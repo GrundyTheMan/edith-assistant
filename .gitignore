@@ -1,0 +1,19 @@
+# Gradle files
+*.iml
+.gradle/
+build/
+app/build/
+.gradle.kts
+gradle/
+
+# Android/Android Studio
+.idea/
+*.iws
+*.ipr
+
+# OS specific
+.DS_Store
+
+# Logs and local data
+*.log
+local.properties
