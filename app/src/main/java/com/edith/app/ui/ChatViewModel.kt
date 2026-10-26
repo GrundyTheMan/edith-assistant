@@ -88,6 +88,11 @@ class ChatViewModel(
         }
     }
 
+    /** The reply text Edith is currently speaking, or null. */
+    val speakingText: StateFlow<String?> = voiceService.speakingText
+
+    fun speak(text: String) = voiceService.speak(text)
+
     fun stopSpeaking() = voiceService.stop()
 
     fun sendMessage(text: String) {
@@ -97,55 +102,71 @@ class ChatViewModel(
 
         viewModelScope.launch {
             chatHistoryDao.insertHistory(ChatHistoryEntity(role = "user", content = text, timestamp = Date().time.toLong()))
-            
-            _uiState.value = _uiState.value.copy(isLoading = true, loadingLabel = THINKING_LABEL, error = null)
-            try {
-                val url = configManager.getOllamaUrl()
-                val model = configManager.getModelName()
-                
-                NetworkClient.clear()
-                val api = NetworkClient.getOllamaApi(url)
-                
-                // Prepend the system prompt to the conversation
-                val fullMessages = mutableListOf<ChatMessage>()
-                fullMessages.add(ChatMessage("system", SYSTEM_PROMPT))
-                // uiState.messages already ends with newMessage
-                fullMessages.addAll(_uiState.value.messages)
+            requestReply()
+        }
+    }
 
-                val request = ChatRequest(
-                    model = model,
-                    messages = fullMessages
-                )
-                val response = api.generateChat(request)
-                
-                if (response.tool_calls != null && response.tool_calls.isNotEmpty()) {
-                    // --- Tool Chaining Logic ---
-                    var currentMessages = fullMessages.toMutableList()
-                    for (toolCall in response.tool_calls) {
-                        // 1. Execute the tool
-                        val result = toolExecutor.execute(toolCall)
-                        // 2. Add tool result to the context messages list
-                        currentMessages.add(ChatMessage("system", "Tool Result: $result"))
-                    }
-                    // 3. Send the result context back to the model for final summary
-                    chatHistoryDao.insertHistory(ChatHistoryEntity(role = "system", content = "Tool Call Execution Complete.", timestamp = Date().time.toLong()))
-                    processMessage(currentMessages)
-                    return@launch
-                } else {
-                    // Standard response flow
-                    chatHistoryDao.insertHistory(ChatHistoryEntity(role = "assistant", content = response.message.content, timestamp = Date().time.toLong()))
-                    _uiState.value = _uiState.value.copy(
-                        messages = _uiState.value.messages + response.message,
-                        isLoading = false
-                    )
-                    voiceService.speak(response.message.content)
+    /** Discards Edith's latest reply and asks for a fresh one to the same conversation. */
+    fun regenerateLastReply() {
+        val messages = _uiState.value.messages
+        if (_uiState.value.isLoading || messages.lastOrNull()?.role != "assistant") return
+
+        voiceService.stop()
+        _uiState.value = _uiState.value.copy(messages = messages.dropLast(1))
+        viewModelScope.launch {
+            chatHistoryDao.deleteLatestReply()
+            requestReply()
+        }
+    }
+
+    /** Asks Ollama for Edith's reply to the conversation in uiState.messages. */
+    private suspend fun requestReply() {
+        _uiState.value = _uiState.value.copy(isLoading = true, loadingLabel = THINKING_LABEL, error = null)
+        try {
+            val url = configManager.getOllamaUrl()
+            val model = configManager.getModelName()
+
+            NetworkClient.clear()
+            val api = NetworkClient.getOllamaApi(url)
+
+            // Prepend the system prompt to the conversation
+            val fullMessages = mutableListOf<ChatMessage>()
+            fullMessages.add(ChatMessage("system", SYSTEM_PROMPT))
+            // uiState.messages already ends with the user's latest message
+            fullMessages.addAll(_uiState.value.messages)
+
+            val request = ChatRequest(
+                model = model,
+                messages = fullMessages
+            )
+            val response = api.generateChat(request)
+
+            if (response.tool_calls != null && response.tool_calls.isNotEmpty()) {
+                // --- Tool Chaining Logic ---
+                var currentMessages = fullMessages.toMutableList()
+                for (toolCall in response.tool_calls) {
+                    // 1. Execute the tool
+                    val result = toolExecutor.execute(toolCall)
+                    // 2. Add tool result to the context messages list
+                    currentMessages.add(ChatMessage("system", "Tool Result: $result"))
                 }
-            } catch (e: Exception) {
+                // 3. Send the result context back to the model for final summary
+                chatHistoryDao.insertHistory(ChatHistoryEntity(role = "system", content = "Tool Call Execution Complete.", timestamp = Date().time.toLong()))
+                processMessage(currentMessages)
+            } else {
+                // Standard response flow
+                chatHistoryDao.insertHistory(ChatHistoryEntity(role = "assistant", content = response.message.content, timestamp = Date().time.toLong()))
                 _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = "Couldn't reach Edith: ${e.message ?: e::class.java.simpleName}"
+                    messages = _uiState.value.messages + response.message,
+                    isLoading = false
                 )
+                voiceService.speakReply(response.message.content)
             }
+        } catch (e: Exception) {
+            _uiState.value = _uiState.value.copy(
+                isLoading = false,
+                error = "Couldn't reach Edith: ${e.message ?: e::class.java.simpleName}"
+            )
         }
     }
 
@@ -177,7 +198,7 @@ class ChatViewModel(
                 messages = _uiState.value.messages + response.message,
                 isLoading = false
             )
-            voiceService.speak(response.message.content)
+            voiceService.speakReply(response.message.content)
         }
     }
 }

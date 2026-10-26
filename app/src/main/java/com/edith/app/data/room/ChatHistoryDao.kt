@@ -13,4 +13,7 @@ interface ChatHistoryDao {
 
     @Query("DELETE FROM chat_history")
     suspend fun clearHistory()
+
+    @Query("DELETE FROM chat_history WHERE id = (SELECT id FROM chat_history WHERE role = 'assistant' ORDER BY timestamp DESC LIMIT 1)")
+    suspend fun deleteLatestReply()
 }

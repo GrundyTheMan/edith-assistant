@@ -8,7 +8,7 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -16,6 +16,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
@@ -28,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 
@@ -37,6 +40,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
     val speechManager = remember { SpeechManager(context) }
     val recordingManager = remember { RecordingManager(context) }
     val uiState by viewModel.uiState.collectAsState()
+    val speakingText by viewModel.speakingText.collectAsState()
 
     var isRecording by remember { mutableStateOf(false) }
     var recordingSeconds by remember { mutableStateOf(0) }
@@ -106,7 +110,8 @@ fun ChatScreen(viewModel: ChatViewModel) {
     // Keep the newest message (or the thinking indicator) in view
     val listState = rememberLazyListState()
     val itemCount = uiState.messages.size + if (uiState.isLoading) 1 else 0
-    LaunchedEffect(itemCount) {
+    // Keyed on the last message too: regenerating a reply replaces it without changing the count
+    LaunchedEffect(itemCount, uiState.messages.lastOrNull()?.content) {
         if (itemCount > 0) listState.animateScrollToItem(itemCount - 1)
     }
 
@@ -124,8 +129,20 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(uiState.messages) { message ->
-                    MessageBubble(message = message)
+                itemsIndexed(uiState.messages) { index, message ->
+                    Column {
+                        MessageBubble(message = message)
+                        if (message.role == "assistant") {
+                            ReplyActions(
+                                isSpeaking = speakingText == message.content,
+                                // Only the latest reply can be regenerated; later messages depend on older ones
+                                canRegenerate = index == uiState.messages.lastIndex && !uiState.isLoading,
+                                onPlay = { viewModel.speak(message.content) },
+                                onStop = { viewModel.stopSpeaking() },
+                                onRegenerate = { viewModel.regenerateLastReply() }
+                            )
+                        }
+                    }
                 }
                 if (uiState.isLoading) {
                     item { ThinkingBubble(label = uiState.loadingLabel) }
@@ -278,6 +295,74 @@ fun MessageBubble(message: ChatMessage) {
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class) // LocalMinimumInteractiveComponentEnforcement
+@Composable
+private fun ReplyActions(
+    isSpeaking: Boolean,
+    canRegenerate: Boolean,
+    onPlay: () -> Unit,
+    onStop: () -> Unit,
+    onRegenerate: () -> Unit
+) {
+    // Material pads icon buttons out to 48dp, which leaves a gap under the bubble; keep this row compact
+    CompositionLocalProvider(LocalMinimumInteractiveComponentEnforcement provides false) {
+        ReplyActionButtons(isSpeaking, canRegenerate, onPlay, onStop, onRegenerate)
+    }
+}
+
+@Composable
+private fun ReplyActionButtons(
+    isSpeaking: Boolean,
+    canRegenerate: Boolean,
+    onPlay: () -> Unit,
+    onStop: () -> Unit,
+    onRegenerate: () -> Unit
+) {
+    // Pulled up so the icons sit right at the bubble's bottom edge, and the
+    // space it frees is given back so the next message isn't pushed down
+    val pullUp = 7.dp
+    Row(
+        modifier = Modifier
+            .padding(start = 4.dp)
+            .layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints)
+                val shift = pullUp.roundToPx()
+                layout(placeable.width, placeable.height - shift) {
+                    placeable.place(0, -shift)
+                }
+            }
+    ) {
+        val buttonModifier = Modifier.size(32.dp)
+        val iconModifier = Modifier.size(18.dp)
+        // Highlighted while this reply is being spoken
+        val playColors = if (isSpeaking) {
+            IconButtonDefaults.filledTonalIconButtonColors()
+        } else {
+            IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        IconButton(onClick = onPlay, colors = playColors, modifier = buttonModifier) {
+            Icon(Icons.Filled.VolumeUp, contentDescription = "Play reply", modifier = iconModifier)
+        }
+        IconButton(
+            onClick = onStop,
+            enabled = isSpeaking,
+            colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
+            modifier = buttonModifier
+        ) {
+            Icon(Icons.Filled.Stop, contentDescription = "Stop playback", modifier = iconModifier)
+        }
+        if (canRegenerate) {
+            IconButton(
+                onClick = onRegenerate,
+                colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
+                modifier = buttonModifier
+            ) {
+                Icon(Icons.Filled.Refresh, contentDescription = "Regenerate reply", modifier = iconModifier)
+            }
         }
     }
 }
