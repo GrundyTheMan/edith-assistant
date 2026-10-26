@@ -1,10 +1,7 @@
 package com.edith.app.network
 
-import retrofit2.Call
-import retrofit2.HttpBody
 import retrofit2.http.Body
 import retrofit2.http.POST
-import retrofit2.http.Query
 
 data class ChatRequest(
     val model: String,
@@ -20,7 +17,13 @@ data class ChatMessage(
 data class ChatResponse(
     val model: String,
     val message: ChatMessage,
-    val done: Boolean
+    val done: Boolean,
+    val tool_calls: List<ToolCall>? = null
+)
+
+data class ToolCall(
+    val function: String,
+    val arguments: Map<String, String>
 )
 
 interface OllamaApi {

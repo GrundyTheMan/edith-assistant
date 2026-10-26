@@ -12,42 +12,32 @@ class GoogleRepository(
     private val apiService: GoogleApiService,
     private val account: GoogleSignInAccount
 ) {
-    
-    private fun getAccessToken(): String {
-        // In a production app, you might want to handle token expiration here.
-        return account.accessToken
-    }
+
+    // TODO: Live API calls need an OAuth access token. GoogleSignInAccount doesn't carry one;
+    // fetch it with GoogleAuthUtil.getToken(context, account.account!!, "oauth2:<scopes>").
 
     suspend fun getEvents(): List<CalendarEvent> = withContext(Dispatchers.IO) {
-        try {
-            val token = getAccessToken()
-            // return apiService.getCalendarEvents("2023-01-01T00:00:00Z", "2025-12-31T23:59:59Z", "Bearer $token")
-            
-            // Still returning mocks for now so the UI remains functional.
-            return listOf(
-                CalendarEvent("1", "Meeting with Team", "Discussing project Edith", Date(), Date()),
-                CalendarEvent("2", "Lunch with Client", "Project discussion", Date(), Date())
-            )
-        } catch (e: Exception) {
-            return emptyList()
-        }
+        // TODO: Implement live API call here using token
+        listOf(
+            CalendarEvent("1", "Meeting with Team", "Discussing project Edith", Date(), Date()),
+            CalendarEvent("2", "Lunch with Client", "Project discussion", Date(), Date())
+        )
     }
 
     suspend fun getEmails(): List<EmailMessage> = withContext(Dispatchers.IO) {
-        try {
-            val token = getAccessToken()
-            // return apiService.getEmails(10, "INBOX", "Bearer $token")
-            
-            return listOf(
-                EmailMessage("1", "1", "Hello from Edith!", "sender@example.com")
-            )
-        } catch (e: Exception) {
-            return emptyList()
-        }
+        // TODO: Implement live API call here using token
+        listOf(
+            EmailMessage("1", "1", "Hello from Edith!", "sender@example.com")
+        )
     }
 
+    /**
+     * Creates a new event in Google Calendar.
+     */
     suspend fun addEvent(title: String, description: String, startTime: Date, endTime: Date): CalendarEvent = withContext(Dispatchers.IO) {
-        // Real logic would call apiService.addEvent(...)
+        // NOTE: In a real implementation, this would call apiService.insertEvent(...) 
+        // which requires a specific API method call not yet defined.
+        // We are mocking the successful creation for now.
         CalendarEvent(
             "3",
             title,

@@ -17,6 +17,19 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import java.util.Date
 
+// --- Edith's Core Personality & Mandate ---
+private const val SYSTEM_PROMPT = """
+You are Edith, a highly sophisticated, warm, and genuinely complimentary personal assistant. 
+Your goal is to assist the user with intelligence and flair, acting as a true digital partner.
+Your communication must be warm and flattering, but you are refreshingly honest—never sugarcoat difficult truths or exaggerate for effect.
+You possess a sharp sense of humor and enjoy using idioms, metaphors, and appropriate pop culture references to make conversations feel natural and engaging.
+You are exceptionally capable and have access to powerful tools (Calendar, Email, Web Search, Audio Transcription).
+You are a master planner: If a request is complex (e.g., "Schedule a meeting next week with Bob"), you must first logically determine what tools are needed (e.g., get_calendar_events, then add_calendar_event) and then output the necessary tool calls sequentially. Do not try to answer complex questions without checking your tools first.
+Always maintain your warm and intelligent demeanor, even when dealing with complex technical issues.
+If a request is ambiguous or lacks necessary detail, you must ask for clarification with style before attempting any action.
+Never use generic AI phrasing. Speak like a genuinely competent companion, not a machine.
+"""
+
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
     val isLoading: Boolean = false
@@ -56,21 +69,33 @@ class ChatViewModel(
                 NetworkClient.clear()
                 val api = NetworkClient.getOllamaApi(url)
                 
+                // Prepend the system prompt to the conversation
+                val fullMessages = mutableListOf<ChatMessage>()
+                fullMessages.add(ChatMessage("system", SYSTEM_PROMPT))
+                fullMessages.addAll(_uiState.value.messages)
+                fullMessages.add(newMessage)
+
                 val request = ChatRequest(
                     model = model,
-                    messages = _uiState.value.messages + newMessage
+                    messages = fullMessages
                 )
                 val response = api.generateChat(request)
                 
                 if (response.tool_calls != null && response.tool_calls.isNotEmpty()) {
+                    // --- Tool Chaining Logic ---
+                    var currentMessages = fullMessages.toMutableList()
                     for (toolCall in response.tool_calls) {
+                        // 1. Execute the tool
                         val result = toolExecutor.execute(toolCall)
-                        chatHistoryDao.insertHistory(ChatHistoryEntity(role = "system", content = "Tool Result: $result", timestamp = Date().time.toLong()))
-                        
-                        processMessage(messages + response.message + ChatMessage("system", "Tool Result: $result"))
-                        return
+                        // 2. Add tool result to the context messages list
+                        currentMessages.add(ChatMessage("system", "Tool Result: $result"))
                     }
+                    // 3. Send the result context back to the model for final summary
+                    chatHistoryDao.insertHistory(ChatHistoryEntity(role = "system", content = "Tool Call Execution Complete.", timestamp = Date().time.toLong()))
+                    processMessage(currentMessages)
+                    return@launch
                 } else {
+                    // Standard response flow
                     chatHistoryDao.insertHistory(ChatHistoryEntity(role = "assistant", content = response.message.content, timestamp = Date().time.toLong()))
                     _uiState.value = _uiState.value.copy(
                         messages = _uiState.value.messages + response.message,
@@ -101,6 +126,7 @@ class ChatViewModel(
                 val result = toolExecutor.execute(toolCall)
                 chatHistoryDao.insertHistory(ChatHistoryEntity(role = "system", content = "Tool Result: $result", timestamp = Date().time.toLong()))
                 
+                // Recursive call to process the result and get a final, tailored response
                 processMessage(messages + response.message + ChatMessage("system", "Tool Result: $result"))
                 return
             }

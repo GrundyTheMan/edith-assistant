@@ -13,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.edith.app.ui.theme.EdithTheme
 import com.edith.app.ui.ChatScreen
@@ -26,6 +27,9 @@ import com.edith.app.network.ToolExecutor
 import com.edith.app.data.calendar.GoogleRepository
 import com.edith.app.utils.ConfigManager
 import com.edith.app.network.AuthManager
+import com.edith.app.network.AudioService
+import com.edith.app.network.NetworkClient
+import com.edith.app.network.WebSearchService
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import kotlinx.coroutines.flow.collectLatest
 
@@ -67,15 +71,10 @@ class MainActivity : ComponentActivity() {
 fun MainScreen(chatHistoryDao: ChatHistoryDao, authManager: AuthManager) {
     var currentScreen by remember { mutableStateOf("chat") }
     val context = LocalContext.current
+    val activity = context as Activity
     val configManager = remember { ConfigManager(context) }
-    
+
     val authState by authManager.authState.collectAsState()
-    
-    val mockAccount = GoogleSignInAccount("mock_id", "user@example.com", "mock_auth_token")
-    val googleRepository = GoogleRepository(com.edith.app.network.GoogleApiService(), mockAccount)
-    val toolExecutor = ToolExecutor(googleRepository, mockAccount)
-    
-    val chatViewModel = remember { ChatViewModel(chatHistoryDao, toolExecutor, configManager) }
 
     Row(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.padding(8.dp)) {
@@ -88,28 +87,27 @@ fun MainScreen(chatHistoryDao: ChatHistoryDao, authManager: AuthManager) {
             Button(onClick = { currentScreen = "settings" }) {
                 Text("Settings")
             }
-            Button(onClick = { authManager.signIn(findActivity()) }) {
+            Button(onClick = { authManager.signIn(activity) }) {
                 Text("Login")
             }
         }
 
         Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-            if (authState == null) {
+            val account = authState
+            if (account == null) {
                 Text("Please login to continue.")
             } else {
+                val chatViewModel = remember(account) {
+                    val googleRepository = GoogleRepository(NetworkClient.getGoogleApi(), account)
+                    val toolExecutor = ToolExecutor(googleRepository, account, WebSearchService(), AudioService(configManager))
+                    ChatViewModel(chatHistoryDao, toolExecutor, configManager)
+                }
                 when (currentScreen) {
                     "chat" -> ChatScreen(chatViewModel)
-                    "calendar" -> CalendarScreen(authState!!)
+                    "calendar" -> CalendarScreen(account)
                     "settings" -> SettingsScreen(configManager)
                 }
             }
         }
     }
-}
-
-// Helper to find current activity context
-@Composable
-fun findActivity(): Activity {
-    val context = LocalContext.current
-    return context as Activity
 }

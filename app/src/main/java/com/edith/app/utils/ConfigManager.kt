@@ -1,11 +1,10 @@
 package com.edith.app.utils
 
 import android.content.Context
-import android.content.ContextPreferences
 import android.content.SharedPreferences
 
 class ConfigManager(context: Context) {
-    private val prefs: SharedPreferences = context.getSharedPreferences("edith_prefs", ContextPreferences.MODE_PRIVATE)
+    private val prefs: SharedPreferences = context.getSharedPreferences("edith_prefs", Context.MODE_PRIVATE)
 
     companion object {
         private const val KEY_OLLAMA_URL = "ollama_url"

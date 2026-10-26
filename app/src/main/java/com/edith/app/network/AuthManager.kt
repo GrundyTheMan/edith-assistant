@@ -6,19 +6,18 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.Scope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import androidx.lifecycle.ViewModel
 
 class AuthManager(private val context: Context) {
     private val signInClient = GoogleSignIn.getClient(context, 
         GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
-            .requestCalendarApi()
-            .requestGmailApi()
+            .requestScopes(
+                Scope("https://www.googleapis.com/auth/calendar"),
+                Scope("https://www.googleapis.com/auth/gmail.readonly")
+            )
             .build())
 
     private val _authState = MutableStateFlow<GoogleSignInAccount?>(null)
@@ -31,10 +30,10 @@ class AuthManager(private val context: Context) {
 
     fun handleActivityResult(requestCode: Int, result: Intent?) {
         if (requestCode == 1001) {
-            val task = signInClient.onActivityResult(requestCode, result)
+            val task = GoogleSignIn.getSignedInAccountFromIntent(result)
             task.addOnCompleteListener {
                 try {
-                    val account = task.getResult(GoogleSignInStatusCodes.SUCCESS)
+                    val account = task.getResult(ApiException::class.java)
                     _authState.value = account
                 } catch (e: Exception) {
                     // Handle error

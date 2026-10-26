@@ -2,6 +2,7 @@ package com.edith.app.utils
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import android.speech.RecognitionListener
@@ -12,7 +13,7 @@ import android.util.Log
 import android.os.Bundle
 import java.util.Locale
 
-class SpeechManager(context: Context) {
+class SpeechManager(private val context: Context) {
     private var speechRecognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
 
@@ -41,7 +42,8 @@ class SpeechManager(context: Context) {
         speechRecognizer?.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {}
             override fun onBeginningOfSpeech() {}
-            override fun onBufferResults(buffer: Bundle?) {}
+            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {}
             override fun onError(error: Int) {
                 Log.e("SpeechManager", "Error: $error")
@@ -53,16 +55,14 @@ class SpeechManager(context: Context) {
                 }
             }
             override fun onPartialResults(partialResults: Bundle?) {}
-            override fun onPriceUpdate(params: Bundle?) {}
-            override fun onTimeout() {}
-            override fun onTryAgain() {}
+            override fun onEvent(eventType: Int, params: Bundle?) {}
         })
 
-        val intent = RecognizerIntent()
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.US)
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.US.toLanguageTag())
 
-        speechRecognizer?.listen(intent)
+        speechRecognizer?.startListening(intent)
     }
 
     fun speak(text: String) {
