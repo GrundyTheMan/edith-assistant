@@ -1,39 +1,18 @@
 package com.edith.app.utils
 
 import android.content.Context
-import android.media.MediaPlayer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
-import com.edith.app.network.NetworkClient
-import com.edith.app.network.SpeechRequest
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import java.io.File
 import java.util.Locale
-import kotlin.coroutines.cancellation.CancellationException
-import kotlin.coroutines.resume
 
 /**
- * Reads Edith's replies aloud.
- * Asks the Ollama server for speech first (/v1/audio/speech, phonon), which currently works only
- * on an Apple Silicon Mac. When the server can't provide speech,
- * falls back to the phone's built-in text-to-speech.
+ * Reads Edith's replies aloud with the phone's built-in text-to-speech.
+ * Runs entirely on the device: no network calls.
  */
-class VoiceService(private val context: Context, private val configManager: ConfigManager) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private var speakJob: Job? = null
-    private var mediaPlayer: MediaPlayer? = null
+class VoiceService(context: Context, private val configManager: ConfigManager) {
     private var tts: TextToSpeech? = null
     private var ttsReady = false
 
@@ -70,43 +49,30 @@ class VoiceService(private val context: Context, private val configManager: Conf
 
     /** Speaks [text] now, replacing anything already playing. */
     fun speak(text: String) {
-        val spoken = cleanForSpeech(text)
+        val spoken = cleanForSpeech(text).take(TextToSpeech.getMaxSpeechInputLength())
         if (spoken.isBlank()) return
+        if (!ttsReady) {
+            Log.e(TAG, "Phone text-to-speech isn't ready; reply not spoken")
+            return
+        }
 
         stop()
         val utteranceId = "edith-reply-${++utteranceCount}"
-        Log.i(TAG, "Speaking $utteranceId (${spoken.length} chars)")
         currentUtteranceId = utteranceId
         _speakingText.value = text
-        speakJob = scope.launch {
-            val parts = splitForSpeech(spoken)
-            val spokenParts = playServerSpeech(parts)
-            ensureActive() // stopped while speaking: don't fall back to the phone's voice
-            if (spokenParts < parts.size) {
-                speakWithPhone(parts.drop(spokenParts).joinToString(" "), utteranceId)
-            } else {
-                finished(utteranceId)
-            }
-        }
+        tts?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        Log.i(TAG, "Speaking $utteranceId with the phone's text-to-speech (${spoken.length} chars)")
     }
 
     fun stop() {
         currentUtteranceId = null
         _speakingText.value = null
-        speakJob?.cancel()
-        speakJob = null
-        mediaPlayer?.run {
-            stop()
-            release()
-        }
-        mediaPlayer = null
         tts?.stop()
     }
 
     fun release() {
         stop()
         tts?.shutdown()
-        scope.cancel()
     }
 
     private fun finished(utteranceId: String?) {
@@ -114,90 +80,6 @@ class VoiceService(private val context: Context, private val configManager: Conf
             currentUtteranceId = null
             _speakingText.value = null
         }
-    }
-
-    /**
-     * Plays [parts] in the server's voice, fetching each part's audio while the previous one plays.
-     * Returns how many parts were spoken; fewer than all means the server couldn't provide speech.
-     */
-    private suspend fun playServerSpeech(parts: List<String>): Int = coroutineScope {
-        // Results rather than exceptions, so a failed fetch doesn't cancel the part that's playing
-        fun fetch(index: Int) = async(Dispatchers.IO) {
-            runCatching {
-                val api = NetworkClient.getOllamaApi(configManager.getOllamaUrl())
-                api.generateSpeech(SpeechRequest(model = VOICE_MODEL, input = parts[index].take(MAX_SPEECH_CHARS))).bytes()
-            }
-        }
-
-        var next = fetch(0)
-        for (index in parts.indices) {
-            val audio = next.await().getOrElse { e ->
-                if (e is CancellationException) throw e
-                Log.i(TAG, "Server speech unavailable (${e.message}); using the phone's voice")
-                return@coroutineScope index
-            }
-            if (index + 1 < parts.size) next = fetch(index + 1)
-            if (index == 0) Log.i(TAG, "Speaking with the server's voice (${parts.size} parts)")
-            playAndWait(audio, index)
-        }
-        parts.size
-    }
-
-    private suspend fun playAndWait(audio: ByteArray, index: Int) {
-        val file = File(context.cacheDir, "edith_reply_$index.wav").apply { writeBytes(audio) }
-        suspendCancellableCoroutine { continuation ->
-            val player = MediaPlayer()
-            mediaPlayer = player
-            fun done() {
-                player.release()
-                if (mediaPlayer === player) mediaPlayer = null
-                if (continuation.isActive) continuation.resume(Unit)
-            }
-            player.setDataSource(file.path)
-            player.setOnCompletionListener { done() }
-            player.setOnErrorListener { _, _, _ -> done(); true }
-            player.prepare()
-            player.start()
-            // stop() releases the player itself; nothing more to do on cancellation
-        }
-    }
-
-    private fun speakWithPhone(text: String, utteranceId: String) {
-        if (!ttsReady) {
-            Log.e(TAG, "Phone text-to-speech isn't ready; reply not spoken")
-            finished(utteranceId)
-            return
-        }
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
-        Log.i(TAG, "Speaking with the phone's text-to-speech")
-    }
-
-    // The first sentence goes alone so speech starts as soon as possible; the rest are grouped
-    // into parts of up to ~200 characters to keep the pauses between parts few
-    private fun splitForSpeech(text: String): List<String> {
-        val sentences = Regex("""[^.!?]+[.!?]*["')\]]*""").findAll(text).map { it.value.trim() }.filter { it.isNotEmpty() }.toList()
-        if (sentences.isEmpty()) return listOf(text)
-        val parts = mutableListOf<String>()
-        // A long opening sentence is cut at its first natural pause so playback still starts quickly
-        val opening = sentences.first()
-        val pause = Regex("""[,;:—–]\s""").findAll(opening).map { it.range.first + 1 }
-            .firstOrNull { it in MIN_OPENING_CHARS until opening.length - MIN_OPENING_CHARS }
-        if (opening.length > MAX_OPENING_CHARS && pause != null) {
-            parts += opening.substring(0, pause).trim()
-            parts += opening.substring(pause).trim()
-        } else {
-            parts += opening
-        }
-        var current = ""
-        for (sentence in sentences.drop(1)) {
-            if (current.isNotEmpty() && current.length + sentence.length > MAX_PART_CHARS) {
-                parts += current
-                current = ""
-            }
-            current = if (current.isEmpty()) sentence else "$current $sentence"
-        }
-        if (current.isNotEmpty()) parts += current
-        return parts
     }
 
     // Markdown symbols and emoji get read out literally, so strip them first
@@ -210,10 +92,5 @@ class VoiceService(private val context: Context, private val configManager: Conf
 
     private companion object {
         const val TAG = "VoiceService"
-        const val VOICE_MODEL = "phonon"
-        const val MAX_SPEECH_CHARS = 4096 // Ollama's per-request limit
-        const val MAX_PART_CHARS = 200
-        const val MAX_OPENING_CHARS = 100
-        const val MIN_OPENING_CHARS = 25
     }
 }

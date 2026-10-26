@@ -1,7 +1,7 @@
 package com.edith.app.network
 
-import okhttp3.ResponseBody
 import retrofit2.http.Body
+import retrofit2.http.GET
 import retrofit2.http.POST
 
 // Every request uses the same context size: Ollama reloads a model when it changes, and the
@@ -36,17 +36,23 @@ data class ToolCall(
     val arguments: Map<String, String>
 )
 
-// Ollama's OpenAI-compatible text-to-speech request
-data class SpeechRequest(
-    val model: String,
-    val input: String,
-    val response_format: String = "wav"
-)
+data class ModelList(val models: List<ModelTag>)
+
+data class ModelTag(val name: String)
+
+data class ModelDetailsRequest(val model: String)
+
+// capabilities is e.g. ["completion", "vision", "audio", "tools", "thinking"]
+data class ModelDetails(val capabilities: List<String>? = null)
 
 interface OllamaApi {
     @POST("/api/chat")
     suspend fun generateChat(@Body request: ChatRequest): ChatResponse
 
-    @POST("/v1/audio/speech")
-    suspend fun generateSpeech(@Body request: SpeechRequest): ResponseBody
+    /** Models installed on the server. */
+    @GET("/api/tags")
+    suspend fun listModels(): ModelList
+
+    @POST("/api/show")
+    suspend fun showModel(@Body request: ModelDetailsRequest): ModelDetails
 }
