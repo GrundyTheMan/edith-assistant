@@ -32,6 +32,7 @@ import com.edith.app.data.room.ChatHistoryDao
 import com.edith.app.ui.ChatViewModel
 import com.edith.app.network.ToolExecutor
 import com.edith.app.data.calendar.GoogleRepository
+import com.edith.app.utils.AttachmentReader
 import com.edith.app.utils.ConfigManager
 import com.edith.app.utils.VoiceService
 import com.edith.app.network.AuthManager
@@ -101,7 +102,7 @@ fun MainScreen(chatHistoryDao: ChatHistoryDao, authManager: AuthManager, voiceSe
         val googleRepository = GoogleRepository(NetworkClient.getGoogleApi(), account)
         val audioService = AudioService(configManager)
         val toolExecutor = ToolExecutor(googleRepository, account, WebSearchService(), audioService)
-        ChatViewModel(chatHistoryDao, toolExecutor, configManager, audioService, voiceService)
+        ChatViewModel(chatHistoryDao, toolExecutor, configManager, audioService, voiceService, AttachmentReader(context))
     }
 
     Scaffold(

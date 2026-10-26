@@ -16,7 +16,14 @@ import kotlinx.coroutines.delay
 import kotlin.coroutines.cancellation.CancellationException
 
 /** A model Edith can chat with, from the Ollama server. */
-private data class ChatModel(val name: String, val supportsAudio: Boolean)
+private data class ChatModel(val name: String, val supportsImages: Boolean, val supportsAudio: Boolean) {
+    val abilities: String? get() = when {
+        supportsImages && supportsAudio -> "Understands images and audio (voice memos)"
+        supportsImages -> "Understands images"
+        supportsAudio -> "Understands audio (voice memos)"
+        else -> null
+    }
+}
 
 /** Lists the server's models that can chat, skipping ones that can't (e.g. embedding models). */
 private suspend fun loadChatModels(url: String): List<ChatModel> = coroutineScope {
@@ -27,7 +34,11 @@ private suspend fun loadChatModels(url: String): List<ChatModel> = coroutineScop
             // If a model's details can't be read, list it rather than hide it
             val capabilities = runCatching { api.showModel(ModelDetailsRequest(tag.name)).capabilities }.getOrNull()
             if (capabilities != null && "completion" !in capabilities) null
-            else ChatModel(tag.name, supportsAudio = capabilities?.contains("audio") == true)
+            else ChatModel(
+                tag.name,
+                supportsImages = capabilities?.contains("vision") == true,
+                supportsAudio = capabilities?.contains("audio") == true
+            )
         }
     }.awaitAll().filterNotNull().sortedBy { it.name }
 }
@@ -106,9 +117,9 @@ fun SettingsScreen(
                         text = {
                             Column {
                                 Text(option.name)
-                                if (option.supportsAudio) {
+                                option.abilities?.let { abilities ->
                                     Text(
-                                        text = "Can transcribe voice memos",
+                                        text = abilities,
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
