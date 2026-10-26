@@ -4,25 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.edith.app.data.calendar.CalendarEvent
 import com.edith.app.data.calendar.GoogleRepository
-import com.edith.app.network.GoogleApiService
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
-
-package com.edith.app.ui
-
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.edith.app.data.calendar.CalendarEvent
-import com.edith.app.data.calendar.GoogleRepository
-import com.edith.app.network.GoogleApiService
+import com.edith.app.network.NetworkClient
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-class CalendarViewModel(account: GoogleSignInAccount) : ViewModel() {
-    private val apiService = GoogleApiService()
+class CalendarViewModel(account: GoogleSignInAccount?) : ViewModel() {
+    private val apiService = NetworkClient.getGoogleApi()
     private val repository = GoogleRepository(apiService, account)
     
     private val _events = MutableStateFlow<List<CalendarEvent>>(emptyList())
