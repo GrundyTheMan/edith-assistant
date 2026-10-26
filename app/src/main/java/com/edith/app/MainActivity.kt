@@ -5,16 +5,23 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import com.edith.app.ui.theme.EdithTheme
 import com.edith.app.ui.ChatScreen
 import com.edith.app.ui.CalendarScreen
@@ -39,6 +46,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var authManager: AuthManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         speechManager = SpeechManager(this)
         database = AppDatabase.getDatabase(this)
@@ -67,43 +75,58 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private enum class Destination(val label: String, val icon: ImageVector) {
+    Chat("Chat", Icons.Filled.Chat),
+    Calendar("Calendar", Icons.Filled.CalendarMonth),
+    Settings("Settings", Icons.Filled.Settings)
+}
+
+@OptIn(ExperimentalLayoutApi::class) // consumeWindowInsets
 @Composable
 fun MainScreen(chatHistoryDao: ChatHistoryDao, authManager: AuthManager) {
-    var currentScreen by remember { mutableStateOf("chat") }
+    var currentScreen by remember { mutableStateOf(Destination.Chat) }
     val context = LocalContext.current
     val activity = context as Activity
     val configManager = remember { ConfigManager(context) }
 
     val authState by authManager.authState.collectAsState()
 
-    Row(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.padding(8.dp)) {
-            Button(onClick = { currentScreen = "chat" }) {
-                Text("Chat")
-            }
-            Button(onClick = { currentScreen = "calendar" }) {
-                Text("Calendar")
-            }
-            Button(onClick = { currentScreen = "settings" }) {
-                Text("Settings")
-            }
-            Button(onClick = { authManager.signIn(activity) }) {
-                Text("Login")
+    // Google sign-in is optional: calendar and email data are still mocked
+    val account = authState
+    val chatViewModel = remember(account) {
+        val googleRepository = GoogleRepository(NetworkClient.getGoogleApi(), account)
+        val toolExecutor = ToolExecutor(googleRepository, account, WebSearchService(), AudioService(configManager))
+        ChatViewModel(chatHistoryDao, toolExecutor, configManager)
+    }
+
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                Destination.entries.forEach { destination ->
+                    NavigationBarItem(
+                        selected = currentScreen == destination,
+                        onClick = { currentScreen = destination },
+                        icon = { Icon(destination.icon, contentDescription = null) },
+                        label = { Text(destination.label) }
+                    )
+                }
             }
         }
-
-        Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-            // Google sign-in is optional: calendar and email data are still mocked
-            val account = authState
-            val chatViewModel = remember(account) {
-                val googleRepository = GoogleRepository(NetworkClient.getGoogleApi(), account)
-                val toolExecutor = ToolExecutor(googleRepository, account, WebSearchService(), AudioService(configManager))
-                ChatViewModel(chatHistoryDao, toolExecutor, configManager)
-            }
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .consumeWindowInsets(innerPadding)
+        ) {
             when (currentScreen) {
-                "chat" -> ChatScreen(chatViewModel)
-                "calendar" -> CalendarScreen(account)
-                "settings" -> SettingsScreen(configManager)
+                Destination.Chat -> ChatScreen(chatViewModel)
+                Destination.Calendar -> CalendarScreen(account)
+                Destination.Settings -> SettingsScreen(
+                    configManager = configManager,
+                    signedInEmail = account?.email,
+                    onSignIn = { authManager.signIn(activity) }
+                )
             }
         }
     }

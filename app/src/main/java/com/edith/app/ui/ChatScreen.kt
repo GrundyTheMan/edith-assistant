@@ -3,6 +3,16 @@ package com.edith.app.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import com.edith.app.network.ChatMessage
@@ -10,9 +20,11 @@ import com.edith.app.utils.SpeechManager
 import com.edith.app.utils.RecordingManager
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 
 @Composable
 fun ChatScreen(viewModel: ChatViewModel) {
@@ -25,29 +37,59 @@ fun ChatScreen(viewModel: ChatViewModel) {
     var recordedFilePath by remember { mutableStateOf<String?>(null) }
 
     fun startRecording() {
-        recordingManager.startRecording()
-        isRecording = true
-        recordedFilePath = null // Clear previous
+        // MediaRecorder throws if the microphone permission hasn't been granted
+        runCatching { recordingManager.startRecording() }
+            .onSuccess {
+                isRecording = true
+                recordedFilePath = null // Clear previous
+            }
     }
 
     fun stopRecording() {
         val file = recordingManager.stopRecording()
         if (file != null) {
             // Using a mock URI for the prototype.
-            recordedFilePath = "mock_uri_for_${file.name}" 
+            recordedFilePath = "mock_uri_for_${file.name}"
             isRecording = false
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        LazyColumn(modifier = Modifier.weight(1f)) {
-            items(uiState.messages) { message ->
-                MessageBubble(message = message)
+    var textInput by remember { mutableStateOf("") }
+
+    fun send() {
+        if (textInput.isBlank()) return
+        viewModel.sendMessage(textInput.trim())
+        textInput = ""
+    }
+
+    // Keep the newest message (or the thinking indicator) in view
+    val listState = rememberLazyListState()
+    val itemCount = uiState.messages.size + if (uiState.isLoading) 1 else 0
+    LaunchedEffect(itemCount) {
+        if (itemCount > 0) listState.animateScrollToItem(itemCount - 1)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .imePadding()
+    ) {
+        if (uiState.messages.isEmpty() && !uiState.isLoading) {
+            EmptyChat(modifier = Modifier.weight(1f))
+        } else {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(uiState.messages) { message ->
+                    MessageBubble(message = message)
+                }
+                if (uiState.isLoading) {
+                    item { ThinkingBubble() }
+                }
             }
-        }
-        
-        if (uiState.isLoading) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
 
         uiState.error?.let { error ->
@@ -55,97 +97,147 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 text = error,
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(vertical = 4.dp)
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
             )
         }
 
-        // --- Recording Controls ---
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            Button(onClick = { startRecording() }, enabled = !isRecording) {
-                Text("🎙️ Record")
-            }
-            Button(onClick = { stopRecording() }, enabled = isRecording) {
-                Text("🛑 Stop")
-            }
-            
-            // Trigger tool if a recording is available and user asks for analysis
-            if (recordedFilePath != null) {
-                Button(
-                    onClick = { 
-                        // Simulation: User asks "Analyze that recording"
-                        // We simulate that command being sent.
-                        viewModel.sendMessage("Analyze this recording.")
-                        recordedFilePath = null // Reset after triggering
-                    },
-                    modifier = Modifier.width(120.dp)
+        // Trigger tool if a recording is available and user asks for analysis
+        if (recordedFilePath != null) {
+            AssistChip(
+                onClick = {
+                    // Simulation: User asks "Analyze that recording"
+                    // We simulate that command being sent.
+                    viewModel.sendMessage("Analyze this recording.")
+                    recordedFilePath = null // Reset after triggering
+                },
+                label = { Text("Analyze recording") },
+                leadingIcon = { Icon(Icons.Filled.GraphicEq, contentDescription = null) },
+                modifier = Modifier.padding(horizontal = 12.dp)
+            )
+        }
+
+        Surface(tonalElevation = 2.dp) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = { if (isRecording) stopRecording() else startRecording() }) {
+                    if (isRecording) {
+                        Icon(Icons.Filled.Stop, contentDescription = "Stop recording", tint = MaterialTheme.colorScheme.error)
+                    } else {
+                        Icon(Icons.Filled.FiberManualRecord, contentDescription = "Record audio")
+                    }
+                }
+
+                OutlinedTextField(
+                    value = textInput,
+                    onValueChange = { textInput = it },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Message Edith") },
+                    shape = RoundedCornerShape(24.dp),
+                    maxLines = 4,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { send() }),
+                    trailingIcon = {
+                        IconButton(onClick = {
+                            speechManager.startListening { result ->
+                                textInput = result
+                            }
+                        }) {
+                            Icon(Icons.Filled.Mic, contentDescription = "Speak a message")
+                        }
+                    }
+                )
+
+                Spacer(modifier = Modifier.width(4.dp))
+
+                FilledIconButton(
+                    onClick = { send() },
+                    enabled = textInput.isNotBlank() && !uiState.isLoading
                 ) {
-                    Text("Analyze")
+                    Icon(Icons.Filled.Send, contentDescription = "Send")
                 }
             }
-        }
-        // --- End Recording Controls ---
-
-        var textInput by remember { mutableStateOf("") }
-
-        // Text Input Area
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextField(
-                value = textInput,
-                onValueChange = { textInput = it },
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Type a message to Edith...") }
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            // Voice Input button remains
-            IconButton(onClick = {
-                speechManager.startListening { result ->
-                    textInput = result
-                }
-            }) {
-                Text("🎤")
-            }
-        }
-        
-        Button(
-            onClick = {
-                viewModel.sendMessage(textInput)
-                textInput = ""
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Send")
         }
     }
 }
 
 @Composable
+private fun EmptyChat(modifier: Modifier = Modifier) {
+    Box(modifier = modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+        Text(
+            text = "Ask Edith anything — your schedule, your inbox, or what's on your mind.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
 fun MessageBubble(message: ChatMessage) {
-    // Determine alignment and color based on role
+    // Tool results and other system notes aren't part of the conversation proper
+    if (message.role == "system") {
+        Text(
+            text = message.content,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)
+        )
+        return
+    }
+
     val isUser = message.role == "user"
-    val alignment = if (isUser) Alignment.End else Alignment.Start
-    val bubbleColor = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
-    val textColor = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+    val bubbleColor = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+    val textColor = if (isUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+    // The corner nearest the speaker's side is squared off, like a speech tail
+    val shape = RoundedCornerShape(
+        topStart = 18.dp,
+        topEnd = 18.dp,
+        bottomStart = if (isUser) 18.dp else 4.dp,
+        bottomEnd = if (isUser) 4.dp else 18.dp
+    )
+    val maxBubbleWidth = (LocalConfiguration.current.screenWidthDp * 0.78f).dp
 
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = bubbleColor),
-            modifier = Modifier.padding(vertical = 4.dp, horizontal = 8.dp)
+        Surface(
+            color = bubbleColor,
+            contentColor = textColor,
+            shape = shape,
+            modifier = Modifier.widthIn(max = maxBubbleWidth)
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = message.content,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ThinkingBubble() {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = RoundedCornerShape(18.dp, 18.dp, 18.dp, 4.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = message.content,
-                    color = textColor
-                )
-                Text(
-                    text = if (isUser) "You" else "Edith",
-                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                    style = MaterialTheme.typography.labelSmall
+                    text = "Edith is thinking…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }

@@ -8,7 +8,11 @@ import androidx.compose.ui.unit.dp
 import com.edith.app.utils.ConfigManager
 
 @Composable
-fun SettingsScreen(configManager: ConfigManager) {
+fun SettingsScreen(
+    configManager: ConfigManager,
+    signedInEmail: String?,
+    onSignIn: () -> Unit
+) {
     var url by remember { mutableStateOf(configManager.getOllamaUrl()) }
     var model by remember { mutableStateOf(configManager.getModelName()) }
 
@@ -42,6 +46,20 @@ fun SettingsScreen(configManager: ConfigManager) {
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Save Settings")
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Text(text = "Google account", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = signedInEmail?.let { "Signed in as $it" } ?: "Not signed in",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(onClick = onSignIn, modifier = Modifier.fillMaxWidth()) {
+            Text(if (signedInEmail == null) "Sign in with Google" else "Switch account")
         }
     }
 }
