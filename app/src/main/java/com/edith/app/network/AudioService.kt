@@ -17,8 +17,7 @@ class AudioService(private val configManager: com.edith.app.utils.ConfigManager)
         val api = NetworkClient.getOllamaApi(configManager.getOllamaUrl())
         val request = ChatRequest(
             model = configManager.getModelName(),
-            messages = listOf(ChatMessage("user", TRANSCRIBE_PROMPT, images = listOf(audio))),
-            think = false
+            messages = listOf(ChatMessage("user", TRANSCRIBE_PROMPT, images = listOf(audio)))
         )
         val transcript = api.generateChat(request).message.content.trim()
         // An empty result means no speech; the model tends to apologise rather than return nothing

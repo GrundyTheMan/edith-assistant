@@ -39,6 +39,7 @@ Set as environment variables before `npm start`:
 | `HOST` | `127.0.0.1` | Use `0.0.0.0` to accept a real phone on your network |
 | `OLLAMA_URL` | `http://127.0.0.1:11434` | |
 | `ORPHEUS_MODEL` | `sematre/orpheus:ft-en-3b-q4_k_m` | |
+| `DECODER_THREADS` | `4` | CPU threads for the audio decoder |
 
 If the server isn't running, chat stops working too (it goes through here). Switch the app's
 Server URL to port 11434 to talk to Ollama directly; Edith then uses the phone's voice.

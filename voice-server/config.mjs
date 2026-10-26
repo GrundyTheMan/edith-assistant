@@ -11,4 +11,6 @@ export const config = {
   // Orpheus English voices: tara, leah, jess, leo, dan, mia, zac, zoe
   voice: process.env.VOICE ?? "tara",
   decoderPath: process.env.SNAC_DECODER ?? fileURLToPath(new URL("./models/snac_24khz_decoder.onnx", import.meta.url)),
+  // CPU threads for the SNAC decoder; more barely speeds it up but crowds out other programs
+  decoderThreads: Number(process.env.DECODER_THREADS ?? 4),
 };

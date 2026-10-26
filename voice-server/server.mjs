@@ -14,7 +14,7 @@ if (!existsSync(config.decoderPath)) {
   process.exit(1);
 }
 const orpheus = new OrpheusVoice({ ollamaUrl: config.OLLAMA_URL, model: config.orpheusModel });
-await orpheus.load(config.decoderPath);
+await orpheus.load(config.decoderPath, config.decoderThreads);
 
 const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && new URL(req.url, "http://x").pathname === "/v1/audio/speech") {
@@ -53,6 +53,7 @@ async function handleSpeech(req, res) {
 }
 
 function proxyToOllama(req, res) {
+  const started = Date.now();
   const upstream = http.request(
     {
       hostname: ollama.hostname,
@@ -64,7 +65,8 @@ function proxyToOllama(req, res) {
     (upstreamRes) => {
       res.writeHead(upstreamRes.statusCode, upstreamRes.headers);
       upstreamRes.pipe(res);
-      log(`proxy   ${req.method} ${req.url} -> ${upstreamRes.statusCode}`);
+      upstreamRes.on("end", () =>
+        log(`proxy   ${req.method} ${req.url} -> ${upstreamRes.statusCode} in ${((Date.now() - started) / 1000).toFixed(1)}s`));
     }
   );
   upstream.on("error", (e) => {

@@ -14,8 +14,10 @@ export class OrpheusVoice {
     this.model = model;
   }
 
-  async load(decoderPath) {
-    this.decoder = await ort.InferenceSession.create(decoderPath);
+  async load(decoderPath, threads) {
+    // ONNX Runtime uses most of the CPU by default; the bursts starve other programs (the Android
+    // emulator's audio crackles). A few threads decode almost as fast.
+    this.decoder = await ort.InferenceSession.create(decoderPath, { intraOpNumThreads: threads, interOpNumThreads: 1 });
   }
 
   /** Speaks [text] in [voice]; returns 24 kHz mono float samples. Stops early if [signal] aborts. */
