@@ -11,7 +11,6 @@ class ConfigManager(context: Context) {
         private const val KEY_MODEL_NAME = "model_name"
         private const val KEY_SPEAK_REPLIES = "speak_replies"
         // Ollama on the PC; 10.0.2.2 is the PC as seen from the Android emulator.
-        // Use port 11435 for Edith's voice server (voice-server/) instead.
         private const val DEFAULT_URL = "http://10.0.2.2:11434"
         private const val DEFAULT_MODEL = "gemma4:12b"
     }

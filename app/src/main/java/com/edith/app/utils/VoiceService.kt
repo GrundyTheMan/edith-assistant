@@ -26,8 +26,8 @@ import kotlin.coroutines.resume
 
 /**
  * Reads Edith's replies aloud.
- * Asks the server for speech first (/v1/audio/speech): Edith's voice server answers it with
- * Orpheus, and so does Ollama itself on a Mac (phonon). When the server can't provide speech,
+ * Asks the Ollama server for speech first (/v1/audio/speech, phonon), which currently works only
+ * on an Apple Silicon Mac. When the server can't provide speech,
  * falls back to the phone's built-in text-to-speech.
  */
 class VoiceService(private val context: Context, private val configManager: ConfigManager) {
@@ -210,7 +210,7 @@ class VoiceService(private val context: Context, private val configManager: Conf
 
     private companion object {
         const val TAG = "VoiceService"
-        const val VOICE_MODEL = "phonon" // used by Ollama itself; the voice server ignores it
+        const val VOICE_MODEL = "phonon"
         const val MAX_SPEECH_CHARS = 4096 // Ollama's per-request limit
         const val MAX_PART_CHARS = 200
         const val MAX_OPENING_CHARS = 100
