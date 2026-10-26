@@ -1,5 +1,6 @@
 package com.edith.app.network
 
+import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.POST
 
@@ -29,7 +30,17 @@ data class ToolCall(
     val arguments: Map<String, String>
 )
 
+// Ollama's OpenAI-compatible text-to-speech request
+data class SpeechRequest(
+    val model: String,
+    val input: String,
+    val response_format: String = "wav"
+)
+
 interface OllamaApi {
     @POST("/api/chat")
     suspend fun generateChat(@Body request: ChatRequest): ChatResponse
+
+    @POST("/v1/audio/speech")
+    suspend fun generateSpeech(@Body request: SpeechRequest): ResponseBody
 }

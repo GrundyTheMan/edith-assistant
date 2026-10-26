@@ -64,6 +64,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
     }
 
     fun startRecording() {
+        viewModel.stopSpeaking() // so Edith's voice doesn't end up in the recording
         runCatching { recordingManager.startRecording() }
             .onSuccess { isRecording = true }
             .onFailure { micMessage = "Couldn't start recording: ${it.message}" }
@@ -200,6 +201,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     trailingIcon = {
                         IconButton(onClick = {
                             withMicPermission {
+                                viewModel.stopSpeaking()
                                 speechManager.startListening { result ->
                                     textInput = result
                                 }

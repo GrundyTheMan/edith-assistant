@@ -9,6 +9,7 @@ class ConfigManager(context: Context) {
     companion object {
         private const val KEY_OLLAMA_URL = "ollama_url"
         private const val KEY_MODEL_NAME = "model_name"
+        private const val KEY_SPEAK_REPLIES = "speak_replies"
         private const val DEFAULT_URL = "http://10.0.2.2:11434"
         private const val DEFAULT_MODEL = "gemma4:12b"
     }
@@ -27,5 +28,13 @@ class ConfigManager(context: Context) {
 
     fun setModelName(modelName: String) {
         prefs.edit().putString(KEY_MODEL_NAME, modelName).apply()
+    }
+
+    fun isSpeakRepliesEnabled(): Boolean {
+        return prefs.getBoolean(KEY_SPEAK_REPLIES, true)
+    }
+
+    fun setSpeakRepliesEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SPEAK_REPLIES, enabled).apply()
     }
 }

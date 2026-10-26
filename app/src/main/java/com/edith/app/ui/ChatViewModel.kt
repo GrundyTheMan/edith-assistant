@@ -11,6 +11,7 @@ import com.edith.app.network.OllamaApi
 import com.edith.app.network.NetworkClient
 import com.edith.app.network.ToolExecutor
 import com.edith.app.utils.ConfigManager
+import com.edith.app.utils.VoiceService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.launchIn
@@ -46,7 +47,8 @@ class ChatViewModel(
     private val chatHistoryDao: ChatHistoryDao,
     private val toolExecutor: ToolExecutor,
     private val configManager: ConfigManager,
-    private val audioService: AudioService
+    private val audioService: AudioService,
+    private val voiceService: VoiceService
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState
@@ -86,7 +88,10 @@ class ChatViewModel(
         }
     }
 
+    fun stopSpeaking() = voiceService.stop()
+
     fun sendMessage(text: String) {
+        voiceService.stop()
         val newMessage = ChatMessage("user", text)
         _uiState.value = _uiState.value.copy(messages = _uiState.value.messages + newMessage)
 
@@ -133,6 +138,7 @@ class ChatViewModel(
                         messages = _uiState.value.messages + response.message,
                         isLoading = false
                     )
+                    voiceService.speak(response.message.content)
                 }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
@@ -171,6 +177,7 @@ class ChatViewModel(
                 messages = _uiState.value.messages + response.message,
                 isLoading = false
             )
+            voiceService.speak(response.message.content)
         }
     }
 }
