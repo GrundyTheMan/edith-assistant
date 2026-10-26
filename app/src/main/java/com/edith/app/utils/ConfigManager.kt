@@ -10,7 +10,7 @@ class ConfigManager(context: Context) {
         private const val KEY_OLLAMA_URL = "ollama_url"
         private const val KEY_MODEL_NAME = "model_name"
         private const val DEFAULT_URL = "http://10.0.2.2:11434"
-        private const val DEFAULT_MODEL = "llama3"
+        private const val DEFAULT_MODEL = "gemma4:12b"
     }
 
     fun getOllamaUrl(): String {

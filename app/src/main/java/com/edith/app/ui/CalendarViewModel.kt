@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-class CalendarViewModel(account: GoogleSignInAccount) : ViewModel() {
+class CalendarViewModel(account: GoogleSignInAccount?) : ViewModel() {
     private val apiService = NetworkClient.getGoogleApi()
     private val repository = GoogleRepository(apiService, account)
     

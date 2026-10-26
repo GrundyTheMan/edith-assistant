@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CalendarScreen(account: GoogleSignInAccount) {
+fun CalendarScreen(account: GoogleSignInAccount?) {
     val coroutineScope = rememberCoroutineScope()
     var events by remember { mutableStateOf<List<CalendarEvent>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }

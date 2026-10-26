@@ -10,7 +10,7 @@ import java.util.Date
 
 class GoogleRepository(
     private val apiService: GoogleApiService,
-    private val account: GoogleSignInAccount
+    private val account: GoogleSignInAccount?
 ) {
 
     // TODO: Live API calls need an OAuth access token. GoogleSignInAccount doesn't carry one;

@@ -8,7 +8,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInAccount
  */
 class ToolExecutor(
     private val googleRepository: GoogleRepository,
-    private val account: GoogleSignInAccount,
+    private val account: GoogleSignInAccount?,
     private val webSearchService: WebSearchService,
     private val audioService: AudioService
 ) {

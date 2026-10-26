@@ -50,6 +50,15 @@ fun ChatScreen(viewModel: ChatViewModel) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
 
+        uiState.error?.let { error ->
+            Text(
+                text = error,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
+        }
+
         // --- Recording Controls ---
         Row(
             modifier = Modifier.fillMaxWidth(),

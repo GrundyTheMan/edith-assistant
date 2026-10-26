@@ -93,20 +93,17 @@ fun MainScreen(chatHistoryDao: ChatHistoryDao, authManager: AuthManager) {
         }
 
         Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            // Google sign-in is optional: calendar and email data are still mocked
             val account = authState
-            if (account == null) {
-                Text("Please login to continue.")
-            } else {
-                val chatViewModel = remember(account) {
-                    val googleRepository = GoogleRepository(NetworkClient.getGoogleApi(), account)
-                    val toolExecutor = ToolExecutor(googleRepository, account, WebSearchService(), AudioService(configManager))
-                    ChatViewModel(chatHistoryDao, toolExecutor, configManager)
-                }
-                when (currentScreen) {
-                    "chat" -> ChatScreen(chatViewModel)
-                    "calendar" -> CalendarScreen(account)
-                    "settings" -> SettingsScreen(configManager)
-                }
+            val chatViewModel = remember(account) {
+                val googleRepository = GoogleRepository(NetworkClient.getGoogleApi(), account)
+                val toolExecutor = ToolExecutor(googleRepository, account, WebSearchService(), AudioService(configManager))
+                ChatViewModel(chatHistoryDao, toolExecutor, configManager)
+            }
+            when (currentScreen) {
+                "chat" -> ChatScreen(chatViewModel)
+                "calendar" -> CalendarScreen(account)
+                "settings" -> SettingsScreen(configManager)
             }
         }
     }

@@ -32,7 +32,8 @@ Never use generic AI phrasing. Speak like a genuinely competent companion, not a
 
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
-    val isLoading: Boolean = false
+    val isLoading: Boolean = false,
+    val error: String? = null
 )
 
 class ChatViewModel(
@@ -46,9 +47,9 @@ class ChatViewModel(
     init {
         chatHistoryDao.getAllHistory()
             .onEach { history ->
-                _uiState.value = ChatUiState(
-                    messages = history.map { ChatMessage(it.role, it.content) },
-                    isLoading = false
+                // DAO returns newest first; the conversation reads oldest first
+                _uiState.value = _uiState.value.copy(
+                    messages = history.reversed().map { ChatMessage(it.role, it.content) }
                 )
             }
             .launchIn(viewModelScope)
@@ -61,7 +62,7 @@ class ChatViewModel(
         viewModelScope.launch {
             chatHistoryDao.insertHistory(ChatHistoryEntity(role = "user", content = text, timestamp = Date().time.toLong()))
             
-            _uiState.value = _uiState.value.copy(isLoading = true)
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
                 val url = configManager.getOllamaUrl()
                 val model = configManager.getModelName()
@@ -72,8 +73,8 @@ class ChatViewModel(
                 // Prepend the system prompt to the conversation
                 val fullMessages = mutableListOf<ChatMessage>()
                 fullMessages.add(ChatMessage("system", SYSTEM_PROMPT))
+                // uiState.messages already ends with newMessage
                 fullMessages.addAll(_uiState.value.messages)
-                fullMessages.add(newMessage)
 
                 val request = ChatRequest(
                     model = model,
@@ -103,7 +104,10 @@ class ChatViewModel(
                     )
                 }
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isLoading = false)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Couldn't reach Edith: ${e.message ?: e::class.java.simpleName}"
+                )
             }
         }
     }
