@@ -10,7 +10,9 @@ class ConfigManager(context: Context) {
         private const val KEY_OLLAMA_URL = "ollama_url"
         private const val KEY_MODEL_NAME = "model_name"
         private const val KEY_SPEAK_REPLIES = "speak_replies"
-        private const val DEFAULT_URL = "http://10.0.2.2:11434"
+        // Edith's voice server (voice-server/), which passes everything else through to Ollama.
+        // 10.0.2.2 is the PC as seen from the Android emulator.
+        private const val DEFAULT_URL = "http://10.0.2.2:11435"
         private const val DEFAULT_MODEL = "gemma4:12b"
     }
 

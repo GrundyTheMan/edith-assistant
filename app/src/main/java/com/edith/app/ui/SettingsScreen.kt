@@ -25,7 +25,8 @@ fun SettingsScreen(
         TextField(
             value = url,
             onValueChange = { url = it },
-            label = { Text("Ollama Server URL") },
+            label = { Text("Server URL") },
+            supportingText = { Text("Edith's voice server (port 11435), or Ollama directly (port 11434) without her voice") },
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -56,7 +57,7 @@ fun SettingsScreen(
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = "Speak Edith's replies", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    text = "Uses Ollama's voice when the server supports it, otherwise the phone's",
+                    text = "Uses the voice server's voice when it's running, otherwise the phone's",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
