@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.edith.app.data.room.ChatHistoryDao
 import com.edith.app.data.room.ChatHistoryEntity
+import com.edith.app.network.AudioService
 import com.edith.app.network.ChatRequest
 import com.edith.app.network.ChatMessage
 import com.edith.app.network.OllamaApi
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.Date
 
 // --- Edith's Core Personality & Mandate ---
@@ -34,13 +36,17 @@ Be concise: this is a chat on a phone screen. Most replies should be two to four
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
     val isLoading: Boolean = false,
+    val loadingLabel: String = THINKING_LABEL,
     val error: String? = null
 )
+
+private const val THINKING_LABEL = "Edith is thinking…"
 
 class ChatViewModel(
     private val chatHistoryDao: ChatHistoryDao,
     private val toolExecutor: ToolExecutor,
-    private val configManager: ConfigManager
+    private val configManager: ConfigManager,
+    private val audioService: AudioService
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState
@@ -56,6 +62,30 @@ class ChatViewModel(
             .launchIn(viewModelScope)
     }
 
+    /** Transcribes a voice recording and sends the transcript as the user's message. */
+    fun sendRecording(recording: File) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, loadingLabel = "Transcribing your recording…", error = null)
+            val transcript = try {
+                audioService.transcribe(recording)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Couldn't transcribe the recording: ${e.message ?: e::class.java.simpleName}"
+                )
+                return@launch
+            } finally {
+                recording.delete()
+            }
+
+            if (transcript.isBlank()) {
+                _uiState.value = _uiState.value.copy(isLoading = false, error = "No speech was heard in that recording.")
+            } else {
+                sendMessage(transcript)
+            }
+        }
+    }
+
     fun sendMessage(text: String) {
         val newMessage = ChatMessage("user", text)
         _uiState.value = _uiState.value.copy(messages = _uiState.value.messages + newMessage)
@@ -63,7 +93,7 @@ class ChatViewModel(
         viewModelScope.launch {
             chatHistoryDao.insertHistory(ChatHistoryEntity(role = "user", content = text, timestamp = Date().time.toLong()))
             
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            _uiState.value = _uiState.value.copy(isLoading = true, loadingLabel = THINKING_LABEL, error = null)
             try {
                 val url = configManager.getOllamaUrl()
                 val model = configManager.getModelName()

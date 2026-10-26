@@ -95,8 +95,9 @@ fun MainScreen(chatHistoryDao: ChatHistoryDao, authManager: AuthManager) {
     val account = authState
     val chatViewModel = remember(account) {
         val googleRepository = GoogleRepository(NetworkClient.getGoogleApi(), account)
-        val toolExecutor = ToolExecutor(googleRepository, account, WebSearchService(), AudioService(configManager))
-        ChatViewModel(chatHistoryDao, toolExecutor, configManager)
+        val audioService = AudioService(configManager)
+        val toolExecutor = ToolExecutor(googleRepository, account, WebSearchService(), audioService)
+        ChatViewModel(chatHistoryDao, toolExecutor, configManager, audioService)
     }
 
     Scaffold(

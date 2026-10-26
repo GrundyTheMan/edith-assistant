@@ -1,5 +1,11 @@
 package com.edith.app.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -9,7 +15,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FiberManualRecord
-import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
@@ -34,24 +39,59 @@ fun ChatScreen(viewModel: ChatViewModel) {
     val uiState by viewModel.uiState.collectAsState()
 
     var isRecording by remember { mutableStateOf(false) }
-    var recordedFilePath by remember { mutableStateOf<String?>(null) }
+    var recordingSeconds by remember { mutableStateOf(0) }
+    var micMessage by remember { mutableStateOf<String?>(null) }
 
-    fun startRecording() {
-        // MediaRecorder throws if the microphone permission hasn't been granted
-        runCatching { recordingManager.startRecording() }
-            .onSuccess {
-                isRecording = true
-                recordedFilePath = null // Clear previous
-            }
+    // What to run once the microphone permission is granted
+    var pendingMicAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val micPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            pendingMicAction?.invoke()
+        } else {
+            micMessage = "Edith needs microphone access to hear you. You can allow it in the app's system settings."
+        }
+        pendingMicAction = null
     }
 
-    fun stopRecording() {
-        val file = recordingManager.stopRecording()
-        if (file != null) {
-            // Using a mock URI for the prototype.
-            recordedFilePath = "mock_uri_for_${file.name}"
-            isRecording = false
+    fun withMicPermission(action: () -> Unit) {
+        micMessage = null
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            action()
+        } else {
+            pendingMicAction = action
+            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
+    }
+
+    fun startRecording() {
+        runCatching { recordingManager.startRecording() }
+            .onSuccess { isRecording = true }
+            .onFailure { micMessage = "Couldn't start recording: ${it.message}" }
+    }
+
+    // Stopping sends the recording: it's transcribed and the transcript becomes the user's message
+    fun stopRecordingAndSend() {
+        isRecording = false
+        val file = recordingManager.stopRecording() ?: return
+        if (RecordingManager.durationSeconds(file) < 1) {
+            file.delete()
+            micMessage = "That recording was too short to send."
+            return
+        }
+        viewModel.sendRecording(file)
+    }
+
+    LaunchedEffect(isRecording) {
+        recordingSeconds = 0
+        while (isRecording) {
+            delay(1000)
+            recordingSeconds++
+        }
+    }
+
+    // Don't leave the microphone running if the user leaves the chat mid-recording
+    DisposableEffect(Unit) {
+        onDispose { recordingManager.stopRecording()?.delete() }
     }
 
     var textInput by remember { mutableStateOf("") }
@@ -87,7 +127,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     MessageBubble(message = message)
                 }
                 if (uiState.isLoading) {
-                    item { ThinkingBubble() }
+                    item { ThinkingBubble(label = uiState.loadingLabel) }
                 }
             }
         }
@@ -101,18 +141,32 @@ fun ChatScreen(viewModel: ChatViewModel) {
             )
         }
 
-        // Trigger tool if a recording is available and user asks for analysis
-        if (recordedFilePath != null) {
-            AssistChip(
-                onClick = {
-                    // Simulation: User asks "Analyze that recording"
-                    // We simulate that command being sent.
-                    viewModel.sendMessage("Analyze this recording.")
-                    recordedFilePath = null // Reset after triggering
-                },
-                label = { Text("Analyze recording") },
-                leadingIcon = { Icon(Icons.Filled.GraphicEq, contentDescription = null) },
-                modifier = Modifier.padding(horizontal = 12.dp)
+        if (isRecording) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Filled.FiberManualRecord,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(12.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Recording %d:%02d · tap stop to send".format(recordingSeconds / 60, recordingSeconds % 60),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        micMessage?.let { message ->
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
             )
         }
 
@@ -123,9 +177,12 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { if (isRecording) stopRecording() else startRecording() }) {
+                IconButton(
+                    onClick = { if (isRecording) stopRecordingAndSend() else withMicPermission { startRecording() } },
+                    enabled = isRecording || !uiState.isLoading
+                ) {
                     if (isRecording) {
-                        Icon(Icons.Filled.Stop, contentDescription = "Stop recording", tint = MaterialTheme.colorScheme.error)
+                        Icon(Icons.Filled.Stop, contentDescription = "Stop and send recording", tint = MaterialTheme.colorScheme.error)
                     } else {
                         Icon(Icons.Filled.FiberManualRecord, contentDescription = "Record audio")
                     }
@@ -142,8 +199,10 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     keyboardActions = KeyboardActions(onSend = { send() }),
                     trailingIcon = {
                         IconButton(onClick = {
-                            speechManager.startListening { result ->
-                                textInput = result
+                            withMicPermission {
+                                speechManager.startListening { result ->
+                                    textInput = result
+                                }
                             }
                         }) {
                             Icon(Icons.Filled.Mic, contentDescription = "Speak a message")
@@ -222,7 +281,7 @@ fun MessageBubble(message: ChatMessage) {
 }
 
 @Composable
-private fun ThinkingBubble() {
+private fun ThinkingBubble(label: String) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
         Surface(
             color = MaterialTheme.colorScheme.surfaceVariant,
@@ -235,7 +294,7 @@ private fun ThinkingBubble() {
                 CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Edith is thinking…",
+                    text = label,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

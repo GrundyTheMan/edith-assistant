@@ -34,7 +34,7 @@ class ToolExecutor(
             }
             "transcribe_recording" -> {
                 val fileUri = toolCall.arguments["file_uri"] ?: ""
-                audioService.transcribe(fileUri)
+                audioService.transcribe(java.io.File(fileUri))
             }
             else -> "Error: Unknown tool ${toolCall.function}"
         }

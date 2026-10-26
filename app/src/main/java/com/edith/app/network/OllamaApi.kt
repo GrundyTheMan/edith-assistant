@@ -6,12 +6,15 @@ import retrofit2.http.POST
 data class ChatRequest(
     val model: String,
     val messages: List<ChatMessage>,
-    val stream: Boolean = false
+    val stream: Boolean = false,
+    val think: Boolean? = null
 )
 
 data class ChatMessage(
     val role: String,
-    val content: String
+    val content: String,
+    // Base64 media for multimodal models; Ollama takes audio (WAV/MP3) in this field too
+    val images: List<String>? = null
 )
 
 data class ChatResponse(
