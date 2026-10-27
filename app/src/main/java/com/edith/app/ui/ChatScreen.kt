@@ -40,6 +40,28 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
+
+private fun formatTimestamp(epochMillis: Long): String {
+    val now = ZonedDateTime.now()
+    val ts = Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault())
+    val formatter12h = DateTimeFormatter.ofPattern("h:mm a", java.util.Locale.getDefault())
+    val formatterDay = DateTimeFormatter.ofPattern("EEE h:mm a", java.util.Locale.getDefault())
+    val formatterMonth = DateTimeFormatter.ofPattern("MMM d, h:mm a", java.util.Locale.getDefault())
+    val formatterFull = DateTimeFormatter.ofPattern("MMM d, yyyy, h:mm a", java.util.Locale.getDefault())
+
+    return when {
+        ts.toLocalDate().isEqual(now.toLocalDate()) -> formatter12h.format(ts)
+        ts.toLocalDate().isEqual(now.toLocalDate().minusDays(1)) -> "Yesterday ${formatter12h.format(ts)}"
+        ts.isAfter(now.minusDays(7)) -> formatterDay.format(ts)
+        ts.year == now.year -> formatterMonth.format(ts)
+        else -> formatterFull.format(ts)
+    }
+}
 
 @Composable
 fun ChatScreen(viewModel: ChatViewModel) {
@@ -148,6 +170,15 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 itemsIndexed(uiState.messages) { index, message ->
                     Column {
                         MessageBubble(message = message, findAttachment = viewModel::liveAttachment)
+    if (message.timestamp > 0) {
+        Text(
+            text = formatTimestamp(message.timestamp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.align(if (message.role == "assistant") Alignment.Start else Alignment.End)
+                .padding(horizontal = 8.dp)
+        )
+    }
                         if (message.role == "assistant") {
                             ReplyActions(
                                 isSpeaking = speakingText == message.content,

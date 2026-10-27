@@ -48,7 +48,8 @@ To send one of the user's attachments back to them, write <attachment number="3"
 data class ChatEntry(
     val role: String,
     val content: String,
-    val attachments: List<Attachment> = emptyList()
+    val attachments: List<Attachment> = emptyList(),
+    val timestamp: Long = 0L
 )
 
 data class ChatUiState(
@@ -96,7 +97,7 @@ class ChatViewModel(
         // DAO returns newest first; the conversation reads oldest first
         _uiState.value = _uiState.value.copy(
             messages = history.reversed().map { row ->
-                ChatEntry(row.role, liveReplies[row.id] ?: row.content, liveAttachments[row.id] ?: emptyList())
+                ChatEntry(row.role, liveReplies[row.id] ?: row.content, liveAttachments[row.id] ?: emptyList(), row.timestamp)
             }
         )
     }
@@ -165,7 +166,7 @@ class ChatViewModel(
 
         voiceService.stop()
         _uiState.value = _uiState.value.copy(
-            messages = _uiState.value.messages + ChatEntry("user", text, attachments),
+            messages = _uiState.value.messages + ChatEntry("user", text, attachments, Date().time),
             pendingAttachments = emptyList()
         )
 
@@ -282,7 +283,7 @@ class ChatViewModel(
             if (history.any { it.id == id }) publishHistory()
         }
         _uiState.value = _uiState.value.copy(
-            messages = _uiState.value.messages + ChatEntry("assistant", reply),
+            messages = _uiState.value.messages + ChatEntry("assistant", reply, emptyList(), Date().time),
             isLoading = false
         )
         voiceService.speakReply(reply)
