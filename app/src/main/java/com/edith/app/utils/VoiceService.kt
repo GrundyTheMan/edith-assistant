@@ -82,9 +82,10 @@ class VoiceService(context: Context, private val configManager: ConfigManager) {
         }
     }
 
-    // Markdown symbols and emoji get read out literally, so strip them first
+    // Attachments, markdown symbols and emoji would be read out literally, so strip them first
     private fun cleanForSpeech(text: String): String =
-        text.replace(Regex("""\[([^\]]+)]\([^)]*\)"""), "$1")
+        ReplyFormat.forSpeech(text)
+            .replace(Regex("""\[([^\]]+)]\([^)]*\)"""), "$1")
             .replace(Regex("""[*_#`>~|]"""), "")
             .replace(Regex("""\p{So}|️"""), "")
             .replace(Regex("""\s+"""), " ")

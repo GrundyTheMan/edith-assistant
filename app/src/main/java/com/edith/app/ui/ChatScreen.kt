@@ -14,7 +14,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VolumeUp
@@ -22,7 +26,10 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import com.edith.app.network.ChatMessage
+import com.edith.app.utils.Attachment
+import com.edith.app.utils.AttachmentKind
+import com.edith.app.utils.ReplyFormat
+import com.edith.app.utils.ReplyPart
 import com.edith.app.utils.SpeechManager
 import com.edith.app.utils.RecordingManager
 import androidx.compose.ui.Modifier
@@ -102,9 +109,18 @@ fun ChatScreen(viewModel: ChatViewModel) {
     var textInput by remember { mutableStateOf("") }
 
     fun send() {
-        if (textInput.isBlank()) return
+        if (textInput.isBlank() && uiState.pendingAttachments.isEmpty()) return
         viewModel.sendMessage(textInput.trim())
         textInput = ""
+    }
+
+    var attachMenuOpen by remember { mutableStateOf(false) }
+    // Android's photo picker needs no storage permission
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let { viewModel.addAttachment(it, AttachmentKind.IMAGE) }
+    }
+    val pickAudio = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { viewModel.addAttachment(it, AttachmentKind.AUDIO) }
     }
 
     // Keep the newest message (or the thinking indicator) in view
@@ -131,7 +147,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
             ) {
                 itemsIndexed(uiState.messages) { index, message ->
                     Column {
-                        MessageBubble(message = message)
+                        MessageBubble(message = message, findAttachment = viewModel::liveAttachment)
                         if (message.role == "assistant") {
                             ReplyActions(
                                 isSpeaking = speakingText == message.content,
@@ -188,6 +204,10 @@ fun ChatScreen(viewModel: ChatViewModel) {
             )
         }
 
+        if (uiState.pendingAttachments.isNotEmpty()) {
+            PendingAttachmentsRow(uiState.pendingAttachments, onRemove = viewModel::removeAttachment)
+        }
+
         Surface(tonalElevation = 2.dp) {
             Row(
                 modifier = Modifier
@@ -215,6 +235,31 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     maxLines = 4,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { send() }),
+                    leadingIcon = {
+                        Box {
+                            IconButton(onClick = { attachMenuOpen = true }, enabled = !uiState.isLoading) {
+                                Icon(Icons.Filled.AttachFile, contentDescription = "Attach a file")
+                            }
+                            DropdownMenu(expanded = attachMenuOpen, onDismissRequest = { attachMenuOpen = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Photo") },
+                                    leadingIcon = { Icon(Icons.Filled.Image, contentDescription = null) },
+                                    onClick = {
+                                        attachMenuOpen = false
+                                        pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Audio file") },
+                                    leadingIcon = { Icon(Icons.Filled.AudioFile, contentDescription = null) },
+                                    onClick = {
+                                        attachMenuOpen = false
+                                        pickAudio.launch(arrayOf("audio/*"))
+                                    }
+                                )
+                            }
+                        }
+                    },
                     trailingIcon = {
                         IconButton(onClick = {
                             withMicPermission {
@@ -233,7 +278,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
 
                 FilledIconButton(
                     onClick = { send() },
-                    enabled = textInput.isNotBlank() && !uiState.isLoading
+                    enabled = (textInput.isNotBlank() || uiState.pendingAttachments.isNotEmpty()) && !uiState.isLoading
                 ) {
                     Icon(Icons.Filled.Send, contentDescription = "Send")
                 }
@@ -255,7 +300,7 @@ private fun EmptyChat(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun MessageBubble(message: ChatMessage) {
+fun MessageBubble(message: ChatEntry, findAttachment: (Int) -> Attachment?) {
     // Tool results and other system notes aren't part of the conversation proper
     if (message.role == "system") {
         Text(
@@ -290,11 +335,33 @@ fun MessageBubble(message: ChatMessage) {
             shape = shape,
             modifier = Modifier.widthIn(max = maxBubbleWidth)
         ) {
-            Text(
-                text = message.content,
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-            )
+            Column(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (isUser) {
+                    message.attachments.forEach { AttachmentView(it) }
+                    if (message.content.isNotBlank()) {
+                        Text(text = message.content, style = MaterialTheme.typography.bodyLarge)
+                    }
+                } else {
+                    ReplyContent(message.content, findAttachment)
+                }
+            }
+        }
+    }
+}
+
+/** Edith's reply: text, plus any files she wrote and attachments she sent back. */
+@Composable
+private fun ReplyContent(reply: String, findAttachment: (Int) -> Attachment?) {
+    ReplyFormat.parse(reply).forEach { part ->
+        when (part) {
+            is ReplyPart.Text -> Text(text = part.text, style = MaterialTheme.typography.bodyLarge)
+            is ReplyPart.File -> WrittenFileCard(part.file)
+            is ReplyPart.SentAttachment -> findAttachment(part.number)?.let { AttachmentView(it) }
+                ?: NoLongerAvailableNote("Attachment ${part.number} is no longer available")
+            is ReplyPart.FileNotKept -> NoLongerAvailableNote("${part.name} · only kept while the app was open")
         }
     }
 }

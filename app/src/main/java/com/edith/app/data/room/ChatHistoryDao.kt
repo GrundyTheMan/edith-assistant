@@ -8,8 +8,9 @@ interface ChatHistoryDao {
     @Query("SELECT * FROM chat_history ORDER BY timestamp DESC")
     fun getAllHistory(): Flow<List<ChatHistoryEntity>>
 
+    /** Returns the new row's id. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertHistory(history: ChatHistoryEntity)
+    suspend fun insertHistory(history: ChatHistoryEntity): Long
 
     @Query("DELETE FROM chat_history")
     suspend fun clearHistory()
