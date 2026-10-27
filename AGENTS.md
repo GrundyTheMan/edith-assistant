@@ -39,7 +39,7 @@ app on port 11434). The app reaches it from the emulator at `http://10.0.2.2:114
 |---|---|
 | Repository | `https://github.com/GrundyTheMan/edith` — **private**, owner's GitHub account `GrundyTheMan` (the `gh` CLI is logged in as it) |
 | Local path | `D:\Dev Projects\edith` (note the space in the path — quote it) |
-| Branches | `master` (default) · `chat-attachments` (pushed, **not merged**, one commit ahead of master: the attachments feature) |
+| Branches | `master` (default) — everything, including the attachments feature, is merged here |
 | Package | `com.edith.app` (namespace and applicationId) |
 | Language / UI | Kotlin 1.9.22, Jetpack Compose (BOM 2023.08.00, Material 3, compiler ext 1.5.10) |
 | Build | Gradle 8.7 wrapper, AGP 8.2.2, KSP 1.9.22-1.0.17 (for Room), JVM target 17 |
@@ -52,8 +52,9 @@ app on port 11434). The app reaches it from the emulator at `http://10.0.2.2:114
 ### Git history (what each commit did)
 
 ```
-c50a2fa  (chat-attachments) Add chat attachments that exist only while the app is open
-eadfc49  (master) Merge pull request #1 from GrundyTheMan/build-environment-setup
+         Merge pull request #4 (chat-attachments) into master; also PRs #2 and #3 added these notes
+c50a2fa  Add chat attachments that exist only while the app is open
+eadfc49  Merge pull request #1 from GrundyTheMan/build-environment-setup
   5d08b1f Use only the phone's voice, and pick the model from a dropdown
   670a48c Remove the voice server
   75a38ed Speed up Edith's replies and go back to the phone's voice by default
@@ -198,7 +199,7 @@ asked for it "almost on top of the edge" and then said the current position is r
 (voice memos)"). Reloads 600 ms after the URL stops changing; shows the error and "Tap to retry"
 when unreachable; warns if the saved model isn't installed. Saving is still via "Save Settings".
 
-### Attachments (branch `chat-attachments`, not merged)
+### Attachments
 - Paperclip in the text field → **Photo** (Android photo picker, no permission) or **Audio file**
   (`OpenDocument`, `audio/*`).
 - `AttachmentReader` reads into **memory only**: photos decoded (EXIF-aware on API 28+), scaled to
@@ -382,7 +383,7 @@ There are no automated tests; everything was verified by driving the emulator wi
 
 ## 11. Suggested next steps (not committed to — confirm with the owner)
 
-1. Merge or revise `chat-attachments` once the owner settles the attachment storage policy.
+1. Revise attachment storage once the owner settles the policy (they intend to respecify it).
 2. Wire up real tool calling (§7) so Edith can actually use calendar / search.
 3. Real Google integration: OAuth client, access tokens, real Calendar/Gmail response models.
 4. Streaming replies (text appears and is spoken as it's generated).
