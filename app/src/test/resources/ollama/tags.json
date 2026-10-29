@@ -1,0 +1,4 @@
+{"models":[
+  {"name":"gemma4:e4b-it-q8_0","size":131072000,"modified_at":"2026-10-29T10:00:00Z"},
+  {"name":"nomic-embed-text:latest","size":52428800,"modified_at":"2026-10-29T08:00:00Z"}
+]}
