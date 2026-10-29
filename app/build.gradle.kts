@@ -5,6 +5,12 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+kotlin {
+    compilerOptions {
+        freeCompilerArgs = listOf("-opt-in=kotlinx.coroutines.FlowPreview")
+    }
+}
+
 // Release signing (docs/design/05-environment.md §6). The key and its passwords live outside the repo, in
 // ~/.edith/ (made once by scripts/create-signing-key.sh; EDITH_KEYSTORE_PROPERTIES overrides the location).
 // Without them (CI, other machines) release builds come out unsigned and scripts/release.sh refuses to continue.
@@ -59,6 +65,9 @@ android {
         buildConfig = true
     }
 
+    // JVM unit tests run without Android: android.util.Log etc. return defaults instead of throwing.
+    testOptions.unitTests.isReturnDefaultValues = true
+
     lint {
         abortOnError = true
         // New library versions are adopted deliberately (01-architecture §1), not on every lint run.
@@ -81,6 +90,12 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
+    // C02: core infrastructure (coroutines, DataStore for secrets)
+    implementation(libs.datastore.preferences)
+    implementation(libs.datastore.core)
+    implementation(libs.coroutines.core)
+
+    testImplementation(libs.coroutines.test)
     testImplementation(libs.junit)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
