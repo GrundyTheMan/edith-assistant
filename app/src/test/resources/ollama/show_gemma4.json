@@ -1,0 +1,1 @@
+{"model":"gemma4:e4b-it-q8_0","capabilities":["completion","vision","audio","tools","thinking"],"model_info":{"arch":true,"context_length":131072,"embedding_only":false,"family":"gemma"},"modified_at":"2026-10-29T10:00:00Z"}

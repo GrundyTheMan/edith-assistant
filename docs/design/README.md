@@ -30,7 +30,7 @@ design in the same PR, or ask the owner.
 |---|---|---|---|---|
 | [C01](chunks/C01-project-reset-and-skeleton.md) | Project reset and skeleton | 1 Foundation + chat | — | Done (C01 PR) — **start at C02** |
 | [C02](chunks/C02-core-infrastructure.md) | Core infrastructure (DI, errors, logging, crash reports, secrets) | 1 | C01 | **Partly done** — still missing: crash banner, debug crash trigger, `viewModelFactory`, shared test fakes, ErrorMapper/LogRingBuffer tests |
-| [C03](chunks/C03-ollama-client.md) | Ollama client (streaming, tool-call DTOs, capabilities) | 1 | C02 | Not started |
+| [C03](chunks/C03-ollama-client.md) | Ollama client (streaming, tool-call DTOs, capabilities) | 1 | C02 | **Done except** the live model-list check from the emulator (acceptance item 2) |
 | [C04](chunks/C04-settings-and-model-picker.md) | Settings store, server setup, model picker | 1 | C02, C03 | Not started |
 | [C05](chunks/C05-conversation-storage.md) | Conversation storage (Room, full v1 schema) | 1 | C02 | Not started |
 | [C06](chunks/C06-chat-engine.md) | Chat engine (prompt, context, streaming, cancel, regenerate) | 1 | C03, C04, C05 | Not started |
