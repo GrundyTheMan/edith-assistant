@@ -1,5 +1,10 @@
 # Edith — handover notes for AI agents
 
+> **Edith is being rebuilt from scratch (decided 2026-10-29).** Start with
+> [`docs/design/README.md`](docs/design/README.md) — the complete design, split into chunks that can be
+> implemented independently. The notes below describe the **old v1 app**, which chunk C01 removes; they're
+> kept only as history. Don't build on v1 code.
+
 Edith is a personal-assistant Android app (Kotlin, Jetpack Compose) whose "brain" is a **local
 Ollama server on the owner's Windows PC**. These notes were written by the previous AI agent
 (Claude Code, October 2026) for whoever takes the project over. They describe the design, the
