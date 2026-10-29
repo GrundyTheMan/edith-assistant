@@ -22,16 +22,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.edith.app.ui.theme.EdithTheme
 import com.edith.app.ui.ChatScreen
 import com.edith.app.ui.CalendarScreen
 import com.edith.app.ui.SettingsScreen
+import com.edith.app.ui.ChatViewModel
+import com.edith.app.ui.ChatViewModelFactory
 import com.edith.app.utils.SpeechManager
 import com.edith.app.data.room.AppDatabase
 import com.edith.app.data.room.ChatHistoryDao
-import com.edith.app.ui.ChatViewModel
-import com.edith.app.network.ToolExecutor
 import com.edith.app.data.calendar.GoogleRepository
+import com.edith.app.network.ToolExecutor
 import com.edith.app.utils.AttachmentReader
 import com.edith.app.utils.ConfigManager
 import com.edith.app.utils.VoiceService
@@ -39,6 +41,7 @@ import com.edith.app.network.AuthManager
 import com.edith.app.network.AudioService
 import com.edith.app.network.NetworkClient
 import com.edith.app.network.WebSearchService
+import com.edith.app.network.WeatherService
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import kotlinx.coroutines.flow.collectLatest
 
@@ -98,12 +101,11 @@ fun MainScreen(chatHistoryDao: ChatHistoryDao, authManager: AuthManager, voiceSe
 
     // Google sign-in is optional: calendar and email data are still mocked
     val account = authState
-    val chatViewModel = remember(account) {
-        val googleRepository = GoogleRepository(NetworkClient.getGoogleApi(), account)
-        val audioService = AudioService(configManager)
-        val toolExecutor = ToolExecutor(googleRepository, account, WebSearchService(), audioService)
-        ChatViewModel(chatHistoryDao, toolExecutor, configManager, audioService, voiceService, AttachmentReader(context))
-    }
+    val googleRepository = GoogleRepository(NetworkClient.getGoogleApi(), account)
+    val audioService = AudioService(configManager)
+    val weatherService = WeatherService()
+    val toolExecutor = ToolExecutor(googleRepository, account, WebSearchService(), audioService, weatherService)
+    val chatViewModel: ChatViewModel = viewModel(factory = ChatViewModelFactory(chatHistoryDao, toolExecutor, configManager, audioService, voiceService, AttachmentReader(context)))
 
     Scaffold(
         bottomBar = {

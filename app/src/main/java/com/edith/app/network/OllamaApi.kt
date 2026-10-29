@@ -14,7 +14,8 @@ data class ChatRequest(
     val stream: Boolean = false,
     // Hidden reasoning before replying; off by default, as it adds several seconds per reply
     val think: Boolean = false,
-    val options: Map<String, Any> = mapOf("num_ctx" to CONTEXT_LENGTH)
+    val options: Map<String, Any> = mapOf("num_ctx" to CONTEXT_LENGTH),
+    val tools: List<Map<String, Any>>? = null
 )
 
 data class ChatMessage(

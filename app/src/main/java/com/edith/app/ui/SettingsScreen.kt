@@ -11,9 +11,10 @@ import com.edith.app.network.NetworkClient
 import com.edith.app.utils.ConfigManager
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CancellationException
 
 /** A model Edith can chat with, from the Ollama server. */
 private data class ChatModel(val name: String, val supportsImages: Boolean, val supportsAudio: Boolean) {
@@ -26,8 +27,7 @@ private data class ChatModel(val name: String, val supportsImages: Boolean, val 
 }
 
 /** Lists the server's models that can chat, skipping ones that can't (e.g. embedding models). */
-private suspend fun loadChatModels(url: String): List<ChatModel> = coroutineScope {
-    NetworkClient.clear()
+private suspend fun loadChatModels(url: String): List<ChatModel> = withContext(Dispatchers.IO) {
     val api = NetworkClient.getOllamaApi(url)
     api.listModels().models.map { tag ->
         async {
@@ -58,16 +58,20 @@ fun SettingsScreen(
     var modelsError by remember { mutableStateOf<String?>(null) }
     var reloadCount by remember { mutableStateOf(0) }
     var menuOpen by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
 
     LaunchedEffect(url, reloadCount) {
         models = null
         modelsError = null
+        isLoading = true
         delay(600) // wait for the user to stop typing the URL
         try {
             models = loadChatModels(url.trim())
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             modelsError = e.message ?: e::class.java.simpleName
+        } finally {
+            isLoading = false
         }
     }
 
@@ -87,8 +91,10 @@ fun SettingsScreen(
         ExposedDropdownMenuBox(
             expanded = menuOpen,
             onExpandedChange = { open ->
-                // With no list loaded (server unreachable), tapping the field tries again
-                if (models == null) reloadCount++ else menuOpen = open
+                menuOpen = open
+                if (models == null && modelsError == null && !isLoading) {
+                    reloadCount++
+                }
             }
         ) {
             val loadedModels = models

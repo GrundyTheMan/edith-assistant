@@ -29,7 +29,7 @@ class CalendarViewModel(account: GoogleSignInAccount?) : ViewModel() {
 
     fun addEvent(title: String, description: String) {
         viewModelScope.launch {
-            repository.addEvent(title, description, java.util.Date(), java.util.Date())
+            repository.addEvent(title, description, java.util.Date(), java.util.Date(), "")
             loadEvents()
         }
     }

@@ -8,7 +8,7 @@ import java.util.concurrent.TimeUnit
 object NetworkClient {
     private const val GOOGLE_API_BASE_URL = "https://www.googleapis.com/"
 
-    private var ollamaApi: OllamaApi? = null
+    private val ollamaApis = mutableMapOf<String, OllamaApi>()
     private var googleApi: GoogleApiService? = null
 
     // Local models can take well over OkHttp's 10s default to load and answer
@@ -16,16 +16,16 @@ object NetworkClient {
         .readTimeout(3, TimeUnit.MINUTES)
         .build()
 
+    @Synchronized
     fun getOllamaApi(baseUrl: String): OllamaApi {
-        if (ollamaApi == null) {
-            ollamaApi = Retrofit.Builder()
+        return ollamaApis.getOrPut(baseUrl) {
+            Retrofit.Builder()
                 .baseUrl(baseUrl)
                 .client(ollamaHttpClient)
                 .addConverterFactory(GsonConverterFactory.create())
                 .build()
                 .create(OllamaApi::class.java)
         }
-        return ollamaApi!!
     }
 
     fun getGoogleApi(): GoogleApiService {
@@ -40,6 +40,6 @@ object NetworkClient {
     }
 
     fun clear() {
-        ollamaApi = null
+        ollamaApis.clear()
     }
 }

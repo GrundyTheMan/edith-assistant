@@ -34,7 +34,7 @@ class GoogleRepository(
     /**
      * Creates a new event in Google Calendar.
      */
-    suspend fun addEvent(title: String, description: String, startTime: Date, endTime: Date): CalendarEvent = withContext(Dispatchers.IO) {
+    suspend fun addEvent(title: String, description: String, startTime: Date, endTime: Date, location: String): CalendarEvent = withContext(Dispatchers.IO) {
         // NOTE: In a real implementation, this would call apiService.insertEvent(...) 
         // which requires a specific API method call not yet defined.
         // We are mocking the successful creation for now.

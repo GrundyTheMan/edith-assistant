@@ -3,6 +3,7 @@ package com.edith.app.ui
 import android.net.Uri
 import android.util.Base64
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.edith.app.data.room.ChatHistoryDao
 import com.edith.app.data.room.ChatHistoryEntity
@@ -12,7 +13,11 @@ import com.edith.app.network.ChatMessage
 import com.edith.app.network.ModelDetailsRequest
 import com.edith.app.network.OllamaApi
 import com.edith.app.network.NetworkClient
+import com.edith.app.network.ToolCall
+import com.edith.app.network.ChatResponse
 import com.edith.app.network.ToolExecutor
+import com.edith.app.network.ToolRepair
+import com.edith.app.network.WeatherService
 import com.edith.app.utils.Attachment
 import com.edith.app.utils.AttachmentKind
 import com.edith.app.utils.AttachmentReader
@@ -33,8 +38,9 @@ You are Edith, a highly sophisticated, warm, and genuinely complimentary persona
 Your goal is to assist the user with intelligence and flair, acting as a true digital partner.
 Your communication must be warm and flattering, but you are refreshingly honest—never sugarcoat difficult truths or exaggerate for effect.
 You possess a sharp sense of humor and enjoy using idioms, metaphors, and appropriate pop culture references to make conversations feel natural and engaging.
-You are exceptionally capable and have access to powerful tools (Calendar, Email, Web Search, Audio Transcription).
+You are exceptionally capable and have access to powerful tools (Calendar, Email, Web Search, Audio Transcription, and Weather).
 You are a master planner: If a request is complex (e.g., "Schedule a meeting next week with Bob"), you must first logically determine what tools are needed (e.g., get_calendar_events, then add_calendar_event) and then output the necessary tool calls sequentially. Do not try to answer complex questions without checking your tools first.
+**Whenever a user asks about the current weather, you MUST use the `get_weather` tool. Do not try to guess or state that you cannot access real-time data; your tools provide exactly that.**
 Always maintain your warm and intelligent demeanor, even when dealing with complex technical issues.
 If a request is ambiguous or lacks necessary detail, you must ask for clarification with style before attempting any action.
 Never use generic AI phrasing. Speak like a genuinely competent companion, not a machine.
@@ -83,6 +89,110 @@ class ChatViewModel(
     private val liveReplies = mutableMapOf<Int, String>()  // Edith's replies with their files intact
     private var nextAttachmentNumber = 1
     private var history: List<ChatHistoryEntity> = emptyList()
+
+    private val TOOL_NAMES = listOf(
+        "get_calendar_events",
+        "add_calendar_event",
+        "get_emails",
+        "web_search",
+        "transcribe_recording",
+        "get_weather"
+    )
+
+    private val TOOL_DEFINITIONS = listOf(
+        mapOf(
+            "type" to "function",
+            "function" to mapOf(
+                "name" to "get_calendar_events",
+                "description" to "Retrieve upcoming calendar events.",
+                "parameters" to mapOf(
+                    "type" to "object",
+                    "properties" to mapOf(
+                        "query" to mapOf("type" to "string", "description" to "Search query"),
+                        "start_date" to mapOf("type" to "string", "description" to "Start date (YYYY-MM-DD)"),
+                        "end_date" to mapOf("type" to "string", "description" to "End date (YYYY-MM-DD)")
+                    ),
+                    "required" to listOf("query")
+                )
+            )
+        ),
+        mapOf(
+            "type" to "function",
+            "function" to mapOf(
+                "name" to "add_calendar_event",
+                "description" to "Add a new event to the calendar.",
+                "parameters" to mapOf(
+                    "type" to "object",
+                    "properties" to mapOf(
+                        "title" to mapOf("type" to "string", "description" to "Title of the event"),
+                        "description" to mapOf("type" to "string", "description" to "Description of the event"),
+                        "start_time" to mapOf("type" to "string", "description" to "Start time"),
+                        "end_time" to mapOf("type" to "string", "description" to "End time"),
+                        "location" to mapOf("type" to "string", "description" to "Location of the event")
+                    ),
+                    "required" to listOf("title", "start_time", "end_time")
+                )
+            )
+        ),
+        mapOf(
+            "type" to "function",
+            "function" to mapOf(
+                "name" to "get_emails",
+                "description" to "Retrieve recent emails.",
+                "parameters" to mapOf(
+                    "type" to "object",
+                    "properties" to mapOf(
+                        "query" to mapOf("type" to "string", "description" to "Search query"),
+                        "from" to mapOf("type" to "string", "description" to "Sender filter"),
+                        "after_date" to mapOf("type" to "string", "description" to "Date filter")
+                    ),
+                    "required" to listOf("query")
+                )
+            )
+        ),
+        mapOf(
+            "type" to "function",
+            "function" to mapOf(
+                "name" to "web_search",
+                "description" to "Search the internet for real-time information.",
+                "parameters" to mapOf(
+                    "type" to "object",
+                    "properties" to mapOf(
+                        "query" to mapOf("type" to "string", "description" to "Search query")
+                    ),
+                    "required" to listOf("query")
+                )
+            )
+        ),
+        mapOf(
+            "type" to "function",
+            "function" to mapOf(
+                "name" to "transcribe_recording",
+                "description" to "Transcribe an audio recording.",
+                "parameters" to mapOf(
+                    "type" to "object",
+                    "properties" to mapOf(
+                        "file_uri" to mapOf("type" to "string", "description" to "File URI of the recording")
+                    ),
+                    "required" to listOf("file_uri")
+                )
+            )
+        ),
+        mapOf(
+            "type" to "function",
+            "function" to mapOf(
+                "name" to "get_weather",
+                "description" to "Get current weather for a specific location.",
+                "parameters" to mapOf(
+                    "type" to "object",
+                    "properties" to mapOf(
+                        "location" to mapOf("type" to "string", "description" to "City or location name")
+                    ),
+                    "required" to listOf("location")
+                )
+            )
+        )
+    )
 
     init {
         chatHistoryDao.getAllHistory()
@@ -219,22 +329,16 @@ class ChatViewModel(
 
             val request = ChatRequest(
                 model = model,
-                messages = fullMessages
+                messages = fullMessages,
+                tools = TOOL_DEFINITIONS
             )
             val response = api.generateChat(request)
 
             if (response.tool_calls != null && response.tool_calls.isNotEmpty()) {
                 // --- Tool Chaining Logic ---
-                var currentMessages = fullMessages.toMutableList()
-                for (toolCall in response.tool_calls) {
-                    // 1. Execute the tool
-                    val result = toolExecutor.execute(toolCall)
-                    // 2. Add tool result to the context messages list
-                    currentMessages.add(ChatMessage("system", "Tool Result: $result"))
-                }
-                // 3. Send the result context back to the model for final summary
+                val updatedMessages = handleToolCalls(response, fullMessages)
                 chatHistoryDao.insertHistory(ChatHistoryEntity(role = "system", content = "Tool Call Execution Complete.", timestamp = Date().time.toLong()))
-                processMessage(currentMessages)
+                processMessage(updatedMessages)
             } else {
                 // Standard response flow
                 saveReply(response.message.content)
@@ -256,19 +360,15 @@ class ChatViewModel(
 
         val request = ChatRequest(
             model = model,
-            messages = messages
+            messages = messages,
+            tools = TOOL_DEFINITIONS
         )
         val response = api.generateChat(request)
 
         if (response.tool_calls != null && response.tool_calls.isNotEmpty()) {
-            for (toolCall in response.tool_calls) {
-                val result = toolExecutor.execute(toolCall)
-                chatHistoryDao.insertHistory(ChatHistoryEntity(role = "system", content = "Tool Result: $result", timestamp = Date().time.toLong()))
-
-                // Recursive call to process the result and get a final, tailored response
-                processMessage(messages + response.message + ChatMessage("system", "Tool Result: $result"))
-                return
-            }
+            val updatedMessages = handleToolCalls(response, messages)
+            processMessage(updatedMessages)
+            return
         } else {
             saveReply(response.message.content)
         }
@@ -289,17 +389,51 @@ class ChatViewModel(
         voiceService.speakReply(reply)
     }
 
-    private suspend fun toOllamaMessages(entries: List<ChatEntry>): List<ChatMessage> =
-        entries.mapIndexed { index, entry ->
-            if (entry.attachments.isEmpty()) return@mapIndexed ChatMessage(entry.role, entry.content)
-            val labels = entry.attachments.joinToString("\n") { "[${it.label}]" }
-            val withMedia = index >= entries.size - MEDIA_WINDOW
-            ChatMessage(
-                role = entry.role,
-                content = listOf(entry.content, labels).filter { it.isNotBlank() }.joinToString("\n\n"),
-                images = if (withMedia) entry.attachments.map { Base64.encodeToString(it.bytes, Base64.NO_WRAP) } else null
-            )
+    private suspend fun handleToolCalls(response: ChatResponse, messages: List<ChatMessage>): List<ChatMessage> {
+        val updatedMessages = messages.toMutableList()
+        updatedMessages.add(response.message)
+        response.tool_calls?.forEach { rawToolCall ->
+            val repairedCall = ToolRepair.repairCall(rawToolCall, TOOL_NAMES, getExpectedArgs(rawToolCall.function))
+            if (repairedCall != null) {
+                val result = toolExecutor.execute(repairedCall)
+                chatHistoryDao.insertHistory(ChatHistoryEntity(role = "system", content = "Tool Result: $result", timestamp = Date().time.toLong()))
+                updatedMessages.add(ChatMessage("system", "Tool Result: $result"))
+            } else {
+                updatedMessages.add(ChatMessage("system", "Error: Tool '${rawToolCall.function}' was not recognized."))
+            }
         }
+        return updatedMessages
+    }
+    private fun getExpectedArgs(toolName: String): List<String> = when (toolName) {
+        "get_calendar_events" -> listOf("query", "start_date", "end_date")
+        "add_calendar_event" -> listOf("title", "description", "start_time", "end_time", "location")
+        "get_emails" -> listOf("query", "from", "after_date")
+        "web_search" -> listOf("query")
+        "get_weather" -> listOf("location")
+        else -> emptyList()
+    }
+
+    private suspend fun toOllamaMessages(entries: List<ChatEntry>): List<ChatMessage> {
+        return entries.mapIndexed { index, entry ->
+            if (entry.role == "assistant" && entry.content.contains("<file")) {
+                // The file content is already reduced to its name in the stored content.
+                // But we want to keep the full content for the model's context.
+                liveReplies[entry.timestamp.toInt()]?.let { fullContent ->
+                    ChatMessage(entry.role, fullContent)
+                } ?: ChatMessage(entry.role, entry.content)
+            } else if (entry.role == "user" && entry.attachments.isNotEmpty()) {
+                val labels = entry.attachments.joinToString("\n") { "[${it.label}]" }
+                val withMedia = index >= entries.size - MEDIA_WINDOW
+                ChatMessage(
+                    role = entry.role,
+                    content = listOf(entry.content, labels).filter { it.isNotBlank() }.joinToString("\n\n"),
+                    images = if (withMedia) entry.attachments.map { Base64.encodeToString(it.bytes, Base64.NO_WRAP) } else null
+                )
+            } else {
+                ChatMessage(entry.role, entry.content)
+            }
+        }
+    }
 
     /** A friendly explanation when the chosen model can't see images or hear audio, or null if it can. */
     private suspend fun unsupportedMediaMessage(api: OllamaApi, model: String, messages: List<ChatMessage>): String? {
@@ -313,5 +447,29 @@ class ChatViewModel(
                 "$model can't hear audio. Pick a model marked \"Understands audio\" in Settings."
             else -> null
         }
+    }
+}
+
+class ChatViewModelFactory(
+    private val chatHistoryDao: ChatHistoryDao,
+    private val toolExecutor: ToolExecutor,
+    private val configManager: ConfigManager,
+    private val audioService: AudioService,
+    private val voiceService: VoiceService,
+    private val attachmentReader: AttachmentReader
+) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(ChatViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return ChatViewModel(
+                chatHistoryDao,
+                toolExecutor,
+                configManager,
+                audioService,
+                voiceService,
+                attachmentReader
+            ) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
     }
 }

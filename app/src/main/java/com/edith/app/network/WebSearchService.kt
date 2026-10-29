@@ -1,5 +1,8 @@
 package com.edith.app.network
 
+import android.util.Log
+import com.google.gson.Gson
+import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
@@ -12,14 +15,12 @@ data class SearchResult(
 )
 
 class WebSearchService {
+
     /**
-     * Fetches search results from a public search provider (DuckDuckGo for this prototype).
-     * This can be swapped for a professional API like Serper or Google Search API later.
+     * Fetches search results from DuckDuckGo.
      */
     suspend fun search(query: String): List<SearchResult> = withContext(Dispatchers.IO) {
         try {
-            // Simple implementation using a public search endpoint
-            // Note: In a production app, you'd use a dedicated Search API key.
             val url = URL("https://api.duckduckgo.com/?q=$query&format=json&pretty=1")
             val connection = url.openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
@@ -28,17 +29,43 @@ class WebSearchService {
 
             if (connection.responseCode == 200) {
                 val response = connection.inputStream.bufferedReader().readText()
-                // This is a simplified parser. In a real app, use a proper JSON parser (like Gson or Kotlinx.Serialization)
-                // and handle the specific DuckDuckGo JSON structure.
-                return@withContext listOf(
-                    SearchResult("Mock Result 1", "This is a summary of the first result for $query.", "https://example.com/1"),
-                    SearchResult("Mock Result 2", "Detailed information about the query.", "https://example.com/2")
-                )
+                val json = Gson().fromJson(response, JsonObject::class.java)
+                
+                val results = mutableListOf<SearchResult>()
+
+                
+                val resultsArray = json.getAsJsonArray("results")
+                if (resultsArray != null) {
+                    for (item in resultsArray) {
+                        val obj = item.asJsonObject
+                        val title = obj.get("title")?.asString ?: "No Title"
+                        val snippet = obj.get("summary")?.asString ?: ""
+                        val link = obj.get("href")?.asString ?: ""
+                        results.add(SearchResult(title, snippet, link))
+                    }
+                }
+
+                if (results.isEmpty()) {
+                    val abstracts = json.getAsJsonArray("Abstracts")
+                    if (abstracts != null) {
+                        for (item in abstracts) {
+                            val obj = item.asJsonObject
+                            results.add(SearchResult(
+                                obj.get("title")?.asString ?: "No Title",
+                                obj.get("text")?.asString ?: "",
+                                obj.get("url")?.asString ?: ""
+                            ))
+                        }
+                    }
+                }
+
+                return@withContext results
             } else {
+                Log.e("WebSearchService", "DuckDuckGo returned ${connection.responseCode}")
                 return@withContext emptyList()
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("WebSearchService", "Error searching web", e)
             return@withContext emptyList()
         }
     }
