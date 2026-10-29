@@ -6,9 +6,10 @@
 
 A chunk is done only when **all** of these are true:
 
-1. The app builds from a clean checkout: `./gradlew clean assembleDebug` (Windows: `gradlew.bat`).
-2. All tests pass: `./gradlew testDebugUnitTest` and, if the chunk added any, `connectedDebugAndroidTest`.
-3. Lint has no new errors: `./gradlew lintDebug`.
+1. `scripts/check.sh` passes from a clean checkout (clean build, unit tests, lint — the same as CI).
+2. If the chunk has instrumented tests, `scripts/check.sh --device` passes on the emulator (not
+   `connectedDebugAndroidTest`, which wipes the owner's app data — `05-environment.md` §2).
+3. Lint has no errors; new warnings are fixed or explained in the PR. CI is green on the PR.
 4. The chunk's **Acceptance criteria** are each demonstrated (tests or the manual steps in the chunk),
    with evidence in the PR description (test names, screenshots, log lines, timings).
 5. The app was installed and exercised on the emulator (or a phone) for the chunk's feature, with no
@@ -40,7 +41,7 @@ A chunk is done only when **all** of these are true:
 | Ollama protocol | MockWebServer + **recorded fixtures** from `03-ollama-reference.md` (copy into `app/src/test/resources/ollama/`) | C03, C06, C08 and any tool chunk |
 | Room | In-memory database tests; migration tests after v1 ships | C05, C16 |
 | ViewModels | coroutines-test + Turbine against fakes | each screen chunk |
-| Compose UI | `createComposeRule` tests for key interactions (send, action row, confirmation card) | C07, C08, C15 |
+| Compose UI | `createComposeRule` tests for key interactions (send, action row, confirmation card). Import the **v2** rule (`androidx.compose.ui.test.junit4.v2.createComposeRule`; v1 is deprecated). Keep the explicit Espresso 3.7+ dependency (older Espresso crashes on API 37). Run with `scripts/check.sh --device`; example: `EdithNavHostTest` | C07, C08, C15 |
 | End to end | Manual script on the emulator per chunk (`adb` recipes in `05-environment.md`), real Ollama | every chunk |
 | Live model behaviour | Optional Node/curl probes against the real Ollama (see `03-ollama-reference.md` §8); report results, don't commit model-dependent tests | C06, C08 |
 
@@ -75,6 +76,9 @@ in `app/src/test/java/com/edith/app/testing/` (created in C02/C03 and reused).
   the design and why, follow-ups. Merge with a merge commit after the owner approves.
 - Never commit build output, `local.properties`, secrets, API keys or recordings.
 - Line endings: the repo has `.gitattributes` (added in C01) forcing LF for `gradlew` and `*.sh`.
+- Releases: only when the owner asks, following `05-environment.md` §6. `scripts/publish.sh` (tag + GitHub
+  Release) is outward-facing — get the owner's explicit OK first. Never touch `C:\Users\USER\.edith\`
+  (the signing key) beyond what `release.sh` reads.
 
 ## 6. Reporting back to the owner (end of each chunk)
 

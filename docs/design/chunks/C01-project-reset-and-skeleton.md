@@ -3,6 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 — Foundation and chat |
+| Status | **Done** — see "As built" at the end |
 | Depends on | nothing (first chunk) |
 | Unblocks | everything |
 | Size | Small–medium (one session) |
@@ -102,3 +103,18 @@ Install, launch, tap each destination, rotate the emulator (Ctrl+Left), screensh
 ## Pitfalls
 - Don't delete `docs/`. Don't force-push `master`. Ask before pushing the tag.
 - The repo path contains a space: quote paths in scripts.
+
+## As built (2026-10-29) — deviations from the spec above, and why
+- **No `kotlin android` plugin.** AGP 9 compiles Kotlin itself; applying `org.jetbrains.kotlin.android` is an
+  error. The root declares android application, kotlin compose, kotlin serialization and KSP (`apply false`).
+- **No `kotlin { jvmToolchain(17) }`.** It would require a JDK 17 install (the owner's PC has JDK 21). Java 17
+  bytecode comes from `compileOptions`.
+- **Window theme parent is `android:Theme.Material.Light.NoActionBar`** (night: `android:Theme.Material.NoActionBar`),
+  not Material3 DayNight, which would add the Material Components (Views) library just for the window background.
+  Compose's `EdithTheme` is Material 3.
+- **App version in `gradle.properties`** (`edith.versionCode`, `edith.versionName`) so the release scripts can read it.
+- **Espresso pinned to 3.7.0** for instrumented tests: Compose ui-test pulls Espresso 3.5, which fails on API 37.
+- **Added beyond the spec** (owner request "solidify build and deploy"): release signing with a key outside the
+  repo, `scripts/` (check, emulator, run, release, publish, create-signing-key), the `Edith_Release_Test` AVD, and
+  CI (`.github/workflows/ci.yml`). All documented in `05-environment.md` §2 and §6.
+- Gradle 9.8.2, AGP 9.5.0, Kotlin 2.4.21, compileSdk/targetSdk 37, Compose BOM 2026.09.00.

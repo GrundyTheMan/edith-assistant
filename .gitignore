@@ -1,18 +1,20 @@
-# Gradle files
-*.iml
+# Gradle / build output
 .gradle/
+.kotlin/
 build/
-app/build/
-.gradle.kts
+/app/build/
+captures/
+*.apk
+*.aab
+/dist/
 
-# Android/Android Studio
-.idea/
-*.iws
-*.ipr
-
-# OS specific
-.DS_Store
-
-# Logs and local data
-*.log
+# Machine-specific and secret — never commit
 local.properties
+keystore.properties
+*.jks
+*.keystore
+
+# IDE / OS
+.idea/
+*.iml
+.DS_Store

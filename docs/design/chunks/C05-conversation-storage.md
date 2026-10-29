@@ -16,7 +16,7 @@ may and may not be stored.
 ## Specification
 
 ### 1. Gradle
-Room runtime + ktx + compiler via **KSP** (not kapt, not annotationProcessor — lessons L1). Schema
+KSP is already declared in the root build and version catalog (C01): apply `alias(libs.plugins.ksp)` in `app/build.gradle.kts` (it works with AGP 9's built-in Kotlin). Room runtime + ktx + compiler via **KSP** (not kapt, not annotationProcessor — lessons L1). Schema
 export: `ksp { arg("room.schemaLocation", "$projectDir/schemas") }`; commit `app/schemas/`.
 
 ### 2. Entities (exactly the schema in 01-architecture §5.1)
