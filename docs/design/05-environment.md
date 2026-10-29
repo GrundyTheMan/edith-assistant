@@ -22,13 +22,44 @@ server with at least one model that has `tools` (and ideally `vision`+`audio`).
 
 ## 2. Build and run
 
-```bash
-./gradlew.bat assembleDebug          # build
-./gradlew.bat installDebug           # build + install on the running emulator/phone
-./gradlew.bat testDebugUnitTest      # unit tests
-./gradlew.bat lintDebug
-adb shell am start -n com.edith.app/.MainActivity
-```
+Use the scripts in `scripts/` (bash: Git Bash on Windows, bash on Linux/macOS). Each was proven end to end
+in C01. Run them from the repo root: `scripts/run.sh` in Git Bash, or in PowerShell
+`& "C:\Program Files\Git\bin\bash.exe" scripts/run.sh` (`bash` alone isn't on the PowerShell PATH).
+
+| Script | What it does |
+|---|---|
+| `scripts/check.sh` | `clean assembleDebug testDebugUnitTest lintDebug` — **exactly what CI runs**. Run before every commit |
+| `scripts/check.sh --device` | the above, then the instrumented (Compose UI) tests on the connected emulator |
+| `scripts/emulator.sh [--cold]` | starts `Pixel_9_API_37` if nothing is connected and waits for boot (`--cold` ignores the snapshot) |
+| `scripts/run.sh` | emulator.sh, then build + install the debug app, launch it, fail if it crashed |
+| `scripts/release.sh` | signed release APK → `dist/Edith-<versionName>.<versionCode>.apk` (owner's PC only, §6) |
+| `scripts/publish.sh` | uploads that APK as a GitHub Release (**owner's OK required**, §6) |
+| `scripts/create-signing-key.sh` | one-time creation of the release key (already done — don't run again) |
+
+Plain Gradle still works (`./gradlew.bat assembleDebug`, `installDebug`, `testDebugUnitTest`, `lintDebug`).
+**Don't use `connectedDebugAndroidTest`** on the owner's emulator: it uninstalls the app afterwards, wiping the
+owner's data. `check.sh --device` installs and runs the tests with `am instrument` instead.
+
+With two devices connected (e.g. the release-test emulator below), set `ANDROID_SERIAL=emulator-5554` so adb
+and the scripts know which one to use.
+
+Toolchain as of C01: Gradle 9.8.2 (wrapper, checksum-pinned), AGP 9.5.0 (compiles Kotlin itself — there is no
+`org.jetbrains.kotlin.android` plugin), Kotlin 2.4.21, compileSdk/targetSdk 37. All versions in
+`gradle/libs.versions.toml`; the app version in `gradle.properties` (`edith.versionName`, `edith.versionCode`).
+
+**Adding a library:** add it to `gradle/libs.versions.toml` at the latest *stable* version (01-architecture §1)
+and reference it as `libs.…`. To find that version, read the Maven metadata, e.g.
+`curl -s https://dl.google.com/android/maven2/androidx/room/room-runtime/maven-metadata.xml` (Google's
+AndroidX libraries) or `https://repo1.maven.org/maven2/<group path>/<artifact>/maven-metadata.xml` (everything
+else), ignoring alpha/beta/rc versions. Lint's "newer version available" checks are switched off on purpose.
+
+**Expected noise (not problems):** `Unable to strip … libandroidx.graphics.path.so` (no NDK installed; harmless),
+`Consider enabling configuration cache` (not enabled yet; fine to try in a later chunk if every script still
+passes), and Git's `LF will be replaced by CRLF` warnings on Windows (`.gitattributes` keeps the repo consistent).
+
+**Working somewhere other than the owner's PC** (cloud agent, another machine): you have no emulator, no
+Ollama and no signing key. `scripts/check.sh` still works (JDK 17+ and an Android SDK are all it needs) and CI
+checks every PR. Say clearly in the PR what you couldn't verify on a device, so the owner or a later agent can.
 
 ## 3. Emulator
 
@@ -51,6 +82,11 @@ adb emu kill
 - **Audio out** can crackle when the PC is busy (emulator host-audio path; Android reports no underruns).
 - **Display failures** (all black, even the home screen) are the emulator — cold-boot it.
 - The owner may be using the emulator at the same time; unexpected messages in the chat are probably theirs.
+- **State left by C01 (2026-10-29):** the new app was installed *over* v1, so the app's storage still holds
+  v1's leftovers (database `edith_database`, prefs `edith_prefs`). The rebuild uses different names (`edith.db`,
+  DataStore), so they're ignored and harmless; clearing them needs `pm clear`, which needs the owner's OK.
+  Auto-rotate is **off** (C01 rotated with `settings put system user_rotation 1|0`); rotate the same way.
+  A second AVD, `Edith_Release_Test`, exists for release APKs (§6) — it holds no data worth keeping.
 
 ## 4. Driving the app from `adb` (proven recipes, Git Bash)
 
@@ -82,3 +118,50 @@ tap 'content-desc="Send"'
 - `sdkmanager` package names with `;` get split by cmd: use `--package_file=<file>`.
 - Deep build folders can exceed Windows' path limit when deleting: `cmd /c 'rd /s /q "\\?\C:\full\path"'`.
 - `rm -rf "$VAR"/...` may be blocked by safety tooling when the variable could be empty; use literal paths.
+
+## 6. Release builds, signing and deploying
+
+Deploy targets (owner decision, 2026-10-29): **the emulator** (debug builds, `scripts/run.sh`) and a
+**downloadable signed APK** on the private repo's GitHub Releases. No Play Store.
+
+### Signing key
+- Lives **outside the repo** in `C:\Users\USER\.edith\`: `edith-release.jks` (RSA 4096, alias `edith`, valid
+  to ~2054) and `keystore.properties` (its path, generated password, and the certificate's SHA-256 that
+  `release.sh` checks every APK against). `app/build.gradle.kts` reads that file
+  (`EDITH_KEYSTORE_PROPERTIES` overrides the location). Never copy either into the repo, a chat or a log.
+- The owner backs up that folder. If it's lost, installed copies can't be updated: phones must uninstall
+  Edith (losing her data) before a build signed with a new key installs.
+- Release certificate fingerprints (public, not secret): SHA-1
+  `D1:F6:25:27:35:0F:35:5D:25:42:A1:88:F5:C4:ED:3C:D6:9A:CE:DE` (Google OAuth Android client, C17), SHA-256
+  `A5:59:FD:3A:CD:73:9F:17:E5:4C:77:01:46:0B:F6:4D:15:96:19:BF:94:4B:47:88:79:F2:51:93:59:20:AF:C0`.
+- CI and other machines have no key: release builds there come out unsigned and `release.sh` refuses.
+
+### Making and publishing a release (only when the owner asks)
+1. On `master`, up to date with GitHub, clean tree. Bump `edith.versionCode` in `gradle.properties` (and
+   `edith.versionName` when the owner wants a new version name) via a normal PR — Android only installs an
+   update whose versionCode is higher than the installed one.
+2. `scripts/release.sh` → runs unit tests and release lint, builds the R8-minified, signed APK, verifies the
+   signature and key, writes `dist/Edith-<name>.<code>.apk` + `.sha256` (`dist/` is git-ignored).
+3. Install it on the **release-test emulator** and check it launches (below).
+4. Ask the owner, then `scripts/publish.sh` → tags the commit `v<name>.<code>`, pushes the tag, creates the
+   GitHub Release with the APK attached (marked pre-release while the name contains `-`, e.g. `2.0.0-dev`).
+5. On the phone: open the release page in the browser **signed in to GitHub** (the repo is private), download
+   the APK, allow the browser to install unknown apps. Later releases install over it, keeping data.
+
+### Debug vs release on the same device
+Both builds use the id `com.edith.app` but different signing keys (debug key vs release key), so Android
+refuses to install one over the other; switching requires `adb uninstall com.edith.app`, which **wipes app
+data**. Never do that on the owner's `Pixel_9_API_37` without asking. Test release APKs on the separate AVD
+**`Edith_Release_Test`** (same image, created in C01):
+```bash
+"$ANDROID_HOME/emulator/emulator" -avd Edith_Release_Test -port 5560 -no-snapshot -no-window -no-audio &
+adb -s emulator-5560 wait-for-device      # then poll sys.boot_completed as in §3
+adb -s emulator-5560 install -r dist/Edith-2.0.0-dev.1.apk
+adb -s emulator-5560 shell am start -W -n com.edith.app/.MainActivity
+adb -s emulator-5560 logcat -b crash -d   # must be empty
+adb -s emulator-5560 emu kill
+```
+
+### CI
+`.github/workflows/ci.yml` runs `scripts/check.sh` (JDK 17, Ubuntu) on every pull request and every push to
+`master`; on failure the lint/test reports are uploaded as a build artifact. A PR is mergeable only with CI green.

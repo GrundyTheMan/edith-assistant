@@ -13,8 +13,8 @@ Pin exact versions in `gradle/libs.versions.toml` (a Gradle version catalog). Ne
 | Area | Choice | Minimum | Why |
 |---|---|---|---|
 | Language | Kotlin (K2) | 2.0 | Compose compiler plugin ships with Kotlin 2 |
-| Build | Gradle wrapper + Android Gradle Plugin, Kotlin DSL (`*.gradle.kts`) | AGP 8.7 | |
-| JDK toolchain | Java 17 target; JDK 17 or 21 to run Gradle | 17 | |
+| Build | Gradle wrapper + Android Gradle Plugin, Kotlin DSL (`*.gradle.kts`) | AGP 9.5 (C01) | AGP 9 compiles Kotlin itself: apply the Compose/serialization/KSP plugins, never `org.jetbrains.kotlin.android` |
+| JDK toolchain | Java 17 bytecode via `compileOptions`; JDK 17 or 21 to run Gradle | 17 | Don't add `jvmToolchain(17)`: it demands a JDK 17 install the owner's PC doesn't have |
 | SDK levels | `compileSdk` = `targetSdk` = latest stable; `minSdk` 26 | 26 | Adaptive icons, `MediaDataSource`, java.time |
 | UI | Jetpack Compose, Material 3, Navigation Compose | latest BOM | |
 | Async | Kotlin Coroutines + Flow | 1.8 | |

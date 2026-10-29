@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Build, unit-test and lint the debug app — exactly what CI runs on every pull request.
+# Run before every commit. Usage: scripts/check.sh [--device]
+#   --device   also run the instrumented (Compose UI) tests on the connected emulator/phone
+source "$(dirname "$0")/lib.sh"
+
+step "Build + unit tests + lint"
+gradle clean assembleDebug testDebugUnitTest lintDebug
+
+if [ "${1:-}" = "--device" ]; then
+  device_ready || die "No booted emulator/phone. Start one with scripts/emulator.sh."
+  # Not connectedDebugAndroidTest: that uninstalls the app afterwards, wiping the owner's data on the emulator.
+  step "Instrumented tests on the device"
+  gradle installDebug installDebugAndroidTest
+  out="$(adb shell am instrument -w "$APP_ID.test/androidx.test.runner.AndroidJUnitRunner" | tr -d '\r')"
+  echo "$out" | tail -5
+  echo "$out" | grep -q "^OK (" || die "Instrumented tests failed."
+fi
+
+echo
+echo "OK. Reports: app/build/reports/ (lint-results-debug.html, tests/)"

@@ -26,7 +26,7 @@ Verify each step against Google's current documentation; console wording changes
    but Google may require re-consent periodically (refresh tokens for Testing apps expire after about 7 days —
    verify). The app must handle re-consent gracefully.
 4. Credentials: an **Android** OAuth client (package `com.edith.app`, SHA-1 of the debug keystore — get it with
-   `gradlew signingReport`; add the release SHA-1 later) **and** a **Web application** client (its client ID is
+   `gradlew signingReport`) and a second Android client with the **release** SHA-1 from `05-environment.md` §6 **and** a **Web application** client (its client ID is
    the `serverClientId` Credential Manager needs).
 5. Put the Web client ID in `local.properties` (`edith.googleWebClientId=…`) → `BuildConfig` field. Never commit it
    to the repo if the owner prefers (it isn't secret, but keep it out of history by default).

@@ -1,0 +1,7 @@
+<resources>
+    <!-- Keep in sync with ui/theme/Color.kt (window and icon colours can't read Compose values). -->
+    <color name="edith_purple">#FF6750A4</color>
+    <color name="edith_background_light">#FFFEF7FF</color>
+    <color name="edith_background_dark">#FF141218</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>

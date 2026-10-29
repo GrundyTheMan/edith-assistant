@@ -28,7 +28,7 @@ design in the same PR, or ask the owner.
 
 | ID | Chunk | Phase | Depends on | Status |
 |---|---|---|---|---|
-| [C01](chunks/C01-project-reset-and-skeleton.md) | Project reset and skeleton | 1 Foundation + chat | — | Not started |
+| [C01](chunks/C01-project-reset-and-skeleton.md) | Project reset and skeleton | 1 Foundation + chat | — | Done (C01 PR) — **start at C02** |
 | [C02](chunks/C02-core-infrastructure.md) | Core infrastructure (DI, errors, logging, crash reports, secrets) | 1 | C01 | Not started |
 | [C03](chunks/C03-ollama-client.md) | Ollama client (streaming, tool-call DTOs, capabilities) | 1 | C02 | Not started |
 | [C04](chunks/C04-settings-and-model-picker.md) | Settings store, server setup, model picker | 1 | C02, C03 | Not started |
@@ -49,6 +49,15 @@ design in the same PR, or ask the owner.
 | [C19](chunks/C19-gmail.md) | Gmail search, read, draft | 5 | C17, C08 | Not started |
 | [C20](chunks/C20-smart-home-architecture.md) | Smart home architecture (**v2, design only**) | 6 Deferred | C08, C17 | Design |
 | [C21](chunks/C21-smart-home-service-notes.md) | Smart home service notes (**v2 research**) | 6 Deferred | — | Research |
+
+### State at handoff (2026-10-29)
+- `master` has the design and the C01 skeleton with its build/deploy tooling (`05-environment.md` §2, §6). Tag
+  `edith-v1` = the old app. Branch `rebuild-design` is an already-merged leftover — ignore it, don't build on it.
+- **Next: C02.** Then C03 and C05 in parallel.
+- Owner decisions still open are in `06-decisions.md`. Ask early about the ones your chunk lists; the first ones
+  needed are **D8** (C03), **D6** (C07), **D11** (C08), **D7** (C09), **D3** (C10), **D4** (C14), **O1** (C16),
+  **D9** (C17), **D5** (C19).
+- No GitHub Release has been published yet; `scripts/publish.sh` is untested until the owner asks for the first one.
 
 ### Parallelism
 After C01–C02: C03 and C05 can run in parallel. After C06–C07: C08, C12, C13 and C15 can run in parallel
