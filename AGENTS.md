@@ -22,6 +22,7 @@ scripts/run.sh              # build, install and launch the debug app on the emu
 - Releases (signed APK on GitHub Releases) only when the owner asks: `scripts/release.sh`, then
   `scripts/publish.sh` after their explicit OK. Signing key lives in `C:\Users\USER\.edith\` — never copy it.
   Full runbook: [`docs/design/05-environment.md`](docs/design/05-environment.md) §2 and §6.
+- Every script run is also saved to `build-logs/` (newest: `build-logs/latest.log`) for later review.
 - Ollama runs on the PC (port 11434); from the emulator it's `http://10.0.2.2:11434`.
 
 ## Layout

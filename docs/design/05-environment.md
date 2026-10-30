@@ -36,7 +36,15 @@ in C01. Run them from the repo root: `scripts/run.sh` in Git Bash, or in PowerSh
 | `scripts/publish.sh` | uploads that APK as a GitHub Release (**owner's OK required**, §6) |
 | `scripts/create-signing-key.sh` | one-time creation of the release key (already done — don't run again) |
 
-Plain Gradle still works (`./gradlew.bat assembleDebug`, `installDebug`, `testDebugUnitTest`, `lintDebug`).
+**Build logs.** Every script above except `create-signing-key.sh` also writes everything it prints to
+`build-logs/<date>_<time>_<script>.log` (git-ignored), and `build-logs/latest.log` is always a copy of the
+newest one. Each log starts with the command, time, branch and commit (and whether there were uncommitted
+changes) and ends with `# Finished OK` or `# FAILED (exit N)` and the duration. A script run by another
+(`run.sh` → `emulator.sh`) goes into the caller's log. The newest 30 logs are kept (`EDITH_LOG_KEEP=N` to change).
+When reporting a failure, quote the relevant lines of the log rather than retyping them.
+
+Plain Gradle still works (`./gradlew.bat assembleDebug`, `installDebug`, `testDebugUnitTest`, `lintDebug`), but
+isn't logged.
 **Don't use `connectedDebugAndroidTest`** on the owner's emulator: it uninstalls the app afterwards, wiping the
 owner's data. `check.sh --device` installs and runs the tests with `am instrument` instead.
 

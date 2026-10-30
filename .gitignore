@@ -18,3 +18,6 @@ keystore.properties
 .idea/
 *.iml
 .DS_Store
+
+# Build logs written by scripts/ (see 05-environment.md §2)
+/build-logs/

@@ -6,6 +6,7 @@
 # It creates and pushes the tag v<versionName>.<versionCode> on the current commit, which must be on master
 # and identical to origin/master.
 source "$(dirname "$0")/lib.sh"
+start_log publish "$@"
 
 command -v gh >/dev/null || die "The GitHub CLI (gh) is needed."
 APK="$(release_apk)"; TAG="$(release_tag)"
