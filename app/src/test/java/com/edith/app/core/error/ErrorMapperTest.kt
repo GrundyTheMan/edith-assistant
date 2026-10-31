@@ -51,7 +51,7 @@ class ErrorMapperTest {
 
     @Test fun `every error has a user message that says something`() {
         val errors = listOf(
-            AppError.ServerUnreachable("http://pc:11434"), AppError.Timeout, AppError.ModelNotFound("m"),
+            AppError.ServerUnreachable("http://pc:11434"), AppError.Timeout, AppError.ModelNotFound("m"), AppError.NoChatModels,
             AppError.ModelLacksCapability("m", "see images"), AppError.OllamaHttp(500, "boom"),
             AppError.MalformedResponse("x"), AppError.ToolFailed("weather", "no network"),
             AppError.PermissionDenied("microphone"), AppError.GoogleNotConnected, AppError.GoogleAuth("expired"),

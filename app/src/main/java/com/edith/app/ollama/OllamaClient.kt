@@ -58,13 +58,20 @@ data class ReplyStats(val totalMs: Long?, val evalCount: Int?, val promptEvalCou
 /**
  * Every request goes through [chatRequest], which applies [ThinkPolicy] and [OllamaDtos.CONTEXT_LENGTH], so
  * no caller can send a chat without them. [keepAlive] is decision D8 (default: not sent).
+ *
+ * The OkHttp client is [Lazy] and first touched on the IO dispatcher: building it sets up TLS (~190 ms on the
+ * emulator), which must not happen on the main thread when a screen merely gets hold of this client.
  */
 class OkHttpOllamaClient(
-    private val okHttp: OkHttpClient,
+    okHttpProvider: Lazy<OkHttpClient>,
     private val json: Json,
     private val dispatchers: AppDispatchers,
     private val keepAlive: String? = null,
 ) : OllamaClient {
+    constructor(okHttp: OkHttpClient, json: Json, dispatchers: AppDispatchers, keepAlive: String? = null) :
+        this(lazyOf(okHttp), json, dispatchers, keepAlive)
+
+    private val okHttp by okHttpProvider
 
     override fun chatStream(baseUrl: String, request: ChatCall): Flow<ChatEvent> = flow {
         val call = okHttp.newCall(chatRequest(baseUrl, request, stream = true))
