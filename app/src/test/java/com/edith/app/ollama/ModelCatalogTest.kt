@@ -1,6 +1,6 @@
 package com.edith.app.ollama
 
-import com.edith.app.core.error.OllamaHttp
+import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -18,7 +18,7 @@ class ModelCatalogTest {
         override suspend fun listModels(baseUrl: String) = Outcome.Success(caps.keys.map { OllamaModelTag(it) })
         override suspend fun show(baseUrl: String, model: String): Outcome<OllamaShow> {
             showCalls += model
-            return caps[model]?.let { Outcome.Success(OllamaShow(it)) } ?: Outcome.Failure(OllamaHttp(500, "boom"))
+            return caps[model]?.let { Outcome.Success(OllamaShow(it)) } ?: Outcome.Failure(AppError.OllamaHttp(500, "boom"))
         }
     }
 

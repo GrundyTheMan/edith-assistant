@@ -54,6 +54,14 @@ port; reject spaces/invalid hosts → validation message.
 - Expose `suspend fun ensureModel(): Outcome<ModelInfo>` used by the chat engine before every send.
 
 ### 3. Settings screen (Server & model section only; other sections are added by their chunks)
+- **Local network permission first (04-lessons L23).** Android 17 blocks connections to the PC (including
+  the emulator's `10.0.2.2`) until the user grants `android.permission.ACCESS_LOCAL_NETWORK` (runtime,
+  "access local network devices"; already declared in the manifest by C03). Without it every request just
+  times out. Before **Test connection**, loading models, or the first chat, check the permission; if it's not
+  granted, explain in one line why Edith needs it ("to talk to Ollama on your PC") and request it. If denied,
+  show `AppError.PermissionDenied("local network")` with a button that opens the app's Android settings,
+  not a "can't reach your server" error. Instrumented tests can grant it with
+  `uiAutomation.grantRuntimePermission(...)` (see `OllamaLiveCheckTest`).
 - **Server address** text field + **Test connection** button → `version()`:
   "Connected — Ollama 0.40.13" or the `AppError.userMessage`. Save on **Save** (explicit) — the
   field shows unsaved state. Hint text: "Emulator: http://10.0.2.2:11434 · Phone: your PC's address, e.g. http://192.168.4.82:11434".
@@ -84,6 +92,8 @@ port; reject spaces/invalid hosts → validation message.
 - [ ] On the emulator, with Ollama running: Test connection shows the version; the model list shows the
       owner's chat models with correct capability lines; `nomic-embed-text` is hidden.
 - [ ] With a wrong address (e.g. port 11400): a clear error and a working Retry.
+- [ ] First run: Edith asks for the local network permission before connecting; denying it shows the
+      permission message (not a timeout), and granting it from there connects.
 - [ ] Rotation keeps unsaved field text; process death keeps saved settings.
 - [ ] Removing the saved model (simulate by saving a bogus name) → automatic fallback + notice.
 

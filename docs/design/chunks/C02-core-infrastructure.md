@@ -3,6 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 |
+| Status | **Done** — see "As built" at the end |
 | Depends on | C01 |
 | Unblocks | all later chunks |
 | Size | Medium |
@@ -120,3 +121,17 @@ after restore), delete the value and return null (log a warning).
 ## Pitfalls
 - Install the crash handler before anything else. Don't swallow the crash — always delegate.
 - Never log secrets; `redact` is for message bodies.
+
+## As built (2026-10-31)
+- `AppError` subtypes are nested (`AppError.ServerUnreachable`, …) as specified; `AppErrorException` carries an
+  `AppError` out of a Flow; `ErrorMapper.map(t, serverUrl)` + top-level `outcome { }`.
+- `LogTag` is a top-level enum. `Log` logs messages as given; callers wrap personal content in `Log.redact()`,
+  which shows only the length in release builds. (Redacting whole messages would make release logs useless.)
+- `viewModelFactory { container, savedState -> … }` in `di/ViewModels.kt`; first user: `CrashReportViewModel`.
+- Crash banner: `ui/components/CrashBanner.kt`, shown through `EdithNavHost(banner = …)` so it sits under the
+  status bar on every screen. The report is read off the main thread (no StrictMode violations).
+- Debug crash trigger: `adb shell am start -a com.edith.app.DEBUG_CRASH` (debug source set only; verified absent
+  from the release APK).
+- Test fakes in `src/test/java/com/edith/app/testing/`: `testDispatchers()`, `FakeClock`, `InMemorySecretStore`.
+- Verified on the emulator: trigger → report written → banner on next launch → View shows the report → Dismiss
+  deletes it; it stays gone after relaunch. Copy wasn't checked by reading the clipboard back.

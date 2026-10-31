@@ -3,13 +3,9 @@ package com.edith.app.ollama
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.error.AppError
 import com.edith.app.core.error.AppErrorException
-import com.edith.app.core.error.MalformedResponse
-import com.edith.app.core.error.ModelNotFound
-import com.edith.app.core.error.OllamaHttp
 import com.edith.app.core.error.Outcome
-import com.edith.app.core.error.ServerUnreachable
-import com.edith.app.core.error.Timeout
 import com.edith.app.core.log.Log
+import com.edith.app.core.log.LogTag
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
@@ -91,7 +87,7 @@ class OkHttpOllamaClient(
                         } catch (e: IOException) {
                             currentCoroutineContext().ensureActive()
                             throw AppErrorException(ioError(e, baseUrl))
-                        } ?: throw AppErrorException(MalformedResponse("Stream ended before done"))
+                        } ?: throw AppErrorException(AppError.MalformedResponse("Stream ended before done"))
                         if (line.isBlank()) continue
                         val chunk = parse(line, OllamaChatChunk.serializer())
                         chunk.error?.let { throw AppErrorException(errorFor(response.code, it, request.model)) }
@@ -122,7 +118,7 @@ class OkHttpOllamaClient(
         val chunk = execute(okHttp.newCall(chatRequest(baseUrl, request, stream = false)), baseUrl, request.model)
             .use { parse(it.body.string(), OllamaChatChunk.serializer()) }
         chunk.error?.let { throw AppErrorException(errorFor(200, it, request.model)) }
-        chunk.message ?: throw AppErrorException(MalformedResponse("Reply has no message"))
+        chunk.message ?: throw AppErrorException(AppError.MalformedResponse("Reply has no message"))
     }
 
     override suspend fun listModels(baseUrl: String): Outcome<List<OllamaModelTag>> = call {
@@ -138,7 +134,7 @@ class OkHttpOllamaClient(
     override suspend fun version(baseUrl: String): Outcome<String> = call {
         get(baseUrl, "api/version", model = null) {
             parse(it, JsonObject.serializer())["version"]?.jsonPrimitive?.contentOrNull
-                ?: throw AppErrorException(MalformedResponse("No version in reply"))
+                ?: throw AppErrorException(AppError.MalformedResponse("No version in reply"))
         }
     }
 
@@ -177,18 +173,18 @@ class OkHttpOllamaClient(
     }
 
     private fun errorFor(code: Int, message: String, model: String?): AppError =
-        if (model != null && message.contains("not found", ignoreCase = true)) ModelNotFound(model)
-        else OllamaHttp(code, message)
+        if (model != null && message.contains("not found", ignoreCase = true)) AppError.ModelNotFound(model)
+        else AppError.OllamaHttp(code, message)
 
     private fun ioError(e: IOException, baseUrl: String): AppError =
-        if (e is SocketTimeoutException) Timeout else ServerUnreachable(baseUrl, e)
+        if (e is SocketTimeoutException) AppError.Timeout else AppError.ServerUnreachable(baseUrl, e)
 
     private fun <T> parse(text: String, serializer: KSerializer<T>): T = try {
         json.decodeFromString(serializer, text)
     } catch (e: SerializationException) {
-        throw AppErrorException(MalformedResponse("Unreadable reply from Ollama", e))
+        throw AppErrorException(AppError.MalformedResponse("Unreadable reply from Ollama", e))
     } catch (e: IllegalArgumentException) {
-        throw AppErrorException(MalformedResponse("Unreadable reply from Ollama", e))
+        throw AppErrorException(AppError.MalformedResponse("Unreadable reply from Ollama", e))
     }
 
     private fun url(baseUrl: String, path: String): String = baseUrl.trimEnd('/') + "/" + path
@@ -198,11 +194,11 @@ class OkHttpOllamaClient(
         try {
             Outcome.Success(block())
         } catch (e: AppErrorException) {
-            Log.w(Log.LogTag.Ollama, "Request failed: ${e.error::class.simpleName}")
+            Log.w(LogTag.Ollama, "Request failed: ${e.error::class.simpleName}")
             Outcome.Failure(e.error)
         } catch (e: IllegalArgumentException) {
             // OkHttp rejects malformed server URLs (e.g. a typo in Settings).
-            Outcome.Failure(ServerUnreachable("(invalid address)", e))
+            Outcome.Failure(AppError.ServerUnreachable("(invalid address)", e))
         }
     }
 

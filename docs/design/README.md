@@ -28,9 +28,9 @@ design in the same PR, or ask the owner.
 
 | ID | Chunk | Phase | Depends on | Status |
 |---|---|---|---|---|
-| [C01](chunks/C01-project-reset-and-skeleton.md) | Project reset and skeleton | 1 Foundation + chat | — | Done (C01 PR) — **start at C02** |
-| [C02](chunks/C02-core-infrastructure.md) | Core infrastructure (DI, errors, logging, crash reports, secrets) | 1 | C01 | **Partly done** — still missing: crash banner, debug crash trigger, `viewModelFactory`, shared test fakes, ErrorMapper/LogRingBuffer tests |
-| [C03](chunks/C03-ollama-client.md) | Ollama client (streaming, tool-call DTOs, capabilities) | 1 | C02 | **Done except** the live model-list check from the emulator (acceptance item 2) |
+| [C01](chunks/C01-project-reset-and-skeleton.md) | Project reset and skeleton | 1 Foundation + chat | — | Done |
+| [C02](chunks/C02-core-infrastructure.md) | Core infrastructure (DI, errors, logging, crash reports, secrets) | 1 | C01 | Done |
+| [C03](chunks/C03-ollama-client.md) | Ollama client (streaming, tool-call DTOs, capabilities) | 1 | C02 | Done |
 | [C04](chunks/C04-settings-and-model-picker.md) | Settings store, server setup, model picker | 1 | C02, C03 | Not started |
 | [C05](chunks/C05-conversation-storage.md) | Conversation storage (Room, full v1 schema) | 1 | C02 | Not started |
 | [C06](chunks/C06-chat-engine.md) | Chat engine (prompt, context, streaming, cancel, regenerate) | 1 | C03, C04, C05 | Not started |
@@ -53,7 +53,7 @@ design in the same PR, or ask the owner.
 ### State at handoff (2026-10-29)
 - `master` has the design and the C01 skeleton with its build/deploy tooling (`05-environment.md` §2, §6). Tag
   `edith-v1` = the old app. Branch `rebuild-design` is an already-merged leftover — ignore it, don't build on it.
-- **Next: finish C02** (see its row), then C04/C05; C03 is in review.
+- **Next: C04 and C05** (can run in parallel). C04 must handle the Android 17 local-network permission (04-lessons L23) and needs decision D8.
 - Owner decisions still open are in `06-decisions.md`. Ask early about the ones your chunk lists; the first ones
   needed are **D8** (C03), **D6** (C07), **D11** (C08), **D7** (C09), **D3** (C10), **D4** (C14), **O1** (C16),
   **D9** (C17), **D5** (C19).

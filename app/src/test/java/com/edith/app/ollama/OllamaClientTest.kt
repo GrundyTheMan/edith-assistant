@@ -1,11 +1,9 @@
 package com.edith.app.ollama
 
 import com.edith.app.core.dispatchers.AppDispatchers
+import com.edith.app.core.error.AppError
 import com.edith.app.core.error.AppErrorException
-import com.edith.app.core.error.MalformedResponse
-import com.edith.app.core.error.ModelNotFound
 import com.edith.app.core.error.Outcome
-import com.edith.app.core.error.ServerUnreachable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
@@ -121,14 +119,14 @@ class OllamaClientTest {
     @Test fun `6 model not found maps to ModelNotFound`() = runTest {
         server.enqueue(MockResponse.Builder().code(404).body(fixture("error_model_not_found.json")).build())
         val result = client.chat(baseUrl, chat(model = "no-such-model"))
-        assertEquals(Outcome.Failure(ModelNotFound("no-such-model")), result)
+        assertEquals(Outcome.Failure(AppError.ModelNotFound("no-such-model")), result)
     }
 
     @Test fun `7 connection refused maps to ServerUnreachable`() = runTest {
         val url = baseUrl
         server.close()
         val result = client.listModels(url)
-        assertTrue("got $result", result is Outcome.Failure && result.error is ServerUnreachable)
+        assertTrue("got $result", result is Outcome.Failure && result.error is AppError.ServerUnreachable)
     }
 
     @Test fun `8 malformed NDJSON line maps to MalformedResponse`() = runTest {
@@ -137,7 +135,7 @@ class OllamaClientTest {
             client.chatStream(baseUrl, chat()).toList()
             fail("Expected MalformedResponse")
         } catch (e: AppErrorException) {
-            assertTrue("got ${e.error}", e.error is MalformedResponse)
+            assertTrue("got ${e.error}", e.error is AppError.MalformedResponse)
         }
     }
 

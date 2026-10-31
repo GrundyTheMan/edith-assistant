@@ -3,6 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 |
+| Status | **Done** — see "As built" at the end |
 | Depends on | C02 |
 | Unblocks | C04, C06, C08, C12, C15 |
 | Size | Medium |
@@ -144,3 +145,15 @@ Copy the real samples from 03-ollama-reference §3 into `app/src/test/resources/
 ## Pitfalls
 - Don't use `Map<String, Any>` for JSON. Don't parse `function` as a string. Don't read tool calls from the top level.
 - Read the stream on IO; never on main.
+
+## As built (2026-10-31)
+- Live check: `OllamaLiveCheckTest` (androidTest, opt-in so CI and `check.sh` skip it):
+  `adb shell am instrument -w -e live true -e class com.edith.app.ollama.OllamaLiveCheckTest com.edith.app.test/androidx.test.runner.AndroidJUnitRunner`,
+  results in `adb logcat -d -s Edith/Ollama:*`. Result on the owner's emulator via `http://10.0.2.2:11434`, Ollama 0.40.13:
+  `gemma4:12b-it-q8_0` and `gemma4:e4b-it-q8_0` audio, completion, thinking, tools, vision · `gpt-oss:20b` completion,
+  thinking, tools · `ornith:9b` completion, thinking, tools · `qwen3.5:9b-q8_0` completion, thinking, tools, vision ·
+  `nomic-embed-text` hidden. Streamed reply "Hello"; real tool call `get_weather({"location":"Boston"})`.
+- **Android 17 needs `ACCESS_LOCAL_NETWORK`** (declared in the manifest; runtime request is C04's job): without it
+  every request times out (04-lessons L23).
+- `gpt-oss:20b` live: `think:"low"` → "hello" with 23 chars of thinking; `think:false` → still thinks (288 chars).
+  So `ThinkPolicy`'s "low" for gpt-oss is right: it can't switch thinking off.

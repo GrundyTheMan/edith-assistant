@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import com.edith.app.core.log.Log
+import com.edith.app.core.log.LogTag
 import kotlinx.coroutines.flow.first
 import java.security.GeneralSecurityException
 import java.security.KeyStore
@@ -47,11 +48,11 @@ class KeystoreSecretStore(context: Context) : SecretStore {
             decrypt(stored)
         } catch (e: GeneralSecurityException) {
             // The key is gone (e.g. data restored to a new phone) or the value is damaged: it can't be recovered.
-            Log.w(Log.LogTag.App, "Secret '$key' couldn't be decrypted; removing it", e)
+            Log.w(LogTag.App, "Secret '$key' couldn't be decrypted; removing it", e)
             put(key, null)
             null
         } catch (e: IllegalArgumentException) {
-            Log.w(Log.LogTag.App, "Secret '$key' is damaged; removing it", e)
+            Log.w(LogTag.App, "Secret '$key' is damaged; removing it", e)
             put(key, null)
             null
         }
@@ -96,11 +97,3 @@ class KeystoreSecretStore(context: Context) : SecretStore {
     }
 }
 
-/** For unit tests and previews. */
-class InMemorySecretStore : SecretStore {
-    private val values = java.util.concurrent.ConcurrentHashMap<String, String>()
-    override suspend fun put(key: String, value: String?) {
-        if (value == null) values.remove(key) else values[key] = value
-    }
-    override suspend fun get(key: String): String? = values[key]
-}

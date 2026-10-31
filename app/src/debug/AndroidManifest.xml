@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: lets a developer crash Edith on purpose to test crash reports (C02 acceptance):
+     adb shell am start -a com.edith.app.DEBUG_CRASH -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name=".debug.DebugCrashActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Edith">
+            <intent-filter>
+                <action android:name="com.edith.app.DEBUG_CRASH" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

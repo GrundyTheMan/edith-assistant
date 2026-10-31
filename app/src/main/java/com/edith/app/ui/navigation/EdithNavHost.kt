@@ -32,14 +32,18 @@ private val Destination.icon: ImageVector
         Destination.Settings -> Icons.Filled.Settings
     }
 
-/** App shell: bottom navigation bar plus one placeholder screen per destination (filled in by later chunks). */
+/**
+ * App shell: bottom navigation bar plus one placeholder screen per destination (filled in by later chunks).
+ * [banner] is shown above every screen (e.g. the crash banner); it handles the status-bar inset itself.
+ */
 @Composable
-fun EdithNavHost() {
+fun EdithNavHost(banner: @Composable () -> Unit = {}) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
 
     Scaffold(
+        topBar = banner,
         bottomBar = {
             NavigationBar {
                 Destination.entries.forEach { destination ->
