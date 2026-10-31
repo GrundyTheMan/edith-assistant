@@ -3,6 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 |
+| Status | **Done** — see "As built" at the end |
 | Depends on | C02 |
 | Unblocks | C06, C07, C16 |
 | Size | Small–medium |
@@ -108,3 +109,24 @@ Guards (enforce lessons L3 in code, not just convention): no API to store `syste
 
 ## Pitfalls
 - KSP only. Keep `created_at` epoch millis from the injected `Clock`.
+
+## As built (2026-10-31)
+Started by another AI agent over three rounds; finished here. Its entities and DAO queries were kept; the rest was
+corrected (Room's compiler was missing, a hand-made schema file, broken converters, a wrong `<tool_call>` guard).
+- Room **2.8.5** via KSP (`ksp(libs.room.compiler)`), schema exported to
+  `app/schemas/com.edith.app.data.db.EdithDatabase/1.json` (written by Room — never edit by hand).
+- `EdithDatabase.create(context)` → `edith.db`, version 1; `EdithDatabaseCallback.onCreate` inserts conversation
+  (1, "Edith"). Plain `@Insert` (no conflict strategy: `REPLACE` would silently delete a clashing row and, through
+  the cascade, its attachments).
+- `EnumConverters` write and read the SQL strings (`voice_memo`, `from_user`, …); `ListConverters` stores
+  `tools_used` as a JSON array via kotlinx.serialization (no Gson); unreadable data reads as empty, with a warning.
+- `ChatRepository` (`data/chat/`): the spec's API; all database work on `dispatchers.io`; `ChatRepository.stripToolCalls`
+  removes `<tool_call>…</tool_call>` and logs a warning (lesson L3) — ordinary text is stored exactly as written.
+- **Created at launch:** `EdithApp` calls `AppContainer.openDatabaseInBackground()` (new `appScope` on IO), so
+  `edith.db` exists from the first launch without disk work on the main thread. (Without it nothing would open the
+  database until C06.)
+- Tests: `ChatRepositoryTest` (androidTest, in-memory Room, 9 tests: conversation row, order + attachments, recent,
+  nextNumber 1→2→3, raw enum strings, `<tool_call>` stripping + tools_used JSON, failed replies, cascade delete,
+  clear keeps the conversation) and `StorageRulesTest` (JVM: stripping, converters, schema file).
+- Verified on the emulator: launch logs "Database ready"; `edith.db` read with `node:sqlite` →
+  tables `attachments, conversations, messages`; conversations `[{id:1, title:"Edith", ...}]`; user_version 1.

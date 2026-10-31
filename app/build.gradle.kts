@@ -4,6 +4,12 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
+}
+
+// Room writes its schema here at build time (C05). Commit app/schemas/: it's needed for future migrations.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 kotlin {
@@ -98,6 +104,11 @@ dependencies {
     implementation(libs.coroutines.core)
     implementation(libs.okhttp)
 
+    // C05: Room (KSP — never kapt, lessons L1)
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
+
     testImplementation(libs.kotlinx.serialization.json)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.junit)
@@ -109,4 +120,6 @@ dependencies {
     androidTestImplementation(libs.androidx.test.runner)
     // ui-test-junit4 pulls in Espresso 3.5, which fails on API 37 (InputManager.getInstance was removed).
     androidTestImplementation(libs.androidx.test.espresso.core)
+    androidTestImplementation(libs.room.testing)
+    androidTestImplementation(libs.coroutines.test)
 }

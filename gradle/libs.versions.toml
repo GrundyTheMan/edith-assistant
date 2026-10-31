@@ -14,6 +14,7 @@ composeBom = "2026.09.00"
 navigation = "2.10.2"
 splashscreen = "1.2.0"
 okhttp = "5.5.1"
+room = "2.8.5"  # C05: upgraded to latest stable (01-architecture §1)
 serialization = "1.12.0"
 junit = "4.13.2"
 androidxTestExtJunit = "1.3.0"
@@ -39,7 +40,12 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExtJunit" }
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
 androidx-test-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espresso" }
-# C02/C03: coroutines, settings storage, JSON, HTTP (MockWebServer for tests)
+# C05: Room database (KSP) - kotlinx.serialization for simple TypeConverters (no Gson banned per 01-architecture §1)
+room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
+room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+# C02/C03: coroutines, settings storage, JSON (kotlinx-serialization), HTTP (MockWebServer for tests)
 coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
 coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }

@@ -21,3 +21,6 @@ keystore.properties
 
 # Build logs written by scripts/ (see 05-environment.md §2)
 /build-logs/
+
+# JVM heap dumps (written when Gradle runs out of memory) — large, never commit
+*.hprof
