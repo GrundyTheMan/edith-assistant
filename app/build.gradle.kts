@@ -4,11 +4,16 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
 }
 
 kotlin {
     compilerOptions {
         freeCompilerArgs = listOf("-opt-in=kotlinx.coroutines.FlowPreview")
+    }
+    // KSP Room schema export (AGP 9 with KSP)
+    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+        ksp{arg("room.schemaLocation", "$projectDir/schemas")}
     }
 }
 
@@ -91,17 +96,23 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
+    // C05: Room database (KSP) - Gson only for simple TypeConverter List<String> <-> JSON
+    implementation(libs.gson)
     // C02: core infrastructure (serialization, DataStore for secrets, OkHttp for network)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.datastore.preferences)
     implementation(libs.datastore.core)
     implementation(libs.coroutines.core)
     implementation(libs.okhttp)
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
 
     testImplementation(libs.kotlinx.serialization.json)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.junit)
     testImplementation(libs.mockwebserver)
+    testImplementation(libs.room.runtime)
+    testImplementation(libs.room.ktx)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
