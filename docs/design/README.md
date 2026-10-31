@@ -34,7 +34,8 @@ design in the same PR, or ask the owner.
 | [C04](chunks/C04-settings-and-model-picker.md) | Settings store, server setup, model picker | 1 | C02, C03 | Done |
 | [C05](chunks/C05-conversation-storage.md) | Conversation storage (Room, full v1 schema) | 1 | C02 | Done |
 | [C06](chunks/C06-chat-engine.md) | Chat engine (prompt, context, streaming, cancel, regenerate) | 1 | C03, C04, C05 | Done |
-| [C07](chunks/C07-chat-ui.md) | Chat UI (bubbles, action row, input row, timestamps) | 1 | C06 | Not started |
+| [C06b](chunks/C06b-multiple-conversations.md) | Multiple conversations: storage (schema v2 + migration) and engine | 1 | C05, C06 | Not started |
+| [C07](chunks/C07-chat-ui.md) | Chat UI (bubbles, action row, input row, timestamps, conversation list) | 1 | C06, C06b | Not started |
 | [C08](chunks/C08-tool-framework.md) | **Tool framework and tool loop** (+ `get_current_time`) | 2 Tools | C03, C06, C07 | Not started |
 | [C09](chunks/C09-weather-tool.md) | Weather tool (Open-Meteo) | 2 | C08 | Not started |
 | [C10](chunks/C10-web-search-and-reading.md) | Web search and web page reading | 2 | C08 | Not started |
@@ -53,14 +54,16 @@ design in the same PR, or ask the owner.
 ### State at handoff (2026-10-29)
 - `master` has the design and the C01 skeleton with its build/deploy tooling (`05-environment.md` §2, §6). Tag
   `edith-v1` = the old app. Branch `rebuild-design` is an already-merged leftover — ignore it, don't build on it.
-- **Next: C07** (chat UI): observe `ChatRepository.observe()` + `ChatEngine.state`, call `ChatEngine.send/cancel/regenerateLast` (C06). Use `ModelSelection.ensureModel()` before every send (C04) and `LocalNetworkAccess` before connecting.
+- **Next: C06b** (multiple conversations, decision D6): schema v2 with a real migration of the owner's existing
+  history, a conversation id on every `ChatRepository` and `ChatEngine` call, and `CurrentConversation`. No UI.
+- **Then C07** (chat UI + conversation list): observe `ChatRepository.observe(id)` + `ChatEngine.state`, call `ChatEngine.send/cancel/regenerateLast` (C06, C06b). The engine already checks the model (`ModelSelection.ensureModel()`, C04) and the local-network permission on every turn, so the UI doesn't repeat them; when a turn fails with `PermissionDenied("local network")`, offer to request it with the launcher pattern in `ui/settings/SettingsScreen.kt`.
 - Owner decisions still open are in `06-decisions.md`. Ask early about the ones your chunk lists; the first ones
-  needed are **D8** (C03), **D6** (C07), **D11** (C08), **D7** (C09), **D3** (C10), **D4** (C14), **O1** (C16),
+  needed are **D8** (C03), **D12** (C06b), **D11** (C08), **D7** (C09), **D3** (C10), **D4** (C14), **O1** (C16),
   **D9** (C17), **D5** (C19).
 - No GitHub Release has been published yet; `scripts/publish.sh` is untested until the owner asks for the first one.
 
 ### Parallelism
-After C01–C02: C03 and C05 can run in parallel. After C06–C07: C08, C12, C13 and C15 can run in parallel
+After C01–C02: C03 and C05 can run in parallel. After C06–C06b–C07: C08, C12, C13 and C15 can run in parallel
 (they touch different packages; coordinate on `AppContainer` and the input row). C09, C10, C11 can run in
 parallel after C08. C17 can start any time after C08; C18 and C19 in parallel after C17.
 

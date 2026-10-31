@@ -21,6 +21,7 @@ answer here in the same PR.
 | A9 | Hands-free mode in v1 | 2026-10-29 | C14 |
 | A10 | Deliver as one PR per chunk; each chunk implementable by a different AI model | 2026-10-29 | 02-standards |
 | A11 | Manual DI (`AppContainer`), OkHttp + kotlinx.serialization, no Retrofit/Gson/Hilt | 2026-10-29 | 01-architecture §1 — design choice, owner may override |
+| D6 | **Multiple conversations**: a conversation list plus "New chat" (not v1's single conversation) | 2026-10-31 | Storage and engine in C06b; list UI in C07 §8 |
 
 ## Open (ask the owner when the chunk needs it)
 
@@ -30,9 +31,9 @@ answer here in the same PR.
 | D3 | Web search provider | **Ollama's web search API** (built for model tool use; needs a free ollama.com API key — verify current API and limits) | Brave Search API (key, free tier); self-hosted SearXNG on the PC (no key, more setup); Tavily | C10 |
 | D4 | Wake-word engine for hands-free | **Picovoice Porcupine** with a custom "Hey Edith" keyword (reliable, on-device; needs a free Picovoice AccessKey; check licence terms for personal use) | openWakeWord via ONNX Runtime (free, open, custom model training harder); Vosk keyword spotting (free, less accurate) | C14 |
 | D5 | Gmail: drafts only, or also send (with confirmation)? | **Drafts only in v1** | Send after explicit confirmation | C19 |
-| D6 | One continuous conversation (like v1) or multiple conversations? | **One conversation** in v1 (schema already supports more) | Conversation list + "New chat" | C07 |
 | D7 | Units | **Auto from device locale** (owner in the US → °F, mph) | Fixed imperial/metric | C09 |
 | D8 | Keep models loaded in Ollama longer (`keep_alive`)? | **Leave default** (5 min) | `15m`/`-1`: faster first reply after a break, but holds ~14 GB VRAM while idle | C03 |
 | D9 | Google sign-in: which Google Cloud project/OAuth client? The owner may already have one (a client ID appeared in a v1 commit) | Create a new project "Edith" with an Android OAuth client (C17 has the steps) | Reuse the existing client | C17 |
 | D10 | Smart-home backend for v2 | **Decide at v2 start** — options in C20: through Jarvis on the PC, through Home Assistant, or direct from the phone | — | C20 |
 | D11 | Confirmation policy: which actions need an explicit tap? | **Anything that changes data outside the app** (calendar writes, email drafts, later: locks, garage, thermostat) | Also confirm reads of email | C08, C18, C19 |
+| D12 | Conversation titles | **First user message**, trimmed to 40 characters at a word boundary; the owner can rename | Edith writes a short title after the first reply (an extra model call each new chat); always "New chat" + date | C06b |

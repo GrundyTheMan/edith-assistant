@@ -3,10 +3,10 @@
 | | |
 |---|---|
 | Phase | 1 |
-| Depends on | C06 (and C01 navigation) |
+| Depends on | C06, C06b (and C01 navigation) |
 | Unblocks | C08 (confirmation card), C12/C13 (input row and action row hooks), C15 |
-| Size | Medium–large |
-| Read first | 00-product §4.7; 01-architecture §10; 02-standards §2 (content descriptions) |
+| Size | Large (chat screen plus the conversation list, §8) |
+| Read first | 00-product §4.7; 01-architecture §10; 02-standards §2 (content descriptions); C06b; 06-decisions D6, D12 |
 
 ## Goal
 
@@ -17,7 +17,9 @@ keyboard-aware layout, clear error display.
 ## Specification
 
 ### 1. `ChatViewModel`
-Combines `ChatRepository.observe()` and `ChatEngine.state` into
+Follows `CurrentConversation.id` (C06b) and combines `ChatRepository.observe(id)` with `ChatEngine.state`.
+Engine states for another conversation don't show here: they only make `canSend` false, with the hint
+"Edith is replying in another chat". The ViewModel produces
 ```kotlin
 data class ChatUiState(
     val messages: List<MessageUi>, val inFlight: InFlight?,  // Working/AwaitingConfirmation rendered as a trailing bubble
@@ -73,8 +75,25 @@ Use feature flags in the ViewModel state so later chunks just turn their buttons
 
 ### 7. Accessibility and test hooks
 Every icon button has a content description (used by tests and `adb` recipes): "Send", "Stop reply",
-"Play reply", "Stop playback", "Regenerate reply", later "Attach a file", "Record audio",
-"Stop and send recording", "Speak a message".
+"Play reply", "Stop playback", "Regenerate reply", "Conversations", "New chat", later "Attach a file",
+"Record audio", "Stop and send recording", "Speak a message".
+
+### 8. Conversations (D6: multiple conversations; storage and engine in C06b)
+- **Top app bar** on the chat screen: a **Conversations** icon (opens the list), the current title
+  ("New chat" while untitled), and a **New chat** icon (`CurrentConversation.newChat()`). The bottom bar
+  is unchanged.
+- **List**: a `ModalNavigationDrawer` from the left, newest first (`ChatRepository.conversations()`). Each row
+  shows the title, a one-line preview of the last message, and a relative time ("2:06 PM", "Mon",
+  "Oct 12"). The open conversation is highlighted, and the one with a reply in progress shows a small spinner.
+  Tap → `select(id)` and close the drawer.
+- **Rename**: tap the title in the top bar, or use the row's long-press menu → dialog with the current
+  title. Saving calls `rename` (an owner rename is never overwritten by auto-title).
+- **Delete**: long-press menu → confirm dialog "Delete this chat? This can't be undone." →
+  `engine.cancelAndJoin(id)` then `repo.delete(id)`. Deleting the open chat switches to the next most
+  recent one, or a new empty chat if none is left.
+- Switching chats keeps a reply running in the old one; coming back shows it still streaming, or finished.
+- Each conversation keeps its own unsent draft (`SavedStateHandle`, keyed by conversation id).
+- No search and no folders in v1.
 
 ## Tests
 - ViewModel: maps messages; `isLatestAssistant` only on the newest Edith message; draft survives recreation.
@@ -82,11 +101,16 @@ Every icon button has a content description (used by tests and `adb` recipes): "
   Regenerate only on the latest Edith message; failed message shows Retry.
 - Compose: the action row's bounding box overlaps the bubble's bottom edge by ~7.dp (layout test).
 - Screenshot or golden-free visual check in the PR: light and dark theme.
+- Conversations: the drawer lists conversations newest first; tapping one shows its messages; New chat on an
+  empty chat doesn't create another; rename shows in the top bar and the list; deleting the open chat
+  switches as specified; a reply started in A doesn't appear in B, and B's Send is disabled with the hint.
 
 ## Acceptance criteria
 - [ ] On the emulator: chat with the real model; reply streams; timestamps; auto-scroll; keyboard behaviour correct.
 - [ ] Stop mid-reply works; Regenerate works; a failed turn (stop Ollama) shows a clear error + Retry; restart Ollama → Retry succeeds.
 - [ ] Rotation mid-reply: the reply keeps streaming after rotation (engine is app-scoped).
+- [ ] Two or more conversations on the emulator: switch mid-reply and back; rename; delete; the app
+      reopens on the last-used chat after being closed.
 - [ ] No crash/ANR in `adb logcat` during the session.
 
 ## Pitfalls
