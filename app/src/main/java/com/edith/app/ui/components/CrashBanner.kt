@@ -36,11 +36,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun CrashBanner(report: String, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
     var showReport by rememberSaveable { mutableStateOf(false) }
-    val clipboard = LocalClipboard.current
-    val scope = rememberCoroutineScope()
-    val copy: () -> Unit = {
-        scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Edith crash report", report))) }
-    }
+    val copy = rememberCopyReport(report)
 
     Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = modifier.fillMaxWidth()) {
         Column(Modifier.statusBarsPadding().padding(start = 16.dp, end = 8.dp, top = 8.dp)) {
@@ -57,17 +53,29 @@ fun CrashBanner(report: String, onDismiss: () -> Unit, modifier: Modifier = Modi
         }
     }
 
-    if (showReport) {
-        AlertDialog(
-            onDismissRequest = { showReport = false },
-            title = { Text("Crash report") },
-            text = {
-                SelectionContainer(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
-                    Text(report, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
-                }
-            },
-            confirmButton = { TextButton(onClick = { showReport = false }) { Text("Close") } },
-            dismissButton = { TextButton(onClick = copy) { Text("Copy") } },
-        )
-    }
+    if (showReport) CrashReportDialog(report, onClose = { showReport = false })
+}
+
+/** The crash report, selectable and scrollable, with Copy and Close. Also opened from Settings → About (C04). */
+@Composable
+fun CrashReportDialog(report: String, onClose: () -> Unit) {
+    val copy = rememberCopyReport(report)
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Crash report") },
+        text = {
+            SelectionContainer(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                Text(report, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text("Close") } },
+        dismissButton = { TextButton(onClick = copy) { Text("Copy") } },
+    )
+}
+
+@Composable
+private fun rememberCopyReport(report: String): () -> Unit {
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
+    return { scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Edith crash report", report))) } }
 }

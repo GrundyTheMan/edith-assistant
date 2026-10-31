@@ -3,6 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 |
+| Status | **Done** — see "As built" at the end |
 | Depends on | C02, C03 |
 | Unblocks | C06, C07 and every chunk that adds a setting |
 | Size | Medium |
@@ -99,3 +100,32 @@ port; reject spaces/invalid hosts → validation message.
 
 ## Pitfalls
 - Don't hard-code model names except as preferences. Don't block the UI on network calls.
+
+## As built (2026-10-31)
+Started by another AI agent; its version didn't compile and had logic bugs, so the chunk was rewritten to this spec
+(keeping its file layout and state names).
+- `settings/Settings.kt`: `Settings`, `Units` (stored lower case: `auto`/`metric`/`imperial`), `SettingsRepository`,
+  `DataStoreSettingsRepository(DataStore<Preferences>)` + `create(context)`. `update` reads, transforms and writes in
+  one DataStore transaction; null values remove their key. Key names exactly as 01-architecture §5.3.
+- `settings/ServerUrl.kt`: `ServerUrl.normalize()` returns `Valid(url)` or `Invalid(message)` (plain-language reason).
+- `settings/ModelSelection.kt`: `ensureModel()` keeps an installed saved model, otherwise picks
+  (`gemma4:12b*` → any `gemma4` → first with tools → first), saves it, and leaves a one-time notice for `takeNotice()`.
+  A down server stays a server error (not "no models"); no chat models → new `AppError.NoChatModels`.
+- `core/permissions/LocalNetworkAccess.kt`: checks `ACCESS_LOCAL_NETWORK` (API 37+; always true below). The Settings
+  screen asks once automatically, re-checks on every resume (after Android settings), and shows a denied card with
+  **Open Android settings**. Android words the dialog "find, connect to, and determine the relative position of
+  nearby devices" (the Nearby devices permission group).
+- `SettingsViewModel` + `ui/settings/SettingsScreen.kt` (stateless `SettingsContent` for tests). About shows the app and
+  Ollama versions and opens the C02 crash report dialog (`CrashReportDialog`, extracted from `CrashBanner`).
+- Also changed in C03 code: the OkHttp client is `Lazy` and first built on the IO dispatcher (it cost 186 ms on the
+  main thread when Settings opened), and sockets are tagged (`core/net/TaggedSocketFactory`) — StrictMode now silent.
+- **Windows note for tests:** a JVM unit test can't write the same DataStore file twice on Windows (Java's rename
+  won't replace an existing file there; Android and Linux CI are fine). `SettingsRepositoryTest` writes each file
+  once and tests null-clearing on the preferences mapping.
+- Verified on the emulator against the owner's Ollama: permission dialog on first entry → deny shows the permission
+  card, Test connection says it needs the permission (not a timeout) → granting in Android settings and returning
+  loads the models; Test connection "Connected — Ollama 0.40.13"; 5 chat models with capability lines,
+  `nomic-embed-text` hidden; picked model survives a force-stop; port 11400 → "Can't reach…" + Retry (each Retry made
+  a new request: 2 → 4 failed-request log lines); rotation keeps unsaved text; a saved model deleted from Ollama
+  (`ollama cp` copy, then `ollama rm`) → "Your model edith-test-temp:latest is no longer installed; switched to
+  gemma4:12b-it-q8_0." 0 crashes, 0 ANRs, 0 StrictMode warnings.
