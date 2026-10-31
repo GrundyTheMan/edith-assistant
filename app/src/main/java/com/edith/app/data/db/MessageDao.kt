@@ -27,11 +27,9 @@ interface MessageDao {
     fun observeConversation(cid: Long): Flow<List<MessageWithAttachments>>
 
     /**
-     * Get recent messages for a conversation, newest first.
-     * Caller should reverse if they want oldest-first ordering.
+     * Get recent messages for a conversation.
      */
-    @Query("SELECT * FROM messages WHERE conversation_id = :cid " +
-           "ORDER BY created_at DESC, id DESC LIMIT :limit")
+    @Query("SELECT * FROM messages WHERE conversation_id = :cid ORDER BY created_at DESC, id DESC LIMIT :limit")
     suspend fun recent(cid: Long, limit: Int): List<MessageWithAttachments>
 
     /**
