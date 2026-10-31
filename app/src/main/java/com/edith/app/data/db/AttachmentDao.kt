@@ -13,7 +13,7 @@ interface AttachmentDao {
     /**
      * Insert an attachment.
      */
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(a: AttachmentEntity): Long
 
     /**

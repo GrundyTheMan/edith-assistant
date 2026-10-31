@@ -16,26 +16,22 @@ import kotlinx.coroutines.flow.Flow
 interface MessageDao {
     /**
      * Get all messages for a conversation with attached media, ordered chronologically.
-     * This includes attachments that belong to each message.
      */
     @Transaction
-    @Query("SELECT m.*, COUNT(a.id) as attachment_count " +
-           "FROM messages m " +
-           "LEFT JOIN attachments a ON m.id = a.message_id " +
-           "WHERE m.conversation_id = :cid " +
-           "ORDER BY m.created_at ASC, m.id ASC")
+    @Query("SELECT * FROM messages WHERE conversation_id = :cid ORDER BY created_at, id")
     fun observeConversation(cid: Long): Flow<List<MessageWithAttachments>>
 
     /**
      * Get recent messages for a conversation.
      */
+    @Transaction
     @Query("SELECT * FROM messages WHERE conversation_id = :cid ORDER BY created_at DESC, id DESC LIMIT :limit")
     suspend fun recent(cid: Long, limit: Int): List<MessageWithAttachments>
 
     /**
      * Insert a message and return its ID.
      */
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(m: MessageEntity): Long
 
     /**

@@ -1,6 +1,8 @@
 package com.edith.app.di
 
 import android.app.Application
+import androidx.room.Room
+import androidx.room.RoomDatabase.Callback
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
@@ -9,6 +11,9 @@ import com.edith.app.core.secrets.KeystoreSecretStore
 import com.edith.app.core.secrets.SecretStore
 import com.edith.app.core.time.Clock
 import com.edith.app.core.time.SystemClock
+import com.edith.app.data.chat.ChatRepository
+import com.edith.app.data.db.EdithDatabase
+import com.edith.app.data.db.EdithDatabaseCallback
 import com.edith.app.ollama.ModelCatalog
 import com.edith.app.ollama.OkHttpOllamaClient
 import com.edith.app.ollama.OllamaClient
@@ -29,6 +34,17 @@ class AppContainer(val app: Application) {
 
     val dispatchers: AppDispatchers = AppDispatchers.Default
     val clock: Clock = SystemClock
+
+    /** Database and chat repository (C05) - use on IO dispatcher. */
+    val database: EdithDatabase by lazy {
+        Room.databaseBuilder(app, EdithDatabase::class.java, "edith.db")
+            .addCallback(EdithDatabaseCallback)
+            .build()
+    }
+    val chatRepository: ChatRepository by lazy {
+        ChatRepository(database, clock, dispatchers)
+    }
+
     val secretStore: SecretStore by lazy { KeystoreSecretStore(app) }
 
     /**

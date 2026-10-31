@@ -7,19 +7,11 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-kotlin {
-    compilerOptions {
-        freeCompilerArgs = listOf("-opt-in=kotlinx.coroutines.FlowPreview")
-    }
-    // KSP Room schema export (AGP 9 with KSP)
-    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-        ksp{arg("room.schemaLocation", "$projectDir/schemas")}
-    }
+// KSP configuration (AGP 9 with KSP)
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
-// Release signing (docs/design/05-environment.md §6). The key and its passwords live outside the repo, in
-// ~/.edith/ (made once by scripts/create-signing-key.sh; EDITH_KEYSTORE_PROPERTIES overrides the location).
-// Without them (CI, other machines) release builds come out unsigned and scripts/release.sh refuses to continue.
 val keystoreProperties = Properties().apply {
     val path = System.getenv("EDITH_KEYSTORE_PROPERTIES")
         ?: "${System.getProperty("user.home")}/.edith/keystore.properties"
@@ -71,12 +63,10 @@ android {
         buildConfig = true
     }
 
-    // JVM unit tests run without Android: android.util.Log etc. return defaults instead of throwing.
     testOptions.unitTests.isReturnDefaultValues = true
 
     lint {
         abortOnError = true
-        // New library versions are adopted deliberately (01-architecture §1), not on every lint run.
         disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion")
     }
 }
@@ -96,16 +86,17 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
-    // C05: Room database (KSP) - Gson only for simple TypeConverter List<String> <-> JSON
-    implementation(libs.gson)
-    // C02: core infrastructure (serialization, DataStore for secrets, OkHttp for network)
-    implementation(libs.kotlinx.serialization.json)
-    implementation(libs.datastore.preferences)
-    implementation(libs.datastore.core)
-    implementation(libs.coroutines.core)
-    implementation(libs.okhttp)
+    // C05: Room database (KSP) - org.json for simple List<String> TypeConverters
+    ksp(libs.room.compiler)
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
+
+    // C02/C03: coroutines, settings storage (DataStore), JSON, HTTP
+    implementation(libs.coroutines.core)
+    implementation(libs.datastore.preferences)
+    implementation(libs.datastore.core)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.okhttp)
 
     testImplementation(libs.kotlinx.serialization.json)
     testImplementation(libs.coroutines.test)
@@ -114,10 +105,13 @@ dependencies {
     testImplementation(libs.room.runtime)
     testImplementation(libs.room.ktx)
 
+    // C05: Instrumented tests (Room testing API, Compose UI testing)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
-    // ui-test-junit4 pulls in Espresso 3.5, which fails on API 37 (InputManager.getInstance was removed).
     androidTestImplementation(libs.androidx.test.espresso.core)
+    androidTestImplementation(libs.kotlinx.serialization.json)
+    androidTestImplementation(libs.coroutines.test)
+    androidTestImplementation(libs.room.testing)
 }

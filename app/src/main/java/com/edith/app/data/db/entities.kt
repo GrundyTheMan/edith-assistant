@@ -5,6 +5,7 @@ import androidx.room.PrimaryKey
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.ColumnInfo
+import androidx.room.Ignore
 
 /**
  * Conversation entity - represents a single chat thread.
@@ -14,7 +15,14 @@ data class ConversationEntity(
     @PrimaryKey val id: Long,
     val title: String,
     @ColumnInfo(name = "created_at") val createdAt: Long
-)
+) {
+    companion object {
+        private const val INITIAL_TITLE = "Edith"
+        
+        @Ignore
+        fun createDefault(): ConversationEntity = ConversationEntity(1, INITIAL_TITLE, System.currentTimeMillis())
+    }
+}
 
 /**
  * Message entity - represents a chat message (user or assistant).
@@ -61,7 +69,7 @@ data class AttachmentEntity(
 )
 
 /**
- * Enums stored as lowercase snake_case strings in Room.
+ * Enums stored as snake_case strings in Room.
  */
 enum class MessageRole { User, Assistant }
 enum class MessageStatus { Complete, Failed, Cancelled }

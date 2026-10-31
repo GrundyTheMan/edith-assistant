@@ -13,8 +13,19 @@ import androidx.room.TypeConverters
     version = 1,
     exportSchema = true
 )
-@TypeConverters(EnumConverters::class, JsonConverters::class)
+@TypeConverters(EnumConverters::class, ListConverters::class)
 abstract class EdithDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
     abstract fun attachmentDao(): AttachmentDao
+}
+
+/**
+ * Callback that creates the default conversation on database open (C05).
+ */
+object EdithDatabaseCallback : androidx.room.RoomDatabase.Callback() {
+    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        // Create initial conversation (id = 1, title = "Edith")
+        db.execSQL("INSERT OR REPLACE INTO conversations (id, title, created_at) " +
+            "VALUES (1, 'Edith', ${System.currentTimeMillis()})")
+    }
 }
