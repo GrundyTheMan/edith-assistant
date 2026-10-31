@@ -23,6 +23,11 @@ sealed interface AppError {
         override val userMessage get() = "The model \"$model\" isn't installed on your server. Pick another in Settings."
     }
 
+    /** The model finished without writing anything (C06): shown instead of an empty bubble. */
+    data object EmptyReply : AppError {
+        override val userMessage get() = "Edith didn't reply. Try again."
+    }
+
     data object NoChatModels : AppError {
         override val userMessage get() = "No chat models are installed on your Ollama server. Install one on the PC, e.g. \"ollama pull gemma4\"."
     }

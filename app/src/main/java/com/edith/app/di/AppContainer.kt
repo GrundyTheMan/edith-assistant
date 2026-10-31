@@ -1,6 +1,14 @@
 package com.edith.app.di
 
 import android.app.Application
+import com.edith.app.chat.engine.ChatEngine
+import com.edith.app.chat.engine.ContextBuilder
+import com.edith.app.chat.engine.DateTimeSection
+import com.edith.app.chat.engine.PlainTurnRunner
+import com.edith.app.chat.engine.PromptBuilder
+import com.edith.app.chat.engine.PromptSection
+import com.edith.app.chat.engine.ReplyListener
+import com.edith.app.chat.engine.TurnRunner
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
@@ -41,6 +49,26 @@ class AppContainer(val app: Application) {
     /** The database (C05). Opened once at startup by [openDatabaseInBackground]; Room does its I/O off the main thread. */
     val database: EdithDatabase by lazy { EdithDatabase.create(app) }
     val chatRepository: ChatRepository by lazy { ChatRepository(database, clock, dispatchers) }
+
+    /** Chat turns run here, not in a ViewModel, so a reply carries on through rotation (C06, lessons L10). */
+    val engineScope: CoroutineScope = CoroutineScope(SupervisorJob() + dispatchers.default)
+
+    /** System-prompt sections; later chunks add theirs here (tools C08, attachments C15/C16, Google C17). */
+    val promptSections: List<PromptSection> = listOf(DateTimeSection())
+
+    /** Replaced by the tool-calling runner in C08. */
+    val turnRunner: TurnRunner by lazy { PlainTurnRunner(ollama) }
+
+    /** Speech (C13) adds itself here. */
+    val replyListeners: MutableList<ReplyListener> = mutableListOf()
+
+    val chatEngine: ChatEngine by lazy {
+        ChatEngine(
+            repo = chatRepository, settings = settingsRepository, modelSelection = modelSelection,
+            promptBuilder = PromptBuilder(clock) { promptSections }, contextBuilder = ContextBuilder(),
+            turnRunner = turnRunner, listeners = replyListeners, scope = engineScope, localNetwork = localNetworkAccess,
+        )
+    }
 
     /** Creates/opens edith.db on a background thread at launch, so the first chat doesn't wait for it. */
     fun openDatabaseInBackground() {

@@ -3,6 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 |
+| Status | **Done** — see "As built" at the end |
 | Depends on | C03, C04, C05 |
 | Unblocks | C07, C08, C13, C15 |
 | Size | Medium–large |
@@ -120,3 +121,26 @@ Behaviour:
 ## Pitfalls
 - Never persist the system prompt, tool calls or tool results (01-architecture §5.2).
 - Engine coroutines run in an app-scoped `CoroutineScope(SupervisorJob() + dispatchers.default)` from `AppContainer`, not `viewModelScope`.
+
+## As built (2026-10-31)
+- `chat/engine/`: `PERSONA` (00-product §5 verbatim), `PromptBuilder` + `PromptSection` + `DateTimeSection`;
+  `ContextBuilder` + `AttachmentContext`/`NoAttachments` (C15 hook); `TurnRunner`, `TurnEvent`,
+  `ConfirmationRequest` (placeholder for C08), `PlainTurnRunner`; `ChatEngine`, `EngineState`, `ReplyListener`,
+  `PendingAttachment` (placeholder for C15).
+- `AppContainer`: `engineScope` (SupervisorJob + Default), `promptSections` (add yours here), `turnRunner`
+  (C08 replaces it), `replyListeners` (C13 adds speech), `chatEngine`.
+- Beyond the spec, from earlier chunks: the engine checks `LocalNetworkAccess` first (04-lessons L23) → `Failed(PermissionDenied)`;
+  new `AppError.EmptyReply` ("Edith didn't reply. Try again."); `ChatRepository.addCancelledAssistantMessage()` and `latest()`.
+  Replies are stored trimmed (models often start with a space or newline). The spec's `dispatchers` parameter is
+  dropped: repository and client already do their own threading.
+- "One turn at a time" is an atomic flag set synchronously by `send`/`regenerateLast` (so a double tap can't start two).
+  **The turn is released before Idle/Failed is published** — the live check caught the opposite order silently
+  ignoring a send made the moment a reply finished (regression test `aSendTheMomentAReplyFinishesIsAccepted`).
+- Tests: `PromptAndContextTest` (JVM, 8) and `ChatEngineTest` (device, in-memory Room + scripted Ollama, 9): send →
+  rows + growing partial text + listeners; unreachable → Failed + stored error, next send clears it and the failed row
+  isn't sent as context; cancel → Cancelled row with the partial text and the stream cancelled; regenerate replaces the
+  reply; the turn survives its caller's scope being cancelled; blank reply → failed row; no local network → nothing sent;
+  one turn at a time; back-to-back sends.
+- Live acceptance (`ChatEngineLiveCheckTest`, opt-in with `-e live true`; in-memory database, so nothing lands in the real
+  history): `gemma4:12b-it-q8_0` warm → **first token 117 ms, whole reply 797 ms, 41 streamed pieces**. Cold (model not
+  loaded) the first token took 18.5 s — that's Ollama loading the model (decision D8 is about keeping it loaded).
