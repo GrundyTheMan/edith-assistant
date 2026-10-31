@@ -54,6 +54,15 @@ class ChatRepository(
             createdAt = now(), status = MessageStatus.Failed, source = MessageSource.Typed, model = model,
             errorMessage = error.userMessage))
 
+    /** A reply the owner stopped part-way (C06): shown in the chat, but never sent back to the model as context. */
+    suspend fun addCancelledAssistantMessage(partialText: String, model: String?): Long =
+        insert(MessageEntity(conversationId = conversationId, role = MessageRole.Assistant,
+            content = stripToolCalls(partialText), createdAt = now(), status = MessageStatus.Cancelled,
+            source = MessageSource.Typed, model = model))
+
+    /** The newest message, or null if the conversation is empty. */
+    suspend fun latest(): MessageWithAttachments? = recent(1).lastOrNull()
+
     /** Deletes the message; its attachment rows go with it (foreign key cascade). */
     suspend fun deleteMessage(id: Long) = withContext(dispatchers.io) { db.messageDao().delete(id) }
 

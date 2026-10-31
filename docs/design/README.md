@@ -33,7 +33,7 @@ design in the same PR, or ask the owner.
 | [C03](chunks/C03-ollama-client.md) | Ollama client (streaming, tool-call DTOs, capabilities) | 1 | C02 | Done |
 | [C04](chunks/C04-settings-and-model-picker.md) | Settings store, server setup, model picker | 1 | C02, C03 | Done |
 | [C05](chunks/C05-conversation-storage.md) | Conversation storage (Room, full v1 schema) | 1 | C02 | Done |
-| [C06](chunks/C06-chat-engine.md) | Chat engine (prompt, context, streaming, cancel, regenerate) | 1 | C03, C04, C05 | Not started |
+| [C06](chunks/C06-chat-engine.md) | Chat engine (prompt, context, streaming, cancel, regenerate) | 1 | C03, C04, C05 | Done |
 | [C07](chunks/C07-chat-ui.md) | Chat UI (bubbles, action row, input row, timestamps) | 1 | C06 | Not started |
 | [C08](chunks/C08-tool-framework.md) | **Tool framework and tool loop** (+ `get_current_time`) | 2 Tools | C03, C06, C07 | Not started |
 | [C09](chunks/C09-weather-tool.md) | Weather tool (Open-Meteo) | 2 | C08 | Not started |
@@ -53,7 +53,7 @@ design in the same PR, or ask the owner.
 ### State at handoff (2026-10-29)
 - `master` has the design and the C01 skeleton with its build/deploy tooling (`05-environment.md` §2, §6). Tag
   `edith-v1` = the old app. Branch `rebuild-design` is an already-merged leftover — ignore it, don't build on it.
-- **Next: C06** (chat engine), then C07 (chat UI). Store messages through `ChatRepository` (C05). Use `ModelSelection.ensureModel()` before every send (C04) and `LocalNetworkAccess` before connecting.
+- **Next: C07** (chat UI): observe `ChatRepository.observe()` + `ChatEngine.state`, call `ChatEngine.send/cancel/regenerateLast` (C06). Use `ModelSelection.ensureModel()` before every send (C04) and `LocalNetworkAccess` before connecting.
 - Owner decisions still open are in `06-decisions.md`. Ask early about the ones your chunk lists; the first ones
   needed are **D8** (C03), **D6** (C07), **D11** (C08), **D7** (C09), **D3** (C10), **D4** (C14), **O1** (C16),
   **D9** (C17), **D5** (C19).
