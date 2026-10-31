@@ -68,4 +68,10 @@ class CrashReporterTest {
     @Test fun `no report means nothing pending`() {
         assertNull(CrashReporter.read(file))
     }
+
+    @Test fun `dismissing deletes the report`() {
+        CrashReporter.writeReport(file, Thread.currentThread(), Error("x"), "v", "d", "a", Instant.EPOCH)
+        CrashReporter.dismiss(file)
+        assertNull(CrashReporter.read(file))
+    }
 }

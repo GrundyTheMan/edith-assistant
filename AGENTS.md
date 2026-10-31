@@ -8,7 +8,7 @@ history (tag `edith-v1`) — don't reuse its code.
 ## Read first
 **[`docs/design/README.md`](docs/design/README.md)** — the complete design, split into chunks (C01–C21) with
 dependencies and status. Read the shared context it lists, then take one chunk whose dependencies are merged.
-C01 (this skeleton, build and deploy tooling) is done; start at C02.
+C01–C03 are done (skeleton and tooling, core infrastructure, Ollama client); the table says what's next.
 
 ## Build, test, run (Git Bash; from PowerShell: `& "C:\Program Files\Git\bin\bash.exe" scripts/check.sh`)
 ```bash
@@ -25,6 +25,8 @@ scripts/run.sh              # build, install and launch the debug app on the emu
 - **Every build is recorded** in `build-logs/` (newest: `build-logs/latest.log`): scripts, plain `gradlew` and Android
   Studio builds alike. The owner reviews them; your reported results must match the log.
 - Ollama runs on the PC (port 11434); from the emulator it's `http://10.0.2.2:11434`.
+  On Android 17 the app also needs the runtime permission `ACCESS_LOCAL_NETWORK`, or every request times out
+  (04-lessons L23). Live check against the real server: see C03 "As built".
 
 ## Layout
 - `app/` — the single Android module, package `com.edith.app` (layout planned in `01-architecture.md` §2).

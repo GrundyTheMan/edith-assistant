@@ -3,6 +3,10 @@
 
     <!-- C03: Ollama client needs network access (cleartext HTTP to the owner's PC) -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 17 (targetSdk 37) blocks connections to the local network (the owner's PC, incl. the emulator's
+         10.0.2.2) unless the user grants this runtime permission; without it requests just time out.
+         C04 asks for it before connecting (04-lessons L23). -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
 
     <application
         android:name=".EdithApp"

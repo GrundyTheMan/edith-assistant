@@ -1,95 +1,59 @@
 package com.edith.app.core.log
 
+import com.edith.app.BuildConfig
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import android.util.Log as AndroidLog
-import java.time.Instant
-import java.text.SimpleDateFormat
-import java.util.*
 
-/** In-memory ring buffer for the last 200 log lines, used by [CrashReporter]. Thread-safe: any thread logs. */
+/** Fixed log tags (C02 §4). Filter with e.g. `adb logcat -s Edith/Ollama:*`. */
+enum class LogTag(val value: String) {
+    App("Edith/App"),
+    Chat("Edith/Chat"),
+    Ollama("Edith/Ollama"),
+    Tools("Edith/Tools"),
+    Voice("Edith/Voice"),
+    Attachments("Edith/Attachments"),
+    Google("Edith/Google"),
+}
+
+/** In-memory ring buffer for the last [CAPACITY] log lines, used by [com.edith.app.core.CrashReporter]. Thread-safe. */
 object LogRingBuffer {
-    private val buffer = ArrayDeque<String>(200)
+    const val CAPACITY = 200
+    private val buffer = ArrayDeque<String>(CAPACITY)
+    private val timeFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")
 
     fun append(tag: String, msg: String) {
-        val line = formatLine(tag, msg)
+        val line = "${LocalDateTime.now().format(timeFormat)} [$tag] $msg"
         synchronized(buffer) {
-            buffer.add(line)
-            if (buffer.size > 200) buffer.removeFirst()
+            buffer.addLast(line)
+            if (buffer.size > CAPACITY) buffer.removeFirst()
         }
     }
 
-    /** Returns the last [count] lines in FIFO order. */
+    /** The last [count] lines, oldest first. */
     fun tail(count: Int = 50): List<String> = synchronized(buffer) { buffer.toList().takeLast(count) }
 
     fun clear() = synchronized(buffer) { buffer.clear() }
-
-    private fun formatLine(tag: String, msg: String): String {
-        val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS z", Locale.US).format(Instant.now().toEpochMilli())
-        return "$time [$tag] $msg"
-    }
 }
 
-/** Logging wrapper with fixed tags. Releases redact message content. */
+/**
+ * Logging wrapper (C02 §4): Android's log plus the crash-report ring buffer. Messages are logged as given, so
+ * wrap anything personal (message text, email bodies, transcripts) in [redact]; never log secrets at all.
+ */
 object Log {
-    enum class LogTag(val value: String) {
-        App("Edith/App"),
-        Chat("Edith/Chat"),
-        Ollama("Edith/Ollama"),
-        Tools("Edith/Tools"),
-        Voice("Edith/Voice"),
-        Attachments("Edith/Attachments"),
-        Google("Edith/Google")
-    }
+    fun d(tag: LogTag, msg: String, t: Throwable? = null) = write(AndroidLog.DEBUG, tag, msg, t)
+    fun i(tag: LogTag, msg: String, t: Throwable? = null) = write(AndroidLog.INFO, tag, msg, t)
+    fun w(tag: LogTag, msg: String, t: Throwable? = null) = write(AndroidLog.WARN, tag, msg, t)
+    fun e(tag: LogTag, msg: String, t: Throwable? = null) = write(AndroidLog.ERROR, tag, msg, t)
 
-    private fun debug(tag: String, msg: String) {
-        AndroidLog.d(tag, msg)
-        LogRingBuffer.append(tag, msg)
-    }
+    /** Personal content: shown in debug builds, only its length in release builds. */
+    fun redact(text: String): String = redact(text, BuildConfig.DEBUG)
 
-    private fun info(tag: String, msg: String) {
-        AndroidLog.i(tag, msg)
-        LogRingBuffer.append(tag, msg)
-    }
+    internal fun redact(text: String, debug: Boolean): String = if (debug) text else "<${text.length} chars>"
 
-    private fun warn(tag: String, msg: String) {
-        AndroidLog.w(tag, msg)
-        LogRingBuffer.append(tag, msg)
-    }
-
-    private fun error(tag: String, msg: String) {
-        AndroidLog.e(tag, msg)
-        LogRingBuffer.append(tag, msg)
-    }
-
-    /** Debug log. Releases redact message content. */
-    fun d(tag: LogTag, msg: String, t: Throwable? = null) {
-        val redacted = redact(msg)
-        debug(tag.value, "$redacted" + if (t != null) " ($t)" else "")
-        t?.let { error -> AndroidLog.e(tag.value, "Exception in log.d: $redacted", error) }
-    }
-
-    /** Info log. */
-    fun i(tag: LogTag, msg: String, t: Throwable? = null) {
-        val redacted = redact(msg)
-        info(tag.value, "$redacted" + if (t != null) " ($t)" else "")
-        t?.let { error -> AndroidLog.e(tag.value, "Exception in log.i: $redacted", error) }
-    }
-
-    /** Warn log. */
-    fun w(tag: LogTag, msg: String, t: Throwable? = null) {
-        val redacted = redact(msg)
-        warn(tag.value, "$redacted" + if (t != null) " ($t)" else "")
-        t?.let { error -> AndroidLog.e(tag.value, "Exception in log.w: $redacted", error) }
-    }
-
-    /** Error log. */
-    fun e(tag: LogTag, msg: String, t: Throwable? = null) {
-        val redacted = redact(msg)
-        error(tag.value, "$redacted" + if (t != null) " ($t)" else "")
-        t?.let { AndroidLog.e(tag.value, "Exception in log.e: $redacted", it) }
-    }
-
-    /** Redacts message content - C02 uses debug mode only. */
-    fun redact(text: String): String {
-        return text
+    private fun write(priority: Int, tag: LogTag, msg: String, t: Throwable?) {
+        val full = if (t != null) "$msg\n${AndroidLog.getStackTraceString(t)}" else msg
+        AndroidLog.println(priority, tag.value, full)
+        LogRingBuffer.append(tag.value, if (t != null) "$msg ($t)" else msg)
     }
 }

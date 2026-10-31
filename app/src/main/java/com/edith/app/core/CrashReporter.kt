@@ -40,8 +40,10 @@ object CrashReporter {
     fun pending(context: Context): CrashReport? = read(reportFile(context))
 
     /** Deletes the last crash report. */
-    fun dismiss(context: Context) {
-        reportFile(context).delete()
+    fun dismiss(context: Context) = dismiss(reportFile(context))
+
+    internal fun dismiss(file: File) {
+        file.delete()
     }
 
     internal fun read(file: File): CrashReport? =

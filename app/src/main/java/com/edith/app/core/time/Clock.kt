@@ -11,8 +11,8 @@ interface Clock {
 }
 
 object SystemClock : Clock {
-    override fun now() = Instant.now()
-    override fun zone() = ZonedDateTime.now().zone
+    override fun now(): Instant = Instant.now()
+    override fun zone(): ZoneId = ZoneId.systemDefault()
 }
 
 /** Formats an Instant as a user-friendly string (ISO-8601 local). */
