@@ -4,6 +4,7 @@
 #   --cold   ignore the saved snapshot (use when the screen stays black or after an emulator crash)
 # The AVD is Pixel_9_API_37 unless EDITH_AVD says otherwise.
 source "$(dirname "$0")/lib.sh"
+start_log emulator "$@"
 
 if device_ready; then
   echo "A device is already connected and booted:"; adb devices | sed 1d

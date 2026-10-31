@@ -21,6 +21,42 @@ esac
 
 gradle() { "$GRADLEW" --console=plain "$@"; }
 
+# --- Build logs --------------------------------------------------------------------------------------------
+# start_log copies everything the script prints (stdout and stderr) into build-logs/<date>_<time>_<name>.log
+# while still showing it in the terminal, and keeps build-logs/latest.log as a copy of the newest log.
+# A script started by another script (run.sh → emulator.sh) writes into its caller's log instead.
+# The newest EDITH_LOG_KEEP logs (default 30) are kept; older ones are deleted.
+LOG_DIR="$ROOT/build-logs"
+
+start_log() {
+  local name="$1"; shift
+  [ -n "${EDITH_LOG:-}" ] && return 0
+  mkdir -p "$LOG_DIR"
+  EDITH_LOG="$LOG_DIR/$(date +%Y-%m-%d_%H-%M-%S)_$name.log"
+  export EDITH_LOG
+  LOG_STARTED=$SECONDS
+  exec > >(tee -a "$EDITH_LOG") 2>&1
+  LOG_TEE_PID=$!
+  local dirty=""
+  [ -n "$(git status --porcelain 2>/dev/null)" ] && dirty=" (with uncommitted changes)"
+  echo "# scripts/$name.sh $* | $(date '+%Y-%m-%d %H:%M:%S %Z') | $(git rev-parse --abbrev-ref HEAD 2>/dev/null)@$(git rev-parse --short HEAD 2>/dev/null)$dirty"
+  trap finish_log EXIT
+}
+
+finish_log() {
+  local status=$?
+  echo
+  if [ "$status" = 0 ]; then echo "# Finished OK in $((SECONDS - LOG_STARTED))s"
+  else echo "# FAILED (exit $status) after $((SECONDS - LOG_STARTED))s"; fi
+  echo "# Log: ${EDITH_LOG#"$ROOT"/}"
+  exec 1>&- 2>&-                                  # close our end so tee writes everything and exits
+  wait "$LOG_TEE_PID" 2>/dev/null || true
+  cp "$EDITH_LOG" "$LOG_DIR/latest.log" 2>/dev/null || true
+  ls -1t "$LOG_DIR"/????-??-??_*.log 2>/dev/null | tail -n +$(( ${EDITH_LOG_KEEP:-30} + 1 )) |
+    while IFS= read -r old; do rm -f -- "$old"; done
+  exit "$status"
+}
+
 sdk_dir() {
   local d="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
   [ -n "$d" ] || die "ANDROID_HOME is not set (docs/design/05-environment.md §1)."

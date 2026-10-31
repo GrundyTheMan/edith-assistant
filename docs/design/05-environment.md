@@ -36,7 +36,21 @@ in C01. Run them from the repo root: `scripts/run.sh` in Git Bash, or in PowerSh
 | `scripts/publish.sh` | uploads that APK as a GitHub Release (**owner's OK required**, §6) |
 | `scripts/create-signing-key.sh` | one-time creation of the release key (already done — don't run again) |
 
-Plain Gradle still works (`./gradlew.bat assembleDebug`, `installDebug`, `testDebugUnitTest`, `lintDebug`).
+**Build logs — every build is recorded** in `build-logs/` (git-ignored); `build-logs/latest.log` is always a
+copy of the newest. The owner reviews these, so when you report a build result, it must match the log; quote
+the relevant lines rather than retyping them. Two sources, never both for the same run:
+- **Scripts** (all above except `create-signing-key.sh`): `<date>_<time>_<script>.log` holds the complete terminal
+  output, written live while it runs, from `# scripts/x.sh … | branch@commit` to `# Finished OK` / `# FAILED (exit N)`.
+  A script run by another (`run.sh` → `emulator.sh`) writes into the caller's log.
+- **Any other Gradle build** — `./gradlew.bat …` typed directly, or Android Studio's Build/Run — is logged by
+  `gradle/build-log.settings.gradle.kts` to `<date>_<time>_gradle_<tasks>.log`: a header (tasks, time, command line
+  or Android Studio, branch@commit, uncommitted changes), `> Task :x OUTCOME` for every task, everything tasks
+  print (compiler errors/warnings, test failures, lint), and `BUILD SUCCESSFUL`/`BUILD FAILED` with Gradle's
+  "What went wrong" message. Gradle's own hints ("Run with --scan…") aren't included. Android Studio's project
+  sync isn't a build and isn't logged. A problem in the logger never fails a build.
+The newest 30 logs are kept (`EDITH_LOG_KEEP=N` to change). Don't edit or delete logs to hide a failure.
+
+Plain Gradle commands: `./gradlew.bat assembleDebug`, `installDebug`, `testDebugUnitTest`, `lintDebug`.
 **Don't use `connectedDebugAndroidTest`** on the owner's emulator: it uninstalls the app afterwards, wiping the
 owner's data. `check.sh --device` installs and runs the tests with `am instrument` instead.
 
