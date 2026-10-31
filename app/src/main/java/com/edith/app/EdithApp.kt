@@ -14,6 +14,7 @@ class EdithApp : Application() {
         CrashReporter.install(this) // First, so later failures are captured
         if (BuildConfig.DEBUG) enableStrictMode()
         container = AppContainer(this)
+        container.openDatabaseInBackground()   // C05: edith.db exists from first launch
     }
 
     private fun enableStrictMode() {

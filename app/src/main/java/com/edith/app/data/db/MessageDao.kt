@@ -31,7 +31,7 @@ interface MessageDao {
     /**
      * Insert a message and return its ID.
      */
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert
     suspend fun insert(m: MessageEntity): Long
 
     /**

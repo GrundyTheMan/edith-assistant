@@ -1,8 +1,6 @@
 package com.edith.app.di
 
 import android.app.Application
-import androidx.room.Room
-import androidx.room.RoomDatabase.Callback
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
@@ -13,7 +11,6 @@ import com.edith.app.core.time.Clock
 import com.edith.app.core.time.SystemClock
 import com.edith.app.data.chat.ChatRepository
 import com.edith.app.data.db.EdithDatabase
-import com.edith.app.data.db.EdithDatabaseCallback
 import com.edith.app.ollama.ModelCatalog
 import com.edith.app.ollama.OkHttpOllamaClient
 import com.edith.app.ollama.OllamaClient
@@ -23,6 +20,9 @@ import com.edith.app.core.permissions.LocalNetworkAccess
 import com.edith.app.settings.DataStoreSettingsRepository
 import com.edith.app.settings.ModelSelection
 import com.edith.app.settings.SettingsRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
@@ -35,14 +35,23 @@ class AppContainer(val app: Application) {
     val dispatchers: AppDispatchers = AppDispatchers.Default
     val clock: Clock = SystemClock
 
-    /** Database and chat repository (C05) - use on IO dispatcher. */
-    val database: EdithDatabase by lazy {
-        Room.databaseBuilder(app, EdithDatabase::class.java, "edith.db")
-            .addCallback(EdithDatabaseCallback)
-            .build()
-    }
-    val chatRepository: ChatRepository by lazy {
-        ChatRepository(database, clock, dispatchers)
+    /** For app-wide background work that outlives any screen. */
+    val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + dispatchers.io)
+
+    /** The database (C05). Opened once at startup by [openDatabaseInBackground]; Room does its I/O off the main thread. */
+    val database: EdithDatabase by lazy { EdithDatabase.create(app) }
+    val chatRepository: ChatRepository by lazy { ChatRepository(database, clock, dispatchers) }
+
+    /** Creates/opens edith.db on a background thread at launch, so the first chat doesn't wait for it. */
+    fun openDatabaseInBackground() {
+        appScope.launch {
+            try {
+                database.openHelper.writableDatabase
+                Log.d(LogTag.App, "Database ready")
+            } catch (e: Exception) {
+                Log.e(LogTag.App, "Couldn't open the database", e)
+            }
+        }
     }
 
     val secretStore: SecretStore by lazy { KeystoreSecretStore(app) }

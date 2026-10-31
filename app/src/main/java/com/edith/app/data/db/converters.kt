@@ -1,8 +1,12 @@
 package com.edith.app.data.db
 
 import androidx.room.TypeConverter
-import org.json.JSONArray
-import java.util.ArrayList
+import com.edith.app.core.log.Log
+import com.edith.app.core.log.LogTag
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 
 /**
  * Converts enums to/from snake_case strings for Room (to match SQL enum values).
@@ -83,33 +87,18 @@ object EnumConverters {
     }
 }
 
-/**
- * Converts JSON strings to/from lists of strings.
- */
+/** `tools_used` as a JSON array of strings, via kotlinx.serialization (no Gson — 01-architecture §1). */
 object ListConverters {
+    private val serializer = ListSerializer(String.serializer())
 
     @TypeConverter
-    fun fromStringList(jsonString: String?): List<String>? {
-        return if (jsonString == null || jsonString.isBlank()) null else {
-            try {
-                val arr = JSONArray(jsonString)
-                (0 until arr.length()).map { arr.getString(it) }.toList()
-            } catch (e: Exception) {
-                null // Fail gracefully if JSON is malformed
-            }
-        }
+    fun fromStringList(json: String): List<String> = try {
+        Json.decodeFromString(serializer, json)
+    } catch (e: SerializationException) {
+        Log.w(LogTag.Chat, "Unreadable tools_used value; treating it as empty", e)
+        emptyList()
     }
 
     @TypeConverter
-    fun toStringList(list: List<String>?): String? {
-        return list?.let {
-            try {
-                JSONArray().apply {
-                    for (item in list) put(item)
-                }.toString()
-            } catch (e: Exception) {
-                null
-            }
-        }
-    }
+    fun toStringList(list: List<String>): String = Json.encodeToString(serializer, list)
 }
