@@ -57,12 +57,13 @@ import com.edith.app.settings.SettingsViewModel
 import com.edith.app.ui.components.CrashReportDialog
 import com.edith.app.ui.components.CrashReportViewModel
 
-/** Settings → Server & model, and About (C04 §3). Later chunks add their own sections. */
+/** Settings → Server & model, Voice (C13), Web search (C10), and About (C04 §3). */
 @Composable
 fun SettingsScreen(
     vm: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory),
     crash: CrashReportViewModel = viewModel(factory = CrashReportViewModel.Factory),
     webSearch: WebSearchSettingsViewModel = viewModel(factory = WebSearchSettingsViewModel.Factory),
+    voice: VoiceSettingsViewModel = viewModel(factory = VoiceSettingsViewModel.Factory),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val crashReport by crash.report.collectAsStateWithLifecycle()
@@ -101,7 +102,11 @@ fun SettingsScreen(
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
         },
-        extraSections = { WebSearchSection(webSearch) },
+        extraSections = {
+            VoiceSection(voice)
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            WebSearchSection(webSearch)
+        },
     )
 }
 

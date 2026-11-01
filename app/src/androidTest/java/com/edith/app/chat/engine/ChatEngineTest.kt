@@ -69,7 +69,7 @@ class ChatEngineTest {
             ContextBuilder(), PlainTurnRunner(ollama),
             listOf(object : ReplyListener {
                 override fun onDelta(conversationId: Long, text: String) { events += "delta:$text" }
-                override fun onFinished(conversationId: Long, text: String) { events += "finished:$text" }
+                override fun onFinished(conversationId: Long, messageId: Long?, text: String) { events += "finished:$text" }
                 override fun onCancelled(conversationId: Long) { events += "cancelled" }
             }),
             engineScope, object : LocalNetworkAccess { override fun isGranted() = networkGranted },

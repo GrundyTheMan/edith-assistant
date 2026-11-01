@@ -51,8 +51,9 @@ import com.edith.app.tools.web.WebSearch
 import com.edith.app.tools.web.WebSearchSetup
 import com.edith.app.tools.weather.OpenMeteoClient
 import com.edith.app.tools.weather.WeatherTool
-import com.edith.app.voice.speech.SilentSpeechController
+import com.edith.app.voice.speech.AndroidTts
 import com.edith.app.voice.speech.SpeechController
+import com.edith.app.voice.speech.SpeechOutput
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -125,8 +126,8 @@ class AppContainer(val app: Application) {
     /** Edith names new chats (D12). */
     val conversationTitler: ConversationTitler by lazy { ConversationTitler(chatRepository, ollama, settingsRepository, appScope) }
 
-    /** Speech (C13) adds itself here. */
-    val replyListeners: MutableList<ReplyListener> by lazy { mutableListOf<ReplyListener>(conversationTitler) }
+    /** Edith's voice speaks replies as they stream (C13). */
+    val replyListeners: MutableList<ReplyListener> by lazy { mutableListOf(conversationTitler, speechOutput) }
 
     val chatEngine: ChatEngine by lazy {
         ChatEngine(
@@ -142,8 +143,11 @@ class AppContainer(val app: Application) {
         CurrentConversation(chatRepository, settingsRepository, chatEngine)
     }
 
-    /** The chat's Play/Stop buttons (C07 §5). C13 replaces this with the phone's voice. */
-    val speechController: SpeechController = SilentSpeechController
+    /** Edith's voice (C13): the phone's text-to-speech, started once for the app. */
+    val speechOutput: SpeechOutput by lazy { SpeechOutput(AndroidTts(app), settingsRepository, appScope) }
+
+    /** The chat's Play/Stop buttons (C07 §5). */
+    val speechController: SpeechController get() = speechOutput
 
     /** Which input-row buttons exist (C07 §6). C15 turns on attach; C12 record, and dictation when the phone can. */
     val chatFeatures: ChatFeatures by lazy { ChatFeatures(record = true, dictation = dictation.isAvailable) }
