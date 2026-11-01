@@ -1,6 +1,7 @@
 package com.edith.app.chat.ui
 
 import androidx.compose.runtime.Immutable
+import com.edith.app.chat.engine.ConfirmationRequest
 import com.edith.app.data.db.AttachmentKind
 import com.edith.app.data.db.MessageRole
 import com.edith.app.data.db.MessageStatus
@@ -56,7 +57,13 @@ data class AttachmentUi(val number: Int, val fileName: String, val kind: Attachm
 
 /** A reply being written. [canStop] is false for the moment between "done" and the stored reply appearing. */
 @Immutable
-data class InFlight(val label: String, val partialText: String, val canStop: Boolean = true)
+data class InFlight(
+    val label: String,
+    val partialText: String,
+    val canStop: Boolean = true,
+    /** Set while a tool waits for the owner's OK (C08 §6): shown as a card with Confirm / Cancel. */
+    val confirmation: ConfirmationRequest? = null,
+)
 
 @Immutable
 data class ChatError(val message: String, val needsLocalNetworkPermission: Boolean)

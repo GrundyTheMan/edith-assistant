@@ -3,6 +3,7 @@
 | | |
 |---|---|
 | Phase | 2 — Tools |
+| Status | **Done** — see "As built" at the end |
 | Depends on | C03, C06, C07 |
 | Unblocks | C09, C10, C11, C18, C19, (v2) C20 |
 | Size | Large — the most important chunk in the project |
@@ -161,3 +162,75 @@ Exists so the framework ships with one real, deterministic tool for live testing
 ## Pitfalls
 - Read tool calls only from `message.tool_calls`. Append the assistant message verbatim. Results are `role:"tool"` with `tool_name`.
 - Never put tool exchanges in `ChatRepository`. Never offer a tool that returns placeholder data.
+
+## As built (2026-11-01)
+
+Where the code differs from the specification above, the code is right.
+
+**Files**
+- `tools/framework/`:
+  - `Tool.kt`: `Tool`, `ToolSpec.toOllama()`, `ToolParam`, `ParamType`, `ToolResult`, `ToolContext`, and `Integration` with `IntegrationStatus`
+  - `ToolArgs.kt`
+  - `ToolRegistry.kt`
+  - `ToolGuidanceSection.kt`
+  - `ToolTurnRunner.kt`
+  - `TextToolCallParser.kt`
+  - `Confirmations.kt`
+- `tools/context/CurrentTimeTool.kt`.
+- `AppContainer` holds `toolRegistry`, `confirmations` and `turnRunner = ToolTurnRunner`. Later chunks add their
+  tools to `toolRegistry`.
+
+**Differences from the spec**
+- **`Tool.displayName`** (e.g. "time") names a tool in the "Used: …" line. `ChatViewModel` maps the stored names
+  through `ToolRegistry.displayName`.
+- **`TurnEvent.TextReset`.** Text a model writes before a tool call ("Let me check…") streams on screen, then is
+  cleared when the next round starts. The stored reply is the final round's text only.
+- **`ConfirmationRequest`** has the spec's shape. Tools leave `id` and `toolName` empty; the runner fills them in.
+  - `Confirmations` registers a request *before* the screen can show it, so an answer can't arrive before anyone is
+    waiting for it.
+  - `ChatEngine.resolveConfirmation(id, approved)` delivers the answer, and so does `ChatViewModel.answerConfirmation`.
+  - Cancelling the turn while it waits runs nothing.
+  - The card in the in-flight bubble has a title, detail rows, **Cancel** ("Cancel action") and **Confirm**
+    ("Confirm action").
+- **D11** (decided 2026-10-31): confirm anything that changes data outside the app. No v1 tool so far needs it;
+  C18 and C19 will.
+- **Declined calls** are sent back as `ToolResult.Ok` ("The user declined: … Don't retry unless they ask."), not as an
+  error.
+- **The text-call fallback** turns a parsed call into a proper `tool_calls` assistant message before sending it
+  back, so the model sees the right form. Every use logs `Fallback tool call parsed`.
+- **Logging.** Debug builds log `Tool <name>(<args>) -> <first 120 chars>`; release builds log only the name and
+  ok/error.
+
+**A crash found and fixed during the live check (L25).** The first real tool call crashed the app:
+- The parser's regex `(\{.*})` is valid on the JVM, but Android's ICU regex engine rejects the bare `}`. The braces
+  are now escaped.
+- The `ExceptionInInitializerError` it caused also slipped past the engine's `catch (e: Exception)`. `ChatEngine`
+  now turns a `LinkageError` into a failed turn instead of a crash.
+- The parser and loop tests run on the device, so Android's regex engine is the one tested.
+- After that crash the app once reopened on an empty screen, as if no chat had loaded. It couldn't be reproduced
+  with a deliberate crash. `CurrentConversation.resolve` now logs which chat it opens and why, as evidence if it
+  recurs.
+
+**Verified**
+- `scripts/check.sh --device`: OK (71 device tests), 81 unit tests, lint clean
+  (`build-logs/2026-10-31_23-49-34_check.log`).
+- Spec tests 1–13:
+  - `ToolTurnRunnerTest` (13, device): tests 1–5, 7–9, 11 and 12, plus test 6 end to end and the parser formats
+  - `ToolFrameworkTest` (7, JVM): the tool JSON shape, `ToolArgs` coercion and errors, name repair, integrations,
+    the prompt section (test 10), and `get_current_time`
+  - `ChatScreenTest` (+1): the confirmation card
+- **Live on the emulator against the owner's Ollama** (L26):
+
+  | Model | Question | Real tool calls |
+  |---|---|---|
+  | `gemma4:12b-it-q8_0` | "What time is it?" | 9/10, all structured, no fallback; the one miss answered correctly from the system prompt's date line |
+  | `gemma4:12b-it-q8_0` | "What time is it in Tokyo?" | 5/5, correct times |
+  | `gemma4:e4b-it-q8_0` | "What time is it?" | 0/5; it answered from the system prompt (correct), except one evasive reply |
+  | `gemma4:e4b-it-q8_0` | Tokyo | 2/5; otherwise it reused an earlier answer, or promised to check without calling anything |
+
+  So the spec's 5/5 target holds for 12b. It isn't met for e4b; that's the model's choice, since every call it did
+  make worked.
+- **Ollama's `server.log`:** exactly 2 `POST /api/chat` per tool turn. The first turn of each chat shows 3: the
+  third is D12's title call.
+- **Database after the live runs:** 75 messages, roles only `user` and `assistant`, **0** rows with tool-call or
+  tool-result text, and 16 replies with `tools_used = ["get_current_time"]`.

@@ -107,6 +107,22 @@ class ChatScreenTest {
         compose.onNodeWithContentDescription("Regenerate reply").assertExists()
     }
 
+    /** C08 §6: a tool waiting for the owner's OK shows a card; the buttons answer it. */
+    @Test fun theConfirmationCardShowsTheRequestAndItsButtonsAnswer() {
+        val answers = mutableListOf<Boolean>()
+        val request = com.edith.app.chat.engine.ConfirmationRequest("Add to your calendar?", listOf("When" to "Fri Oct 30, 12:00–1:00 PM"), id = "r1")
+        val state = ChatUiState(conversationId = 1, loaded = true, busy = true,
+            inFlight = InFlight("Waiting for your OK…", "I can add that.", confirmation = request))
+        compose.setContent { EdithTheme { ChatContent(state, draft = "", actions = ChatActions(onAnswerConfirmation = { answers += it })) } }
+
+        compose.onNodeWithText("Add to your calendar?").assertIsDisplayed()
+        compose.onNodeWithText("Fri Oct 30, 12:00–1:00 PM").assertIsDisplayed()
+        compose.onNode(inMessages(hasText("I can add that."))).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Cancel action").performClick()
+        compose.onNodeWithContentDescription("Confirm action").performClick()
+        assertEquals(listOf(false, true), answers)
+    }
+
     /** The in-flight bubble's look (C07 §4); the streaming states themselves are covered in ChatViewModelTest. */
     @Test fun theInFlightBubbleShowsTheLabelUntilTextArrivesAndCanBeStopped() {
         var stopped = 0

@@ -13,6 +13,7 @@ import com.edith.app.data.db.MessageSource
 import com.edith.app.ollama.ModelInfo
 import com.edith.app.settings.ModelSelection
 import com.edith.app.settings.SettingsRepository
+import com.edith.app.tools.framework.Confirmations
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -65,6 +66,7 @@ class ChatEngine(
     private val listeners: List<ReplyListener>,
     private val scope: CoroutineScope,
     private val localNetwork: LocalNetworkAccess,
+    private val confirmations: Confirmations = Confirmations(),
     private val nanoTime: () -> Long = System::nanoTime,
 ) {
     private val _state = MutableStateFlow<EngineState>(EngineState.Idle)
@@ -101,6 +103,9 @@ class ChatEngine(
     fun cancel() {
         job?.cancel()
     }
+
+    /** The owner's answer to [EngineState.AwaitingConfirmation] (C08 §6). Approved runs the tool; denied tells Edith so. */
+    fun resolveConfirmation(id: String, approved: Boolean) = confirmations.resolve(id, approved)
 
     /**
      * If a turn is running in [conversationId], stops it and waits until its cancelled message is stored. Call before
@@ -164,6 +169,7 @@ class ChatEngine(
                         listeners.forEach { it.onDelta(conversationId, event.text) }
                         publish()
                     }
+                    is TurnEvent.TextReset -> { partial.clear(); publish(force = true) }   // a new round after tool calls
                     is TurnEvent.NeedsConfirmation ->
                         _state.value = EngineState.AwaitingConfirmation(conversationId, event.request, partial.toString())
                     is TurnEvent.Finished -> outcome = finish(conversationId, event, model)
@@ -180,6 +186,11 @@ class ChatEngine(
             val error = ErrorMapper.map(e, runCatching { settings.current().serverUrl }.getOrDefault("your server"))
             Log.w(LogTag.Chat, "Turn failed: ${error::class.simpleName}", e)
             return fail(conversationId, error, model)
+        } catch (e: LinkageError) {
+            // A class that failed to load (e.g. ExceptionInInitializerError) is a bug, but it must fail this turn,
+            // not crash the app: it once did, from a regex Android couldn't compile (L25).
+            Log.e(LogTag.Chat, "Turn failed: a part of Edith couldn't load", e)
+            return fail(conversationId, AppError.Unknown(e), model)
         }
     }
 

@@ -38,7 +38,10 @@ class CurrentConversation(
      */
     suspend fun resolve(): Long = mutex.withLock {
         val saved = settings.current().currentConversationId?.let { repo.conversation(it) }
-        val chosen = saved?.id ?: repo.mostRecentConversation()?.id ?: repo.createConversation()
+        val recent = if (saved == null) repo.mostRecentConversation() else null
+        val chosen = saved?.id ?: recent?.id ?: repo.createConversation()
+        // Evidence for "the app opened on the wrong or an empty chat" reports (seen once after a crash, not reproduced).
+        Log.d(LogTag.Chat, "Opening conversation $chosen (${when { saved != null -> "saved"; recent != null -> "most recent"; else -> "new" }})")
         val pruned = repo.deleteEmptyConversationsExcept(chosen)
         if (pruned > 0) Log.d(LogTag.Chat, "Removed $pruned empty conversation(s)")
         setLocked(chosen)

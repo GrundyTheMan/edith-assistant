@@ -82,6 +82,7 @@ data class ChatActions(
     val onDraftChange: (String) -> Unit = {},
     val onSend: () -> Unit = {},
     val onStopReply: () -> Unit = {},
+    val onAnswerConfirmation: (approved: Boolean) -> Unit = {},
     val onRegenerate: () -> Unit = {},
     val onPlay: (MessageUi) -> Unit = {},
     val onStopPlayback: () -> Unit = {},
@@ -125,6 +126,7 @@ fun ChatScreen(vm: ChatViewModel = viewModel(factory = ChatViewModel.Factory)) {
             onDraftChange = vm::onDraftChange,
             onSend = { vm.send(); askForNotificationsOnce() },
             onStopReply = vm::stopReply,
+            onAnswerConfirmation = vm::answerConfirmation,
             onRegenerate = vm::regenerate,
             onPlay = vm::play,
             onStopPlayback = vm::stopPlayback,
@@ -293,7 +295,7 @@ private fun MessageList(state: ChatUiState, actions: ChatActions, modifier: Modi
             modifier = Modifier.fillMaxSize().testTag(MESSAGE_LIST_TAG),
         ) {
             state.inFlight?.let { inFlight ->
-                item(key = "in-flight") { InFlightItem(inFlight, maxBubbleWidth, actions.onStopReply) }
+                item(key = "in-flight") { InFlightItem(inFlight, maxBubbleWidth, actions.onStopReply, actions.onAnswerConfirmation) }
             }
             state.pendingUserText?.let { text -> item(key = "pending") { PendingUserItem(text, maxBubbleWidth) } }
             items(state.messages.asReversed(), key = { it.id }) { message ->
