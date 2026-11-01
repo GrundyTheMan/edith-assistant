@@ -33,6 +33,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.edith.app.core.error.AppError
 import com.edith.app.data.db.MessageSource
 import com.edith.app.testing.ChatTestKit
@@ -56,7 +57,11 @@ class ChatScreenTest {
     private lateinit var kit: ChatTestKit
     private val store = ViewModelStore()
 
-    @Before fun setUp() { kit = ChatTestKit() }
+    @Before fun setUp() {
+        // Send asks for notifications once (D13); grant it so no system dialog covers the screen mid-test.
+        InstrumentationRegistry.getInstrumentation().uiAutomation.grantRuntimePermission("com.edith.app", android.Manifest.permission.POST_NOTIFICATIONS)
+        kit = ChatTestKit()
+    }
 
     @After fun tearDown() {
         compose.runOnUiThread { store.clear() }

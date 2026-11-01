@@ -53,6 +53,7 @@ com.edith.app
 │   └── chat/                   ChatRepository (messages, conversations)
 ├── chat/
 │   ├── engine/                 ChatEngine, PromptBuilder, ContextBuilder, ReplyFormat
+│   ├── service/                ReplyService (keeps a reply alive after the owner leaves the app, D13)
 │   └── ui/                     ChatScreen, components (bubbles, input row, action row), ChatViewModel
 ├── tools/
 │   ├── framework/              Tool, ToolRegistry, ToolSpec DSL, ToolLoop, ArgumentReader, Confirmation
@@ -240,8 +241,8 @@ Long work uses injected `AppDispatchers.io/default`.
   IV stored in DataStore. Used for search API keys and the wake-word key. Google tokens are not stored
   by the app (C17 uses `AuthorizationClient`, which caches them in Google Play services).
 - Permissions are requested only at the moment of use, with a one-line reason: microphone (record,
-  dictate, hands-free), location (only when the owner asks about "here"), notifications (hands-free
-  foreground service, Android 13+).
+  dictate, hands-free), location (only when the owner asks about "here"), notifications (Android 13+: the
+  "Edith is replying…" notification, asked on the first Send (D13), and the hands-free foreground service).
 - Ollama has no authentication; anyone on the LAN can use it. Don't send secrets to it.
 
 ## 10. Navigation and screens

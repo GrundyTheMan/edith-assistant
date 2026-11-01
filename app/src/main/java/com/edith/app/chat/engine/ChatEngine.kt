@@ -34,6 +34,9 @@ sealed interface EngineState {
     data class Failed(val conversationId: Long, val error: AppError) : EngineState
 }
 
+/** True while a turn is being written (Working or waiting for the owner's OK). */
+fun EngineState.isRunning(): Boolean = this is EngineState.Working || this is EngineState.AwaitingConfirmation
+
 /** Follows a reply as it streams (C13 speaks it; the titler names new chats). Called from the engine's coroutine. */
 interface ReplyListener {
     fun onDelta(conversationId: Long, text: String) {}

@@ -1,7 +1,10 @@
 package com.edith.app.chat.ui
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -67,8 +70,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.edith.app.chat.service.ReplyService
 import com.edith.app.core.permissions.LocalNetworkAccess
 import kotlinx.coroutines.launch
 
@@ -98,13 +103,27 @@ fun ChatScreen(vm: ChatViewModel = viewModel(factory = ChatViewModel.Factory)) {
         permissionDenied = !granted
         vm.onLocalNetworkPermissionResult(granted)
     }
+    // D13: the "Edith is replying…" notification (and its Stop button) is only visible once notifications are allowed.
+    // Asked on the first Send of each app run; Android stops showing the prompt after the owner declines twice.
+    var askedForNotifications by rememberSaveable { mutableStateOf(false) }
+    val requestNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        // The prompt appears after Send, when the reply's notification was already posted (and dropped): post it again.
+        if (granted && vm.state.value.busy) ReplyService.start(context)
+    }
+    fun askForNotificationsOnce() {
+        if (askedForNotifications || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        askedForNotifications = true
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     ChatContent(
         state = state,
         draft = vm.draft,
         permissionDenied = permissionDenied,
         actions = ChatActions(
             onDraftChange = vm::onDraftChange,
-            onSend = vm::send,
+            onSend = { vm.send(); askForNotificationsOnce() },
             onStopReply = vm::stopReply,
             onRegenerate = vm::regenerate,
             onPlay = vm::play,
