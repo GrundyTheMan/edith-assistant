@@ -47,6 +47,8 @@ class ChatViewModel(
     private val features: ChatFeatures,
     private val clock: Clock,
     private val savedState: SavedStateHandle,
+    /** Names in the "Used: …" line: "get_current_time" → "time" (C08). */
+    private val toolLabel: (String) -> String = { it },
 ) : ViewModel() {
 
     /** The open conversation's unsent text. Each chat keeps its own (C07 §8), and it survives process death. */
@@ -83,7 +85,7 @@ class ChatViewModel(
         val inFlight = when {
             runningIn != null && runningIn == openId -> when (engineState) {
                 is EngineState.Working -> InFlight(engineState.label, engineState.partialText)
-                is EngineState.AwaitingConfirmation -> InFlight(CONFIRMING, engineState.partialText)
+                is EngineState.AwaitingConfirmation -> InFlight(CONFIRMING, engineState.partialText, confirmation = engineState.request)
                 else -> null
             }
             t.endingReply?.showsIn(open) == true -> InFlight("", t.endingReply.text, canStop = false)
@@ -158,6 +160,12 @@ class ChatViewModel(
     /** Stops the reply being written; what Edith had written so far is kept (C06). */
     fun stopReply() = engine.cancel()
 
+    /** The owner's answer to a tool's confirmation card (C08 §6, D11). */
+    fun answerConfirmation(approved: Boolean) {
+        val waiting = engine.state.value as? EngineState.AwaitingConfirmation ?: return
+        engine.resolveConfirmation(waiting.request.id, approved)
+    }
+
     /** Regenerate on the newest reply, and Retry on a failed one: both replace the newest reply (C06). */
     fun regenerate() {
         val id = current.id.value ?: return
@@ -227,7 +235,7 @@ class ChatViewModel(
                 time = formatMessageTime(Instant.ofEpochMilli(m.createdAt), clock),
                 status = m.status,
                 errorMessage = m.errorMessage,
-                toolsUsed = m.toolsUsed,
+                toolsUsed = m.toolsUsed.map(toolLabel),
                 attachments = row.attachments.map { AttachmentUi(it.number, it.fileName, it.kind) },
                 isLatest = m.id == newest?.id,
                 isLatestAssistant = m.id == newest?.id && m.role == MessageRole.Assistant,
@@ -258,6 +266,7 @@ class ChatViewModel(
                 speech = container.speechController,
                 features = container.chatFeatures,
                 clock = container.clock,
+                toolLabel = container.toolRegistry::displayName,
                 savedState = savedState,
             )
         }

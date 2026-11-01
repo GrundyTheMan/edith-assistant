@@ -24,6 +24,7 @@ answer here in the same PR.
 | D6 | **Multiple conversations**: a conversation list plus "New chat" (not v1's single conversation) | 2026-10-31 | Storage and engine in C06b; list UI in C07 §8 |
 | D12 | Conversation titles: **Edith writes a short title** after the first reply (one extra non-streaming call); until then, and if it fails, the first message (40 chars) is the title; the owner can rename, and Edith never overwrites that | 2026-10-31 | C06b `ConversationTitler` |
 | D13 | **Keep a reply going when the owner leaves the app**: a short foreground service with an "Edith is replying…" notification runs only while a reply is being written (L24) | 2026-10-31 | `chat/service/ReplyService` (asks for notifications on the first Send) |
+| D11 | Tool confirmations: **anything that changes data outside the app** needs the owner's tap (calendar writes, email drafts, later locks, garage, thermostat); reads (weather, web, calendar, email) don't | 2026-10-31 | C08 `Tool.confirmation`; C18, C19 |
 
 ## Open (ask the owner when the chunk needs it)
 
@@ -37,4 +38,3 @@ answer here in the same PR.
 | D8 | Keep models loaded in Ollama longer (`keep_alive`)? | **Leave default** (5 min) | `15m`/`-1`: faster first reply after a break, but holds ~14 GB VRAM while idle | C03 |
 | D9 | Google sign-in: which Google Cloud project/OAuth client? The owner may already have one (a client ID appeared in a v1 commit) | Create a new project "Edith" with an Android OAuth client (C17 has the steps) | Reuse the existing client | C17 |
 | D10 | Smart-home backend for v2 | **Decide at v2 start** — options in C20: through Jarvis on the PC, through Home Assistant, or direct from the phone | — | C20 |
-| D11 | Confirmation policy: which actions need an explicit tap? | **Anything that changes data outside the app** (calendar writes, email drafts, later: locks, garage, thermostat) | Also confirm reads of email | C08, C18, C19 |

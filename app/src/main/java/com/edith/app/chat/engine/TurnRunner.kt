@@ -22,12 +22,26 @@ sealed interface TurnEvent {
     /** Shown while Edith works, e.g. "Edith is thinking…", "Checking the weather…". */
     data class Status(val label: String) : TurnEvent
     data class TextDelta(val text: String) : TurnEvent
+    /** A new round starts after tool calls: what was written so far ("Let me check…") is cleared from the screen. */
+    data object TextReset : TurnEvent
     data class NeedsConfirmation(val request: ConfirmationRequest) : TurnEvent
+    /** [text] is the final round's text only: that's what's stored (C08 §5). */
     data class Finished(val text: String, val toolsUsed: List<String>, val stats: ReplyStats?) : TurnEvent
 }
 
-/** What Edith wants the owner to approve before acting (C08 fills this in). */
-data class ConfirmationRequest(val title: String, val details: String)
+/**
+ * What Edith wants the owner to approve before a tool changes something outside the app (C08 §6, decision D11),
+ * e.g. title "Add to your calendar?" with details "When" to "Fri Oct 30, 12:00–1:00 PM". The turn runner fills in
+ * [id] and [toolName].
+ */
+data class ConfirmationRequest(
+    val title: String,
+    val details: List<Pair<String, String>> = emptyList(),
+    val confirmLabel: String = "Confirm",
+    val denyLabel: String = "Cancel",
+    val id: String = "",
+    val toolName: String = "",
+)
 
 /** No tools: one streamed chat call. */
 class PlainTurnRunner(private val client: OllamaClient) : TurnRunner {

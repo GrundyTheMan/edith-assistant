@@ -22,7 +22,7 @@ class ReplyKeepAliveTest {
         state.value = EngineState.Working(1, "Edith is thinking…", "")
         state.value = EngineState.Working(1, "Edith is thinking…", "Hel")
         state.value = EngineState.Working(1, "Edith is thinking…", "Hello")
-        state.value = EngineState.AwaitingConfirmation(1, ConfirmationRequest("Send email?", ""), "Hello")
+        state.value = EngineState.AwaitingConfirmation(1, ConfirmationRequest("Send email?"), "Hello")
         assertEquals("one start for the whole turn", 1, starts)
 
         state.value = EngineState.Idle

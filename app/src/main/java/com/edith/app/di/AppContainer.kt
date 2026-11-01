@@ -8,7 +8,6 @@ import com.edith.app.chat.engine.ChatEngine
 import com.edith.app.chat.engine.ContextBuilder
 import com.edith.app.chat.engine.ConversationTitler
 import com.edith.app.chat.engine.DateTimeSection
-import com.edith.app.chat.engine.PlainTurnRunner
 import com.edith.app.chat.engine.PromptBuilder
 import com.edith.app.chat.engine.PromptSection
 import com.edith.app.chat.engine.ReplyListener
@@ -33,6 +32,11 @@ import com.edith.app.core.permissions.LocalNetworkAccess
 import com.edith.app.settings.DataStoreSettingsRepository
 import com.edith.app.settings.ModelSelection
 import com.edith.app.settings.SettingsRepository
+import com.edith.app.tools.context.CurrentTimeTool
+import com.edith.app.tools.framework.Confirmations
+import com.edith.app.tools.framework.ToolGuidanceSection
+import com.edith.app.tools.framework.ToolRegistry
+import com.edith.app.tools.framework.ToolTurnRunner
 import com.edith.app.voice.speech.SilentSpeechController
 import com.edith.app.voice.speech.SpeechController
 import kotlinx.coroutines.CoroutineScope
@@ -60,11 +64,19 @@ class AppContainer(val app: Application) {
     /** Chat turns run here, not in a ViewModel, so a reply carries on through rotation (C06, lessons L10). */
     val engineScope: CoroutineScope = CoroutineScope(SupervisorJob() + dispatchers.default)
 
-    /** System-prompt sections; later chunks add theirs here (tools C08, attachments C15/C16, Google C17). */
-    val promptSections: List<PromptSection> = listOf(DateTimeSection())
+    /** Every tool Edith has (C08). Later chunks add theirs here: weather C09, web C10, location C11, Google C18/C19. */
+    val toolRegistry: ToolRegistry by lazy { ToolRegistry(tools = listOf(CurrentTimeTool())) }
 
-    /** Replaced by the tool-calling runner in C08. */
-    val turnRunner: TurnRunner by lazy { PlainTurnRunner(ollama) }
+    /** Tool confirmations waiting for the owner's tap (C08 §6, D11). */
+    val confirmations = Confirmations()
+
+    /** System-prompt sections; later chunks add theirs here (attachments C15/C16, Google C17). */
+    val promptSections: List<PromptSection> by lazy { listOf(DateTimeSection(), ToolGuidanceSection { toolRegistry }) }
+
+    /** The tool loop (C08). */
+    val turnRunner: TurnRunner by lazy {
+        ToolTurnRunner(ollama, toolRegistry, confirmations, settingsRepository, clock, dispatchers)
+    }
 
     /** Edith names new chats (D12). */
     val conversationTitler: ConversationTitler by lazy { ConversationTitler(chatRepository, ollama, settingsRepository, appScope) }
@@ -77,6 +89,7 @@ class AppContainer(val app: Application) {
             repo = chatRepository, settings = settingsRepository, modelSelection = modelSelection,
             promptBuilder = PromptBuilder(clock) { promptSections }, contextBuilder = ContextBuilder(),
             turnRunner = turnRunner, listeners = replyListeners, scope = engineScope, localNetwork = localNetworkAccess,
+            confirmations = confirmations,
         )
     }
 

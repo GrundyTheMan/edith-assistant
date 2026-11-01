@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
@@ -33,6 +34,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -47,9 +49,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.edith.app.chat.engine.ConfirmationRequest
 import com.edith.app.data.db.MessageRole
 import com.edith.app.data.db.MessageStatus
 
@@ -122,24 +127,50 @@ fun PendingUserItem(text: String, maxBubbleWidth: Dp) {
     }
 }
 
-/** Edith's reply while she writes it: a spinner and status label until the first words, then the text (C07 §4). */
+/**
+ * Edith's reply while she writes it: a spinner and status label until the first words, then the text (C07 §4).
+ * While a tool waits for the owner's OK, the bubble holds the confirmation card instead (C08 §6).
+ */
 @Composable
-fun InFlightItem(inFlight: InFlight, maxBubbleWidth: Dp, onStop: () -> Unit) {
+fun InFlightItem(inFlight: InFlight, maxBubbleWidth: Dp, onStop: () -> Unit, onAnswer: (approved: Boolean) -> Unit = {}) {
     Column(Modifier.fillMaxWidth().testTag(IN_FLIGHT_TAG), horizontalAlignment = Alignment.Start) {
         Bubble(id = null, mine = false, maxBubbleWidth) {
-            if (inFlight.partialText.isBlank()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            if (inFlight.partialText.isNotBlank()) MarkdownText(inFlight.partialText)
+            val request = inFlight.confirmation
+            when {
+                request != null -> ConfirmationCard(request, onAnswer, Modifier.padding(top = if (inFlight.partialText.isBlank()) 0.dp else 10.dp))
+                inFlight.partialText.isBlank() -> Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(10.dp))
                     Text(inFlight.label, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            } else {
-                MarkdownText(inFlight.partialText)
             }
         }
         if (inFlight.canStop) {
             CompactRow(Modifier.pullUpOntoBubble()) {
                 CompactButton(Icons.Filled.StopCircle, "Stop reply", onClick = onStop)
+            }
+        }
+    }
+}
+
+/** "Add to your calendar?" with its details and Confirm / Cancel (C08 §6). Nothing happens until one is tapped. */
+@Composable
+private fun ConfirmationCard(request: ConfirmationRequest, onAnswer: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier.testTag(CONFIRMATION_TAG)) {
+        Text(request.title, style = MaterialTheme.typography.titleSmall)
+        request.details.forEach { (label, value) ->
+            Row(Modifier.padding(top = 4.dp)) {
+                Text("$label: ", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f))
+                Text(value, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { onAnswer(false) }, modifier = Modifier.semantics { contentDescription = "Cancel action" }) {
+                Text(request.denyLabel)
+            }
+            Button(onClick = { onAnswer(true) }, modifier = Modifier.semantics { contentDescription = "Confirm action" }) {
+                Text(request.confirmLabel)
             }
         }
     }
@@ -304,6 +335,7 @@ fun ErrorLine(message: String, actionLabel: String?, onAction: () -> Unit, onDis
 }
 
 const val IN_FLIGHT_TAG = "in-flight"
+const val CONFIRMATION_TAG = "confirmation"
 const val INPUT_TAG = "message-input"
 fun bubbleTag(messageId: Long) = "bubble-$messageId"
 fun actionRowTag(messageId: Long) = "action-row-$messageId"
