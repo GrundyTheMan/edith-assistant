@@ -18,6 +18,9 @@ import com.edith.app.data.db.MessageRole
 import com.edith.app.data.db.MessageSource
 import com.edith.app.data.db.MessageWithAttachments
 import com.edith.app.core.permissions.ToolPermissions
+import com.edith.app.voice.capture.LiveSpeech
+import com.edith.app.voice.capture.SpeechInput
+import com.edith.app.voice.capture.VoiceMemos
 import com.edith.app.di.viewModelFactory
 import com.edith.app.voice.speech.SpeechController
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -52,6 +55,10 @@ class ChatViewModel(
     private val toolLabel: (String) -> String = { it },
     /** Android permissions a tool is waiting for (C11): the screen shows the system dialog. */
     private val permissions: ToolPermissions = ToolPermissions { true },
+    /** Voice memos (C12); null when recording isn't available. */
+    private val voiceMemos: VoiceMemos? = null,
+    /** Dictation into the text field (C12); null when the phone has no speech recognizer. */
+    private val dictation: SpeechInput? = null,
 ) : ViewModel() {
 
     val toolPermissionRequest: StateFlow<ToolPermissions.Request?> get() = permissions.pending
@@ -84,9 +91,29 @@ class ChatViewModel(
     )
     private val transient = MutableStateFlow(Transient())
 
+    // --- Voice (C12) ---------------------------------------------------------------------------------------------
+
+    private val dictating = MutableStateFlow(false)
+    /** A message from dictation or the microphone permission (the memo's own messages come from [VoiceMemos]). */
+    private val voiceError = MutableStateFlow<ChatError?>(null)
+    /** The draft came (at least partly) from dictation, so it's sent with source "dictated". */
+    private var draftDictated = false
+    private var dictationBase = ""
+
+    private data class Voice(val memo: VoiceMemos.State, val memoNotice: String?, val dictating: Boolean, val error: ChatError?)
+    private val voice = combine(
+        voiceMemos?.state ?: MutableStateFlow(VoiceMemos.State.Idle),
+        voiceMemos?.notice ?: MutableStateFlow(null),
+        dictating,
+        voiceError,
+    ) { memo, notice, listening, error -> Voice(memo, notice, listening, error) }
+
+    /** The memo's level meter, 0..1 (separate, so the meter doesn't redraw the whole screen). */
+    val recordingLevel: StateFlow<Float> = voiceMemos?.level ?: MutableStateFlow(0f)
+
     val state: StateFlow<ChatUiState> = combine(
-        opened, engine.state, repo.conversations(), speech.speakingMessageId, transient,
-    ) { open, engineState, conversations, speaking, t ->
+        opened, engine.state, repo.conversations(), speech.speakingMessageId, combine(transient, voice, ::Pair),
+    ) { open, engineState, conversations, speaking, (t, v) ->
         val openId = open?.id
         val runningIn = engineState.runningConversationId()
         val inFlight = when {
@@ -96,8 +123,10 @@ class ChatViewModel(
                 else -> null
             }
             t.endingReply?.showsIn(open) == true -> InFlight("", t.endingReply.text, canStop = false)
+            (v.memo as? VoiceMemos.State.Transcribing)?.conversationId == openId -> InFlight(TRANSCRIBING, "", canStop = false)
             else -> null
         }
+        val recording = v.memo as? VoiceMemos.State.Recording
         val failure = (engineState as? EngineState.Failed)
             ?.takeIf { it.conversationId == openId && it.error is AppError.PermissionDenied && it != t.dismissedFailure }
         ChatUiState(
@@ -107,8 +136,13 @@ class ChatViewModel(
             inFlight = inFlight,
             pendingUserText = t.pendingUser?.takeIf { it.showsIn(open) }?.text,
             busy = runningIn != null,
+            voiceBusy = v.memo != VoiceMemos.State.Idle,
             sendHint = if (runningIn != null && runningIn != openId) OTHER_CHAT_HINT else null,
-            error = failure?.let { ChatError(LOCAL_NETWORK_MESSAGE, needsLocalNetworkPermission = true) },
+            error = failure?.let { ChatError(LOCAL_NETWORK_MESSAGE, needsLocalNetworkPermission = true) }
+                ?: v.error
+                ?: v.memoNotice?.let { ChatError(it, needsLocalNetworkPermission = false) },
+            recording = recording?.let { RecordingUi(it.startedAtMs) },
+            dictating = v.dictating,
             conversations = conversations.map {
                 ConversationItem(
                     id = it.id,
@@ -150,6 +184,7 @@ class ChatViewModel(
 
     fun onDraftChange(text: String) {
         draft = text
+        if (text.isBlank()) draftDictated = false
         current.id.value?.let { savedState[draftKey(it)] = text }
     }
 
@@ -157,11 +192,80 @@ class ChatViewModel(
         val id = current.id.value ?: return
         val text = draft.trim()
         if (text.isEmpty() || engine.activeConversationId != null) return   // one turn at a time (C06)
+        if (voiceMemos?.state?.value?.let { it != VoiceMemos.State.Idle } == true) return
         speech.stop()   // a new message interrupts Edith speaking (C13)
+        if (dictating.value) dictation?.cancel().also { dictating.value = false }
         bridgeBriefly(Bridge(id, text, opened.value?.takeIf { it.id == id }?.latestId)) { t, b -> t.copy(pendingUser = b) }
-        engine.send(id, text, MessageSource.Typed)
+        engine.send(id, text, if (draftDictated) MessageSource.Dictated else MessageSource.Typed)
+        draftDictated = false
         draft = ""
         savedState[draftKey(id)] = ""
+    }
+
+    // --- Voice memos and dictation (C12) ----------------------------------------------------------------------
+
+    /** Record: the screen has already got the microphone permission. */
+    fun startRecording() {
+        val id = current.id.value ?: return
+        if (engine.activeConversationId != null) return
+        voiceError.value = null
+        if (dictating.value) dictation?.cancel().also { dictating.value = false }
+        voiceMemos?.start(id)
+    }
+
+    fun stopAndSendRecording() = voiceMemos?.stopAndSend()
+
+    fun cancelRecording() = voiceMemos?.cancel()
+
+    /** The mic in the text field: starts listening, or stops (the final text still arrives). */
+    fun toggleDictation() {
+        val input = dictation ?: return
+        if (dictating.value) {
+            input.stop()
+            return
+        }
+        speech.stop()
+        voiceError.value = null
+        voiceMemos?.dismissNotice()
+        dictationBase = draft.trimEnd()
+        dictating.value = true
+        input.start(object : SpeechInput.Listener {
+            override fun onPartial(text: String) = fill(text)
+
+            override fun onFinal(text: String) {
+                dictating.value = false
+                if (text.isBlank()) voiceError.value = ChatError(LiveSpeech.DIDNT_CATCH, needsLocalNetworkPermission = false)
+                else fill(text)
+            }
+
+            override fun onError(message: String) {
+                dictating.value = false
+                voiceError.value = ChatError(message, needsLocalNetworkPermission = false, opensAppSettings = message == VoiceMemos.MIC_DENIED)
+            }
+        })
+    }
+
+    private fun fill(spoken: String) {
+        draftDictated = true
+        onDraftChange(listOf(dictationBase, spoken.trim()).filter { it.isNotEmpty() }.joinToString(" "))
+    }
+
+    /** The owner said no to the microphone: say why it's needed, with Open settings. */
+    fun onMicrophoneDenied() {
+        voiceError.value = ChatError(VoiceMemos.MIC_DENIED, needsLocalNetworkPermission = false, opensAppSettings = true)
+    }
+
+    /** The app went to the background: never leave the microphone open (C12 §2). */
+    fun onLeftApp() {
+        voiceMemos?.cancel(reason = VoiceMemos.LEFT_APP)
+        if (dictating.value) {
+            dictation?.cancel()
+            dictating.value = false
+        }
+    }
+
+    override fun onCleared() {
+        if (dictating.value) dictation?.cancel()
     }
 
     /** Stops the reply being written; what Edith had written so far is kept (C06). */
@@ -188,6 +292,8 @@ class ChatViewModel(
     // --- Errors --------------------------------------------------------------------------------------------------
 
     fun dismissError() {
+        voiceError.value = null
+        voiceMemos?.dismissNotice()
         val failed = engine.state.value as? EngineState.Failed ?: return
         transient.update { it.copy(dismissedFailure = failed) }
     }
@@ -254,6 +360,7 @@ class ChatViewModel(
         const val OTHER_CHAT_HINT = "Edith is replying in another chat"
         const val LOCAL_NETWORK_MESSAGE = "Edith needs permission to reach your PC on the local network."
         private const val CONFIRMING = "Waiting for your OK…"
+        const val TRANSCRIBING = "Transcribing…"
         private const val PREVIEW_CHARS = 80
         private const val BRIDGE_MAX_MS = 2_000L
 
@@ -276,6 +383,8 @@ class ChatViewModel(
                 toolLabel = container.toolRegistry::displayName,
                 savedState = savedState,
                 permissions = container.toolPermissions,
+                voiceMemos = container.voiceMemos.takeIf { container.chatFeatures.record },
+                dictation = container.dictation.takeIf { container.chatFeatures.dictation },
             )
         }
     }

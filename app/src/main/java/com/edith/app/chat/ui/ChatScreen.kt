@@ -1,6 +1,7 @@
 package com.edith.app.chat.ui
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -55,6 +56,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
@@ -71,6 +73,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.edith.app.chat.service.ReplyService
@@ -92,6 +97,9 @@ data class ChatActions(
     val onSelect: (Long) -> Unit = {},
     val onRename: (Long, String) -> Unit = { _, _ -> },
     val onDelete: (Long) -> Unit = {},
+    val voice: VoiceActions = VoiceActions(),
+    /** Android's settings page for Edith (the microphone was refused and Android won't ask again). */
+    val onOpenAppSettings: () -> Unit = {},
 )
 
 /** The Chat tab (C07). */
@@ -131,11 +139,53 @@ fun ChatScreen(vm: ChatViewModel = viewModel(factory = ChatViewModel.Factory)) {
             requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
+    // C12: the microphone is asked for on the first Record or dictation tap; a refusal shows why, with Open settings.
+    var micAction by rememberSaveable { mutableStateOf<String?>(null) }
+    val requestMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val action = micAction
+        micAction = null
+        when {
+            !granted -> vm.onMicrophoneDenied()
+            action == MIC_RECORD -> vm.startRecording()
+            action == MIC_DICTATE -> vm.toggleDictation()
+        }
+    }
+    fun withMicrophone(action: String, run: () -> Unit) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            run()
+        } else {
+            micAction = action
+            requestMic.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+    // Never leave the microphone open in the background (C12 §2). A rotation isn't leaving.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && (context as? Activity)?.isChangingConfigurations != true) vm.onLeftApp()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val openAppSettings = {
+        context.startActivity(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
     ChatContent(
         state = state,
         draft = vm.draft,
         permissionDenied = permissionDenied,
+        recordingLevel = { vm.recordingLevel.value },
         actions = ChatActions(
+            voice = VoiceActions(
+                onRecord = { withMicrophone(MIC_RECORD, vm::startRecording) },
+                onStopAndSend = { vm.stopAndSendRecording() },
+                onCancelRecording = { vm.cancelRecording() },
+                onDictate = { withMicrophone(MIC_DICTATE, vm::toggleDictation) },
+            ),
+            onOpenAppSettings = openAppSettings,
             onDraftChange = vm::onDraftChange,
             onSend = { vm.send(); askForNotificationsOnce() },
             onStopReply = vm::stopReply,
@@ -147,10 +197,7 @@ fun ChatScreen(vm: ChatViewModel = viewModel(factory = ChatViewModel.Factory)) {
             onAllowLocalNetwork = {
                 if (permissionDenied) {
                     // Android won't ask again after a denial; the owner allows it in the app's settings.
-                    context.startActivity(
-                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                    )
+                    openAppSettings()
                 } else {
                     requestPermission.launch(LocalNetworkAccess.PERMISSION)
                 }
@@ -165,7 +212,13 @@ fun ChatScreen(vm: ChatViewModel = viewModel(factory = ChatViewModel.Factory)) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatContent(state: ChatUiState, draft: String, actions: ChatActions, permissionDenied: Boolean = false) {
+fun ChatContent(
+    state: ChatUiState,
+    draft: String,
+    actions: ChatActions,
+    permissionDenied: Boolean = false,
+    recordingLevel: () -> Float = { 0f },
+) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var renaming by remember { mutableStateOf<Pair<Long, String>?>(null) }
@@ -211,8 +264,13 @@ fun ChatContent(state: ChatUiState, draft: String, actions: ChatActions, permiss
             state.error?.let { error ->
                 ErrorLine(
                     message = error.message,
-                    actionLabel = if (!error.needsLocalNetworkPermission) null else if (permissionDenied) "Open settings" else "Allow",
-                    onAction = actions.onAllowLocalNetwork,
+                    actionLabel = when {
+                        error.opensAppSettings -> "Open settings"
+                        !error.needsLocalNetworkPermission -> null
+                        permissionDenied -> "Open settings"
+                        else -> "Allow"
+                    },
+                    onAction = if (error.opensAppSettings) actions.onOpenAppSettings else actions.onAllowLocalNetwork,
                     onDismiss = actions.onDismissError,
                 )
             }
@@ -230,6 +288,11 @@ fun ChatContent(state: ChatUiState, draft: String, actions: ChatActions, permiss
                 features = state.features,
                 onDraftChange = actions.onDraftChange,
                 onSend = actions.onSend,
+                canRecord = state.canRecord,
+                recording = state.recording,
+                level = recordingLevel,
+                dictating = state.dictating,
+                voice = actions.voice,
             )
         }
     }
@@ -410,3 +473,6 @@ private fun RenameDialog(current: String, onSave: (String) -> Unit, onDismiss: (
 const val MESSAGE_LIST_TAG = "message-list"
 const val DRAWER_LIST_TAG = "conversation-list"
 const val NEW_BELOW_TAG = "new-messages-below"
+
+private const val MIC_RECORD = "record"
+private const val MIC_DICTATE = "dictate"

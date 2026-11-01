@@ -22,7 +22,9 @@ import com.edith.app.core.secrets.SecretStore
 import com.edith.app.core.time.Clock
 import com.edith.app.core.time.SystemClock
 import com.edith.app.data.chat.ChatRepository
+import com.edith.app.core.error.Outcome
 import com.edith.app.data.db.EdithDatabase
+import com.edith.app.data.db.MessageSource
 import com.edith.app.ollama.ModelCatalog
 import com.edith.app.ollama.OkHttpOllamaClient
 import com.edith.app.ollama.OllamaClient
@@ -55,6 +57,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
+import com.edith.app.voice.capture.AudioRecorder
+import com.edith.app.voice.capture.LiveSpeech
+import com.edith.app.voice.capture.OllamaTranscriber
+import com.edith.app.voice.capture.SpeechInput
+import com.edith.app.voice.capture.VoiceMemos
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 /** Builds and holds the app's long-lived objects. Later chunks add fields here. Created once, by [com.edith.app.EdithApp]. */
@@ -137,8 +145,33 @@ class AppContainer(val app: Application) {
     /** The chat's Play/Stop buttons (C07 §5). C13 replaces this with the phone's voice. */
     val speechController: SpeechController = SilentSpeechController
 
-    /** Which input-row buttons exist (C07 §6). C15 turns on attach; C12 record and dictation. */
-    val chatFeatures: ChatFeatures = ChatFeatures()
+    /** Which input-row buttons exist (C07 §6). C15 turns on attach; C12 record, and dictation when the phone can. */
+    val chatFeatures: ChatFeatures by lazy { ChatFeatures(record = true, dictation = dictation.isAvailable) }
+
+    /** Voice memos (C12): app-scoped, so a recording or transcription survives rotation. */
+    val voiceMemos: VoiceMemos by lazy {
+        VoiceMemos(
+            recorder = AudioRecorder(recordingsDir),
+            transcriber = OllamaTranscriber(ollama, settingsRepository, dispatchers),
+            liveSpeech = LiveSpeech(app),
+            modelHears = {
+                // Unknown (server unreachable, no model): try the model; its error is clearer than a fallback.
+                val s = settingsRepository.current()
+                val caps = s.model?.let { modelCatalog.capabilities(s.serverUrl, it) }
+                caps !is Outcome.Success || "audio" in caps.value
+            },
+            send = { id, text -> chatEngine.send(id, text, MessageSource.VoiceMemo) },
+            stopSpeaking = { speechController.stop() },
+            scope = appScope,
+            dispatchers = dispatchers,
+        )
+    }
+
+    /** Dictation into the text field (C12): Android's speech recognizer. */
+    val dictation: SpeechInput by lazy { LiveSpeech(app) }
+
+    /** Where memos are recorded; emptied at startup and after every transcription. */
+    private val recordingsDir: File get() = File(app.cacheDir, "recordings")
 
     /**
      * Creates/opens edith.db on a background thread at launch (running any migration), so the first chat doesn't
@@ -147,6 +180,7 @@ class AppContainer(val app: Application) {
     fun openDatabaseInBackground() {
         appScope.launch {
             try {
+                AudioRecorder.deleteLeftovers(recordingsDir)   // from a crash or a killed process mid-recording
                 database.openHelper.writableDatabase
                 Log.d(LogTag.App, "Database ready")
                 currentConversation.resolve()

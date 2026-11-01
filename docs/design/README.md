@@ -40,7 +40,7 @@ design in the same PR, or ask the owner.
 | [C09](chunks/C09-weather-tool.md) | Weather tool (Open-Meteo) | 2 | C08 | Done |
 | [C10](chunks/C10-web-search-and-reading.md) | Web search and web page reading | 2 | C08 | Done |
 | [C11](chunks/C11-device-location.md) | Device location ("here") | 2 | C08, C09 | Done |
-| [C12](chunks/C12-voice-input.md) | Voice memos and dictation | 3 Voice | C03, C06, C07 | Not started |
+| [C12](chunks/C12-voice-input.md) | Voice memos and dictation | 3 Voice | C03, C06, C07 | Done |
 | [C13](chunks/C13-spoken-replies.md) | Spoken replies (phone voice, streaming sentences) | 3 | C06, C07 | Not started |
 | [C14](chunks/C14-hands-free.md) | Hands-free mode (wake word, follow-ups) | 3 | C12, C13, C06 | Not started |
 | [C15](chunks/C15-attachment-intake.md) | Attachments in (photos, audio files) | 4 Attachments | C05, C06, C07 | Not started |
@@ -61,12 +61,16 @@ design in the same PR, or ask the owner.
   model must follow on a result in the result itself (L27).
 - **Device location is done (C11)**: "here" uses approximate location, asked with Android's dialog (D14). Tools that
   need a runtime permission declare it (`Tool.permission`); the tool loop asks through `ToolPermissions`.
-- **Phase 2 (tools) is done. Next: phase 3, C12** (voice memos and dictation) **or C13** (spoken replies), or C15 / C17,
-  which can also start now. New tools go in `AppContainer.toolRegistry`: implement `Tool`, and test on the device
-  (L25). C12, C13 and C15 can run alongside (see Parallelism). The chat screen's hooks for
-  them are in C07 "As built":
-  - `AppContainer.chatFeatures` turns on the Attach, Record and dictation buttons
-  - `AppContainer.speechController` is the playback interface C13 implements
+- **Phase 2 (tools) is done.** New tools go in `AppContainer.toolRegistry`: implement `Tool`, and test on the device
+  (L25).
+- **Voice input is done (C12)**: voice memos (transcribed by the model, or live recognition for models that can't
+  hear) and dictation. `AppContainer.voiceMemos` is what C14's hands-free mode builds on. To test with real speech
+  on the emulator, push a WAV through the debug hook (`DebugVoiceMemoReceiver`).
+- **Next: C13** (spoken replies), which C14 (hands-free) also needs; or C15 / C17, which can start now. The chat
+  screen's hooks are in C07 "As built":
+  - `AppContainer.chatFeatures` turns on the Attach button (C15)
+  - `AppContainer.speechController` is the playback interface C13 implements; voice memos and dictation already call
+    its `stop()`, so Edith stops talking when the owner starts
 - Judge tool reliability with `gemma4:12b`; `e4b` often skips tools (L26).
 - Owner decisions still open are in `06-decisions.md`. Ask early about the ones your chunk lists; the first ones
   needed are **D8** (C03), **D4** (C14), **O1** (C16),
