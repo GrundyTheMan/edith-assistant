@@ -30,6 +30,9 @@ has been removed by retention.
   folder on start; rows still get `removed_at` on next start.
 - Changing the setting applies immediately (a lower number prunes now, with a confirmation dialog:
   "This will delete 7 older attachments.").
+- Counts span **all conversations** (D6). **Deleting a conversation** (C07 §8) deletes its stored attachment
+  files too: the message and attachment rows cascade in the database, but the files on disk don't. Delete the
+  files before the rows, and clean up any orphaned files on app start.
 - Settings → Attachments: the number field/slider with the explanation "Keeps the most recent N attachments you
   sent and N Edith sent, on this phone only. Older ones are deleted." plus current usage ("12 files, 8.4 MB")
   and **Delete all attachments now** (confirmation).
