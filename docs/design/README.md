@@ -39,7 +39,7 @@ design in the same PR, or ask the owner.
 | [C08](chunks/C08-tool-framework.md) | **Tool framework and tool loop** (+ `get_current_time`) | 2 Tools | C03, C06, C07 | Done |
 | [C09](chunks/C09-weather-tool.md) | Weather tool (Open-Meteo) | 2 | C08 | Done |
 | [C10](chunks/C10-web-search-and-reading.md) | Web search and web page reading | 2 | C08 | Done |
-| [C11](chunks/C11-device-location.md) | Device location ("here") | 2 | C08, C09 | Not started |
+| [C11](chunks/C11-device-location.md) | Device location ("here") | 2 | C08, C09 | Done |
 | [C12](chunks/C12-voice-input.md) | Voice memos and dictation | 3 Voice | C03, C06, C07 | Not started |
 | [C13](chunks/C13-spoken-replies.md) | Spoken replies (phone voice, streaming sentences) | 3 | C06, C07 | Not started |
 | [C14](chunks/C14-hands-free.md) | Hands-free mode (wake word, follow-ups) | 3 | C12, C13, C06 | Not started |
@@ -59,9 +59,11 @@ design in the same PR, or ask the owner.
 - **Weather is done (C09)**, from Open-Meteo, with units automatic by locale (D7).
 - **Web search is done (C10)**: DuckDuckGo with no key, and an optional Ollama API key (D3). Put instructions the
   model must follow on a result in the result itself (L27).
-- **Next: C11** (device location, which turns on "the weather here"). Each
-  adds its tools to `AppContainer.toolRegistry`: implement `Tool`,
-  and test on the device (L25). C12, C13 and C15 can run alongside (see Parallelism). The chat screen's hooks for
+- **Device location is done (C11)**: "here" uses approximate location, asked with Android's dialog (D14). Tools that
+  need a runtime permission declare it (`Tool.permission`); the tool loop asks through `ToolPermissions`.
+- **Phase 2 (tools) is done. Next: phase 3, C12** (voice memos and dictation) **or C13** (spoken replies), or C15 / C17,
+  which can also start now. New tools go in `AppContainer.toolRegistry`: implement `Tool`, and test on the device
+  (L25). C12, C13 and C15 can run alongside (see Parallelism). The chat screen's hooks for
   them are in C07 "As built":
   - `AppContainer.chatFeatures` turns on the Attach, Record and dictation buttons
   - `AppContainer.speechController` is the playback interface C13 implements

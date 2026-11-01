@@ -17,6 +17,7 @@ import com.edith.app.data.chat.ChatRepository
 import com.edith.app.data.db.MessageRole
 import com.edith.app.data.db.MessageSource
 import com.edith.app.data.db.MessageWithAttachments
+import com.edith.app.core.permissions.ToolPermissions
 import com.edith.app.di.viewModelFactory
 import com.edith.app.voice.speech.SpeechController
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -49,7 +50,13 @@ class ChatViewModel(
     private val savedState: SavedStateHandle,
     /** Names in the "Used: …" line: "get_current_time" → "time" (C08). */
     private val toolLabel: (String) -> String = { it },
+    /** Android permissions a tool is waiting for (C11): the screen shows the system dialog. */
+    private val permissions: ToolPermissions = ToolPermissions { true },
 ) : ViewModel() {
+
+    val toolPermissionRequest: StateFlow<ToolPermissions.Request?> get() = permissions.pending
+
+    fun onToolPermissionResult(id: String, granted: Boolean) = permissions.resolve(id, granted)
 
     /** The open conversation's unsent text. Each chat keeps its own (C07 §8), and it survives process death. */
     var draft by mutableStateOf("")
@@ -268,6 +275,7 @@ class ChatViewModel(
                 clock = container.clock,
                 toolLabel = container.toolRegistry::displayName,
                 savedState = savedState,
+                permissions = container.toolPermissions,
             )
         }
     }

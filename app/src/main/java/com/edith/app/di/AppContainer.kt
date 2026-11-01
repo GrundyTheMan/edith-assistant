@@ -33,7 +33,10 @@ import com.edith.app.settings.DataStoreSettingsRepository
 import com.edith.app.settings.ModelSelection
 import com.edith.app.settings.SettingsRepository
 import com.edith.app.tools.context.CurrentTimeTool
+import com.edith.app.core.permissions.ToolPermissions
 import com.edith.app.tools.framework.Confirmations
+import com.edith.app.tools.location.AndroidLocationProvider
+import com.edith.app.tools.location.LocationProvider
 import com.edith.app.tools.framework.ToolGuidanceSection
 import com.edith.app.tools.framework.ToolRegistry
 import com.edith.app.tools.framework.ToolTurnRunner
@@ -77,7 +80,7 @@ class AppContainer(val app: Application) {
     val toolRegistry: ToolRegistry by lazy {
         ToolRegistry(
             tools = listOf(
-                CurrentTimeTool(), WeatherTool(openMeteo),
+                CurrentTimeTool(), WeatherTool(openMeteo, deviceLocation),
                 SearchWebTool(webSearch), ReadWebPageTool(webSearch.pages(PageReader(okHttpLazy, dispatchers))),
             ),
         )
@@ -97,12 +100,18 @@ class AppContainer(val app: Application) {
     /** Tool confirmations waiting for the owner's tap (C08 §6, D11). */
     val confirmations = Confirmations()
 
+    /** Permissions tools ask for with Android's dialog, shown by the chat screen (C11). */
+    val toolPermissions: ToolPermissions by lazy { ToolPermissions.android(app) }
+
+    /** The phone's approximate location for "here" (C11): never stored, never sent to Ollama. */
+    val deviceLocation: LocationProvider by lazy { AndroidLocationProvider(app, dispatchers) }
+
     /** System-prompt sections; later chunks add theirs here (attachments C15/C16, Google C17). */
     val promptSections: List<PromptSection> by lazy { listOf(DateTimeSection(), ToolGuidanceSection { toolRegistry }) }
 
     /** The tool loop (C08). */
     val turnRunner: TurnRunner by lazy {
-        ToolTurnRunner(ollama, toolRegistry, confirmations, settingsRepository, clock, dispatchers)
+        ToolTurnRunner(ollama, toolRegistry, confirmations, settingsRepository, clock, dispatchers, permissions = toolPermissions)
     }
 
     /** Edith names new chats (D12). */

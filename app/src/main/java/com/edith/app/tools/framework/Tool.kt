@@ -33,8 +33,13 @@ interface Tool {
     val integrationId: String? get() = null
     /** Non-null when the call changes something outside the app and needs the owner's OK first (D11). */
     fun confirmation(args: ToolArgs): ConfirmationRequest? = null
+    /** Non-null when this call needs a runtime permission (C11), asked with Android's dialog before [execute]. */
+    fun permission(args: ToolArgs): PermissionNeed? = null
     suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult
 }
+
+/** A runtime permission ([permission], e.g. `ACCESS_COARSE_LOCATION`) and what the model is told if it's denied. */
+data class PermissionNeed(val permission: String, val deniedResult: String)
 
 data class ToolSpec(val name: String, val description: String, val parameters: List<ToolParam> = emptyList()) {
     /** Ollama's tool JSON (03-ollama-reference §2): `{"type":"function","function":{name, description, parameters}}`. */

@@ -5,6 +5,7 @@ import com.edith.app.chat.engine.PlainTurnRunner
 import com.edith.app.chat.engine.TurnEvent
 import com.edith.app.chat.engine.TurnRunner
 import com.edith.app.core.dispatchers.AppDispatchers
+import com.edith.app.core.permissions.ToolPermissions
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import com.edith.app.core.time.Clock
@@ -43,6 +44,7 @@ class ToolTurnRunner(
     private val dispatchers: AppDispatchers,
     private val toolTimeoutMs: Long = TOOL_TIMEOUT_MS,
     private val textCallFallback: Boolean = TEXT_CALL_FALLBACK,
+    private val permissions: ToolPermissions = ToolPermissions { true },
 ) : TurnRunner {
 
     override fun run(baseUrl: String, model: ModelInfo, messages: List<OllamaMessage>): Flow<TurnEvent> = flow {
@@ -111,6 +113,14 @@ class ToolTurnRunner(
         val name = tool.spec.name
         val args = ToolArgs(call.function.arguments, tool.spec)
         val result = try {
+            // Outside the tool's timeout, like confirmations: the owner may take a while to answer Android's dialog.
+            tool.permission(args)?.let { need ->
+                if (!permissions.isGranted(need.permission)) emit(TurnEvent.Status(WAITING_FOR_PERMISSION))
+                if (!permissions.request(need.permission)) {
+                    log(name, call, "permission denied")
+                    return name to ToolResult.Error(need.deniedResult)
+                }
+            }
             val request = tool.confirmation(args)?.copy(id = UUID.randomUUID().toString(), toolName = name)
             if (request != null) {
                 val answer = confirmations.register(request)   // before the screen can show it
@@ -146,6 +156,7 @@ class ToolTurnRunner(
         const val MAX_ROUNDS = 5
         const val TOOL_TIMEOUT_MS = 20_000L
         const val RESULT_MAX_CHARS = 2_000
+        const val WAITING_FOR_PERMISSION = "Waiting for your permission…"
         /** C08 §7: parse tool calls a model wrote as text. On by default; every use is logged. */
         const val TEXT_CALL_FALLBACK = true
     }
