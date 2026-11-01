@@ -11,6 +11,7 @@ import com.edith.app.chat.engine.PromptBuilder
 import com.edith.app.chat.engine.PromptSection
 import com.edith.app.chat.engine.ReplyListener
 import com.edith.app.chat.engine.TurnRunner
+import com.edith.app.chat.ui.ChatFeatures
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
@@ -30,6 +31,8 @@ import com.edith.app.core.permissions.LocalNetworkAccess
 import com.edith.app.settings.DataStoreSettingsRepository
 import com.edith.app.settings.ModelSelection
 import com.edith.app.settings.SettingsRepository
+import com.edith.app.voice.speech.SilentSpeechController
+import com.edith.app.voice.speech.SpeechController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -79,6 +82,12 @@ class AppContainer(val app: Application) {
     val currentConversation: CurrentConversation by lazy {
         CurrentConversation(chatRepository, settingsRepository, chatEngine)
     }
+
+    /** The chat's Play/Stop buttons (C07 §5). C13 replaces this with the phone's voice. */
+    val speechController: SpeechController = SilentSpeechController
+
+    /** Which input-row buttons exist (C07 §6). C15 turns on attach; C12 record and dictation. */
+    val chatFeatures: ChatFeatures = ChatFeatures()
 
     /**
      * Creates/opens edith.db on a background thread at launch (running any migration), so the first chat doesn't

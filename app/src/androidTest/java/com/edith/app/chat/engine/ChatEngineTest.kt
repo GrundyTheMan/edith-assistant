@@ -6,7 +6,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.edith.app.chat.CurrentConversation
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.error.AppError
-import com.edith.app.core.error.AppErrorException
 import com.edith.app.core.error.Outcome
 import com.edith.app.core.permissions.LocalNetworkAccess
 import com.edith.app.core.time.Clock
@@ -16,27 +15,17 @@ import com.edith.app.data.db.MessageRole
 import com.edith.app.data.db.MessageSource
 import com.edith.app.data.db.MessageStatus
 import com.edith.app.data.db.TitleSource
-import com.edith.app.ollama.ChatCall
-import com.edith.app.ollama.ChatEvent
 import com.edith.app.ollama.ModelCatalog
-import com.edith.app.ollama.OllamaClient
 import com.edith.app.ollama.OllamaMessage
-import com.edith.app.ollama.OllamaModelTag
-import com.edith.app.ollama.OllamaShow
-import com.edith.app.ollama.ReplyStats
 import com.edith.app.settings.ModelSelection
-import com.edith.app.settings.Settings
-import com.edith.app.settings.SettingsRepository
+import com.edith.app.testing.MemorySettings
+import com.edith.app.testing.ScriptedOllama
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -53,44 +42,6 @@ import java.util.Collections
 /** C06 engine tests: real in-memory Room, a scripted Ollama, the real prompt/context builders. */
 @RunWith(AndroidJUnit4::class)
 class ChatEngineTest {
-
-    /** Each reply is a script: words streamed with a delay, or an error, or nothing. */
-    private class ScriptedOllama : OllamaClient {
-        var words = listOf("Hello", " there", ",", " friend", "!")
-        var wordDelayMs = 40L
-        var failure: AppError? = null
-        val calls: MutableList<ChatCall> = Collections.synchronizedList(mutableListOf())
-        @Volatile var streamCancelled = false
-
-        override fun chatStream(baseUrl: String, request: ChatCall): Flow<ChatEvent> = flow {
-            calls += request
-            failure?.let { throw AppErrorException(it) }
-            try {
-                for (w in words) { delay(wordDelayMs); emit(ChatEvent.Delta(w)) }
-                emit(ChatEvent.Done(ReplyStats(totalMs = 10, evalCount = words.size, promptEvalCount = 1)))
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                streamCancelled = true   // the real client cancels the HTTP call here (C03 test 9)
-                throw e
-            }
-        }
-        /** The titler's non-streaming call (D12). */
-        var titleReply: Outcome<OllamaMessage> = Outcome.Success(OllamaMessage("assistant", "\"Picking a Number.\""))
-        val titleCalls: MutableList<ChatCall> = Collections.synchronizedList(mutableListOf())
-        override suspend fun chat(baseUrl: String, request: ChatCall): Outcome<OllamaMessage> {
-            titleCalls += request
-            return titleReply
-        }
-        override suspend fun listModels(baseUrl: String) = Outcome.Success(listOf(OllamaModelTag("gemma4:12b-it-q8_0")))
-        override suspend fun show(baseUrl: String, model: String) = Outcome.Success(OllamaShow(listOf("completion", "tools")))
-        override suspend fun version(baseUrl: String) = Outcome.Success("0.40.13")
-    }
-
-    private class MemorySettings : SettingsRepository {
-        val state = MutableStateFlow(Settings())
-        override val settings: Flow<Settings> = state
-        override suspend fun current() = state.value
-        override suspend fun update(transform: (Settings) -> Settings) { state.value = transform(state.value) }
-    }
 
     private val clock = object : Clock {
         var t = Instant.parse("2026-10-31T12:00:00Z")

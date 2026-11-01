@@ -3,6 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 |
+| Status | **Done** — see "As built" at the end |
 | Depends on | C06, C06b (and C01 navigation) |
 | Unblocks | C08 (confirmation card), C12/C13 (input row and action row hooks), C15 |
 | Size | Large (chat screen plus the conversation list, §8) |
@@ -115,3 +116,89 @@ Every icon button has a content description (used by tests and `adb` recipes): "
 
 ## Pitfalls
 - Don't construct anything long-lived in composables. Don't key the auto-scroll only on item count.
+
+## As built (2026-10-31)
+
+Where the code differs from the specification above, the code is right.
+
+**Files** (`chat/ui/`)
+- `ChatViewModel.kt`: state and actions.
+- `ChatUiState.kt`: the UI model.
+- `ChatScreen.kt`: the screen, message list, drawer and dialogs.
+- `ChatComponents.kt`: the bubbles, action row and input row.
+- `Markdown.kt`: the Markdown renderer.
+- Elsewhere: `core/time/MessageTimes.kt` (time formats) and `voice/speech/SpeechController.kt` (the interface,
+  plus the silent version used until C13). `AppContainer` gains `speechController` and `chatFeatures`.
+
+**Differences from §1**
+- **The draft isn't in `ChatUiState`.** It's Compose state in the ViewModel (`ChatViewModel.draft`), so typing never
+  waits on a flow. It's saved per conversation in `SavedStateHandle` (`draft_<id>`) and reloaded when a chat opens.
+  `canSend` is the function `state.canSend(draft)`.
+- **`error` is a `ChatError`.** It's set only for `PermissionDenied`, the one failure a failed bubble can't fix:
+  - the error line offers **Allow**, or **Open settings** after a denial
+  - allowing retries the turn
+  - every other failure shows only as the failed bubble with **Retry**, so nothing is shown twice
+- **Bridging.** The engine reports a step a few milliseconds before Room delivers the stored row, so:
+  - the owner's message shows from Send until it's stored (`pendingUserText`)
+  - Edith's finished text stays until her stored reply arrives (`InFlight(canStop = false)`)
+
+  Each bridge lasts at most 2 s. Without them, Send and every finished reply flickered.
+
+**Differences from §2–§4**
+- **Auto-scroll.** The list is bottom-up (`reverseLayout`), so a growing reply stays in view on its own.
+  - Whether to follow new items is decided only when the owner *scrolls*: within about one screen of the bottom.
+  - It's never decided when items are added. Deciding on additions was a real bug: Send adds two items at once,
+    which looked like "scrolled away".
+  - Sending always scrolls to the bottom. Otherwise a **New** button appears.
+- **Markdown** is a small renderer of its own (`Markdown.kt`) instead of a library. It has no dependency, and
+  unrecognised text stays as written.
+  - Blocks are laid out as separate `Text`s, because one string with paragraph styles adds blank lines between
+    list items.
+  - Links open in the browser through `LinkAnnotation.Url`.
+  - The drawer preview uses the same parser, minus the markers.
+- **Tools used** shows the raw tool names (`get_weather`); C08 supplies display names.
+
+**Differences from §8**
+- The title is clickable to rename it.
+- **Back** closes the open drawer. Without that, Back left the app (a regression test proves it).
+- Delete calls `CurrentConversation.delete` (C06b).
+
+**Verified**
+- `scripts/check.sh --device`: OK (57 device tests), 73 unit tests, lint clean (`build-logs/2026-10-31_23-14-20_check.log`).
+- New tests:
+  - `ChatViewModelTest` (7):
+    - a chat switch
+    - a reply in A not shown in B, with B's Send off and the hint
+    - per-chat drafts surviving recreation
+    - the Regenerate rules
+    - a failure shown once, the permission path and allowing
+    - Stop and playback
+    - delete and rename
+  - `ChatScreenTest` (10):
+    - send and reply
+    - the in-flight label and Stop
+    - Stop keeping the partial reply
+    - Regenerate only on the newest reply, and the action row overlapping the bubble by 7 dp ±1
+    - failure and Retry
+    - the drawer: switch, rename, delete, and Back
+    - New chat while a reply runs elsewhere
+    - auto-scroll on Send from a long chat
+    - the New button when scrolled up
+  - `ChatFormattingTest` (5, JVM): the Markdown blocks and inline styles, and the times.
+- The shared test kit is `androidTest/.../testing/ChatTestKit.kt`. `ChatEngineTest` now uses its fakes.
+- **Live on the emulator against the owner's Ollama** (`gemma4:12b-it-q8_0`):
+  - replies stream with Markdown, the time and the action row
+  - the keyboard pushes the input row up
+  - the reply kept streaming through a rotation
+  - Stop, Regenerate and Retry all worked
+  - New chat while a reply ran elsewhere showed the hint, with Send off, and a spinner in the drawer
+  - Edith titled a new chat "Golden Retriever Puppy Names"
+  - the app reopened on the last chat after a reinstall
+  - light and dark themes both checked
+  - no crash in logcat
+- **Not done live:** stopping Ollama on the PC to see the failure. A real "Can't reach your Ollama server" failure
+  did happen (see L24); its bubble and Retry were checked live.
+
+**Known problem, D13 (owner's decision):** leaving the app (Back or Home) mid-reply kills the reply after about 5 s,
+because Android cuts the network of an app in the background (L24). It shows as a server error, and Retry works.
+Rotation is fine.
