@@ -8,7 +8,7 @@ history (tag `edith-v1`) — don't reuse its code.
 ## Read first
 **[`docs/design/README.md`](docs/design/README.md)** — the complete design, split into chunks (C01–C21) with
 dependencies and status. Read the shared context it lists, then take one chunk whose dependencies are merged.
-C01–C14 are done (phases 1–3: chat, tools and voice; hands-free still needs a real-mic check); the table says what's next.
+C01–C15 are done (phases 1–3: chat, tools and voice, and attachments in; hands-free still needs a real-mic check); the table says what's next.
 
 ## Build, test, run (Git Bash; from PowerShell: `& "C:\Program Files\Git\bin\bash.exe" scripts/check.sh`)
 ```bash

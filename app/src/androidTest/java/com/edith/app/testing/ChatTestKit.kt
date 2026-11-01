@@ -74,7 +74,9 @@ class ScriptedOllama : OllamaClient {
         return titleReply
     }
     override suspend fun listModels(baseUrl: String) = Outcome.Success(listOf(OllamaModelTag("gemma4:12b-it-q8_0")))
-    override suspend fun show(baseUrl: String, model: String) = Outcome.Success(OllamaShow(listOf("completion", "tools")))
+    /** What the model can do (C15 needs "vision" and "audio" for attachments). */
+    var capabilities = listOf("completion", "tools")
+    override suspend fun show(baseUrl: String, model: String) = Outcome.Success(OllamaShow(capabilities))
     override suspend fun version(baseUrl: String) = Outcome.Success("0.40.13")
 }
 

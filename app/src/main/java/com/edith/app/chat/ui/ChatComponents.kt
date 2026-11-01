@@ -3,6 +3,7 @@ package com.edith.app.chat.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -21,16 +22,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.outlined.Hearing
+import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material.icons.outlined.Hearing
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -49,6 +54,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -67,6 +73,7 @@ import androidx.compose.ui.unit.dp
 import com.edith.app.chat.engine.ConfirmationRequest
 import com.edith.app.data.db.MessageRole
 import com.edith.app.data.db.MessageStatus
+import java.io.File
 import kotlinx.coroutines.delay
 
 /** How far Edith's action row is pulled up onto her bubble's bottom edge (the owner's "almost on top of the edge"). */
@@ -87,6 +94,9 @@ fun MessageItem(
     onPlay: () -> Unit,
     onStopPlayback: () -> Unit,
     onRegenerate: () -> Unit,
+    playingAttachmentId: Long? = null,
+    onToggleAttachment: (AttachmentUi) -> Unit = {},
+    onOpenImage: (File) -> Unit = {},
 ) {
     val mine = message.role == MessageRole.User
     Column(
@@ -95,7 +105,14 @@ fun MessageItem(
     ) {
         when {
             mine -> Bubble(message.id, mine = true, maxBubbleWidth) {
-                SelectionContainer { Text(message.text, color = MaterialTheme.colorScheme.onPrimary) }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (message.attachments.isNotEmpty()) {
+                        MessageAttachments(message.attachments, playingAttachmentId, onToggleAttachment, onOpenImage, MaterialTheme.colorScheme.onPrimary)
+                    }
+                    if (message.text.isNotBlank()) {
+                        SelectionContainer { Text(message.text, color = MaterialTheme.colorScheme.onPrimary) }
+                    }
+                }
             }
             message.status == MessageStatus.Failed -> FailedBubble(message, maxBubbleWidth, canRetry = message.isLatest && !busy, onRetry = onRegenerate)
             else -> {
@@ -325,6 +342,8 @@ fun InputRow(
     voice: VoiceActions = VoiceActions(),
     /** False while hands-free holds the microphone (C14): dictation waits. */
     micFree: Boolean = true,
+    onAttachPhoto: () -> Unit = {},
+    onAttachAudio: () -> Unit = {},
 ) {
     Row(
         modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
@@ -334,7 +353,25 @@ fun InputRow(
             RecordingControls(recording, level, voice)
             return@Row
         }
-        if (features.attach) IconButton(onClick = {}) { Icon(Icons.Filled.AttachFile, contentDescription = "Attach a file") }
+        if (features.attach) {
+            // C15 §1: Photo (Android's photo picker, no permission) or Audio file.
+            Box {
+                var menu by remember { mutableStateOf(false) }
+                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.AttachFile, contentDescription = "Attach a file") }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Photo") },
+                        leadingIcon = { Icon(Icons.Filled.Image, contentDescription = null) },
+                        onClick = { menu = false; onAttachPhoto() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Audio file") },
+                        leadingIcon = { Icon(Icons.Filled.AudioFile, contentDescription = null) },
+                        onClick = { menu = false; onAttachAudio() },
+                    )
+                }
+            }
+        }
         if (features.record) {
             IconButton(onClick = voice.onRecord, enabled = canRecord) {
                 Icon(Icons.Filled.FiberManualRecord, contentDescription = "Record audio", tint = if (canRecord) RecordRed else LocalContentColor.current.copy(alpha = 0.38f))

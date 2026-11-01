@@ -28,11 +28,11 @@ private fun MessageRole.ollamaRole() = when (this) {
 class ContextBuilder(private val attachmentContext: AttachmentContext = NoAttachments) {
 
     fun build(history: List<MessageWithAttachments>, system: String, model: ModelInfo): List<OllamaMessage> {
-        // 2 + 3: completed rows only, with text-form tool calls removed; drop what's left empty.
+        // 2 + 3: completed rows only, with text-form tool calls removed; drop what's left empty (no text, no attachments).
         val usable = history
             .filter { it.message.status == MessageStatus.Complete }
             .map { it to stripToolCalls(it.message.content) }
-            .filter { (_, text) -> text.isNotBlank() }
+            .filter { (item, text) -> text.isNotBlank() || item.attachments.isNotEmpty() }   // a photo alone is a message (C15)
 
         // 4: newest first, keep while within the token budget; the latest user message always stays.
         val latestUser = usable.lastOrNull { it.first.message.role == MessageRole.User }

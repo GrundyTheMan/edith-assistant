@@ -7,6 +7,9 @@ import com.edith.app.core.error.AppError
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import com.edith.app.core.time.Clock
+import com.edith.app.data.db.AttachmentDirection
+import com.edith.app.data.db.AttachmentEntity
+import com.edith.app.data.db.AttachmentKind
 import com.edith.app.data.db.ConversationEntity
 import com.edith.app.data.db.ConversationRow
 import com.edith.app.data.db.EdithDatabase
@@ -76,10 +79,38 @@ class ChatRepository(
 
     /** Stores the owner's message. The first one also gives an untitled conversation a provisional title (D12). */
     suspend fun addUserMessage(conversationId: Long, text: String, source: MessageSource): Long? =
-        insert(MessageEntity(conversationId = conversationId, role = MessageRole.User, content = text,
-            createdAt = now(), status = MessageStatus.Complete, source = source)) {
-            firstMessageTitle(text)?.let { db.conversationDao().setTitle(conversationId, it, TitleSource.FirstMessage) }
-        }
+        addUserMessage(conversationId, text, source, emptyList())?.messageId
+
+    /** The ids of a stored message and its attachment rows, in the order given. */
+    data class StoredMessage(val messageId: Long, val attachmentIds: List<Long>)
+
+    /**
+     * Stores the owner's message and its attachment rows in one transaction (C15 §3), numbered per conversation
+     * (`[Attachment 3: …]`). The files themselves go to the attachment store; null if the conversation is gone.
+     */
+    suspend fun addUserMessage(
+        conversationId: Long, text: String, source: MessageSource, attachments: List<NewAttachment>,
+    ): StoredMessage? {
+        val createdAt = now()
+        val ids = mutableListOf<Long>()
+        val messageId = insert(MessageEntity(conversationId = conversationId, role = MessageRole.User, content = text,
+            createdAt = createdAt, status = MessageStatus.Complete, source = source)) { messageId ->
+            val title = firstMessageTitle(text) ?: attachments.firstOrNull()?.fileName?.let { firstMessageTitle(it) }
+            title?.let { db.conversationDao().setTitle(conversationId, it, TitleSource.FirstMessage) }
+            var number = db.attachmentDao().nextNumber(conversationId)
+            for (a in attachments) {
+                ids += db.attachmentDao().insert(AttachmentEntity(
+                    messageId = messageId, number = number++, direction = AttachmentDirection.FromUser, kind = a.kind,
+                    fileName = a.fileName, mimeType = a.mimeType, sizeBytes = a.sizeBytes, storedPath = null,
+                    createdAt = createdAt,
+                ))
+            }
+        } ?: return null
+        return StoredMessage(messageId, ids)
+    }
+
+    /** What the repository needs to number and describe an attachment (its file is the store's business). */
+    data class NewAttachment(val kind: AttachmentKind, val fileName: String, val mimeType: String, val sizeBytes: Long)
 
     /** Stores Edith's reply with any `<tool_call>…</tool_call>` text removed (and a warning logged). */
     suspend fun addAssistantMessage(conversationId: Long, text: String, model: String, toolsUsed: List<String>): Long? {
@@ -111,12 +142,12 @@ class ChatRepository(
      * Inserts the message and bumps the conversation's `updated_at`, in one transaction. Returns null (and logs)
      * if the conversation no longer exists — it was deleted while a reply was running — instead of crashing.
      */
-    private suspend fun insert(message: MessageEntity, alsoInTransaction: suspend () -> Unit = {}): Long? = io {
+    private suspend fun insert(message: MessageEntity, alsoInTransaction: suspend (messageId: Long) -> Unit = {}): Long? = io {
         try {
             db.withTransaction {
                 val id = db.messageDao().insert(message)
                 db.conversationDao().touch(message.conversationId, message.createdAt)
-                alsoInTransaction()
+                alsoInTransaction(id)
                 id
             }
         } catch (e: SQLiteConstraintException) {

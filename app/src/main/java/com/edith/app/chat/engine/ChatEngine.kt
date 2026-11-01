@@ -7,7 +7,11 @@ import com.edith.app.core.error.Outcome
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import com.edith.app.core.permissions.LocalNetworkAccess
+import com.edith.app.attachments.AttachmentStore
+import com.edith.app.attachments.PendingAttachment
 import com.edith.app.data.chat.ChatRepository
+import com.edith.app.data.db.AttachmentEntity
+import com.edith.app.data.db.AttachmentKind
 import com.edith.app.data.db.MessageRole
 import com.edith.app.data.db.MessageSource
 import com.edith.app.ollama.ModelInfo
@@ -49,9 +53,6 @@ interface ReplyListener {
     fun onFailed(conversationId: Long) {}
 }
 
-/** An attachment chosen in the input row and not yet sent (C15 fills this in). */
-data class PendingAttachment(val fileName: String, val mimeType: String)
-
 /**
  * One chat turn at a time, across all conversations (C06 §4, C06b §5): store the user message, make sure there's
  * a usable model, build the prompt and context, run the turn, store the result. Each turn is bound to the
@@ -72,6 +73,8 @@ class ChatEngine(
     private val localNetwork: LocalNetworkAccess,
     private val confirmations: Confirmations = Confirmations(),
     private val nanoTime: () -> Long = System::nanoTime,
+    /** Where sent attachments' files go (C15; C16 makes it durable). */
+    private val attachmentStore: AttachmentStore? = null,
 ) {
     private val _state = MutableStateFlow<EngineState>(EngineState.Idle)
     val state: StateFlow<EngineState> = _state.asStateFlow()
@@ -84,11 +87,20 @@ class ChatEngine(
     /** The conversation whose turn is running, or null when idle. */
     val activeConversationId: Long? get() = jobConversationId
 
-    fun send(conversationId: Long, text: String, source: MessageSource, attachments: List<PendingAttachment> = emptyList()) {
-        if (text.isBlank() && attachments.isEmpty()) return
-        start(conversationId) {
-            // C15/C16 add attachment rows here, in one transaction. Null: the conversation was deleted meanwhile.
-            if (repo.addUserMessage(conversationId, text.trim(), source) == null) return@start EngineState.Idle
+    /**
+     * Sends the owner's message, with any attachments (C15). False if a turn is already running: nothing was sent, and
+     * the attachments are still the caller's.
+     */
+    fun send(conversationId: Long, text: String, source: MessageSource, attachments: List<PendingAttachment> = emptyList()): Boolean {
+        if (text.isBlank() && attachments.isEmpty()) return false
+        return start(conversationId) {
+            val new = attachments.map { ChatRepository.NewAttachment(it.kind, it.fileName, it.mimeType, it.sizeBytes) }
+            val stored = repo.addUserMessage(conversationId, text.trim(), source, new)
+            if (stored == null) {   // the conversation was deleted meanwhile
+                attachments.forEach { it.file.delete() }
+                return@start EngineState.Idle
+            }
+            stored.attachmentIds.zip(attachments).forEach { (id, a) -> attachmentStore?.save(id, a) ?: a.file.delete() }
             runTurn(conversationId)
         }
     }
@@ -124,8 +136,8 @@ class ChatEngine(
      * Runs [block] as the one active turn. Its result (Idle or Failed) is published only AFTER the turn is released,
      * so anyone who sees Idle can send straight away (otherwise a send right after a reply was silently ignored).
      */
-    private fun start(conversationId: Long, block: suspend () -> EngineState) {
-        if (!busy.compareAndSet(false, true)) return
+    private fun start(conversationId: Long, block: suspend () -> EngineState): Boolean {
+        if (!busy.compareAndSet(false, true)) return false
         jobConversationId = conversationId
         _state.value = EngineState.Working(conversationId, PlainTurnRunner.THINKING, "")
         job = scope.launch {
@@ -138,6 +150,7 @@ class ChatEngine(
                 _state.value = end
             }
         }
+        return true
     }
 
     /** Returns how the turn ended: Idle, or Failed. Cancellation is rethrown after the partial reply is kept. */
@@ -162,7 +175,11 @@ class ChatEngine(
             }
             val baseUrl = settings.current().serverUrl
             val history = repo.recent(conversationId, HISTORY_LIMIT)
-            val messages = contextBuilder.build(history, promptBuilder.system(model), model)
+            // C15: the newest message's attachments must be usable by this model; don't call it otherwise.
+            history.lastOrNull { it.message.role == MessageRole.User }?.let { cantUse(it.attachments, model) }
+                ?.let { throw AppErrorException(it) }
+            val hasAttachments = history.any { it.attachments.isNotEmpty() }
+            val messages = contextBuilder.build(history, promptBuilder.system(model, hasAttachments), model)
 
             var outcome: EngineState? = null
             turnRunner.run(baseUrl, model, messages).collect { event ->
@@ -218,6 +235,15 @@ class ChatEngine(
     }
 
     companion object {
+        /** Why [model] can't take these attachments (images without "vision", audio without "audio"), or null (C15 §3). */
+        fun cantUse(attachments: List<AttachmentEntity>, model: ModelInfo): AppError? = when {
+            attachments.any { it.kind == AttachmentKind.Image } && !model.canSee ->
+                AppError.ModelLacksCapability(model.name, "see images", badge = "Sees images")
+            attachments.any { it.kind == AttachmentKind.Audio } && !model.canHear ->
+                AppError.ModelLacksCapability(model.name, "hear audio", badge = "Hears audio")
+            else -> null
+        }
+
         /** Messages read for context; the token budget (ContextBuilder) usually keeps fewer. */
         const val HISTORY_LIMIT = 200
         /** ~30 UI updates a second at most (C06 §4); the listeners still get every delta. */

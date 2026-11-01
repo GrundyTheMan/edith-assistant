@@ -121,6 +121,7 @@ dependencies {
     // C10: reading web pages and DuckDuckGo results
     implementation(libs.jsoup)
     implementation(libs.onnxruntime.android)   // C14: openWakeWord models (D4)
+    implementation(libs.coil.compose)   // C15: attachment thumbnails
 
     testImplementation(libs.kotlinx.serialization.json)
     testImplementation(libs.coroutines.test)
