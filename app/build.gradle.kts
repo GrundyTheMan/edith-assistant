@@ -40,7 +40,13 @@ android {
         versionCode = providers.gradleProperty("edith.versionCode").get().toInt()
         versionName = providers.gradleProperty("edith.versionName").get()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // C14: ONNX Runtime's native library is ~35 MB per CPU type. Only 64-bit is kept: arm64 for phones,
+        // x86_64 for the emulator (32-bit devices can't run the Android versions Edith targets anyway).
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
+
+    // Native libraries compressed in the APK (extracted on install): a much smaller download for ONNX Runtime.
+    packaging { jniLibs { useLegacyPackaging = true } }
 
     signingConfigs {
         if (hasReleaseKey) {
@@ -114,6 +120,7 @@ dependencies {
 
     // C10: reading web pages and DuckDuckGo results
     implementation(libs.jsoup)
+    implementation(libs.onnxruntime.android)   // C14: openWakeWord models (D4)
 
     testImplementation(libs.kotlinx.serialization.json)
     testImplementation(libs.coroutines.test)

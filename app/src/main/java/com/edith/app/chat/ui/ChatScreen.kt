@@ -2,6 +2,7 @@ package com.edith.app.chat.ui
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -33,8 +34,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.Hearing
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Hearing
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
@@ -45,6 +48,8 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -79,6 +84,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.edith.app.chat.service.ReplyService
+import com.edith.app.voice.handsfree.HandsFreeService
 import com.edith.app.core.permissions.LocalNetworkAccess
 import kotlinx.coroutines.launch
 
@@ -100,6 +106,8 @@ data class ChatActions(
     val voice: VoiceActions = VoiceActions(),
     /** Android's settings page for Edith (the microphone was refused and Android won't ask again). */
     val onOpenAppSettings: () -> Unit = {},
+    /** The top bar's hands-free button (C14): on or off. */
+    val onHandsFree: () -> Unit = {},
 )
 
 /** The Chat tab (C07). */
@@ -148,6 +156,7 @@ fun ChatScreen(vm: ChatViewModel = viewModel(factory = ChatViewModel.Factory)) {
             !granted -> vm.onMicrophoneDenied()
             action == MIC_RECORD -> vm.startRecording()
             action == MIC_DICTATE -> vm.toggleDictation()
+            action == MIC_HANDS_FREE -> startHandsFree(context, vm)
         }
     }
     fun withMicrophone(action: String, run: () -> Unit) {
@@ -186,6 +195,14 @@ fun ChatScreen(vm: ChatViewModel = viewModel(factory = ChatViewModel.Factory)) {
                 onDictate = { withMicrophone(MIC_DICTATE, vm::toggleDictation) },
             ),
             onOpenAppSettings = openAppSettings,
+            onHandsFree = {
+                if (state.handsFree?.on == true) {
+                    vm.stopHandsFree()
+                } else {
+                    askForNotificationsOnce()   // its notification has Pause and Stop
+                    withMicrophone(MIC_HANDS_FREE) { startHandsFree(context, vm) }
+                }
+            },
             onDraftChange = vm::onDraftChange,
             onSend = { vm.send(); askForNotificationsOnce() },
             onStopReply = vm::stopReply,
@@ -257,9 +274,32 @@ fun ChatContent(
                     }
                 },
                 actions = {
+                    state.handsFree?.let { hf ->
+                        IconToggleButton(
+                            checked = hf.on,
+                            onCheckedChange = { actions.onHandsFree() },
+                            enabled = hf.on || state.canStartHandsFree,
+                            colors = IconButtonDefaults.iconToggleButtonColors(checkedContentColor = MaterialTheme.colorScheme.primary),
+                        ) {
+                            Icon(
+                                if (hf.on) Icons.Filled.Hearing else Icons.Outlined.Hearing,
+                                contentDescription = if (hf.on) "Turn hands-free off" else "Turn hands-free on",
+                            )
+                        }
+                    }
                     IconButton(onClick = actions.onNewChat) { Icon(Icons.Filled.Add, contentDescription = "New chat") }
                 },
             )
+            state.handsFree?.status?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag(HANDS_FREE_STATUS_TAG),
+                )
+            }
             MessageList(state, actions, Modifier.weight(1f))
             state.error?.let { error ->
                 ErrorLine(
@@ -293,6 +333,7 @@ fun ChatContent(
                 level = recordingLevel,
                 dictating = state.dictating,
                 voice = actions.voice,
+                micFree = state.micFree,
             )
         }
     }
@@ -473,6 +514,13 @@ private fun RenameDialog(current: String, onSave: (String) -> Unit, onDismiss: (
 const val MESSAGE_LIST_TAG = "message-list"
 const val DRAWER_LIST_TAG = "conversation-list"
 const val NEW_BELOW_TAG = "new-messages-below"
+const val HANDS_FREE_STATUS_TAG = "hands-free-status"
 
 private const val MIC_RECORD = "record"
 private const val MIC_DICTATE = "dictate"
+private const val MIC_HANDS_FREE = "hands_free"
+
+/** Hands-free runs in its own service, started from here while the app is on screen (Android's rule, C14 §2). */
+private fun startHandsFree(context: Context, vm: ChatViewModel) {
+    if (!HandsFreeService.start(context)) vm.onHandsFreeNotStarted("Hands-free couldn't start. Try again.")
+}

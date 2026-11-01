@@ -16,6 +16,8 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- C12: voice memos and dictation, asked the first time either button is used. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- C14: hands-free listens in a microphone foreground service. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <!-- C12: Android 11+ hides the speech recognizer service from apps that don't declare it here. -->
     <queries>
@@ -53,5 +55,10 @@
             android:name=".chat.service.ReplyService"
             android:exported="false"
             android:foregroundServiceType="shortService" />
+        <!-- C14: hands-free listening, only while its notification shows. -->
+        <service
+            android:name=".voice.handsfree.HandsFreeService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
     </application>
 </manifest>

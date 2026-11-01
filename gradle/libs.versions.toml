@@ -15,6 +15,7 @@ navigation = "2.10.2"
 splashscreen = "1.2.0"
 okhttp = "5.5.1"
 jsoup = "1.23.2"
+onnxruntime = "1.31.0"
 room = "2.8.5"  # C05: upgraded to latest stable (01-architecture §1)
 serialization = "1.12.0"
 junit = "4.13.2"
@@ -55,6 +56,7 @@ kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver3", version.ref = "okhttp" }
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
+onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

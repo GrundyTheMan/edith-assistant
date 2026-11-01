@@ -34,9 +34,15 @@ data class ChatUiState(
     val voiceBusy: Boolean = false,
     /** Dictation is listening (C12): the mic in the text field is highlighted. */
     val dictating: Boolean = false,
+    /** Hands-free mode (C14); null when it isn't available. */
+    val handsFree: HandsFreeUi? = null,
 ) {
     fun canSend(draft: String): Boolean = conversationId != null && !busy && !voiceBusy && draft.isNotBlank()
-    val canRecord: Boolean get() = conversationId != null && !busy && !voiceBusy
+    /** Hands-free holds the microphone while it's on, so Record and dictation wait. */
+    val micFree: Boolean get() = handsFree?.on != true
+    val canRecord: Boolean get() = conversationId != null && !busy && !voiceBusy && micFree
+    /** Hands-free can't start while a memo or dictation has the microphone. */
+    val canStartHandsFree: Boolean get() = conversationId != null && !voiceBusy && !dictating
 
     companion object {
         const val NEW_CHAT_TITLE = "New chat"
@@ -57,7 +63,13 @@ data class MessageUi(
     val isLatest: Boolean,
     /** The newest message, and it's Edith's: Regenerate is offered here only. */
     val isLatestAssistant: Boolean,
+    /** Said hands-free (C14): an ear icon by its time. */
+    val handsFree: Boolean = false,
 )
+
+/** Hands-free on the chat screen (C14 §3): the top-bar button and, while on, what it's doing. */
+@Immutable
+data class HandsFreeUi(val on: Boolean, val status: String? = null)
 
 @Immutable
 data class AttachmentUi(val number: Int, val fileName: String, val kind: AttachmentKind)

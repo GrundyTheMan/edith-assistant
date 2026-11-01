@@ -160,6 +160,40 @@ class ChatScreenTest {
         assertEquals(listOf("record", "dictate", "stop", "cancel", "settings"), calls)
     }
 
+    /** C14: the hands-free button and status line, the mic buttons waiting while it's on, and the ear on its messages. */
+    @Test fun handsFreeButtonStatusAndEar() {
+        var toggles = 0
+        val off = ChatUiState(
+            conversationId = 1, loaded = true, features = ChatFeatures(record = true, dictation = true),
+            handsFree = HandsFreeUi(on = false),
+            messages = listOf(
+                MessageUi(1, com.edith.app.data.db.MessageRole.User, "what's the weather", "9:00 AM", com.edith.app.data.db.MessageStatus.Complete,
+                    null, emptyList(), emptyList(), isLatest = true, isLatestAssistant = false, handsFree = true),
+            ),
+        )
+        var state by mutableStateOf(off)
+        compose.setContent { EdithTheme { ChatContent(state, draft = "", actions = ChatActions(onHandsFree = { toggles++ })) } }
+
+        compose.onNodeWithContentDescription("Said hands-free").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Turn hands-free on").performClick()
+        assertEquals(1, toggles)
+        assertTrue(!exists(hasTestTag(HANDS_FREE_STATUS_TAG)))
+
+        state = off.copy(handsFree = ChatViewModel.handsFreeUi(com.edith.app.voice.handsfree.HandsFree.State.Listening, "Hey Edith"))
+        compose.onNodeWithTag(HANDS_FREE_STATUS_TAG).assert(hasText("Listening for “Hey Edith”"))
+        compose.onNodeWithContentDescription("Record audio").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Speak a message").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Turn hands-free off").performClick()
+        assertEquals(2, toggles)
+
+        state = off.copy(handsFree = ChatViewModel.handsFreeUi(com.edith.app.voice.handsfree.HandsFree.State.Capturing("what's the"), "Hey Edith"))
+        compose.onNodeWithTag(HANDS_FREE_STATUS_TAG).assert(hasText("what's the"))
+
+        // Hands-free can't start while dictation has the microphone.
+        state = off.copy(dictating = true)
+        compose.onNodeWithContentDescription("Turn hands-free on").assertIsNotEnabled()
+    }
+
     /** The in-flight bubble's look (C07 §4); the streaming states themselves are covered in ChatViewModelTest. */
     @Test fun theInFlightBubbleShowsTheLabelUntilTextArrivesAndCanBeStopped() {
         var stopped = 0

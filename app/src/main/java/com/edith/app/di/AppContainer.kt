@@ -1,6 +1,8 @@
 package com.edith.app.di
 
 import android.app.Application
+import android.media.AudioManager
+import android.media.ToneGenerator
 import com.edith.app.chat.CurrentConversation
 import com.edith.app.chat.service.ReplyKeepAlive
 import com.edith.app.chat.service.ReplyService
@@ -55,7 +57,9 @@ import com.edith.app.voice.speech.AndroidTts
 import com.edith.app.voice.speech.SpeechController
 import com.edith.app.voice.speech.SpeechOutput
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import com.edith.app.voice.capture.AudioRecorder
@@ -63,6 +67,10 @@ import com.edith.app.voice.capture.LiveSpeech
 import com.edith.app.voice.capture.OllamaTranscriber
 import com.edith.app.voice.capture.SpeechInput
 import com.edith.app.voice.capture.VoiceMemos
+import com.edith.app.voice.handsfree.HandsFree
+import com.edith.app.voice.handsfree.MicWakeListener
+import com.edith.app.voice.handsfree.OpenWakeWord
+import com.edith.app.voice.handsfree.WakeWordModel
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -174,6 +182,41 @@ class AppContainer(val app: Application) {
     /** Dictation into the text field (C12): Android's speech recognizer. */
     val dictation: SpeechInput by lazy { LiveSpeech(app) }
 
+    /** The wake word in this build: "Hey Edith" once the owner's model is in assets, else the stand-in (C14, D4). */
+    val wakeWordModel: WakeWordModel by lazy { WakeWordModel.find(app) }
+
+    /** Listens for the wake word with openWakeWord (D4). */
+    val wakeListener: MicWakeListener by lazy { MicWakeListener { OpenWakeWord(app, wakeWordModel) } }
+
+    /** Hands-free mode (C14): app-scoped; [HandsFreeService] keeps it running with its notification. */
+    val handsFree: HandsFree by lazy {
+        HandsFree(
+            wake = wakeListener,
+            recognizer = LiveSpeech(app),
+            engineState = chatEngine.state,
+            speaking = speechOutput.speakingMessageId,
+            stopSpeaking = { speechOutput.stop() },
+            cancelReply = { chatEngine.cancel() },
+            send = { text -> chatEngine.send(currentConversation.await(), text, MessageSource.HandsFree) },
+            earcon = ::earcon,
+            settings = settingsRepository,
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+            phrase = wakeWordModel.phrase,
+        )
+    }
+
+    /** A short beep after the wake word, so the owner knows Edith is listening (C14 §1). */
+    private suspend fun earcon() {
+        try {
+            val tone = ToneGenerator(AudioManager.STREAM_MUSIC, EARCON_VOLUME)
+            tone.startTone(ToneGenerator.TONE_PROP_BEEP, EARCON_MS)
+            delay(EARCON_MS + 60L)   // let it finish before the recognizer opens the mic
+            tone.release()
+        } catch (e: RuntimeException) {
+            Log.w(LogTag.Voice, "Couldn't play the hands-free beep", e)
+        }
+    }
+
     /** Where memos are recorded; emptied at startup and after every transcription. */
     private val recordingsDir: File get() = File(app.cacheDir, "recordings")
 
@@ -223,4 +266,9 @@ class AppContainer(val app: Application) {
     val settingsRepository: SettingsRepository by lazy { DataStoreSettingsRepository.create(app) }
     val modelSelection: ModelSelection by lazy { ModelSelection(settingsRepository, modelCatalog) }
     val localNetworkAccess: LocalNetworkAccess by lazy { AndroidLocalNetworkAccess(app) }
+
+    private companion object {
+        const val EARCON_VOLUME = 60
+        const val EARCON_MS = 120
+    }
 }

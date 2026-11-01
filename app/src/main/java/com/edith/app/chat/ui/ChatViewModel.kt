@@ -21,10 +21,12 @@ import com.edith.app.core.permissions.ToolPermissions
 import com.edith.app.voice.capture.LiveSpeech
 import com.edith.app.voice.capture.SpeechInput
 import com.edith.app.voice.capture.VoiceMemos
+import com.edith.app.voice.handsfree.HandsFree
 import com.edith.app.di.viewModelFactory
 import com.edith.app.voice.speech.SpeechController
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -59,6 +61,8 @@ class ChatViewModel(
     private val voiceMemos: VoiceMemos? = null,
     /** Dictation into the text field (C12); null when the phone has no speech recognizer. */
     private val dictation: SpeechInput? = null,
+    /** Hands-free mode (C14); null when it isn't available. */
+    private val handsFree: HandsFree? = null,
 ) : ViewModel() {
 
     val toolPermissionRequest: StateFlow<ToolPermissions.Request?> get() = permissions.pending
@@ -111,9 +115,16 @@ class ChatViewModel(
     /** The memo's level meter, 0..1 (separate, so the meter doesn't redraw the whole screen). */
     val recordingLevel: StateFlow<Float> = voiceMemos?.level ?: MutableStateFlow(0f)
 
+    // --- Hands-free (C14) ----------------------------------------------------------------------------------------
+
+    /** The button's state and hands-free's notice (why it stopped). */
+    private val handsFreeUi: Flow<Pair<HandsFreeUi, String?>?> = if (handsFree == null) MutableStateFlow(null) else {
+        combine(handsFree.state, handsFree.notice) { s, notice -> handsFreeUi(s, handsFree.phrase) to notice }
+    }
+
     val state: StateFlow<ChatUiState> = combine(
-        opened, engine.state, repo.conversations(), speech.speakingMessageId, combine(transient, voice, ::Pair),
-    ) { open, engineState, conversations, speaking, (t, v) ->
+        opened, engine.state, repo.conversations(), speech.speakingMessageId, combine(transient, voice, handsFreeUi, ::Triple),
+    ) { open, engineState, conversations, speaking, (t, v, hf) ->
         val openId = open?.id
         val runningIn = engineState.runningConversationId()
         val inFlight = when {
@@ -140,9 +151,11 @@ class ChatViewModel(
             sendHint = if (runningIn != null && runningIn != openId) OTHER_CHAT_HINT else null,
             error = failure?.let { ChatError(LOCAL_NETWORK_MESSAGE, needsLocalNetworkPermission = true) }
                 ?: v.error
-                ?: v.memoNotice?.let { ChatError(it, needsLocalNetworkPermission = false) },
+                ?: v.memoNotice?.let { ChatError(it, needsLocalNetworkPermission = false) }
+                ?: hf?.second?.let { ChatError(it, needsLocalNetworkPermission = false) },
             recording = recording?.let { RecordingUi(it.startedAtMs) },
             dictating = v.dictating,
+            handsFree = hf?.first,
             conversations = conversations.map {
                 ConversationItem(
                     id = it.id,
@@ -291,9 +304,20 @@ class ChatViewModel(
 
     // --- Errors --------------------------------------------------------------------------------------------------
 
+    /** Turns hands-free off. (The screen turns it on: it must start the service, after the microphone permission.) */
+    fun stopHandsFree() {
+        handsFree?.stop()
+    }
+
+    /** The service couldn't start, or the microphone was refused. */
+    fun onHandsFreeNotStarted(message: String, opensAppSettings: Boolean = false) {
+        voiceError.value = ChatError(message, needsLocalNetworkPermission = false, opensAppSettings = opensAppSettings)
+    }
+
     fun dismissError() {
         voiceError.value = null
         voiceMemos?.dismissNotice()
+        handsFree?.dismissNotice()
         val failed = engine.state.value as? EngineState.Failed ?: return
         transient.update { it.copy(dismissedFailure = failed) }
     }
@@ -352,6 +376,7 @@ class ChatViewModel(
                 attachments = row.attachments.map { AttachmentUi(it.number, it.fileName, it.kind) },
                 isLatest = m.id == newest?.id,
                 isLatestAssistant = m.id == newest?.id && m.role == MessageRole.Assistant,
+                handsFree = m.source == MessageSource.HandsFree,
             )
         }
     }
@@ -365,6 +390,16 @@ class ChatViewModel(
         private const val BRIDGE_MAX_MS = 2_000L
 
         private fun draftKey(conversationId: Long) = "draft_$conversationId"
+
+        /** What the hands-free line under the top bar says (C14 §3). */
+        fun handsFreeUi(state: HandsFree.State, phrase: String): HandsFreeUi = when (state) {
+            HandsFree.State.Off -> HandsFreeUi(on = false)
+            HandsFree.State.Paused -> HandsFreeUi(on = true, status = "Paused")
+            HandsFree.State.Listening -> HandsFreeUi(on = true, status = "Listening for “$phrase”")
+            is HandsFree.State.Capturing -> HandsFreeUi(on = true, status = state.partial.ifBlank { "Listening…" })
+            HandsFree.State.Thinking -> HandsFreeUi(on = true, status = "Thinking…")
+            HandsFree.State.Speaking -> HandsFreeUi(on = true, status = "Speaking…")
+        }
 
         private fun EngineState.runningConversationId(): Long? = when (this) {
             is EngineState.Working -> conversationId
@@ -385,6 +420,7 @@ class ChatViewModel(
                 permissions = container.toolPermissions,
                 voiceMemos = container.voiceMemos.takeIf { container.chatFeatures.record },
                 dictation = container.dictation.takeIf { container.chatFeatures.dictation },
+                handsFree = container.handsFree.takeIf { container.chatFeatures.dictation },   // it needs the recognizer too
             )
         }
     }
