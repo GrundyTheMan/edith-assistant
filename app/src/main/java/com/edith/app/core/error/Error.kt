@@ -32,8 +32,13 @@ sealed interface AppError {
         override val userMessage get() = "No chat models are installed on your Ollama server. Install one on the PC, e.g. \"ollama pull gemma4\"."
     }
 
-    data class ModelLacksCapability(val model: String, val capability: String) : AppError {
-        override val userMessage get() = "The model \"$model\" can't $capability. Pick a different model in Settings."
+    /** [badge]: the Settings label of models that can ("Sees images"), to point the owner at one. */
+    data class ModelLacksCapability(val model: String, val capability: String, val badge: String? = null) : AppError {
+        override val userMessage get() = if (badge != null) {
+            "$model can't $capability — pick a model marked ‘$badge’ in Settings."
+        } else {
+            "The model \"$model\" can't $capability. Pick a different model in Settings."
+        }
     }
 
     data class OllamaHttp(val code: Int, val body: String) : AppError {

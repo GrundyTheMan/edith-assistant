@@ -43,7 +43,7 @@ design in the same PR, or ask the owner.
 | [C12](chunks/C12-voice-input.md) | Voice memos and dictation | 3 Voice | C03, C06, C07 | Done |
 | [C13](chunks/C13-spoken-replies.md) | Spoken replies (phone voice, streaming sentences) | 3 | C06, C07 | Done |
 | [C14](chunks/C14-hands-free.md) | Hands-free mode (wake word, follow-ups) | 3 | C12, C13, C06 | Done (real-mic check pending) |
-| [C15](chunks/C15-attachment-intake.md) | Attachments in (photos, audio files) | 4 Attachments | C05, C06, C07 | Not started |
+| [C15](chunks/C15-attachment-intake.md) | Attachments in (photos, audio files) | 4 Attachments | C05, C06, C07 | Done |
 | [C16](chunks/C16-attachment-storage-and-edith-files.md) | Storage, retention (default 10), Edith's files, resends | 4 | C15, C05, C07, C13 | Not started |
 | [C17](chunks/C17-google-account.md) | Google account sign-in and authorization | 5 Google | C02, C04, C08 | Not started |
 | [C18](chunks/C18-google-calendar.md) | Google Calendar tools and Calendar tab | 5 | C17, C08 | Not started |
@@ -75,8 +75,12 @@ design in the same PR, or ask the owner.
   - "Hey Edith" needs the owner's trained model in `app/src/main/assets/wakeword/hey_edith.onnx`
     (`docs/wake-word-training.md`); until then the wake word is the stand-in "Hey Jarvis".
   - On the emulator, speech gets in through `DebugHandsFreeReceiver`.
-- **Phase 3 (voice) is done.** **Next: C15** (attachments) **or C17** (Google sign-in; ask the owner about **D9**
-  first). `AppContainer.chatFeatures` turns on the Attach button (C15).
+- **Phase 3 (voice) is done.**
+- **Attachments in are done (C15)**: photos (scaled, upright) and audio (WAV/MP3 kept, others converted to WAV),
+  labels and media in the context (`MediaAttachmentContext`), and a capability check before sending. Sent files last
+  for one run of the app (`SessionAttachmentStore`) until C16 makes them durable.
+- **Next: C16** (storage, retention and Edith's files; ask the owner about **O1** first) **or C17** (Google
+  sign-in; ask about **D9** first).
 - Judge tool reliability with `gemma4:12b`; `e4b` often skips tools (L26).
 - Owner decisions still open are in `06-decisions.md`. Ask early about the ones your chunk lists; the first ones
   needed are **D8** (C03), **O1** (C16), **D9** (C17), **D5** (C19).

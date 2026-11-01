@@ -10,6 +10,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -87,6 +88,7 @@ import com.edith.app.chat.service.ReplyService
 import com.edith.app.voice.handsfree.HandsFreeService
 import com.edith.app.core.permissions.LocalNetworkAccess
 import kotlinx.coroutines.launch
+import java.io.File
 
 /** Everything the chat screen can do, so [ChatContent] can be tested without a ViewModel. */
 data class ChatActions(
@@ -108,6 +110,12 @@ data class ChatActions(
     val onOpenAppSettings: () -> Unit = {},
     /** The top bar's hands-free button (C14): on or off. */
     val onHandsFree: () -> Unit = {},
+    /** Attachments (C15): the paperclip's two pickers, ✕ on a chip, ▶/■ on an audio attachment, a photo full screen. */
+    val onAttachPhoto: () -> Unit = {},
+    val onAttachAudio: () -> Unit = {},
+    val onRemoveAttachment: (Long) -> Unit = {},
+    val onToggleAttachment: (AttachmentUi) -> Unit = {},
+    val onOpenImage: (File) -> Unit = {},
 )
 
 /** The Chat tab (C07). */
@@ -167,6 +175,16 @@ fun ChatScreen(vm: ChatViewModel = viewModel(factory = ChatViewModel.Factory)) {
             requestMic.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
+    // C15: Android's photo picker needs no permission (on API 37 it's select, then Done); audio files come from the
+    // document picker.
+    val pickPhotos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PHOTOS)) { uris ->
+        if (uris.isNotEmpty()) vm.attachImages(uris)
+    }
+    val pickAudio = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let(vm::attachAudio)
+    }
+    var viewing by rememberSaveable { mutableStateOf<String?>(null) }
+    viewing?.let { path -> ImageViewer(File(path)) { viewing = null } }
     // Never leave the microphone open in the background (C12 §2). A rotation isn't leaving.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -195,6 +213,11 @@ fun ChatScreen(vm: ChatViewModel = viewModel(factory = ChatViewModel.Factory)) {
                 onDictate = { withMicrophone(MIC_DICTATE, vm::toggleDictation) },
             ),
             onOpenAppSettings = openAppSettings,
+            onAttachPhoto = { pickPhotos.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+            onAttachAudio = { pickAudio.launch(arrayOf("audio/*")) },
+            onRemoveAttachment = vm::removeAttachment,
+            onToggleAttachment = vm::toggleAttachmentPlayback,
+            onOpenImage = { viewing = it.path },
             onHandsFree = {
                 if (state.handsFree?.on == true) {
                     vm.stopHandsFree()
@@ -322,6 +345,7 @@ fun ChatContent(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 2.dp),
                 )
             }
+            PendingAttachments(state.pending, actions.onRemoveAttachment)
             InputRow(
                 draft = draft,
                 canSend = state.canSend(draft),
@@ -334,6 +358,8 @@ fun ChatContent(
                 dictating = state.dictating,
                 voice = actions.voice,
                 micFree = state.micFree,
+                onAttachPhoto = actions.onAttachPhoto,
+                onAttachAudio = actions.onAttachAudio,
             )
         }
     }
@@ -424,6 +450,9 @@ private fun MessageList(state: ChatUiState, actions: ChatActions, modifier: Modi
                     onPlay = { actions.onPlay(message) },
                     onStopPlayback = actions.onStopPlayback,
                     onRegenerate = actions.onRegenerate,
+                    playingAttachmentId = state.playingAttachmentId,
+                    onToggleAttachment = actions.onToggleAttachment,
+                    onOpenImage = actions.onOpenImage,
                 )
             }
         }
@@ -519,6 +548,8 @@ const val HANDS_FREE_STATUS_TAG = "hands-free-status"
 private const val MIC_RECORD = "record"
 private const val MIC_DICTATE = "dictate"
 private const val MIC_HANDS_FREE = "hands_free"
+/** The photo picker's limit per pick (C15 §1). */
+private const val MAX_PHOTOS = 4
 
 /** Hands-free runs in its own service, started from here while the app is on screen (Android's rule, C14 §2). */
 private fun startHandsFree(context: Context, vm: ChatViewModel) {

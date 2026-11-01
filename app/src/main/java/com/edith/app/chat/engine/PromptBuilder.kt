@@ -24,12 +24,13 @@ fun interface PromptSection {
     fun text(ctx: PromptContext): String?
 }
 
-data class PromptContext(val now: ZonedDateTime, val model: ModelInfo)
+/** [hasAttachments]: the messages sent with this prompt include attachments (C15). */
+data class PromptContext(val now: ZonedDateTime, val model: ModelInfo, val hasAttachments: Boolean = false)
 
 /** Builds the system prompt fresh for every request: [PERSONA], a blank line, then each active section. */
 class PromptBuilder(private val clock: Clock, private val sections: () -> List<PromptSection>) {
-    fun system(model: ModelInfo): String {
-        val ctx = PromptContext(ZonedDateTime.ofInstant(clock.now(), clock.zone()), model)
+    fun system(model: ModelInfo, hasAttachments: Boolean = false): String {
+        val ctx = PromptContext(ZonedDateTime.ofInstant(clock.now(), clock.zone()), model, hasAttachments)
         val active = sections().mapNotNull { it.text(ctx)?.takeIf(String::isNotBlank) }
         return if (active.isEmpty()) PERSONA else PERSONA + "\n\n" + active.joinToString("\n")
     }

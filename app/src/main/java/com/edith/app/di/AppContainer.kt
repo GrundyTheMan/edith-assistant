@@ -62,6 +62,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
+import com.edith.app.attachments.AttachmentIntake
+import com.edith.app.attachments.AttachmentPlayer
+import com.edith.app.attachments.AttachmentsSection
+import com.edith.app.attachments.MediaAttachmentContext
+import com.edith.app.attachments.SessionAttachmentStore
 import com.edith.app.voice.capture.AudioRecorder
 import com.edith.app.voice.capture.LiveSpeech
 import com.edith.app.voice.capture.OllamaTranscriber
@@ -124,7 +129,7 @@ class AppContainer(val app: Application) {
     val deviceLocation: LocationProvider by lazy { AndroidLocationProvider(app, dispatchers) }
 
     /** System-prompt sections; later chunks add theirs here (attachments C15/C16, Google C17). */
-    val promptSections: List<PromptSection> by lazy { listOf(DateTimeSection(), ToolGuidanceSection { toolRegistry }) }
+    val promptSections: List<PromptSection> by lazy { listOf(DateTimeSection(), ToolGuidanceSection { toolRegistry }, AttachmentsSection()) }
 
     /** The tool loop (C08). */
     val turnRunner: TurnRunner by lazy {
@@ -140,9 +145,9 @@ class AppContainer(val app: Application) {
     val chatEngine: ChatEngine by lazy {
         ChatEngine(
             repo = chatRepository, settings = settingsRepository, modelSelection = modelSelection,
-            promptBuilder = PromptBuilder(clock) { promptSections }, contextBuilder = ContextBuilder(),
+            promptBuilder = PromptBuilder(clock) { promptSections }, contextBuilder = ContextBuilder(MediaAttachmentContext(attachmentStore)),
             turnRunner = turnRunner, listeners = replyListeners, scope = engineScope, localNetwork = localNetworkAccess,
-            confirmations = confirmations,
+            confirmations = confirmations, attachmentStore = attachmentStore,
         )
     }
 
@@ -158,7 +163,7 @@ class AppContainer(val app: Application) {
     val speechController: SpeechController get() = speechOutput
 
     /** Which input-row buttons exist (C07 §6). C15 turns on attach; C12 record, and dictation when the phone can. */
-    val chatFeatures: ChatFeatures by lazy { ChatFeatures(record = true, dictation = dictation.isAvailable) }
+    val chatFeatures: ChatFeatures by lazy { ChatFeatures(attach = true, record = true, dictation = dictation.isAvailable) }
 
     /** Voice memos (C12): app-scoped, so a recording or transcription survives rotation. */
     val voiceMemos: VoiceMemos by lazy {
@@ -220,6 +225,15 @@ class AppContainer(val app: Application) {
     /** Where memos are recorded; emptied at startup and after every transcription. */
     private val recordingsDir: File get() = File(app.cacheDir, "recordings")
 
+    /** Prepares picked photos and audio files (C15). */
+    val attachmentIntake: AttachmentIntake by lazy { AttachmentIntake(app.contentResolver, File(app.cacheDir, "pending"), dispatchers) }
+
+    /** Sent attachments' files, for this run of the app (C15; C16 makes them durable). */
+    val attachmentStore: SessionAttachmentStore by lazy { SessionAttachmentStore(File(app.cacheDir, "attachments")) }
+
+    /** Plays audio attachments in the chat; starting one stops Edith's voice. */
+    val attachmentPlayer: AttachmentPlayer by lazy { AttachmentPlayer { speechOutput.stop() } }
+
     /**
      * Creates/opens edith.db on a background thread at launch (running any migration), so the first chat doesn't
      * wait for it, then picks the conversation to open.
@@ -228,6 +242,8 @@ class AppContainer(val app: Application) {
         appScope.launch {
             try {
                 AudioRecorder.deleteLeftovers(recordingsDir)   // from a crash or a killed process mid-recording
+                attachmentIntake.clearLeftovers()   // C15: unsent attachments from the last run
+                attachmentStore.clearLeftovers()    // and sent ones: kept for one run until C16
                 database.openHelper.writableDatabase
                 Log.d(LogTag.App, "Database ready")
                 currentConversation.resolve()

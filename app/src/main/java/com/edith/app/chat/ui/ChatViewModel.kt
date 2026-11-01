@@ -1,5 +1,6 @@
 package com.edith.app.chat.ui
 
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -14,10 +15,15 @@ import com.edith.app.core.time.Clock
 import com.edith.app.core.time.formatListTime
 import com.edith.app.core.time.formatMessageTime
 import com.edith.app.data.chat.ChatRepository
+import com.edith.app.data.db.AttachmentKind
 import com.edith.app.data.db.MessageRole
 import com.edith.app.data.db.MessageSource
 import com.edith.app.data.db.MessageWithAttachments
 import com.edith.app.core.permissions.ToolPermissions
+import com.edith.app.attachments.AttachmentIntake
+import com.edith.app.attachments.AttachmentPlayer
+import com.edith.app.attachments.AttachmentStore
+import com.edith.app.attachments.PendingAttachment
 import com.edith.app.voice.capture.LiveSpeech
 import com.edith.app.voice.capture.SpeechInput
 import com.edith.app.voice.capture.VoiceMemos
@@ -61,6 +67,10 @@ class ChatViewModel(
     private val voiceMemos: VoiceMemos? = null,
     /** Dictation into the text field (C12); null when the phone has no speech recognizer. */
     private val dictation: SpeechInput? = null,
+    /** Attachments (C15): preparing picked files, where sent ones are kept, and playing audio ones. */
+    private val intake: AttachmentIntake? = null,
+    private val attachmentStore: AttachmentStore? = null,
+    private val attachmentPlayer: AttachmentPlayer? = null,
     /** Hands-free mode (C14); null when it isn't available. */
     private val handsFree: HandsFree? = null,
 ) : ViewModel() {
@@ -77,7 +87,8 @@ class ChatViewModel(
     private data class Opened(val id: Long, val title: String, val messages: List<MessageUi>, val latestId: Long?)
 
     private val opened: StateFlow<Opened?> = current.id.filterNotNull().flatMapLatest { id ->
-        combine(repo.observe(id), repo.observeConversation(id)) { rows, conversation ->
+        // The store's changes too: a sent attachment's file arrives just after its row (C15).
+        combine(repo.observe(id), repo.observeConversation(id), attachmentStore?.changes ?: MutableStateFlow(0)) { rows, conversation, _ ->
             Opened(id, conversation?.title.orEmpty().ifBlank { ChatUiState.NEW_CHAT_TITLE }, rows.toUi(), rows.lastOrNull()?.message?.id)
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -104,13 +115,24 @@ class ChatViewModel(
     private var draftDictated = false
     private var dictationBase = ""
 
-    private data class Voice(val memo: VoiceMemos.State, val memoNotice: String?, val dictating: Boolean, val error: ChatError?)
+    // --- Attachments (C15) -----------------------------------------------------------------------------------
+
+    /** In the input row: each picked file, being prepared ([attachment] null) or ready to send. */
+    private data class PendingItem(val key: Long, val name: String, val kind: AttachmentKind, val attachment: PendingAttachment? = null)
+    private val pending = MutableStateFlow<List<PendingItem>>(emptyList())
+    private var nextPendingKey = 0L
+
+    private data class Voice(
+        val memo: VoiceMemos.State, val memoNotice: String?, val dictating: Boolean, val error: ChatError?,
+        val pending: List<PendingItem>, val playing: Long?,
+    )
     private val voice = combine(
         voiceMemos?.state ?: MutableStateFlow(VoiceMemos.State.Idle),
         voiceMemos?.notice ?: MutableStateFlow(null),
         dictating,
         voiceError,
-    ) { memo, notice, listening, error -> Voice(memo, notice, listening, error) }
+        combine(pending, attachmentPlayer?.playing ?: MutableStateFlow(null), ::Pair),
+    ) { memo, notice, listening, error, (items, playing) -> Voice(memo, notice, listening, error, items, playing) }
 
     /** The memo's level meter, 0..1 (separate, so the meter doesn't redraw the whole screen). */
     val recordingLevel: StateFlow<Float> = voiceMemos?.level ?: MutableStateFlow(0f)
@@ -156,6 +178,8 @@ class ChatViewModel(
             recording = recording?.let { RecordingUi(it.startedAtMs) },
             dictating = v.dictating,
             handsFree = hf?.first,
+            pending = v.pending.map { PendingUi(it.key, it.name, it.kind, it.attachment?.file, ready = it.attachment != null) },
+            playingAttachmentId = v.playing,
             conversations = conversations.map {
                 ConversationItem(
                     id = it.id,
@@ -204,12 +228,19 @@ class ChatViewModel(
     fun send() {
         val id = current.id.value ?: return
         val text = draft.trim()
-        if (text.isEmpty() || engine.activeConversationId != null) return   // one turn at a time (C06)
+        val items = pending.value
+        if (items.any { it.attachment == null }) return   // still preparing
+        val attachments = items.mapNotNull { it.attachment }
+        if ((text.isEmpty() && attachments.isEmpty()) || engine.activeConversationId != null) return   // one turn at a time (C06)
         if (voiceMemos?.state?.value?.let { it != VoiceMemos.State.Idle } == true) return
         speech.stop()   // a new message interrupts Edith speaking (C13)
+        attachmentPlayer?.stop()
         if (dictating.value) dictation?.cancel().also { dictating.value = false }
-        bridgeBriefly(Bridge(id, text, opened.value?.takeIf { it.id == id }?.latestId)) { t, b -> t.copy(pendingUser = b) }
-        engine.send(id, text, if (draftDictated) MessageSource.Dictated else MessageSource.Typed)
+        if (text.isNotEmpty()) {
+            bridgeBriefly(Bridge(id, text, opened.value?.takeIf { it.id == id }?.latestId)) { t, b -> t.copy(pendingUser = b) }
+        }
+        if (!engine.send(id, text, if (draftDictated) MessageSource.Dictated else MessageSource.Typed, attachments)) return
+        pending.update { now -> now.filterNot { it in items } }   // the engine has them now
         draftDictated = false
         draft = ""
         savedState[draftKey(id)] = ""
@@ -279,6 +310,56 @@ class ChatViewModel(
 
     override fun onCleared() {
         if (dictating.value) dictation?.cancel()
+        pending.value.forEach { item -> item.attachment?.let { intake?.discard(it) } }
+        attachmentPlayer?.stop()
+    }
+
+    // --- Attachments (C15) -----------------------------------------------------------------------------------
+
+    /** Photos from the picker: each is prepared (scaled, upright JPEG) and appears in the input row. */
+    fun attachImages(uris: List<Uri>) = uris.forEach { attach(it, AttachmentKind.Image) }
+
+    /** An audio file: kept as WAV/MP3, or converted to WAV. */
+    fun attachAudio(uri: Uri) = attach(uri, AttachmentKind.Audio)
+
+    private fun attach(uri: Uri, kind: AttachmentKind) {
+        val intake = intake ?: return
+        if (pending.value.size >= MAX_ATTACHMENTS) {
+            voiceError.value = ChatError("You can attach up to $MAX_ATTACHMENTS files to one message.", needsLocalNetworkPermission = false)
+            return
+        }
+        val key = nextPendingKey++
+        pending.update { it + PendingItem(key, if (kind == AttachmentKind.Image) "Photo" else "Audio", kind) }
+        viewModelScope.launch {
+            val result = if (kind == AttachmentKind.Image) intake.image(uri) else intake.audio(uri)
+            when (result) {
+                is AttachmentIntake.Result.Ready -> {
+                    var kept = false
+                    pending.update { list ->
+                        list.map { if (it.key == key) it.copy(name = result.attachment.fileName, attachment = result.attachment).also { kept = true } else it }
+                    }
+                    if (!kept) intake.discard(result.attachment)   // removed while it was being prepared
+                }
+                is AttachmentIntake.Result.Refused -> {
+                    pending.update { list -> list.filterNot { it.key == key } }
+                    voiceError.value = ChatError(result.message, needsLocalNetworkPermission = false)
+                }
+            }
+        }
+    }
+
+    /** ✕ on a chip in the input row. */
+    fun removeAttachment(key: Long) {
+        val item = pending.value.firstOrNull { it.key == key } ?: return
+        pending.update { list -> list.filterNot { it.key == key } }
+        item.attachment?.let { intake?.discard(it) }
+    }
+
+    /** ▶/■ on an audio attachment in a bubble. */
+    fun toggleAttachmentPlayback(attachment: AttachmentUi) {
+        val player = attachmentPlayer ?: return
+        if (player.playing.value == attachment.id) player.stop()
+        else attachment.file?.let { player.play(attachment.id, it) }
     }
 
     /** Stops the reply being written; what Edith had written so far is kept (C06). */
@@ -373,7 +454,9 @@ class ChatViewModel(
                 status = m.status,
                 errorMessage = m.errorMessage,
                 toolsUsed = m.toolsUsed.map(toolLabel),
-                attachments = row.attachments.map { AttachmentUi(it.number, it.fileName, it.kind) },
+                attachments = row.attachments.sortedBy { it.number }.map { a ->
+                    AttachmentUi(a.number, a.fileName, a.kind, a.id, attachmentStore?.file(a.id), attachmentStore?.durationMs(a.id))
+                },
                 isLatest = m.id == newest?.id,
                 isLatestAssistant = m.id == newest?.id && m.role == MessageRole.Assistant,
                 handsFree = m.source == MessageSource.HandsFree,
@@ -386,6 +469,8 @@ class ChatViewModel(
         const val LOCAL_NETWORK_MESSAGE = "Edith needs permission to reach your PC on the local network."
         private const val CONFIRMING = "Waiting for your OK…"
         const val TRANSCRIBING = "Transcribing…"
+        /** Files on one message (the photo picker allows 4 at a time). */
+        const val MAX_ATTACHMENTS = 6
         private const val PREVIEW_CHARS = 80
         private const val BRIDGE_MAX_MS = 2_000L
 
@@ -421,6 +506,9 @@ class ChatViewModel(
                 voiceMemos = container.voiceMemos.takeIf { container.chatFeatures.record },
                 dictation = container.dictation.takeIf { container.chatFeatures.dictation },
                 handsFree = container.handsFree.takeIf { container.chatFeatures.dictation },   // it needs the recognizer too
+                intake = container.attachmentIntake,
+                attachmentStore = container.attachmentStore,
+                attachmentPlayer = container.attachmentPlayer,
             )
         }
     }

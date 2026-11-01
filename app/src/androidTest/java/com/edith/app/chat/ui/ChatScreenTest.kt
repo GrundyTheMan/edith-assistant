@@ -194,6 +194,56 @@ class ChatScreenTest {
         compose.onNodeWithContentDescription("Turn hands-free on").assertIsNotEnabled()
     }
 
+    /** C15: the paperclip's menu, chips (preparing, ready, ✕), Send with only attachments, and attachments in a bubble. */
+    @Test fun attachmentsInTheInputRowAndInBubbles() {
+        val calls = mutableListOf<String>()
+        val app = InstrumentationRegistry.getInstrumentation().targetContext
+        val photo = java.io.File(app.cacheDir, "ui-test.jpg").apply {
+            outputStream().use { android.graphics.Bitmap.createBitmap(40, 30, android.graphics.Bitmap.Config.ARGB_8888).compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, it) }
+        }
+        val actions = ChatActions(
+            onAttachPhoto = { calls += "photo" }, onAttachAudio = { calls += "audio" },
+            onRemoveAttachment = { calls += "remove $it" }, onToggleAttachment = { calls += "play ${it.fileName}" },
+            onOpenImage = { calls += "open ${it.name}" },
+        )
+        val image = com.edith.app.data.db.AttachmentKind.Image
+        val audio = com.edith.app.data.db.AttachmentKind.Audio
+        val message = MessageUi(
+            1, com.edith.app.data.db.MessageRole.User, "", "9:00 AM", com.edith.app.data.db.MessageStatus.Complete, null, emptyList(),
+            listOf(
+                AttachmentUi(1, "list.jpg", image, id = 11, file = photo),
+                AttachmentUi(2, "note.wav", audio, id = 12, file = photo, durationMs = 65_000),
+                AttachmentUi(3, "old.jpg", image, id = 13, file = null),
+            ),
+            isLatest = true, isLatestAssistant = false,
+        )
+        val base = ChatUiState(conversationId = 1, loaded = true, features = ChatFeatures(attach = true), messages = listOf(message))
+        var state by mutableStateOf(base.copy(pending = listOf(PendingUi(5, "Photo", image, null, ready = false))))
+        compose.setContent { EdithTheme { ChatContent(state, draft = "", actions = actions) } }
+
+        compose.onNodeWithContentDescription("Attach a file").performClick()
+        compose.onNodeWithText("Photo").performClick()
+        compose.onNodeWithContentDescription("Attach a file").performClick()
+        compose.onNodeWithText("Audio file").performClick()
+
+        compose.onNodeWithText("Preparing…").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Send").assertIsNotEnabled()   // still preparing
+
+        state = base.copy(pending = listOf(PendingUi(5, "receipt.jpg", image, photo, ready = true)))
+        compose.onNodeWithText("receipt.jpg").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Send").assertIsEnabled()      // attachments alone can be sent
+        compose.onNodeWithContentDescription("Remove receipt.jpg").performClick()
+
+        compose.onNodeWithContentDescription("Attachment 1: list.jpg").performClick()
+        compose.onNodeWithText("1:05").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Play note.wav").performClick()
+        compose.onNodeWithText("old.jpg — no longer available", substring = true).assertIsDisplayed()
+
+        state = state.copy(playingAttachmentId = 12)
+        compose.onNodeWithContentDescription("Stop note.wav").assertIsDisplayed()
+        assertEquals(listOf("photo", "audio", "remove 5", "open ui-test.jpg", "play note.wav"), calls)
+    }
+
     /** The in-flight bubble's look (C07 §4); the streaming states themselves are covered in ChatViewModelTest. */
     @Test fun theInFlightBubbleShowsTheLabelUntilTextArrivesAndCanBeStopped() {
         var stopped = 0

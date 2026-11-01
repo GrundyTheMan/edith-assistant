@@ -5,6 +5,7 @@ import com.edith.app.chat.engine.ConfirmationRequest
 import com.edith.app.data.db.AttachmentKind
 import com.edith.app.data.db.MessageRole
 import com.edith.app.data.db.MessageStatus
+import java.io.File
 
 /** Everything the chat screen shows (C07 §1). The draft lives in [ChatViewModel.draft] so typing stays instant. */
 @Immutable
@@ -36,8 +37,14 @@ data class ChatUiState(
     val dictating: Boolean = false,
     /** Hands-free mode (C14); null when it isn't available. */
     val handsFree: HandsFreeUi? = null,
+    /** Attachments in the input row, waiting to be sent (C15). */
+    val pending: List<PendingUi> = emptyList(),
+    /** The audio attachment playing in a bubble, by attachment id. */
+    val playingAttachmentId: Long? = null,
 ) {
-    fun canSend(draft: String): Boolean = conversationId != null && !busy && !voiceBusy && draft.isNotBlank()
+    /** Text or attachments, and nothing still being prepared. */
+    fun canSend(draft: String): Boolean = conversationId != null && !busy && !voiceBusy &&
+        (draft.isNotBlank() || pending.isNotEmpty()) && pending.all { it.ready }
     /** Hands-free holds the microphone while it's on, so Record and dictation wait. */
     val micFree: Boolean get() = handsFree?.on != true
     val canRecord: Boolean get() = conversationId != null && !busy && !voiceBusy && micFree
@@ -72,7 +79,19 @@ data class MessageUi(
 data class HandsFreeUi(val on: Boolean, val status: String? = null)
 
 @Immutable
-data class AttachmentUi(val number: Int, val fileName: String, val kind: AttachmentKind)
+data class AttachmentUi(
+    val number: Int,
+    val fileName: String,
+    val kind: AttachmentKind,
+    val id: Long = 0,
+    /** Null when it's no longer available (C15: kept for this run of the app until C16). */
+    val file: File? = null,
+    val durationMs: Long? = null,
+)
+
+/** A chip above the input row (C15 §1): a picked file being prepared, or ready to send. */
+@Immutable
+data class PendingUi(val key: Long, val name: String, val kind: AttachmentKind, val file: File?, val ready: Boolean)
 
 /** A reply being written. [canStop] is false for the moment between "done" and the stored reply appearing. */
 @Immutable
