@@ -72,7 +72,105 @@ stored; otherwise the `[Attached file: name]` placeholder.
 - No attachment bytes in the database (byte-level scan test on the DB file for a JPEG/WAV signature).
 
 ## Acceptance criteria
-- [ ] Emulator: ask "make me a packing list for a beach day as a file" → file card; View/Save/Share work.
-- [ ] "Send me that receipt photo again" → the original photo shown in Edith's bubble.
-- [ ] Attach 11 photos over time with N=10 → the oldest shows "no longer available" and its file is gone (`run-as` listing).
-- [ ] Restart the app → kept attachments still show; removed ones show the placeholder.
+- [x] Emulator: ask "make me a packing list for a beach day as a file" → file card; View/Save/Share work.
+- [x] "Send me that receipt photo again" → the original photo shown in Edith's bubble.
+- [x] Attach 11 photos over time with N=10 → the oldest shows "no longer available" and its file is gone (`run-as` listing).
+- [x] Restart the app → kept attachments still show; removed ones show the placeholder.
+
+## As built (2026-11-01)
+
+Where the code differs from the specification above, the code is right.
+
+**O1 (the owner, 2026-11-01): per direction.** The owner's 10 newest and Edith's 10 newest are kept, across all chats.
+Recorded in 06-decisions.
+
+**Files** (`attachments/`)
+- `AttachmentStore.kt`: `AttachmentStore`, and `FileAttachmentStore` (replaces C15's one-run store).
+- `Retention.kt`: pruning per direction, startup cleanup, Delete all, and usage.
+- `ReplyFormat.kt`: parsing `<file>` blocks and resend tags, name sanitising, placeholders, and `EdithFilesSection`
+  (the prompt).
+- `FileExport.kt`: Save (exact bytes to a chosen URI) and Share (a FileProvider URI).
+- `MediaAttachmentContext.kt` (C15): now also handles Edith's own files and resends.
+
+Also:
+- **Engine:** `ChatEngine` stores files before their rows; after a reply, `edithAttachments` turns her blocks and
+  tags into rows. A retention hook (`afterAttachments`) runs after a message with attachments.
+- **Repository:** `ChatRepository` deletes files with their conversation, message (Regenerate) or Clear.
+  `addAssistantMessage` takes her files and resends.
+- **Database:** new `AttachmentDao` queries. No schema change: the columns were there since C05.
+- **Chat UI:** `EdithAttachments` (file cards, resends, removed lines) and `FileViewer`. The screen handles
+  View/Save/Share, and a streaming reply shows "Writing name…" in place of a file block.
+- **Settings:** `ui/settings/AttachmentSettings.kt` (Settings → Attachments).
+- **Manifest:** a `FileProvider` (`${applicationId}.files`) exposing only `cacheDir/share`.
+
+**Differences from the spec**
+- **`stored_path`** is `attachments/<uuid>.<ext>` under `filesDir`, or `session/<uuid>.<ext>` under `cacheDir` when
+  keeping 0. `FileAttachmentStore` resolves both.
+- **The store API is path-based:** `keep(pending, session)` / `write(name, content, session)` return the
+  `stored_path`, and `file(storedPath)`, `durationMs(storedPath)`, `delete(storedPath)` read from it. Files are
+  stored before their rows, so a row never points at a file that isn't there yet.
+- **Keep = 0:**
+  - New files go to `session/` and aren't counted during the run.
+  - At the next start, `session/` is emptied and those rows get `removed_at`.
+  - Lowering the setting to 0 deletes the kept files at once, after the confirmation.
+- **Retention also runs at startup**, after the session and orphan cleanup. That cleanup also removes `*.tmp`
+  leftovers and C15's old `cacheDir/attachments`.
+- **Resend rows** take the original's number (so "Attachment 3" stays 3), `kind`, name and size, with
+  `stored_path = null` and `resend_of` set. A resend of a resend points at the original.
+- **Edith's files** get the next number in the chat like the owner's. Name sanitising keeps the extension when
+  cutting to 60 characters (a name without one gets `.md`).
+- **Stored text:** a file block becomes `[Attached file: name]` on its own line, and a resend tag is removed (the
+  bubble shows the attachment). An unknown number becomes "Attachment N isn't available." The bubble hides the
+  placeholders; speech skips them and the tags.
+- **Context:**
+  - Within the 10-message window and while stored, her placeholder becomes her file block again (up to 8,000
+    characters).
+  - Her resends go back as the `<attachment number="N"/>` tag she wrote, with no media.
+  - Older ones keep the placeholder.
+- **Removed files:** a removed Edith file shows "name — no longer kept"; a resend whose original is gone shows
+  "Attachment N is no longer available."
+- **Share** copies the file to `cacheDir/share/<name>` (the stored name is random), the only folder the provider
+  exposes, emptied on each share.
+- **The prompt says plainly that Edith can send attachments back.** Live, gemma4 once answered "I'm afraid I can't
+  actually 'send' files…".
+  - In a replay with Ollama, the spec's wording gave the tag 15 times in 16. The added line ("You can send
+    attachments back … Never say you can't send it.") gave it 10 times in 10, and the next two live tries both
+    worked. The variance is the model's; the line targets what it said.
+
+**Verified**
+- `scripts/check.sh --device`: OK (`build-logs/2026-11-01_17-13-01_check.log`). 167 unit tests (10 new in `ReplyFormatTest`), lint
+  clean, 104 device tests (13 new).
+  - `ReplyFormatTest` (JVM): parts in order; an unclosed file; resend tag forms; sanitising (spaces, `../`,
+    non-ASCII, empty, length with the extension kept); streaming text; placeholders; MIME types; speech; Edith's
+    file in and out of the window; a resend in the context.
+  - `RetentionTest` (Room and real files):
+    - 12 owner + 3 Edith with N=10 → the 2 oldest owner files go; Edith's and the resend don't count
+    - a lower number prunes; counts span chats
+    - keep = 0 → session files go at the next start, rows marked
+    - orphans and `.tmp` files deleted at start
+    - deleting a message or a chat deletes its files
+    - Delete all and usage
+    - Save writes the exact bytes; the Share URI is `content://…files/…/beach-list.md` and reads back the same bytes
+  - `AttachmentSendTest`:
+    - Edith's file → a `from_edith` `file` row, the content on disk, the placeholder in the text
+    - a resend → `resend_of` set, number kept, no copy; an unknown number → "Attachment 7 isn't available."
+    - **no attachment bytes in the database**: a file-backed DB and its WAL scanned for JPEG and WAV signatures
+  - `ChatScreenTest.edithsFilesAndResendsInHerBubble` and `AttachmentSettingsTest`.
+- **Live on the emulator** (`gemma4:12b`):
+  - **"Make me a packing list for a beach day as a file"** → a card "beach_day_packing_list.md" with its first lines.
+    - **View** shows the whole file.
+    - **Save** → Android's save screen → Downloads: `md5` identical to the stored file.
+    - **Share** → Android's share sheet with "beach_day_packing_list.md" (Quick Share, Drive, Gmail).
+  - **"Send me that receipt photo again"** (after sending a photo as a receipt): the first try got the "I can't
+    send files" reply (see above). After the prompt line, two tries in a row → the photo in Edith's bubble. Only one
+    copy stored.
+  - **11 more photos with N=10** → the store stayed at 10 photos; "Retention: removed 1 attachment(s)" each time;
+    the oldest (the receipt and photo 1) show "26.jpg — no longer available".
+  - **Restart** → the 10 photos and Edith's file still show (View/Save/Share). The removed ones keep their
+    placeholders, and the receipt's resends show "Attachment 2 is no longer available."
+  - Settings → Attachments: "Keep the most recent 10 each way", the explanation, "11 files, 644 KB".
+  - No crash.
+- **Not verified:**
+  - Lowering the number from Settings on the emulator (it deletes files). The dialog has a UI test and the pruning
+    has device tests.
+  - Saving to a cloud provider (Drive), and sharing into another app (the sheet was closed).

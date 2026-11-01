@@ -13,8 +13,6 @@ import com.edith.app.data.db.MessageSource
 import com.edith.app.data.db.MessageStatus
 import com.edith.app.data.db.MessageWithAttachments
 import com.edith.app.ollama.ModelInfo
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -27,15 +25,18 @@ class AttachmentContextTest {
     private val textOnly = ModelInfo("ornith:9b", setOf("completion", "tools"))
 
     /** A store where attachment ids in [available] have a file; "encoding" gives "b64:<id>". */
+    /** Attachment [id] is stored at "attachments/<id>"; the ids in [available] have a file. Text files read as "text of <id>". */
     private class FakeStore(private val available: Set<Long>) : AttachmentStore {
-        override fun save(id: Long, pending: PendingAttachment) {}
-        override fun file(id: Long): File? = if (id in available) File("/att/$id") else null
-        override fun durationMs(id: Long): Long? = null
-        override val changes: StateFlow<Int> = MutableStateFlow(0)
+        override fun keep(pending: PendingAttachment, session: Boolean) = error("unused")
+        override fun write(fileName: String, content: String, session: Boolean) = error("unused")
+        override fun file(storedPath: String?): File? =
+            storedPath?.removePrefix("attachments/")?.toLongOrNull()?.takeIf { it in available }?.let { File("/att/$it") }
+        override fun durationMs(storedPath: String?): Long? = null
+        override fun delete(storedPath: String?) {}
     }
 
     private fun context(vararg available: Long) =
-        MediaAttachmentContext(FakeStore(available.toSet())) { "b64:${it.name}" }
+        MediaAttachmentContext(FakeStore(available.toSet()), encode = { "b64:${it.name}" }, readText = { "text of ${it.name}" })
 
     private var nextId = 1L
     private fun message(text: String, vararg attachments: AttachmentEntity, role: MessageRole = MessageRole.User): MessageWithAttachments {
@@ -48,7 +49,7 @@ class AttachmentContextTest {
 
     private fun attachment(id: Long, number: Int, name: String, kind: AttachmentKind) = AttachmentEntity(
         id = id, messageId = 0, number = number, direction = AttachmentDirection.FromUser, kind = kind, fileName = name,
-        mimeType = if (kind == AttachmentKind.Image) "image/jpeg" else "audio/wav", sizeBytes = 10, storedPath = null, createdAt = 0,
+        mimeType = if (kind == AttachmentKind.Image) "image/jpeg" else "audio/wav", sizeBytes = 10, storedPath = "attachments/$id", createdAt = 0,
     )
 
     @Test fun `labels follow the text and media goes in images`() {

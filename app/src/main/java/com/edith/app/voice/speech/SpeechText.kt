@@ -168,6 +168,9 @@ class SentenceChunker {
 object SpeechText {
     // Every `{` and `}` is escaped and each pattern is compiled on the device in a test (L25).
     private val FILE_BLOCK = Regex("<file\\b[^>]*>.*?(</file>|$)", RegexOption.DOT_MATCHES_ALL)
+    /** C16: resend tags, and the placeholders left where her files were (Play on a stored reply). */
+    private val ATTACHMENT_TAG = Regex("<attachment\\b[^>]*>")
+    private val FILE_PLACEHOLDER = Regex("\\[Attached file: [^\\]]*\\]")
     private val MARKDOWN_LINK = Regex("\\[([^\\]]*)\\]\\([^)]*\\)")
     /** Not ending in punctuation, so a sentence's full stop after an address stays. */
     private val URL = Regex("(https?://|www\\.)[^\\s)\\]]*[^\\s)\\].,!?;:'\"]")
@@ -182,6 +185,8 @@ object SpeechText {
 
     fun clean(text: String): String = text
         .replace(FILE_BLOCK, " ")
+        .replace(ATTACHMENT_TAG, " ")
+        .replace(FILE_PLACEHOLDER, " ")
         .replace(MARKDOWN_LINK, "$1")
         .replace(URL, "a link")
         .replace(HEADING, "")

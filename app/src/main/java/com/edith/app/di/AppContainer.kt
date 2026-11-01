@@ -66,7 +66,9 @@ import com.edith.app.attachments.AttachmentIntake
 import com.edith.app.attachments.AttachmentPlayer
 import com.edith.app.attachments.AttachmentsSection
 import com.edith.app.attachments.MediaAttachmentContext
-import com.edith.app.attachments.SessionAttachmentStore
+import com.edith.app.attachments.EdithFilesSection
+import com.edith.app.attachments.FileAttachmentStore
+import com.edith.app.attachments.Retention
 import com.edith.app.voice.capture.AudioRecorder
 import com.edith.app.voice.capture.LiveSpeech
 import com.edith.app.voice.capture.OllamaTranscriber
@@ -93,7 +95,7 @@ class AppContainer(val app: Application) {
 
     /** The database (C05). Opened once at startup by [openDatabaseInBackground]; Room does its I/O off the main thread. */
     val database: EdithDatabase by lazy { EdithDatabase.create(app) }
-    val chatRepository: ChatRepository by lazy { ChatRepository(database, clock, dispatchers) }
+    val chatRepository: ChatRepository by lazy { ChatRepository(database, clock, dispatchers, attachmentStore) }
 
     /** Chat turns run here, not in a ViewModel, so a reply carries on through rotation (C06, lessons L10). */
     val engineScope: CoroutineScope = CoroutineScope(SupervisorJob() + dispatchers.default)
@@ -129,7 +131,7 @@ class AppContainer(val app: Application) {
     val deviceLocation: LocationProvider by lazy { AndroidLocationProvider(app, dispatchers) }
 
     /** System-prompt sections; later chunks add theirs here (attachments C15/C16, Google C17). */
-    val promptSections: List<PromptSection> by lazy { listOf(DateTimeSection(), ToolGuidanceSection { toolRegistry }, AttachmentsSection()) }
+    val promptSections: List<PromptSection> by lazy { listOf(DateTimeSection(), ToolGuidanceSection { toolRegistry }, AttachmentsSection(), EdithFilesSection()) }
 
     /** The tool loop (C08). */
     val turnRunner: TurnRunner by lazy {
@@ -147,7 +149,7 @@ class AppContainer(val app: Application) {
             repo = chatRepository, settings = settingsRepository, modelSelection = modelSelection,
             promptBuilder = PromptBuilder(clock) { promptSections }, contextBuilder = ContextBuilder(MediaAttachmentContext(attachmentStore)),
             turnRunner = turnRunner, listeners = replyListeners, scope = engineScope, localNetwork = localNetworkAccess,
-            confirmations = confirmations, attachmentStore = attachmentStore,
+            confirmations = confirmations, attachmentStore = attachmentStore, afterAttachments = { retention.apply() },
         )
     }
 
@@ -228,8 +230,11 @@ class AppContainer(val app: Application) {
     /** Prepares picked photos and audio files (C15). */
     val attachmentIntake: AttachmentIntake by lazy { AttachmentIntake(app.contentResolver, File(app.cacheDir, "pending"), dispatchers) }
 
-    /** Sent attachments' files, for this run of the app (C15; C16 makes them durable). */
-    val attachmentStore: SessionAttachmentStore by lazy { SessionAttachmentStore(File(app.cacheDir, "attachments")) }
+    /** Attachments' files: `filesDir/attachments` (or `cacheDir/session` when keeping 0), C16. */
+    val attachmentStore: FileAttachmentStore by lazy { FileAttachmentStore(app.filesDir, app.cacheDir) }
+
+    /** Keeps the newest N attachments each way (C16, O1). */
+    val retention: Retention by lazy { Retention(database.attachmentDao(), attachmentStore, settingsRepository, clock, dispatchers) }
 
     /** Plays audio attachments in the chat; starting one stops Edith's voice. */
     val attachmentPlayer: AttachmentPlayer by lazy { AttachmentPlayer { speechOutput.stop() } }
@@ -243,7 +248,8 @@ class AppContainer(val app: Application) {
             try {
                 AudioRecorder.deleteLeftovers(recordingsDir)   // from a crash or a killed process mid-recording
                 attachmentIntake.clearLeftovers()   // C15: unsent attachments from the last run
-                attachmentStore.clearLeftovers()    // and sent ones: kept for one run until C16
+                File(app.cacheDir, "attachments").deleteRecursively()   // C15's one-run store, before C16
+                retention.onStart()   // C16: session files, orphans, then the setting
                 database.openHelper.writableDatabase
                 Log.d(LogTag.App, "Database ready")
                 currentConversation.resolve()

@@ -7,29 +7,36 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.edith.app.chat.CurrentConversation
-import com.edith.app.chat.engine.ChatEngine
-import com.edith.app.chat.engine.EngineState
-import com.edith.app.core.error.AppError
-import com.edith.app.core.time.Clock
-import com.edith.app.core.time.formatListTime
-import com.edith.app.core.time.formatMessageTime
-import com.edith.app.data.chat.ChatRepository
-import com.edith.app.data.db.AttachmentKind
-import com.edith.app.data.db.MessageRole
-import com.edith.app.data.db.MessageSource
-import com.edith.app.data.db.MessageWithAttachments
-import com.edith.app.core.permissions.ToolPermissions
 import com.edith.app.attachments.AttachmentIntake
 import com.edith.app.attachments.AttachmentPlayer
 import com.edith.app.attachments.AttachmentStore
 import com.edith.app.attachments.PendingAttachment
+import com.edith.app.attachments.ReplyFormat
+import com.edith.app.chat.CurrentConversation
+import com.edith.app.chat.engine.ChatEngine
+import com.edith.app.chat.engine.EngineState
+import com.edith.app.core.error.AppError
+import com.edith.app.core.permissions.ToolPermissions
+import com.edith.app.core.time.Clock
+import com.edith.app.core.time.formatListTime
+import com.edith.app.core.time.formatMessageTime
+import com.edith.app.data.chat.ChatRepository
+import com.edith.app.data.db.AttachmentDirection
+import com.edith.app.data.db.AttachmentEntity
+import com.edith.app.data.db.AttachmentKind
+import com.edith.app.data.db.MessageRole
+import com.edith.app.data.db.MessageSource
+import com.edith.app.data.db.MessageWithAttachments
+import com.edith.app.di.viewModelFactory
 import com.edith.app.voice.capture.LiveSpeech
 import com.edith.app.voice.capture.SpeechInput
 import com.edith.app.voice.capture.VoiceMemos
 import com.edith.app.voice.handsfree.HandsFree
-import com.edith.app.di.viewModelFactory
 import com.edith.app.voice.speech.SpeechController
+import java.io.File
+import java.time.Instant
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -40,10 +47,11 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.time.Instant
 
 /**
  * The chat screen's state and actions (C07 §1, C06b). Follows the open conversation ([CurrentConversation]) and
@@ -71,6 +79,8 @@ class ChatViewModel(
     private val intake: AttachmentIntake? = null,
     private val attachmentStore: AttachmentStore? = null,
     private val attachmentPlayer: AttachmentPlayer? = null,
+    /** Where the chat's attachments are read from disk. */
+    private val io: CoroutineDispatcher = Dispatchers.IO,
     /** Hands-free mode (C14); null when it isn't available. */
     private val handsFree: HandsFree? = null,
 ) : ViewModel() {
@@ -87,11 +97,10 @@ class ChatViewModel(
     private data class Opened(val id: Long, val title: String, val messages: List<MessageUi>, val latestId: Long?)
 
     private val opened: StateFlow<Opened?> = current.id.filterNotNull().flatMapLatest { id ->
-        // The store's changes too: a sent attachment's file arrives just after its row (C15).
-        combine(repo.observe(id), repo.observeConversation(id), attachmentStore?.changes ?: MutableStateFlow(0)) { rows, conversation, _ ->
+        combine(repo.observe(id), repo.observeConversation(id), ::Pair).mapLatest { (rows, conversation) ->
             Opened(id, conversation?.title.orEmpty().ifBlank { ChatUiState.NEW_CHAT_TITLE }, rows.toUi(), rows.lastOrNull()?.message?.id)
         }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    }.flowOn(io).stateIn(viewModelScope, SharingStarted.Eagerly, null)   // io: attachments are looked up on disk (C16)
 
     /**
      * Bridges the moments when the engine and the database disagree, so nothing flickers: the owner's message
@@ -151,11 +160,11 @@ class ChatViewModel(
         val runningIn = engineState.runningConversationId()
         val inFlight = when {
             runningIn != null && runningIn == openId -> when (engineState) {
-                is EngineState.Working -> InFlight(engineState.label, engineState.partialText)
-                is EngineState.AwaitingConfirmation -> InFlight(CONFIRMING, engineState.partialText, confirmation = engineState.request)
+                is EngineState.Working -> InFlight(engineState.label, ReplyFormat.streaming(engineState.partialText))   // file blocks as "Writing …" (C16)
+                is EngineState.AwaitingConfirmation -> InFlight(CONFIRMING, ReplyFormat.streaming(engineState.partialText), confirmation = engineState.request)
                 else -> null
             }
-            t.endingReply?.showsIn(open) == true -> InFlight("", t.endingReply.text, canStop = false)
+            t.endingReply?.showsIn(open) == true -> InFlight("", ReplyFormat.streaming(t.endingReply.text), canStop = false)
             (v.memo as? VoiceMemos.State.Transcribing)?.conversationId == openId -> InFlight(TRANSCRIBING, "", canStop = false)
             else -> null
         }
@@ -442,7 +451,21 @@ class ChatViewModel(
         }
     }
 
-    private fun List<MessageWithAttachments>.toUi(): List<MessageUi> {
+    /** One attachment as a bubble shows it. A resend shows its original (C16 §4); Edith's files get a preview. */
+    private suspend fun attachmentUi(a: AttachmentEntity): AttachmentUi {
+        val original = a.resendOf?.let { repo.attachment(it) }
+        val shown = original ?: a
+        val file = attachmentStore?.file(shown.storedPath)
+        return AttachmentUi(
+            number = a.number, fileName = shown.fileName, kind = shown.kind, id = shown.id, file = file,
+            durationMs = if (shown.kind == AttachmentKind.Audio) attachmentStore?.durationMs(shown.storedPath) else null,
+            fromEdith = a.direction == AttachmentDirection.FromEdith, isResend = a.resendOf != null,
+            mimeType = shown.mimeType,
+            preview = if (shown.kind == AttachmentKind.File && file != null) previewOf(file) else null,
+        )
+    }
+
+    private suspend fun List<MessageWithAttachments>.toUi(): List<MessageUi> {
         val newest = lastOrNull()?.message
         return map { row ->
             val m = row.message
@@ -454,9 +477,7 @@ class ChatViewModel(
                 status = m.status,
                 errorMessage = m.errorMessage,
                 toolsUsed = m.toolsUsed.map(toolLabel),
-                attachments = row.attachments.sortedBy { it.number }.map { a ->
-                    AttachmentUi(a.number, a.fileName, a.kind, a.id, attachmentStore?.file(a.id), attachmentStore?.durationMs(a.id))
-                },
+                attachments = row.attachments.sortedBy { it.number }.map { attachmentUi(it) },
                 isLatest = m.id == newest?.id,
                 isLatestAssistant = m.id == newest?.id && m.role == MessageRole.Assistant,
                 handsFree = m.source == MessageSource.HandsFree,
@@ -471,6 +492,14 @@ class ChatViewModel(
         const val TRANSCRIBING = "Transcribing…"
         /** Files on one message (the photo picker allows 4 at a time). */
         const val MAX_ATTACHMENTS = 6
+        /** Lines of Edith's file shown on its card (C16 §4). */
+        const val PREVIEW_LINES = 3
+
+        /** The first [PREVIEW_LINES] lines of a file, for its card. */
+        fun previewOf(file: File): String? = runCatching {
+            file.bufferedReader().useLines { lines -> lines.take(PREVIEW_LINES).joinToString("\n") { it.take(120) } }
+        }.getOrNull()
+
         private const val PREVIEW_CHARS = 80
         private const val BRIDGE_MAX_MS = 2_000L
 
