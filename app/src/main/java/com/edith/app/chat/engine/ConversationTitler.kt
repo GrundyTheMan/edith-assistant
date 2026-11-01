@@ -30,7 +30,7 @@ class ConversationTitler(
     /** One attempt per conversation per app run, so a model that can't title doesn't cost a call every reply. */
     private val attempted: MutableSet<Long> = Collections.synchronizedSet(mutableSetOf())
 
-    override fun onFinished(conversationId: Long, text: String) {
+    override fun onFinished(conversationId: Long, messageId: Long?, text: String) {
         if (!attempted.add(conversationId)) return
         scope.launch { titleIfNeeded(conversationId) }
     }

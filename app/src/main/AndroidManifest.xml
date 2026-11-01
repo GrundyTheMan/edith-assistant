@@ -22,6 +22,10 @@
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
+        <!-- C13: without it Android 11+ hides the text-to-speech engines, and Edith can't speak. -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
     </queries>
 
     <application

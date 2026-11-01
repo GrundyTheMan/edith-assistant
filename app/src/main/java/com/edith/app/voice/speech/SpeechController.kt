@@ -4,7 +4,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/** Speaks one message aloud. The chat's Play/Stop buttons use it (C07 §5); C13 provides the real voice. */
+/** Speaks one message aloud. The chat's Play/Stop buttons use it (C07 §5); [SpeechOutput] is the real voice (C13). */
 interface SpeechController {
     /** The message being spoken, or null. Drives the Play button highlight and enables Stop. */
     val speakingMessageId: StateFlow<Long?>
@@ -12,7 +12,7 @@ interface SpeechController {
     fun stop()
 }
 
-/** Until C13: nothing is spoken, so nothing is ever "speaking". */
+/** Speaks nothing (tests and previews). */
 object SilentSpeechController : SpeechController {
     private val none = MutableStateFlow<Long?>(null)
     override val speakingMessageId: StateFlow<Long?> = none.asStateFlow()

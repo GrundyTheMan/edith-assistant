@@ -41,8 +41,12 @@ fun EngineState.isRunning(): Boolean = this is EngineState.Working || this is En
 /** Follows a reply as it streams (C13 speaks it; the titler names new chats). Called from the engine's coroutine. */
 interface ReplyListener {
     fun onDelta(conversationId: Long, text: String) {}
-    fun onFinished(conversationId: Long, text: String) {}
+    /** The text streamed so far was dropped: it came before a tool call, and the next round writes the reply. */
+    fun onReset(conversationId: Long) {}
+    /** [messageId] is the stored reply, or null if its conversation was deleted meanwhile. */
+    fun onFinished(conversationId: Long, messageId: Long?, text: String) {}
     fun onCancelled(conversationId: Long) {}
+    fun onFailed(conversationId: Long) {}
 }
 
 /** An attachment chosen in the input row and not yet sent (C15 fills this in). */
@@ -169,7 +173,11 @@ class ChatEngine(
                         listeners.forEach { it.onDelta(conversationId, event.text) }
                         publish()
                     }
-                    is TurnEvent.TextReset -> { partial.clear(); publish(force = true) }   // a new round after tool calls
+                    is TurnEvent.TextReset -> {   // a new round after tool calls
+                        partial.clear()
+                        listeners.forEach { it.onReset(conversationId) }
+                        publish(force = true)
+                    }
                     is TurnEvent.NeedsConfirmation ->
                         _state.value = EngineState.AwaitingConfirmation(conversationId, event.request, partial.toString())
                     is TurnEvent.Finished -> outcome = finish(conversationId, event, model)
@@ -197,14 +205,15 @@ class ChatEngine(
     private suspend fun finish(conversationId: Long, event: TurnEvent.Finished, model: ModelInfo): EngineState {
         val text = event.text.trim()   // models often start with a space or newline
         if (text.isEmpty()) return fail(conversationId, AppError.EmptyReply, model)
-        repo.addAssistantMessage(conversationId, text, model.name, event.toolsUsed)
-        listeners.forEach { it.onFinished(conversationId, text) }
+        val messageId = repo.addAssistantMessage(conversationId, text, model.name, event.toolsUsed)
+        listeners.forEach { it.onFinished(conversationId, messageId, text) }
         event.stats?.let { Log.d(LogTag.Chat, "Reply finished: ${it.totalMs} ms, ${it.evalCount} tokens") }
         return EngineState.Idle
     }
 
     private suspend fun fail(conversationId: Long, error: AppError, model: ModelInfo?): EngineState {
         withContext(NonCancellable) { repo.addFailedAssistantMessage(conversationId, model?.name, error) }
+        listeners.forEach { it.onFailed(conversationId) }
         return EngineState.Failed(conversationId, error)
     }
 

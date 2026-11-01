@@ -41,7 +41,7 @@ design in the same PR, or ask the owner.
 | [C10](chunks/C10-web-search-and-reading.md) | Web search and web page reading | 2 | C08 | Done |
 | [C11](chunks/C11-device-location.md) | Device location ("here") | 2 | C08, C09 | Done |
 | [C12](chunks/C12-voice-input.md) | Voice memos and dictation | 3 Voice | C03, C06, C07 | Done |
-| [C13](chunks/C13-spoken-replies.md) | Spoken replies (phone voice, streaming sentences) | 3 | C06, C07 | Not started |
+| [C13](chunks/C13-spoken-replies.md) | Spoken replies (phone voice, streaming sentences) | 3 | C06, C07 | Done |
 | [C14](chunks/C14-hands-free.md) | Hands-free mode (wake word, follow-ups) | 3 | C12, C13, C06 | Not started |
 | [C15](chunks/C15-attachment-intake.md) | Attachments in (photos, audio files) | 4 Attachments | C05, C06, C07 | Not started |
 | [C16](chunks/C16-attachment-storage-and-edith-files.md) | Storage, retention (default 10), Edith's files, resends | 4 | C15, C05, C07, C13 | Not started |
@@ -66,11 +66,11 @@ design in the same PR, or ask the owner.
 - **Voice input is done (C12)**: voice memos (transcribed by the model, or live recognition for models that can't
   hear) and dictation. `AppContainer.voiceMemos` is what C14's hands-free mode builds on. To test with real speech
   on the emulator, push a WAV through the debug hook (`DebugVoiceMemoReceiver`).
-- **Next: C13** (spoken replies), which C14 (hands-free) also needs; or C15 / C17, which can start now. The chat
-  screen's hooks are in C07 "As built":
-  - `AppContainer.chatFeatures` turns on the Attach button (C15)
-  - `AppContainer.speechController` is the playback interface C13 implements; voice memos and dictation already call
-    its `stop()`, so Edith stops talking when the owner starts
+- **Spoken replies are done (C13)**: the phone's own voice, sentence by sentence as a reply streams.
+  `AppContainer.speechOutput` is the voice. Its `speakingMessageId` is non-null while Edith is talking, which C14
+  needs so it doesn't listen to her. Speech stops when the owner sends, records or dictates.
+- **Next: C14** (hands-free; ask the owner about **D4**, the wake-word engine, first), or C15 / C17, which can
+  start now. `AppContainer.chatFeatures` turns on the Attach button (C15).
 - Judge tool reliability with `gemma4:12b`; `e4b` often skips tools (L26).
 - Owner decisions still open are in `06-decisions.md`. Ask early about the ones your chunk lists; the first ones
   needed are **D8** (C03), **D4** (C14), **O1** (C16),
