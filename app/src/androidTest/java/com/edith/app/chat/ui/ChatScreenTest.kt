@@ -131,6 +131,7 @@ class ChatScreenTest {
 
         compose.onNodeWithText("Checking the weather…").assertIsDisplayed()
         compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
+        waitFor { exists(hasContentDescription("Stop reply")) }
         compose.onNodeWithContentDescription("Stop reply").performClick()
         assertEquals(1, stopped)
 
@@ -148,6 +149,7 @@ class ChatScreenTest {
         compose.onNodeWithContentDescription("Send").performClick()
         waitFor { exists(hasText("word3", substring = true)) }
 
+        waitFor { exists(hasContentDescription("Stop reply")) }
         compose.onNodeWithContentDescription("Stop reply").performClick()
 
         waitFor { exists(hasText("(stopped)", substring = true)) }
@@ -247,7 +249,7 @@ class ChatScreenTest {
 
         compose.onNodeWithContentDescription("New chat").performClick()
         waitFor { exists(hasText(ChatUiState.NEW_CHAT_TITLE)) && exists(hasText("Ask Edith anything", substring = true)) }
-        compose.onNodeWithText(ChatViewModel.OTHER_CHAT_HINT).assertExists()
+        waitFor { exists(hasText(ChatViewModel.OTHER_CHAT_HINT)) }
         compose.onNodeWithTag(INPUT_TAG).performTextInput("Can I?")
         compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
     }

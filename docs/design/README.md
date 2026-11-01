@@ -37,7 +37,7 @@ design in the same PR, or ask the owner.
 | [C06b](chunks/C06b-multiple-conversations.md) | Multiple conversations: storage (schema v2 + migration) and engine | 1 | C05, C06 | Done |
 | [C07](chunks/C07-chat-ui.md) | Chat UI (bubbles, action row, input row, timestamps, conversation list) | 1 | C06, C06b | Done |
 | [C08](chunks/C08-tool-framework.md) | **Tool framework and tool loop** (+ `get_current_time`) | 2 Tools | C03, C06, C07 | Done |
-| [C09](chunks/C09-weather-tool.md) | Weather tool (Open-Meteo) | 2 | C08 | Not started |
+| [C09](chunks/C09-weather-tool.md) | Weather tool (Open-Meteo) | 2 | C08 | Done |
 | [C10](chunks/C10-web-search-and-reading.md) | Web search and web page reading | 2 | C08 | Not started |
 | [C11](chunks/C11-device-location.md) | Device location ("here") | 2 | C08, C09 | Not started |
 | [C12](chunks/C12-voice-input.md) | Voice memos and dictation | 3 Voice | C03, C06, C07 | Not started |
@@ -56,14 +56,16 @@ design in the same PR, or ask the owner.
   `edith-v1` = the old app. Branch `rebuild-design` is an already-merged leftover — ignore it, don't build on it.
 - **Phase 1 is done** (C01–C07): the owner can chat with Edith in the app, across multiple conversations.
 - **The tool framework is done (C08).** Edith uses real tools through `ToolTurnRunner`.
-- **Next: C09** (weather), then C10 and C11. Each adds its tools to `AppContainer.toolRegistry`: implement `Tool`,
+- **Weather is done (C09)**, from Open-Meteo, with units automatic by locale (D7).
+- **Next: C10** (web search; needs decision D3), then C11 (device location, which turns on "the weather here"). Each
+  adds its tools to `AppContainer.toolRegistry`: implement `Tool`,
   and test on the device (L25). C12, C13 and C15 can run alongside (see Parallelism). The chat screen's hooks for
   them are in C07 "As built":
   - `AppContainer.chatFeatures` turns on the Attach, Record and dictation buttons
   - `AppContainer.speechController` is the playback interface C13 implements
 - Judge tool reliability with `gemma4:12b`; `e4b` often skips tools (L26).
 - Owner decisions still open are in `06-decisions.md`. Ask early about the ones your chunk lists; the first ones
-  needed are **D8** (C03), **D7** (C09), **D3** (C10), **D4** (C14), **O1** (C16),
+  needed are **D8** (C03), **D3** (C10), **D4** (C14), **O1** (C16),
   **D9** (C17), **D5** (C19).
 - No GitHub Release has been published yet; `scripts/publish.sh` is untested until the owner asks for the first one.
 
