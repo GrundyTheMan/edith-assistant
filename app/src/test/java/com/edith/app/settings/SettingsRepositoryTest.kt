@@ -36,7 +36,7 @@ class SettingsRepositoryTest {
         val file = File(temp.root, "settings.preferences_pb")
         val changed = Settings(
             serverUrl = "http://192.168.4.82:11434", model = "gemma4:12b-it-q8_0", speakReplies = false,
-            speechRate = 1.5f, units = Units.Imperial, useDeviceLocation = true, searchProvider = "ollama",
+            speechRate = 1.5f, units = Units.Imperial, searchProvider = "ollama",
             keepRecentAttachments = 0, handsFreeEnabled = true, wakeWordSensitivity = 0.8f, followUpSeconds = 12,
             googleAccountEmail = "owner@example.com",
         )

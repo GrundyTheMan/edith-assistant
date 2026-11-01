@@ -1,14 +1,17 @@
 package com.edith.app.tools.weather
 
 import com.edith.app.core.dispatchers.AppDispatchers
+import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
 import com.edith.app.settings.Settings
 import com.edith.app.settings.Units
 import com.edith.app.testing.FakeClock
-import com.edith.app.tools.framework.ArgumentError
+import com.edith.app.tools.framework.PermissionNeed
 import com.edith.app.tools.framework.ToolArgs
 import com.edith.app.tools.framework.ToolContext
 import com.edith.app.tools.framework.ToolResult
+import com.edith.app.tools.location.Coordinates
+import com.edith.app.tools.location.LocationProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -20,6 +23,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -183,6 +187,52 @@ class WeatherToolTest {
         geocoding.close()   // nothing listening: like no network
         assertEquals(ToolResult.Error("The weather service didn't respond — try again shortly."), tool().execute(args("""{"location":"Boston"}"""), ctx()))
 
-        try { tool().execute(args("""{}"""), ctx()); throw AssertionError("expected missing location") } catch (e: ArgumentError) { assertEquals("location", e.argument) }
+        assertEquals("no place and no device location", ToolResult.Error("I need your location — ask the user for a city."), tool().execute(args("""{}"""), ctx()))
+        assertNull("nothing to ask for without a provider", tool().permission(args("""{"location":"here"}""")))
+    }
+
+    // --- C11: "here" ------------------------------------------------------------------------------------
+
+    private class FakeLocation(
+        private val at: Outcome<Coordinates> = Outcome.Success(Coordinates(42.66, -84.07)),
+        private val name: String? = "Fowlerville, Michigan (US)",
+    ) : LocationProvider {
+        var asked = 0
+        override suspend fun current(): Outcome<Coordinates> { asked++; return at }
+        override suspend fun placeName(at: Coordinates) = name
+    }
+
+    @Test fun `here uses the phone's location, named on the phone`() = runTest {
+        val device = FakeLocation()
+        val tool = WeatherTool(client, device) { Locale.US }
+        forecasts.enqueue(ok(fixture("forecast_fowlerville_imperial.json")))
+        assertEquals(ToolResult.Ok("Fowlerville, Michigan (US) — now 50°F (feels like 46°F), overcast, wind 6 mph, humidity 70%."),
+            tool.execute(args("""{"location":"here"}"""), ctx()))
+        val request = forecasts.takeRequest().url
+        assertEquals("42.66" to "-84.07", request.queryParameter("latitude") to request.queryParameter("longitude"))
+        assertEquals("no geocoding for here", 0, geocoding.requestCount)
+
+        listOf("""{"location":"here"}""", """{"location":"Near me."}""", """{"location":"current location"}""", """{"location":""}""", "{}")
+            .forEach { assertEquals(it, PermissionNeed(LocationProvider.PERMISSION, LocationProvider.DENIED), tool.permission(args(it))) }
+        assertNull("a named place needs no permission", tool.permission(args("""{"location":"Boston"}""")))
+        assertTrue(tool.guidance!!.contains("location \"here\""))
+    }
+
+    @Test fun `here without a place name, and location failures, give plain text`() = runTest {
+        forecasts.enqueue(ok(fixture("forecast_fowlerville_imperial.json")))
+        val unnamed = (WeatherTool(client, FakeLocation(name = null)) { Locale.US }.execute(args("{}"), ctx()) as ToolResult.Ok).text
+        assertTrue(unnamed, unnamed.startsWith("Your current location — now 50°F"))
+        assertFalse("coordinates never reach the model", unnamed.contains("42.66"))
+
+        val off = FakeLocation(at = Outcome.Failure(AppError.ToolFailed("location", LocationProvider.LOCATION_OFF)))
+        assertEquals(ToolResult.Error(LocationProvider.LOCATION_OFF), WeatherTool(client, off) { Locale.US }.execute(args("""{"location":"here"}"""), ctx()))
+        assertEquals("no forecast without a location", 1, forecasts.requestCount)
+    }
+
+    @Test fun `coordinates are rounded to about a kilometre`() {
+        assertEquals(Coordinates(42.66, -84.07), Coordinates(42.660594, -84.0733).rounded())
+        assertEquals("Fowlerville, Michigan (US)", com.edith.app.tools.location.AndroidLocationProvider.label("Fowlerville", "Michigan", "US"))
+        assertEquals("Michigan (US)", com.edith.app.tools.location.AndroidLocationProvider.label(null, "Michigan", "US"))
+        assertNull(com.edith.app.tools.location.AndroidLocationProvider.label(null, null, "US"))
     }
 }

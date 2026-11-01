@@ -111,6 +111,19 @@ fun ChatScreen(vm: ChatViewModel = viewModel(factory = ChatViewModel.Factory)) {
         // The prompt appears after Send, when the reply's notification was already posted (and dropped): post it again.
         if (granted && vm.state.value.busy) ReplyService.start(context)
     }
+    // C11: a tool waiting for a permission (location for "here") gets Android's own dialog, once per request (a
+    // rotation mustn't show it twice); the answer goes back to the tool.
+    val toolPermission by vm.toolPermissionRequest.collectAsStateWithLifecycle()
+    var shownPermissionId by rememberSaveable { mutableStateOf<String?>(null) }
+    val requestToolPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        shownPermissionId?.let { vm.onToolPermissionResult(it, granted) }
+    }
+    LaunchedEffect(toolPermission?.id) {
+        val request = toolPermission ?: return@LaunchedEffect
+        if (request.id == shownPermissionId) return@LaunchedEffect
+        shownPermissionId = request.id
+        requestToolPermission.launch(request.permission)
+    }
     fun askForNotificationsOnce() {
         if (askedForNotifications || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         askedForNotifications = true

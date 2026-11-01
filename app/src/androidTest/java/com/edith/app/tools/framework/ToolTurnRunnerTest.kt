@@ -12,6 +12,7 @@ import com.edith.app.chat.engine.TurnEvent
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.error.Outcome
 import com.edith.app.core.permissions.LocalNetworkAccess
+import com.edith.app.core.permissions.ToolPermissions
 import com.edith.app.data.chat.ChatRepository
 import com.edith.app.data.db.EdithDatabase
 import com.edith.app.data.db.MessageSource
@@ -98,6 +99,7 @@ class ToolTurnRunnerTest {
         private val failWith: Exception? = null,
         private val delayMs: Long = 0,
         private val confirm: Boolean = false,
+        private val needs: String? = null,
         params: List<ToolParam> = emptyList(),
     ) : Tool {
         val calls = mutableListOf<JsonObject>()
@@ -105,6 +107,7 @@ class ToolTurnRunnerTest {
         override val statusLabel = "Running $name…"
         override val displayName = name
         override fun confirmation(args: ToolArgs) = if (confirm) ConfirmationRequest("Do $name?", listOf("What" to name)) else null
+        override fun permission(args: ToolArgs) = needs?.let { PermissionNeed(it, "No $it.") }
         override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
             calls += args.raw
             args.string("location")   // reads a required argument when declared (missing → ArgumentError)
@@ -121,8 +124,8 @@ class ToolTurnRunnerTest {
     private val start = listOf(OllamaMessage("system", "S"), OllamaMessage("user", "Hi"))
     private val confirmations = Confirmations()
 
-    private fun runner(ollama: OllamaClient, vararg tools: Tool, timeoutMs: Long = 2_000) =
-        ToolTurnRunner(ollama, ToolRegistry(tools.toList()), confirmations, settings, clock, dispatchers, toolTimeoutMs = timeoutMs)
+    private fun runner(ollama: OllamaClient, vararg tools: Tool, timeoutMs: Long = 2_000, permissions: ToolPermissions = ToolPermissions { true }) =
+        ToolTurnRunner(ollama, ToolRegistry(tools.toList()), confirmations, settings, clock, dispatchers, toolTimeoutMs = timeoutMs, permissions = permissions)
 
     private fun finished(events: List<TurnEvent>) = events.filterIsInstance<TurnEvent.Finished>().single()
     private fun toolMessages(request: ChatCall) = request.messages.filter { it.role == "tool" }
@@ -248,6 +251,52 @@ class ToolTurnRunnerTest {
         job.join()
         assertTrue("nothing executed after cancelling", tool.calls.isEmpty())
         assertEquals(1, ollama.requests.size)
+        scope.cancel()
+    }
+
+    @Test fun t13_permission_grantedRuns_askedThenAllowedRuns_deniedDoesNot_slowAnswerIsNotATimeout() = runBlocking {
+        // Already granted: runs, nothing asked
+        var granted = true
+        val permissions = ToolPermissions { granted }
+        var ollama = ScriptedToolOllama(ScriptedToolOllama.Calls(listOf("weather_here" to "{}")), ScriptedToolOllama.Text("Sunny."))
+        var tool = RecordingTool("weather_here", needs = "LOCATION")
+        var events = runner(ollama, tool, permissions = permissions).run("http://x", model, start).toList()
+        assertEquals(1, tool.calls.size)
+        assertFalse(events.contains(TurnEvent.Status(ToolTurnRunner.WAITING_FOR_PERMISSION)))
+
+        // Not granted: asked; allowed after longer than the tool timeout (the dialog isn't timed) → runs
+        granted = false
+        ollama = ScriptedToolOllama(ScriptedToolOllama.Calls(listOf("weather_here" to "{}")), ScriptedToolOllama.Text("Sunny."))
+        tool = RecordingTool("weather_here", needs = "LOCATION")
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        scope.launch {
+            val request = permissions.pending.first { it != null }!!
+            assertEquals("LOCATION", request.permission)
+            delay(700)
+            permissions.resolve(request.id, granted = true)
+        }
+        events = runner(ollama, tool, timeoutMs = 500, permissions = permissions).run("http://x", model, start).toList()
+        assertEquals(1, tool.calls.size)
+        assertTrue(events.contains(TurnEvent.Status(ToolTurnRunner.WAITING_FOR_PERMISSION)))
+        assertNull("the request is cleared", permissions.pending.value)
+
+        // Denied → not run, the model gets the tool's message
+        ollama = ScriptedToolOllama(ScriptedToolOllama.Calls(listOf("weather_here" to "{}")), ScriptedToolOllama.Text("Which city?"))
+        tool = RecordingTool("weather_here", needs = "LOCATION")
+        scope.launch { permissions.resolve(permissions.pending.first { it != null }!!.id, granted = false) }
+        runner(ollama, tool, permissions = permissions).run("http://x", model, start).toList()
+        assertTrue(tool.calls.isEmpty())
+        assertEquals("No LOCATION.", toolMessages(ollama.requests[1]).single().content)
+
+        // Stopping the reply while the dialog is up runs nothing and clears the request
+        ollama = ScriptedToolOllama(ScriptedToolOllama.Calls(listOf("weather_here" to "{}")))
+        tool = RecordingTool("weather_here", needs = "LOCATION")
+        val job = scope.launch { runner(ollama, tool, permissions = permissions).run("http://x", model, start).collect { } }
+        withTimeout(5_000) { permissions.pending.first { it != null } }
+        job.cancel()
+        job.join()
+        assertTrue(tool.calls.isEmpty())
+        assertNull(permissions.pending.value)
         scope.cancel()
     }
 

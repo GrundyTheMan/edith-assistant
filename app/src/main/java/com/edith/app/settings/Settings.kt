@@ -26,7 +26,6 @@ data class Settings(
     val speakReplies: Boolean = true,
     val speechRate: Float = 1.0f,
     val units: Units = Units.Auto,
-    val useDeviceLocation: Boolean = false,
     val searchProvider: String = "",            // C10 sets the real default from decision D3
     val keepRecentAttachments: Int = 10,
     val handsFreeEnabled: Boolean = false,
@@ -62,7 +61,6 @@ internal object SettingsKeys {
     val SPEAK_REPLIES = booleanPreferencesKey("speak_replies")
     val SPEECH_RATE = floatPreferencesKey("speech_rate")
     val UNITS = stringPreferencesKey("units")
-    val USE_DEVICE_LOCATION = booleanPreferencesKey("use_device_location")
     val SEARCH_PROVIDER = stringPreferencesKey("search_provider")
     val KEEP_RECENT_ATTACHMENTS = intPreferencesKey("keep_recent_attachments")
     val HANDS_FREE_ENABLED = booleanPreferencesKey("hands_free_enabled")
@@ -100,7 +98,6 @@ internal fun Preferences.toSettings(): Settings {
         speakReplies = this[SettingsKeys.SPEAK_REPLIES] ?: d.speakReplies,
         speechRate = this[SettingsKeys.SPEECH_RATE] ?: d.speechRate,
         units = Units.fromStored(this[SettingsKeys.UNITS]),
-        useDeviceLocation = this[SettingsKeys.USE_DEVICE_LOCATION] ?: d.useDeviceLocation,
         searchProvider = this[SettingsKeys.SEARCH_PROVIDER] ?: d.searchProvider,
         keepRecentAttachments = this[SettingsKeys.KEEP_RECENT_ATTACHMENTS] ?: d.keepRecentAttachments,
         handsFreeEnabled = this[SettingsKeys.HANDS_FREE_ENABLED] ?: d.handsFreeEnabled,
@@ -117,7 +114,6 @@ internal fun MutablePreferences.write(s: Settings) {
     this[SettingsKeys.SPEAK_REPLIES] = s.speakReplies
     this[SettingsKeys.SPEECH_RATE] = s.speechRate
     this[SettingsKeys.UNITS] = s.units.stored
-    this[SettingsKeys.USE_DEVICE_LOCATION] = s.useDeviceLocation
     this[SettingsKeys.SEARCH_PROVIDER] = s.searchProvider
     this[SettingsKeys.KEEP_RECENT_ATTACHMENTS] = s.keepRecentAttachments
     this[SettingsKeys.HANDS_FREE_ENABLED] = s.handsFreeEnabled
