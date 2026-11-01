@@ -14,8 +14,14 @@ if [ "${1:-}" = "--device" ]; then
   step "Instrumented tests on the device"
   gradle installDebug installDebugAndroidTest
   out="$(adb shell am instrument -w "$APP_ID.test/androidx.test.runner.AndroidJUnitRunner" | tr -d '\r')"
-  echo "$out" | tail -5
-  echo "$out" | grep -q "^OK (" || die "Instrumented tests failed."
+  if echo "$out" | grep -q "^OK ("; then
+    echo "$out" | tail -5
+  else
+    # The failures themselves (each test's name and stack), so they're in the build log, not just the count.
+    failures="$(echo "$out" | sed -En '/^There (was|were) [0-9]+ failure/,$p')"
+    echo "${failures:-$(echo "$out" | tail -80)}" | head -300
+    die "Instrumented tests failed."
+  fi
 fi
 
 echo

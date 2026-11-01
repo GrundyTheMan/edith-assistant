@@ -1,0 +1,179 @@
+package com.edith.app.tools.web
+
+import com.edith.app.core.dispatchers.AppDispatchers
+import com.edith.app.core.error.AppError
+import com.edith.app.core.error.Outcome
+import com.edith.app.core.log.Log
+import com.edith.app.core.log.LogTag
+import kotlinx.coroutines.withContext
+import okhttp3.Dns
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okio.Buffer
+import org.jsoup.Jsoup
+import org.jsoup.nodes.Element
+import org.jsoup.nodes.Node
+import org.jsoup.nodes.TextNode
+import org.jsoup.select.NodeTraversor
+import org.jsoup.select.NodeVisitor
+import java.io.IOException
+import java.net.Inet4Address
+import java.net.Inet6Address
+import java.net.InetAddress
+import java.net.UnknownHostException
+import java.util.concurrent.TimeUnit
+
+/**
+ * Downloads a page on the phone and turns it into readable text (C10 §2): OkHttp, 10 s, at most 2 MB, Jsoup for the
+ * text. Only public http(s) addresses: redirects are followed by hand so every hop's host is checked, and
+ * [PublicOnlyDns] refuses names that resolve to a private address, so neither the model nor a page can point Edith at
+ * the owner's PC, router or anything else on their network.
+ */
+class PageReader(
+    baseClient: Lazy<OkHttpClient>,
+    private val dispatchers: AppDispatchers,
+    private val dns: Dns = PublicOnlyDns(),
+    private val hostAllowed: (String) -> Boolean = { !PrivateNetwork.isPrivateHost(it) },
+) {
+    private val http by lazy {
+        baseClient.value.newBuilder()
+            .dns(dns)
+            .followRedirects(false).followSslRedirects(false)
+            .connectTimeout(TIMEOUT_S, TimeUnit.SECONDS).readTimeout(TIMEOUT_S, TimeUnit.SECONDS).callTimeout(TIMEOUT_S, TimeUnit.SECONDS)
+            .build()
+    }
+
+    suspend fun read(url: String): Outcome<WebPage> = withContext(dispatchers.io) {
+        var current = url.toHttpUrlOrNull() ?: return@withContext fail(NOT_WEB)
+        repeat(MAX_REDIRECTS + 1) {
+            if (!hostAllowed(current.host)) return@withContext fail(PRIVATE)
+            val request = Request.Builder().url(current)
+                .header("User-Agent", DuckDuckGoSearch.USER_AGENT)
+                .header("Accept", "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5")
+                .build()
+            try {
+                http.newCall(request).execute().use { response ->
+                    if (response.isRedirect) {
+                        current = response.header("Location")?.let { current.resolve(it) } ?: return@withContext fail(httpError(response.code))
+                        return@use
+                    }
+                    if (!response.isSuccessful) {
+                        Log.w(LogTag.Tools, "Page ${current.host} HTTP ${response.code}")
+                        return@withContext fail(httpError(response.code))
+                    }
+                    val type = response.body.contentType()
+                    val kind = type?.let { "${it.type}/${it.subtype}".lowercase() }
+                    if (kind != null && kind !in HTML_TYPES && kind != "text/plain") return@withContext fail("That's a $kind file, not a web page, so it can't be read.")
+                    val bytes = Buffer().also { buf ->
+                        val source = response.body.source()
+                        while (buf.size < MAX_BYTES && source.read(buf, 8_192) != -1L) Unit
+                    }.let { if (it.size > MAX_BYTES) it.readByteArray(MAX_BYTES) else it.readByteArray() }
+                    val page = if (kind == "text/plain") {
+                        WebPage("", String(bytes, type?.charset() ?: Charsets.UTF_8))
+                    } else {
+                        readable(Jsoup.parse(bytes.inputStream(), type?.charset()?.name(), current.toString()))
+                    }
+                    return@withContext Outcome.Success(page)
+                }
+            } catch (e: PrivateAddressException) {
+                return@withContext fail(PRIVATE)
+            } catch (e: UnknownHostException) {
+                return@withContext fail("Couldn't find ${current.host}.")
+            } catch (e: IOException) {
+                Log.w(LogTag.Tools, "Page ${current.host} unreachable (${e::class.simpleName})")
+                return@withContext fail(UNREACHABLE)
+            }
+        }
+        fail("That page redirected too many times.")
+    }
+
+    private fun fail(message: String) = Outcome.Failure(AppError.ToolFailed("read_web_page", message))
+
+    companion object {
+        const val NOT_WEB = "Only public http(s) web pages can be read."
+        const val PRIVATE = "That address is on a private network; only public web pages can be read."
+        const val UNREACHABLE = "That site didn't respond — try again shortly."
+        const val MAX_BYTES = 2L * 1024 * 1024
+        private const val MAX_REDIRECTS = 5
+        private const val TIMEOUT_S = 10L
+        private val HTML_TYPES = setOf("text/html", "application/xhtml+xml")
+        private val SPACES = Regex("\\s+")
+
+        private fun httpError(code: Int) = when (code) {
+            404, 410 -> "That page wasn't found (HTTP $code)."
+            401, 403 -> "That site refused to show the page (HTTP $code)."
+            else -> "That site answered with an error (HTTP $code)."
+        }
+
+        /** Whether Ollama's web fetch is worth a try after [failure]: never for addresses that were refused. */
+        fun worthRetrying(failure: Outcome<WebPage>): Boolean =
+            ((failure as? Outcome.Failure)?.error as? AppError.ToolFailed)?.detail.let { it != PRIVATE && it != NOT_WEB }
+
+        /**
+         * The page's text, one block (heading, paragraph, list item…) per line: scripts, styles, navigation, footers
+         * and asides removed; the `article` or `main` element when there is one.
+         */
+        internal fun readable(doc: org.jsoup.nodes.Document): WebPage {
+            doc.select("script, style, noscript, template, svg, iframe, nav, footer, aside, form, header").remove()
+            val root: Element = doc.selectFirst("article") ?: doc.selectFirst("main") ?: doc.body()
+            val text = StringBuilder()
+            NodeTraversor.traverse(object : NodeVisitor {
+                override fun head(node: Node, depth: Int) {
+                    when (node) {
+                        is TextNode -> text.append(node.text())
+                        is Element -> if (node.isBlock || node.nameIs("br")) text.append('\n')
+                    }
+                }
+
+                override fun tail(node: Node, depth: Int) {
+                    if (node is Element && node.isBlock) text.append('\n')
+                }
+            }, root)
+            val lines = text.lines().map { it.replace(SPACES, " ").trim() }.filter { it.isNotEmpty() }
+            return WebPage(doc.title().trim(), lines.joinToString("\n"))
+        }
+    }
+}
+
+/** Refuses names that resolve to any private address, checked on the addresses OkHttp will actually connect to. */
+class PublicOnlyDns(private val base: Dns = Dns.SYSTEM) : Dns {
+    override fun lookup(hostname: String): List<InetAddress> {
+        val addresses = base.lookup(hostname)
+        if (addresses.any(PrivateNetwork::isPrivateAddress)) throw PrivateAddressException(hostname)
+        return addresses
+    }
+}
+
+class PrivateAddressException(host: String) : UnknownHostException("$host is on a private network")
+
+/** Loopback, link-local and private ranges, and names that only mean something on a LAN. No regexes (L25). */
+object PrivateNetwork {
+    fun isPrivateHost(host: String): Boolean {
+        val h = host.lowercase().trim('[', ']')
+        if (h == "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".lan") ||
+            h.endsWith(".internal") || h.endsWith(".home.arpa") || '.' !in h && ':' !in h
+        ) return true
+        if (':' in h) return h == "::1" || h == "::" || h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80")
+        val parts = h.split('.').map { it.toIntOrNull() }
+        if (parts.size != 4 || parts.any { it == null || it !in 0..255 }) return false   // a domain name
+        return isPrivateV4(parts[0]!!, parts[1]!!)
+    }
+
+    fun isPrivateAddress(address: InetAddress): Boolean {
+        if (address.isLoopbackAddress || address.isAnyLocalAddress || address.isLinkLocalAddress ||
+            address.isSiteLocalAddress || address.isMulticastAddress
+        ) return true
+        val b = address.address.map { it.toInt() and 0xff }
+        return when (address) {
+            is Inet4Address -> isPrivateV4(b[0], b[1])
+            is Inet6Address -> b[0] and 0xfe == 0xfc   // fc00::/7, unique local
+            else -> false
+        }
+    }
+
+    private fun isPrivateV4(a: Int, b: Int) =
+        a == 10 || a == 127 || a == 0 || (a == 169 && b == 254) || (a == 192 && b == 168) || (a == 172 && b in 16..31) ||
+            (a == 100 && b in 64..127) || a >= 224
+}

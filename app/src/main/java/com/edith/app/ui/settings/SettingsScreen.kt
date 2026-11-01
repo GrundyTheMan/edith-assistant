@@ -62,6 +62,7 @@ import com.edith.app.ui.components.CrashReportViewModel
 fun SettingsScreen(
     vm: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory),
     crash: CrashReportViewModel = viewModel(factory = CrashReportViewModel.Factory),
+    webSearch: WebSearchSettingsViewModel = viewModel(factory = WebSearchSettingsViewModel.Factory),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val crashReport by crash.report.collectAsStateWithLifecycle()
@@ -100,6 +101,7 @@ fun SettingsScreen(
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
         },
+        extraSections = { WebSearchSection(webSearch) },
     )
 }
 
@@ -117,6 +119,8 @@ fun SettingsContent(
     onDismissNotice: () -> Unit,
     onRequestPermission: () -> Unit,
     onOpenAppSettings: () -> Unit,
+    /** Sections added by later chunks (web search, C10), shown above About. */
+    extraSections: @Composable () -> Unit = {},
 ) {
     var showCrashReport by rememberSaveable { mutableStateOf(false) }
 
@@ -185,6 +189,8 @@ fun SettingsContent(
             )
         }
 
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        extraSections()
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
         Text("About", style = MaterialTheme.typography.titleMedium)
         Text("Edith ${BuildConfig.VERSION_NAME}")

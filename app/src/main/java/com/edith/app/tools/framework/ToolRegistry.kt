@@ -29,6 +29,10 @@ class ToolRegistry(private val tools: List<Tool>, private val integrations: List
         return offered.filter { it.spec.name.length >= 8 && editDistanceAtMostOne(normalize(it.spec.name), wanted) }.singleOrNull()
     }
 
+    /** What the model should know about integrations that aren't connected (e.g. "Web search isn't set up…"). */
+    fun notConnectedNotes(): List<String> =
+        integrations.filter { it.status.value != IntegrationStatus.Connected }.mapNotNull { it.notConnectedNote }
+
     /** For the "Used: …" line: "get_current_time" → "time". Unknown names are shown as they are. */
     fun displayName(toolName: String): String = tools.firstOrNull { it.spec.name == toolName }?.displayName ?: toolName
 

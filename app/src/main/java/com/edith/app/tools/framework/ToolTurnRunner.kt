@@ -73,7 +73,8 @@ class ToolTurnRunner(
             for (call in assistant.toolCalls.orEmpty()) {
                 val (name, result) = runCall(call, offered, ctx)
                 if (name != null) used += name
-                history += OllamaMessage("tool", result.text.take(RESULT_MAX_CHARS), toolName = name ?: call.function.name)
+                val limit = offered.firstOrNull { it.spec.name == name }?.maxResultChars ?: RESULT_MAX_CHARS
+                history += OllamaMessage("tool", result.text.take(limit), toolName = name ?: call.function.name)
             }
         }
         // Still asking for tools after MAX_ROUNDS: answer with what she has.
@@ -119,7 +120,7 @@ class ToolTurnRunner(
                     return name to ToolResult.Ok("The user declined: ${request.title}. Don't retry unless they ask.")
                 }
             }
-            emit(TurnEvent.Status(tool.statusLabel))
+            emit(TurnEvent.Status(tool.statusLabelFor(args)))
             withTimeout(toolTimeoutMs) { tool.execute(args, ctx) }
         } catch (e: ArgumentError) {
             ToolResult.Error("Error: ${e.message} for $name.")
