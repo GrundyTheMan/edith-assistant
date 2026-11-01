@@ -23,6 +23,12 @@ interface Tool {
     val statusLabel: String
     /** How the "Used: …" line names it, e.g. "weather". */
     val displayName: String
+    /** The status label for this call, e.g. "Reading espn.com…" (default [statusLabel]). */
+    fun statusLabelFor(args: ToolArgs): String = statusLabel
+    /** An extra line for the system prompt's tool section while this tool is offered (C08 §4). */
+    val guidance: String? get() = null
+    /** The most of a result the model is sent; longer results are cut (C08 §5). A page's text needs more (C10 §2). */
+    val maxResultChars: Int get() = ToolTurnRunner.RESULT_MAX_CHARS
     /** Integration this tool belongs to (null = built in). Tools of disconnected integrations aren't offered. */
     val integrationId: String? get() = null
     /** Non-null when the call changes something outside the app and needs the owner's OK first (D11). */
@@ -82,6 +88,8 @@ data class ToolContext(val clock: Clock, val settings: Settings, val dispatchers
 interface Integration {
     val id: kotlin.String
     val status: StateFlow<IntegrationStatus>
+    /** Told to the model while this integration isn't connected, so it says so instead of guessing (L6). */
+    val notConnectedNote: kotlin.String? get() = null
 }
 
 enum class IntegrationStatus { Connected, NotConnected }

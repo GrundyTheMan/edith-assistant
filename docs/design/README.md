@@ -38,7 +38,7 @@ design in the same PR, or ask the owner.
 | [C07](chunks/C07-chat-ui.md) | Chat UI (bubbles, action row, input row, timestamps, conversation list) | 1 | C06, C06b | Done |
 | [C08](chunks/C08-tool-framework.md) | **Tool framework and tool loop** (+ `get_current_time`) | 2 Tools | C03, C06, C07 | Done |
 | [C09](chunks/C09-weather-tool.md) | Weather tool (Open-Meteo) | 2 | C08 | Done |
-| [C10](chunks/C10-web-search-and-reading.md) | Web search and web page reading | 2 | C08 | Not started |
+| [C10](chunks/C10-web-search-and-reading.md) | Web search and web page reading | 2 | C08 | Done |
 | [C11](chunks/C11-device-location.md) | Device location ("here") | 2 | C08, C09 | Not started |
 | [C12](chunks/C12-voice-input.md) | Voice memos and dictation | 3 Voice | C03, C06, C07 | Not started |
 | [C13](chunks/C13-spoken-replies.md) | Spoken replies (phone voice, streaming sentences) | 3 | C06, C07 | Not started |
@@ -57,7 +57,9 @@ design in the same PR, or ask the owner.
 - **Phase 1 is done** (C01–C07): the owner can chat with Edith in the app, across multiple conversations.
 - **The tool framework is done (C08).** Edith uses real tools through `ToolTurnRunner`.
 - **Weather is done (C09)**, from Open-Meteo, with units automatic by locale (D7).
-- **Next: C10** (web search; needs decision D3), then C11 (device location, which turns on "the weather here"). Each
+- **Web search is done (C10)**: DuckDuckGo with no key, and an optional Ollama API key (D3). Put instructions the
+  model must follow on a result in the result itself (L27).
+- **Next: C11** (device location, which turns on "the weather here"). Each
   adds its tools to `AppContainer.toolRegistry`: implement `Tool`,
   and test on the device (L25). C12, C13 and C15 can run alongside (see Parallelism). The chat screen's hooks for
   them are in C07 "As built":
@@ -65,7 +67,7 @@ design in the same PR, or ask the owner.
   - `AppContainer.speechController` is the playback interface C13 implements
 - Judge tool reliability with `gemma4:12b`; `e4b` often skips tools (L26).
 - Owner decisions still open are in `06-decisions.md`. Ask early about the ones your chunk lists; the first ones
-  needed are **D8** (C03), **D3** (C10), **D4** (C14), **O1** (C16),
+  needed are **D8** (C03), **D4** (C14), **O1** (C16),
   **D9** (C17), **D5** (C19).
 - No GitHub Release has been published yet; `scripts/publish.sh` is untested until the owner asks for the first one.
 

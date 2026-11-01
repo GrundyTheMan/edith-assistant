@@ -112,6 +112,9 @@ dependencies {
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
 
+    // C10: reading web pages and DuckDuckGo results
+    implementation(libs.jsoup)
+
     testImplementation(libs.kotlinx.serialization.json)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.junit)

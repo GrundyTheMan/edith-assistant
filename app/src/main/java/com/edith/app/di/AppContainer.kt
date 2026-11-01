@@ -37,6 +37,13 @@ import com.edith.app.tools.framework.Confirmations
 import com.edith.app.tools.framework.ToolGuidanceSection
 import com.edith.app.tools.framework.ToolRegistry
 import com.edith.app.tools.framework.ToolTurnRunner
+import com.edith.app.tools.web.DuckDuckGoSearch
+import com.edith.app.tools.web.OllamaWebSearch
+import com.edith.app.tools.web.PageReader
+import com.edith.app.tools.web.ReadWebPageTool
+import com.edith.app.tools.web.SearchWebTool
+import com.edith.app.tools.web.WebSearch
+import com.edith.app.tools.web.WebSearchSetup
 import com.edith.app.tools.weather.OpenMeteoClient
 import com.edith.app.tools.weather.WeatherTool
 import com.edith.app.voice.speech.SilentSpeechController
@@ -67,7 +74,22 @@ class AppContainer(val app: Application) {
     val engineScope: CoroutineScope = CoroutineScope(SupervisorJob() + dispatchers.default)
 
     /** Every tool Edith has (C08). Later chunks add theirs here: weather C09, web C10, location C11, Google C18/C19. */
-    val toolRegistry: ToolRegistry by lazy { ToolRegistry(tools = listOf(CurrentTimeTool(), WeatherTool(openMeteo))) }
+    val toolRegistry: ToolRegistry by lazy {
+        ToolRegistry(
+            tools = listOf(
+                CurrentTimeTool(), WeatherTool(openMeteo),
+                SearchWebTool(webSearch), ReadWebPageTool(webSearch.pages(PageReader(okHttpLazy, dispatchers))),
+            ),
+        )
+    }
+
+    /**
+     * Web search (C10, D3): DuckDuckGo, keyless; with an Ollama API key saved, Ollama's web search first. The key
+     * stays in [secretStore].
+     */
+    val webSearchSetup: WebSearchSetup by lazy { WebSearchSetup(secretStore) }
+    val ollamaWeb: OllamaWebSearch by lazy { OllamaWebSearch(okHttpLazy, dispatchers, apiKey = { webSearchSetup.key() }) }
+    private val webSearch: WebSearch by lazy { WebSearch(DuckDuckGoSearch(okHttpLazy, dispatchers), ollamaWeb, webSearchSetup) }
 
     /** Weather data (C09): Open-Meteo, keyless. Shares the app's HTTP client, with its own 10 s timeouts. */
     val openMeteo: OpenMeteoClient by lazy { OpenMeteoClient(okHttpLazy, dispatchers) }
