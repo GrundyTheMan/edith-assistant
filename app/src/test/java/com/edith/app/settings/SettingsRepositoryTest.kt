@@ -6,6 +6,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -21,6 +23,15 @@ class SettingsRepositoryTest {
     private val scopes = mutableListOf<CoroutineScope>()
 
     @After fun closeStores() = scopes.forEach { it.cancel() }
+
+    /**
+     * Closes every open store and waits until each has let go of its file: only one DataStore may own a file at a
+     * time, and cancelling alone returns before that (a second store opened at once failed on CI, not locally).
+     */
+    private suspend fun restart() {
+        scopes.forEach { it.coroutineContext.job.cancelAndJoin() }
+        scopes.clear()
+    }
 
     /** A fresh repository on [file]; a second one on the same file simulates the app being restarted. */
     private fun repository(file: File = File(temp.root, "settings.preferences_pb")): DataStoreSettingsRepository {
@@ -41,7 +52,7 @@ class SettingsRepositoryTest {
             googleAccountEmail = "owner@example.com",
         )
         repository(file).update { changed }
-        scopes.forEach { it.cancel() }; scopes.clear()   // only one DataStore may own the file at a time
+        restart()
 
         assertEquals(changed, repository(file).current())
     }
@@ -62,7 +73,7 @@ class SettingsRepositoryTest {
     @Test fun `units are stored in lower case as the key registry says`() = runBlocking {
         val file = File(temp.root, "settings.preferences_pb")
         repository(file).update { it.copy(units = Units.Metric) }
-        scopes.forEach { it.cancel() }; scopes.clear()
+        restart()
         assertEquals(Units.Metric, repository(file).current().units)
         assertEquals(Units.Auto, Units.fromStored("nonsense"))
         assertEquals("metric", Units.Metric.stored)
