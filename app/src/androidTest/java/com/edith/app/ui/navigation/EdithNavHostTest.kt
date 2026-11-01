@@ -29,7 +29,7 @@ class EdithNavHostTest {
         compose.setContent { EdithTheme { EdithNavHost() } }
 
         compose.onNodeWithText("Chat").assertExists()
-        compose.onNodeWithText("Chat — coming in C07").assertExists()
+        compose.onNodeWithText("Message Edith").assertExists()   // the chat screen (C07); not its contents, which are the owner's
 
         compose.onNodeWithText("Calendar").performClick()
         compose.onNodeWithText("Calendar — coming in C18").assertExists()
@@ -38,6 +38,6 @@ class EdithNavHostTest {
         compose.onNodeWithText("Server & model").assertExists()
 
         compose.onNodeWithText("Chat").performClick()
-        compose.onNodeWithText("Chat — coming in C07").assertExists()
+        compose.onNodeWithText("Message Edith").assertExists()   // the chat screen (C07); not its contents, which are the owner's
     }
 }

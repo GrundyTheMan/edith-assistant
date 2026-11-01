@@ -24,6 +24,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.edith.app.chat.ui.ChatScreen
 import com.edith.app.ui.settings.SettingsScreen
 
 private val Destination.icon: ImageVector
@@ -69,7 +70,7 @@ fun EdithNavHost(banner: @Composable () -> Unit = {}) {
             startDestination = Destination.start.route,
             modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
         ) {
-            composable(Destination.Chat.route) { Placeholder("Chat — coming in C07") }
+            composable(Destination.Chat.route) { ChatScreen() }
             composable(Destination.Calendar.route) { Placeholder("Calendar — coming in C18") }
             composable(Destination.Settings.route) { SettingsScreen() }
         }

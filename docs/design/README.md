@@ -35,7 +35,7 @@ design in the same PR, or ask the owner.
 | [C05](chunks/C05-conversation-storage.md) | Conversation storage (Room, full v1 schema) | 1 | C02 | Done |
 | [C06](chunks/C06-chat-engine.md) | Chat engine (prompt, context, streaming, cancel, regenerate) | 1 | C03, C04, C05 | Done |
 | [C06b](chunks/C06b-multiple-conversations.md) | Multiple conversations: storage (schema v2 + migration) and engine | 1 | C05, C06 | Done |
-| [C07](chunks/C07-chat-ui.md) | Chat UI (bubbles, action row, input row, timestamps, conversation list) | 1 | C06, C06b | Not started |
+| [C07](chunks/C07-chat-ui.md) | Chat UI (bubbles, action row, input row, timestamps, conversation list) | 1 | C06, C06b | Done |
 | [C08](chunks/C08-tool-framework.md) | **Tool framework and tool loop** (+ `get_current_time`) | 2 Tools | C03, C06, C07 | Not started |
 | [C09](chunks/C09-weather-tool.md) | Weather tool (Open-Meteo) | 2 | C08 | Not started |
 | [C10](chunks/C10-web-search-and-reading.md) | Web search and web page reading | 2 | C08 | Not started |
@@ -54,12 +54,15 @@ design in the same PR, or ask the owner.
 ### State at handoff (2026-10-29)
 - `master` has the design and the C01 skeleton with its build/deploy tooling (`05-environment.md` §2, §6). Tag
   `edith-v1` = the old app. Branch `rebuild-design` is an already-merged leftover — ignore it, don't build on it.
-- **Next: C07** (chat UI + conversation list): follow `CurrentConversation.id`, observe `ChatRepository.observe(id)`,
-  `ChatRepository.conversations()` and `ChatEngine.state` (states carry their `conversationId`); call
-  `ChatEngine.send(id, …)/cancel()/regenerateLast(id)` and `CurrentConversation.select/newChat/delete`,
-  `ChatRepository.rename` (C06, C06b "As built"). Edith titles new chats herself (D12, `ConversationTitler`). The engine already checks the model (`ModelSelection.ensureModel()`, C04) and the local-network permission on every turn, so the UI doesn't repeat them; when a turn fails with `PermissionDenied("local network")`, offer to request it with the launcher pattern in `ui/settings/SettingsScreen.kt`.
+- **Phase 1 is done** (C01–C07): the owner can chat with Edith in the app, across multiple conversations.
+- **Next: C08** (tool framework), then C09–C11. C12, C13 and C15 can run alongside C08 (see Parallelism). The chat
+  screen's hooks for them are in C07 "As built":
+  - `AppContainer.chatFeatures` turns on the Attach, Record and dictation buttons
+  - `AppContainer.speechController` is the playback interface C13 implements
+  - `ChatUiState.inFlight` carries C08's status labels
+  - `EngineState.AwaitingConfirmation` already shows an in-flight bubble, waiting for C08's confirmation card
 - Owner decisions still open are in `06-decisions.md`. Ask early about the ones your chunk lists; the first ones
-  needed are **D8** (C03), **D11** (C08), **D7** (C09), **D3** (C10), **D4** (C14), **O1** (C16),
+  needed are **D13** (L24: replies die when the owner leaves the app), **D8** (C03), **D11** (C08), **D7** (C09), **D3** (C10), **D4** (C14), **O1** (C16),
   **D9** (C17), **D5** (C19).
 - No GitHub Release has been published yet; `scripts/publish.sh` is untested until the owner asks for the first one.
 

@@ -1,0 +1,271 @@
+package com.edith.app.chat.ui
+
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.test.espresso.Espresso
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.edith.app.core.error.AppError
+import com.edith.app.data.db.MessageSource
+import com.edith.app.testing.ChatTestKit
+import com.edith.app.ui.theme.EdithTheme
+import com.edith.app.voice.speech.SilentSpeechController
+import kotlinx.coroutines.runBlocking
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import kotlin.math.abs
+
+/** C07 tests: the real chat screen over the real engine, repository and Room, with a scripted Ollama. */
+@OptIn(ExperimentalTestApi::class)
+@RunWith(AndroidJUnit4::class)
+class ChatScreenTest {
+    @get:Rule val compose = createComposeRule()
+    private lateinit var kit: ChatTestKit
+    private val store = ViewModelStore()
+
+    @Before fun setUp() { kit = ChatTestKit() }
+
+    @After fun tearDown() {
+        compose.runOnUiThread { store.clear() }
+        kit.close()
+    }
+
+    private fun show(): ChatViewModel {
+        lateinit var vm: ChatViewModel
+        compose.runOnUiThread {
+            val factory = viewModelFactory {
+                initializer { ChatViewModel(kit.repo, kit.engine, kit.current, SilentSpeechController, ChatFeatures(), kit.clock, SavedStateHandle()) }
+            }
+            vm = ViewModelProvider.create(store, factory)[ChatViewModel::class]
+        }
+        shown = vm
+        compose.setContent { EdithTheme { ChatScreen(vm) } }
+        waitFor { vm.state.value.loaded }   // Send stays off until the open conversation has loaded
+        return vm
+    }
+
+    private var shown: ChatViewModel? = null
+    private fun waitFor(timeoutMs: Long = 10_000, condition: () -> Boolean) = try {
+        compose.waitUntil(timeoutMs, condition)
+    } catch (e: androidx.compose.ui.test.ComposeTimeoutException) {
+        throw AssertionError("Timed out. Screen state: ${shown?.state?.value}; engine: ${kit.engine.state.value}", e)
+    }
+    private fun inMessages(matcher: androidx.compose.ui.test.SemanticsMatcher) = matcher.and(hasAnyAncestor(hasTestTag(MESSAGE_LIST_TAG)))
+    private fun exists(matcher: androidx.compose.ui.test.SemanticsMatcher) = compose.onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty()
+
+    @Test fun sendingClearsTheFieldAndTheReplyArrives() {
+        runBlocking { kit.current.resolve() }
+        kit.ollama.wordDelayMs = 300
+        show()
+        compose.onNodeWithText("Ask Edith anything — your schedule, the weather, or what's on your mind.").assertExists()
+        compose.onNodeWithContentDescription("Send").assertIsNotEnabled()   // nothing typed yet
+
+        compose.onNodeWithTag(INPUT_TAG).performTextInput("Hi Edith")
+        compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
+
+        compose.onNodeWithTag(INPUT_TAG).assert(hasText("").or(hasText("Message Edith")))
+        waitFor { exists(inMessages(hasText("Hi Edith"))) }
+        waitFor { exists(inMessages(hasText("Hello there, friend!"))) && !exists(hasTestTag(IN_FLIGHT_TAG)) }
+        compose.onNodeWithContentDescription("Regenerate reply").assertExists()
+    }
+
+    /** The in-flight bubble's look (C07 §4); the streaming states themselves are covered in ChatViewModelTest. */
+    @Test fun theInFlightBubbleShowsTheLabelUntilTextArrivesAndCanBeStopped() {
+        var stopped = 0
+        var state by mutableStateOf(ChatUiState(conversationId = 1, loaded = true, busy = true, inFlight = InFlight("Checking the weather…", "")))
+        compose.setContent { EdithTheme { ChatContent(state, draft = "", actions = ChatActions(onStopReply = { stopped++ })) } }
+
+        compose.onNodeWithText("Checking the weather…").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Stop reply").performClick()
+        assertEquals(1, stopped)
+
+        state = state.copy(inFlight = InFlight("Checking the weather…", "It's **sunny**"))
+        compose.onNode(inMessages(hasText("It's sunny"))).assertIsDisplayed()
+        assertTrue("the label goes once text arrives", !exists(hasText("Checking the weather…")))
+    }
+
+    @Test fun stopKeepsThePartialReplyMarkedStopped() {
+        runBlocking { kit.current.resolve() }
+        kit.ollama.words = (1..60).map { " word$it" }
+        kit.ollama.wordDelayMs = 80
+        show()
+        compose.onNodeWithTag(INPUT_TAG).performTextInput("Long story please")
+        compose.onNodeWithContentDescription("Send").performClick()
+        waitFor { exists(hasText("word3", substring = true)) }
+
+        compose.onNodeWithContentDescription("Stop reply").performClick()
+
+        waitFor { exists(hasText("(stopped)", substring = true)) }
+        assertTrue(kit.ollama.streamCancelled)
+    }
+
+    @Test fun regenerateIsOnlyOnTheNewestReplyAndTheActionRowHugsTheBubbleEdge() {
+        val newest = runBlocking {
+            val id = kit.current.resolve()
+            kit.repo.addUserMessage(id, "Q1", MessageSource.Typed)
+            kit.repo.addAssistantMessage(id, "First reply", "m", emptyList())
+            kit.repo.addUserMessage(id, "Q2", MessageSource.Typed)
+            kit.repo.addAssistantMessage(id, "Second reply with **bold** text", "m", emptyList())!!
+        }
+        show()
+        waitFor { exists(hasTestTag(actionRowTag(newest))) }
+
+        val regenerate = compose.onAllNodesWithContentDescription("Regenerate reply").fetchSemanticsNodes()
+        assertEquals("one Regenerate button", 1, regenerate.size)
+        compose.onNode(hasContentDescription("Regenerate reply").and(hasAnyAncestor(hasTestTag(actionRowTag(newest))))).assertExists()
+        assertEquals("Play on both replies", 2, compose.onAllNodesWithContentDescription("Play reply").fetchSemanticsNodes().size)
+
+        // The approved look: the action row is pulled ActionRowOverlap (7 dp) up onto the bubble's bottom edge.
+        val bubble = compose.onNodeWithTag(bubbleTag(newest)).getUnclippedBoundsInRoot()
+        val row = compose.onNodeWithTag(actionRowTag(newest)).getUnclippedBoundsInRoot()
+        val overlap = bubble.bottom - row.top
+        assertTrue("action row overlaps the bubble by ~7 dp, was $overlap", abs((overlap - ActionRowOverlap).value) <= 1f)
+        compose.onNode(inMessages(hasText("bold", substring = true))).assertExists()
+        assertTrue("Markdown markers aren't shown", !exists(hasText("**bold**", substring = true)))
+    }
+
+    @Test fun aFailedReplyShowsItsErrorAndRetryAsksAgain() {
+        runBlocking { kit.current.resolve() }
+        kit.ollama.failure = AppError.ServerUnreachable("http://10.0.2.2:11434")
+        show()
+        compose.onNodeWithTag(INPUT_TAG).performTextInput("Hello?")
+        compose.onNodeWithContentDescription("Send").performClick()
+        waitFor { exists(hasText("Can't reach your Ollama server", substring = true)) }
+        compose.onNodeWithText("Retry").assertExists()
+
+        kit.ollama.failure = null
+        compose.onNodeWithText("Retry").performClick()
+        waitFor { exists(hasText("Hello there, friend!")) }
+        assertTrue("the failure was replaced", !exists(hasText("Can't reach your Ollama server", substring = true)))
+    }
+
+    @Test fun theDrawerListsSwitchesRenamesAndDeletesChats() {
+        val (plants, trains) = runBlocking {
+            val p = kit.repo.createConversation().also { kit.repo.addUserMessage(it, "Watering ferns", MessageSource.Typed) }
+            val t = kit.repo.createConversation().also { kit.repo.addUserMessage(it, "Steam engines", MessageSource.Typed) }
+            kit.current.select(t)
+            p to t
+        }
+        show()
+        waitFor { exists(hasText("Steam engines")) }
+
+        // Regression: Back with the list open closes the list; it used to close the app.
+        compose.onNodeWithContentDescription("Conversations").performClick()
+        compose.onNodeWithTag(DRAWER_LIST_TAG).assertIsDisplayed()
+        Espresso.pressBack()
+        waitFor { compose.onAllNodes(hasTestTag(DRAWER_LIST_TAG)).fetchSemanticsNodes().none { node -> node.boundsInRoot.right > 0f } }
+        compose.onNodeWithTag(INPUT_TAG).assertIsDisplayed()
+
+        compose.onNodeWithContentDescription("Conversations").performClick()
+        compose.onNode(hasText("Watering ferns").and(hasAnyAncestor(hasTestTag(DRAWER_LIST_TAG)))).performClick()
+        waitFor { kit.current.id.value == plants }
+        waitFor { exists(hasText("Watering ferns").and(hasAnyAncestor(hasTestTag(MESSAGE_LIST_TAG)))) }
+
+        // Rename from the list's ⋮ menu; the new name shows in the top bar.
+        compose.onNodeWithContentDescription("Conversations").performClick()
+        compose.onNodeWithContentDescription("Options for Watering ferns").performClick()
+        compose.onNodeWithText("Rename").performClick()
+        compose.onNode(hasText("Watering ferns").and(hasSetTextAction())).performTextReplacement("Fern care")
+        compose.onNodeWithText("Save").performClick()
+        waitFor { exists(hasText("Fern care")) }
+
+        // Delete the open chat: it asks first, then the other chat opens.
+        compose.onNodeWithContentDescription("Options for Fern care").performClick()
+        compose.onNodeWithText("Delete").performClick()
+        compose.onNodeWithText("Delete this chat?").assertExists()
+        compose.onNode(hasText("Delete").and(hasAnyAncestor(isDialog()))).performClick()
+        waitFor { kit.current.id.value == trains }
+        waitFor { !exists(hasText("Fern care")) }
+    }
+
+    @Test fun newChatOpensAnEmptyChatAndTheReplyInAnotherChatDisablesSend() {
+        runBlocking {
+            val id = kit.current.resolve()
+            kit.repo.addUserMessage(id, "First chat", MessageSource.Typed)
+        }
+        kit.ollama.words = (1..40).map { " w$it" }
+        kit.ollama.wordDelayMs = 100
+        show()
+        compose.onNodeWithTag(INPUT_TAG).performTextInput("Start a reply")
+        compose.onNodeWithContentDescription("Send").performClick()
+        waitFor { exists(hasText("w2", substring = true)) }
+
+        compose.onNodeWithContentDescription("New chat").performClick()
+        waitFor { exists(hasText(ChatUiState.NEW_CHAT_TITLE)) && exists(hasText("Ask Edith anything", substring = true)) }
+        compose.onNodeWithText(ChatViewModel.OTHER_CHAT_HINT).assertExists()
+        compose.onNodeWithTag(INPUT_TAG).performTextInput("Can I?")
+        compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
+    }
+
+    private fun seedLongChat(): Long = runBlocking {
+        val id = kit.current.resolve()
+        repeat(15) {
+            kit.repo.addUserMessage(id, "Question $it", MessageSource.Typed)
+            kit.repo.addAssistantMessage(id, "Answer $it, " + "with a few words of padding ".repeat(4), "m", emptyList())
+        }
+        id
+    }
+
+    /** Regression: on Send, the owner's message and the thinking bubble arrive together; the chat must still follow. */
+    @Test fun sendingFromALongChatScrollsToTheReply() {
+        seedLongChat()
+        show()
+        compose.onNodeWithTag(INPUT_TAG).performTextInput("Newest question")
+        compose.onNodeWithContentDescription("Send").performClick()
+        waitFor { exists(inMessages(hasText("Hello there, friend!"))) && !exists(hasTestTag(IN_FLIGHT_TAG)) }
+        compose.waitForIdle()
+        compose.onNode(inMessages(hasText("Hello there, friend!"))).assertIsDisplayed()
+        compose.onNode(inMessages(hasText("Newest question"))).assertIsDisplayed()
+        assertTrue("no New button when following", !exists(hasTestTag(NEW_BELOW_TAG)))
+    }
+
+    @Test fun scrolledFarUpANewMessageShowsTheNewButtonInsteadOfMoving() {
+        val id = seedLongChat()
+        show()
+        repeat(6) { compose.onNodeWithTag(MESSAGE_LIST_TAG).performTouchInput { swipeDown() } }   // the owner drags far up
+        waitFor { exists(inMessages(hasText("Question 0"))) }
+        compose.onNode(inMessages(hasText("Question 0"))).assertIsDisplayed()
+
+        runBlocking { kit.repo.addAssistantMessage(id, "A brand new message", "m", emptyList()) }
+        waitFor { exists(hasTestTag(NEW_BELOW_TAG)) }
+        compose.onNode(inMessages(hasText("Question 0"))).assertIsDisplayed()   // not yanked down
+
+        compose.onNodeWithTag(NEW_BELOW_TAG).performClick()
+        waitFor { !exists(hasTestTag(NEW_BELOW_TAG)) }
+        compose.onNode(inMessages(hasText("A brand new message"))).assertIsDisplayed()
+    }
+}
