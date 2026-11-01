@@ -31,9 +31,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertFalse
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -50,7 +50,7 @@ class AttachmentSendTest {
     private val work = File(app.cacheDir, "send-test").apply { deleteRecursively(); mkdirs() }
     private val ollama = ScriptedOllama().apply { wordDelayMs = 1 }
     private val settings = MemorySettings()
-    private val store = SessionAttachmentStore(File(work, "attachments"))
+    private val store = FileAttachmentStore(File(work, "files"), File(work, "cache"))
     private lateinit var db: EdithDatabase
     private lateinit var repo: ChatRepository
     private lateinit var scope: CoroutineScope
@@ -60,7 +60,7 @@ class AttachmentSendTest {
     @Before fun setUp() {
         db = Room.inMemoryDatabaseBuilder(app, EdithDatabase::class.java).build()
         val clock = TickingClock()
-        repo = ChatRepository(db, clock, AppDispatchers(Dispatchers.Main, Dispatchers.IO, Dispatchers.Default))
+        repo = ChatRepository(db, clock, AppDispatchers(Dispatchers.Main, Dispatchers.IO, Dispatchers.Default), store)
         cid = runBlocking { repo.createConversation() }
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         engine = ChatEngine(
@@ -96,9 +96,9 @@ class AttachmentSendTest {
         assertEquals(listOf(1, 2), user.attachments.map { it.number })
         assertTrue(user.attachments.all { it.direction == AttachmentDirection.FromUser })
         assertEquals(listOf("list.jpg", "note.wav"), user.attachments.map { it.fileName })
-        val stored = user.attachments.map { store.file(it.id) }
+        val stored = user.attachments.map { store.file(it.storedPath) }
         assertTrue("files moved into the store", stored.all { it != null && it.isFile } && !photo.file.exists() && !note.file.exists())
-        assertEquals(1_000L, store.durationMs(user.attachments[1].id))
+        assertEquals(1_000L, store.durationMs(user.attachments[1].storedPath))
 
         val sent = ollama.calls.single()
         val last = sent.messages.last()
@@ -134,4 +134,63 @@ class AttachmentSendTest {
         assertTrue("still the caller's", photo.file.exists())
         awaitDone()
     }
+
+    // --- C16: Edith's files and resends ------------------------------------------------------------------------
+
+    @Test fun edithsFileIsStoredAndHerTextKeepsAPlaceholder(): Unit = runBlocking {
+        ollama.words = listOf("Here you go.\n", "<file name=\"beach list.md\">", "- towel\n- sunscreen\n", "</file>", "\nHave fun!")
+        engine.send(cid, "make me a beach list as a file", MessageSource.Typed)
+        assertEquals(EngineState.Idle, awaitDone())
+
+        val reply = repo.observe(cid).first().last()
+        assertEquals("Here you go.\n\n[Attached file: beach-list.md]\nHave fun!", reply.message.content)
+        val file = reply.attachments.single()
+        assertEquals(AttachmentDirection.FromEdith, file.direction)
+        assertEquals(AttachmentKind.File, file.kind)
+        assertEquals("beach-list.md", file.fileName)
+        assertEquals("text/markdown", file.mimeType)
+        assertTrue(file.storedPath!!.startsWith("attachments/"))
+        assertEquals("- towel\n- sunscreen", store.file(file.storedPath)!!.readText())
+    }
+
+    @Test fun aResendPointsAtTheOriginalAndAnUnknownNumberIsSaid(): Unit = runBlocking {
+        ollama.capabilities = listOf("completion", "tools", "vision")
+        engine.send(cid, "my receipt", MessageSource.Typed, listOf(pending("receipt.jpg", AttachmentKind.Image, byteArrayOf(1, 2))))
+        awaitDone()
+        val original = repo.observe(cid).first().first { it.message.role == MessageRole.User }.attachments.single()
+
+        ollama.words = listOf("Here it is: ", "<attachment number=\"1\"/>", " And <attachment number=\"7\"/>")
+        engine.send(cid, "send me that receipt again", MessageSource.Typed)
+        awaitDone()
+        val reply = repo.observe(cid).first().last()
+        val resend = reply.attachments.single()
+        assertEquals(original.id, resend.resendOf)
+        assertEquals(1, resend.number)
+        assertEquals(null, resend.storedPath)   // no copy
+        assertEquals("Here it is:  And\n\nAttachment 7 isn't available.", reply.message.content)
+        assertEquals("receipt still stored once", 1, store.storedFiles().size)
+    }
+
+    @Test fun noAttachmentBytesAreStoredInTheDatabase(): Unit = runBlocking {
+        // A file-backed database this time, scanned byte by byte for a JPEG and a WAV signature (C16 tests).
+        val name = "bytes-test.db"
+        app.deleteDatabase(name)
+        val fileDb = Room.databaseBuilder(app, EdithDatabase::class.java, name).build()
+        val fileRepo = ChatRepository(fileDb, TickingClock(), AppDispatchers(Dispatchers.Main, Dispatchers.IO, Dispatchers.Default), store)
+        val chat = fileRepo.createConversation()
+        val jpeg = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte()) + ByteArray(64) { 7 }
+        val wav = "RIFF____WAVEfmt ".toByteArray() + ByteArray(64) { 3 }
+        val kept = listOf(pending("p.jpg", AttachmentKind.Image, jpeg), pending("a.wav", AttachmentKind.Audio, wav)).map {
+            ChatRepository.NewAttachment(it.kind, it.fileName, it.mimeType, it.sizeBytes, store.keep(it, session = false))
+        }
+        fileRepo.addUserMessage(chat, "two files", MessageSource.Typed, kept)
+        fileDb.close()
+        val bytes = listOf("", "-wal", "-journal").map { app.getDatabasePath(name + it) }.filter { it.exists() }.flatMap { it.readBytes().asList() }.toByteArray()
+        assertFalse("JPEG bytes in the database", indexOf(bytes, jpeg.copyOf(4)) >= 0)
+        assertFalse("WAV bytes in the database", indexOf(bytes, "WAVEfmt ".toByteArray()) >= 0)
+        app.deleteDatabase(name)
+    }
+
+    private fun indexOf(haystack: ByteArray, needle: ByteArray): Int =
+        (0..haystack.size - needle.size).firstOrNull { i -> needle.indices.all { haystack[i + it] == needle[it] } } ?: -1
 }

@@ -57,7 +57,7 @@ import com.edith.app.settings.SettingsViewModel
 import com.edith.app.ui.components.CrashReportDialog
 import com.edith.app.ui.components.CrashReportViewModel
 
-/** Settings → Server & model, Voice (C13), Hands-free (C14), Web search (C10), and About (C04 §3). */
+/** Settings → Server & model, Voice (C13), Hands-free (C14), Attachments (C16), Web search (C10), and About (C04 §3). */
 @Composable
 fun SettingsScreen(
     vm: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory),
@@ -65,6 +65,7 @@ fun SettingsScreen(
     webSearch: WebSearchSettingsViewModel = viewModel(factory = WebSearchSettingsViewModel.Factory),
     voice: VoiceSettingsViewModel = viewModel(factory = VoiceSettingsViewModel.Factory),
     handsFree: HandsFreeSettingsViewModel = viewModel(factory = HandsFreeSettingsViewModel.Factory),
+    attachments: AttachmentSettingsViewModel = viewModel(factory = AttachmentSettingsViewModel.Factory),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val crashReport by crash.report.collectAsStateWithLifecycle()
@@ -107,6 +108,8 @@ fun SettingsScreen(
             VoiceSection(voice)
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             HandsFreeSection(handsFree)
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            AttachmentSettingsSection(attachments)
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             WebSearchSection(webSearch)
         },

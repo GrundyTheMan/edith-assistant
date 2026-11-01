@@ -84,9 +84,15 @@ data class AttachmentUi(
     val fileName: String,
     val kind: AttachmentKind,
     val id: Long = 0,
-    /** Null when it's no longer available (C15: kept for this run of the app until C16). */
+    /** Null when it's no longer available (removed by retention, C16). */
     val file: File? = null,
     val durationMs: Long? = null,
+    /** In Edith's reply: a file she wrote, or (with [isResend]) one of the owner's sent back (C16 §3). */
+    val fromEdith: Boolean = false,
+    val isResend: Boolean = false,
+    val mimeType: String = "",
+    /** The first lines of Edith's file, for its card. */
+    val preview: String? = null,
 )
 
 /** A chip above the input row (C15 §1): a picked file being prepared, or ready to send. */

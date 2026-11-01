@@ -7,6 +7,7 @@ import com.edith.app.core.error.AppError
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import com.edith.app.core.time.Clock
+import com.edith.app.attachments.AttachmentStore
 import com.edith.app.data.db.AttachmentDirection
 import com.edith.app.data.db.AttachmentEntity
 import com.edith.app.data.db.AttachmentKind
@@ -32,6 +33,8 @@ class ChatRepository(
     private val db: EdithDatabase,
     private val clock: Clock,
     private val dispatchers: AppDispatchers,
+    /** Deletes attachment files when their messages go (C16 §2); null in tests that store no files. */
+    private val files: AttachmentStore? = null,
 ) {
     // --- Conversations ---------------------------------------------------------------------------------------
 
@@ -58,7 +61,11 @@ class ChatRepository(
         io { db.conversationDao().setTitle(id, title, TitleSource.Edith) } > 0
 
     /** Deletes the conversation with its messages and attachment rows. Stop its turn first (ChatEngine.cancelAndJoin). */
-    suspend fun deleteConversation(id: Long) = io { db.conversationDao().delete(id) }
+    /** Deletes the conversation; its attachment files go first (the rows cascade, the files wouldn't; C16 §2). */
+    suspend fun deleteConversation(id: Long) = io {
+        deleteFiles(db.attachmentDao().storedPathsInConversation(id))
+        db.conversationDao().delete(id)
+    }
 
     suspend fun isEmpty(id: Long): Boolean = io { db.conversationDao().isEmpty(id) }
 
@@ -101,7 +108,7 @@ class ChatRepository(
             for (a in attachments) {
                 ids += db.attachmentDao().insert(AttachmentEntity(
                     messageId = messageId, number = number++, direction = AttachmentDirection.FromUser, kind = a.kind,
-                    fileName = a.fileName, mimeType = a.mimeType, sizeBytes = a.sizeBytes, storedPath = null,
+                    fileName = a.fileName, mimeType = a.mimeType, sizeBytes = a.sizeBytes, storedPath = a.storedPath,
                     createdAt = createdAt,
                 ))
             }
@@ -109,17 +116,51 @@ class ChatRepository(
         return StoredMessage(messageId, ids)
     }
 
-    /** What the repository needs to number and describe an attachment (its file is the store's business). */
-    data class NewAttachment(val kind: AttachmentKind, val fileName: String, val mimeType: String, val sizeBytes: Long)
+    /** What the repository needs to number and describe an attachment; [storedPath] is where the store put its file. */
+    data class NewAttachment(
+        val kind: AttachmentKind, val fileName: String, val mimeType: String, val sizeBytes: Long, val storedPath: String? = null,
+    )
 
     /** Stores Edith's reply with any `<tool_call>…</tool_call>` text removed (and a warning logged). */
-    suspend fun addAssistantMessage(conversationId: Long, text: String, model: String, toolsUsed: List<String>): Long? {
+    suspend fun addAssistantMessage(
+        conversationId: Long, text: String, model: String, toolsUsed: List<String>,
+        /** Files Edith wrote (C16 §3), already in the store. */
+        files: List<NewAttachment> = emptyList(),
+        /** The owner's attachments she sent back: rows pointing at these originals. */
+        resends: List<AttachmentEntity> = emptyList(),
+    ): Long? {
         val cleaned = stripToolCalls(text)
         if (cleaned != text) Log.w(LogTag.Chat, "Stripped tool-call text from an assistant message")
+        val createdAt = now()
         return insert(MessageEntity(conversationId = conversationId, role = MessageRole.Assistant, content = cleaned,
-            createdAt = now(), status = MessageStatus.Complete, source = MessageSource.Typed, model = model,
-            toolsUsed = toolsUsed))
+            createdAt = createdAt, status = MessageStatus.Complete, source = MessageSource.Typed, model = model,
+            toolsUsed = toolsUsed)) { messageId ->
+            val dao = db.attachmentDao()
+            var number = if (files.isEmpty()) 0 else dao.nextNumber(conversationId)
+            for (f in files) {
+                dao.insert(AttachmentEntity(
+                    messageId = messageId, number = number++, direction = AttachmentDirection.FromEdith, kind = f.kind,
+                    fileName = f.fileName, mimeType = f.mimeType, sizeBytes = f.sizeBytes, storedPath = f.storedPath,
+                    createdAt = createdAt,
+                ))
+            }
+            for (o in resends) {
+                // No copy: the row points at the original and keeps its number (C16 §3).
+                dao.insert(AttachmentEntity(
+                    messageId = messageId, number = o.number, direction = AttachmentDirection.FromEdith, kind = o.kind,
+                    fileName = o.fileName, mimeType = o.mimeType, sizeBytes = o.sizeBytes, storedPath = null,
+                    resendOf = o.id, createdAt = createdAt,
+                ))
+            }
+        }
     }
+
+    /** The attachment numbered [number] in a conversation (for a resend), the original rather than a resend of it. */
+    suspend fun attachmentByNumber(conversationId: Long, number: Int): AttachmentEntity? = io {
+        db.attachmentDao().byNumber(conversationId, number)?.let { a -> a.resendOf?.let { db.attachmentDao().byId(it) } ?: a }
+    }
+
+    suspend fun attachment(id: Long): AttachmentEntity? = io { db.attachmentDao().byId(id) }
 
     /** A reply that failed: empty content, the error's message kept for the UI. */
     suspend fun addFailedAssistantMessage(conversationId: Long, model: String?, error: AppError): Long? =
@@ -134,9 +175,19 @@ class ChatRepository(
             source = MessageSource.Typed, model = model))
 
     /** Deletes the message; its attachment rows go with it (foreign key cascade). */
-    suspend fun deleteMessage(id: Long) = io { db.messageDao().delete(id) }
+    suspend fun deleteMessage(id: Long) = io {
+        deleteFiles(db.attachmentDao().storedPathsOfMessage(id))   // e.g. Edith's file in a regenerated reply
+        db.messageDao().delete(id)
+    }
 
-    suspend fun clearConversation(conversationId: Long) = io { db.messageDao().clearConversation(conversationId) }
+    suspend fun clearConversation(conversationId: Long) = io {
+        deleteFiles(db.attachmentDao().storedPathsInConversation(conversationId))
+        db.messageDao().clearConversation(conversationId)
+    }
+
+    private fun deleteFiles(paths: List<String>) {
+        paths.forEach { files?.delete(it) }
+    }
 
     /**
      * Inserts the message and bumps the conversation's `updated_at`, in one transaction. Returns null (and logs)

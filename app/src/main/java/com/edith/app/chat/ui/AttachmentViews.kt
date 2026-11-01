@@ -16,18 +16,24 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -42,6 +48,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -127,6 +134,82 @@ fun MessageAttachments(
     }
 }
 
+/** What Edith's file card can do (C16 §4). */
+data class FileActions(
+    val onView: (AttachmentUi) -> Unit = {},
+    val onSave: (AttachmentUi) -> Unit = {},
+    val onShare: (AttachmentUi) -> Unit = {},
+)
+
+/**
+ * Edith's attachments, below her text (C16 §4): a card per file she wrote (name, first lines, View / Save / Share),
+ * and the owner's attachments she sent back, shown like the originals. Removed ones get a muted line.
+ */
+@Composable
+fun EdithAttachments(
+    attachments: List<AttachmentUi>,
+    playingId: Long?,
+    onTogglePlay: (AttachmentUi) -> Unit,
+    onOpenImage: (File) -> Unit,
+    files: FileActions,
+) {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        for (a in attachments) {
+            when {
+                a.isResend && a.file == null ->
+                    Text("Attachment ${a.number} is no longer available.", color = muted, style = MaterialTheme.typography.bodySmall)
+                a.isResend -> MessageAttachments(listOf(a), playingId, onTogglePlay, onOpenImage, MaterialTheme.colorScheme.onSurface)
+                a.file == null -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Description, contentDescription = null, tint = muted, modifier = Modifier.size(18.dp))
+                    Text(" ${a.fileName} — no longer kept", color = muted, style = MaterialTheme.typography.bodySmall)
+                }
+                else -> FileCard(a, files)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FileCard(a: AttachmentUi, actions: FileActions) {
+    OutlinedCard(modifier = Modifier.fillMaxWidth().testTag(FILE_CARD_TAG)) {
+        Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Description, contentDescription = null, modifier = Modifier.size(20.dp))
+                Text(" ${a.fileName}", style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            a.preview?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    it, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, maxLines = 3,
+                    overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+            Row {
+                TextButton(onClick = { actions.onView(a) }) { Text("View") }
+                TextButton(onClick = { actions.onSave(a) }) { Text("Save") }
+                TextButton(onClick = { actions.onShare(a) }) { Text("Share") }
+            }
+        }
+    }
+}
+
+/** A file's text, selectable and scrollable (View on a file card). */
+@Composable
+fun FileViewer(name: String, text: String, onClose: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text(name) },
+        text = {
+            SelectionContainer {
+                Text(text, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.verticalScroll(rememberScrollState()).testTag(FILE_VIEWER_TAG))
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text("Close") } },
+    )
+}
+
 /** A photo full screen, with pinch-zoom and pan; ✕ or Back closes it. */
 @Composable
 fun ImageViewer(file: File, onClose: () -> Unit) {
@@ -161,3 +244,5 @@ fun formatDuration(ms: Long): String {
 
 const val PENDING_ATTACHMENTS_TAG = "pending-attachments"
 const val IMAGE_VIEWER_TAG = "image-viewer"
+const val FILE_CARD_TAG = "file-card"
+const val FILE_VIEWER_TAG = "file-viewer"

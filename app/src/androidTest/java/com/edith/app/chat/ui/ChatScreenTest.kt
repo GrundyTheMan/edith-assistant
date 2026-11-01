@@ -244,6 +244,46 @@ class ChatScreenTest {
         assertEquals(listOf("photo", "audio", "remove 5", "open ui-test.jpg", "play note.wav"), calls)
     }
 
+    /** C16: Edith's file card (preview, View, Save, Share), a resend, and the removed lines in her bubble. */
+    @Test fun edithsFilesAndResendsInHerBubble() {
+        val calls = mutableListOf<String>()
+        val app = InstrumentationRegistry.getInstrumentation().targetContext
+        val list = java.io.File(app.cacheDir, "ui-list.md").apply { writeText("- towel\n- sunscreen\n- hat\n- snacks") }
+        val photo = java.io.File(app.cacheDir, "ui-photo.jpg").apply {
+            outputStream().use { android.graphics.Bitmap.createBitmap(40, 30, android.graphics.Bitmap.Config.ARGB_8888).compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, it) }
+        }
+        val file = com.edith.app.data.db.AttachmentKind.File
+        val image = com.edith.app.data.db.AttachmentKind.Image
+        val reply = MessageUi(
+            2, com.edith.app.data.db.MessageRole.Assistant, "Here's your list.\n\n[Attached file: beach-list.md]", "9:01 AM",
+            com.edith.app.data.db.MessageStatus.Complete, null, emptyList(),
+            listOf(
+                AttachmentUi(4, "beach-list.md", file, id = 14, file = list, fromEdith = true, mimeType = "text/markdown", preview = "- towel\n- sunscreen\n- hat"),
+                AttachmentUi(1, "receipt.jpg", image, id = 11, file = photo, fromEdith = true, isResend = true),
+                AttachmentUi(2, "old.jpg", image, id = 12, file = null, fromEdith = true, isResend = true),
+                AttachmentUi(5, "notes.md", file, id = 15, file = null, fromEdith = true),
+            ),
+            isLatest = true, isLatestAssistant = true,
+        )
+        val actions = ChatActions(
+            files = FileActions(onView = { calls += "view ${it.fileName}" }, onSave = { calls += "save ${it.fileName}" }, onShare = { calls += "share ${it.fileName}" }),
+            onOpenImage = { calls += "open" },
+        )
+        compose.setContent { EdithTheme { ChatContent(ChatUiState(conversationId = 1, loaded = true, messages = listOf(reply)), draft = "", actions = actions) } }
+
+        compose.onNodeWithText("Here's your list.").assertIsDisplayed()
+        assertTrue("the placeholder isn't shown", !exists(hasText("[Attached file: beach-list.md]", substring = true)))
+        compose.onNodeWithTag(FILE_CARD_TAG).assertIsDisplayed()
+        compose.onNodeWithText("- towel\n- sunscreen\n- hat").assertIsDisplayed()
+        compose.onNodeWithText("View").performClick()
+        compose.onNodeWithText("Save").performClick()
+        compose.onNodeWithText("Share").performClick()
+        compose.onNodeWithContentDescription("Attachment 1: receipt.jpg").performClick()
+        compose.onNodeWithText("Attachment 2 is no longer available.").assertIsDisplayed()
+        compose.onNodeWithText("notes.md — no longer kept", substring = true).assertIsDisplayed()
+        assertEquals(listOf("view beach-list.md", "save beach-list.md", "share beach-list.md", "open"), calls)
+    }
+
     /** The in-flight bubble's look (C07 §4); the streaming states themselves are covered in ChatViewModelTest. */
     @Test fun theInFlightBubbleShowsTheLabelUntilTextArrivesAndCanBeStopped() {
         var stopped = 0

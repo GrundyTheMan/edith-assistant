@@ -71,6 +71,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.edith.app.chat.engine.ConfirmationRequest
+import com.edith.app.attachments.ReplyFormat
 import com.edith.app.data.db.MessageRole
 import com.edith.app.data.db.MessageStatus
 import java.io.File
@@ -97,6 +98,7 @@ fun MessageItem(
     playingAttachmentId: Long? = null,
     onToggleAttachment: (AttachmentUi) -> Unit = {},
     onOpenImage: (File) -> Unit = {},
+    fileActions: FileActions = FileActions(),
 ) {
     val mine = message.role == MessageRole.User
     Column(
@@ -118,7 +120,15 @@ fun MessageItem(
             else -> {
                 val stopped = message.status == MessageStatus.Cancelled
                 Bubble(message.id, mine = false, maxBubbleWidth, Modifier.alpha(if (stopped) 0.7f else 1f)) {
-                    SelectionContainer { MarkdownText(message.text + if (stopped) " (stopped)" else "") }
+                    val text = ReplyFormat.withoutPlaceholders(message.text)   // her files show as cards (C16)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (text.isNotBlank() || message.attachments.isEmpty()) {
+                            SelectionContainer { MarkdownText(text + if (stopped) " (stopped)" else "") }
+                        }
+                        if (message.attachments.isNotEmpty()) {
+                            EdithAttachments(message.attachments, playingAttachmentId, onToggleAttachment, onOpenImage, fileActions)
+                        }
+                    }
                 }
                 ActionRow(
                     messageId = message.id,

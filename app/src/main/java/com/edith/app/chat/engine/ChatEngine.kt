@@ -9,6 +9,7 @@ import com.edith.app.core.log.LogTag
 import com.edith.app.core.permissions.LocalNetworkAccess
 import com.edith.app.attachments.AttachmentStore
 import com.edith.app.attachments.PendingAttachment
+import com.edith.app.attachments.ReplyFormat
 import com.edith.app.data.chat.ChatRepository
 import com.edith.app.data.db.AttachmentEntity
 import com.edith.app.data.db.AttachmentKind
@@ -20,6 +21,7 @@ import com.edith.app.settings.SettingsRepository
 import com.edith.app.tools.framework.Confirmations
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
@@ -73,8 +75,10 @@ class ChatEngine(
     private val localNetwork: LocalNetworkAccess,
     private val confirmations: Confirmations = Confirmations(),
     private val nanoTime: () -> Long = System::nanoTime,
-    /** Where sent attachments' files go (C15; C16 makes it durable). */
+    /** Where attachments' files go (C15, C16). */
     private val attachmentStore: AttachmentStore? = null,
+    /** Runs after a message with attachments is stored: retention (C16 §2). */
+    private val afterAttachments: suspend () -> Unit = {},
 ) {
     private val _state = MutableStateFlow<EngineState>(EngineState.Idle)
     val state: StateFlow<EngineState> = _state.asStateFlow()
@@ -94,13 +98,18 @@ class ChatEngine(
     fun send(conversationId: Long, text: String, source: MessageSource, attachments: List<PendingAttachment> = emptyList()): Boolean {
         if (text.isBlank() && attachments.isEmpty()) return false
         return start(conversationId) {
-            val new = attachments.map { ChatRepository.NewAttachment(it.kind, it.fileName, it.mimeType, it.sizeBytes) }
-            val stored = repo.addUserMessage(conversationId, text.trim(), source, new)
-            if (stored == null) {   // the conversation was deleted meanwhile
-                attachments.forEach { it.file.delete() }
+            // Files first, so a row never points at a file that isn't there yet (C16 §1).
+            val session = keepsNothing()
+            val new = attachments.map { a ->
+                val path = withContext(Dispatchers.IO) { attachmentStore?.keep(a, session) }
+                if (path == null) a.file.delete()
+                ChatRepository.NewAttachment(a.kind, a.fileName, a.mimeType, a.sizeBytes, path)
+            }
+            if (repo.addUserMessage(conversationId, text.trim(), source, new) == null) {   // the chat was deleted meanwhile
+                new.forEach { attachmentStore?.delete(it.storedPath) }
                 return@start EngineState.Idle
             }
-            stored.attachmentIds.zip(attachments).forEach { (id, a) -> attachmentStore?.save(id, a) ?: a.file.delete() }
+            if (new.isNotEmpty()) afterAttachments()
             runTurn(conversationId)
         }
     }
@@ -222,11 +231,56 @@ class ChatEngine(
     private suspend fun finish(conversationId: Long, event: TurnEvent.Finished, model: ModelInfo): EngineState {
         val text = event.text.trim()   // models often start with a space or newline
         if (text.isEmpty()) return fail(conversationId, AppError.EmptyReply, model)
-        val messageId = repo.addAssistantMessage(conversationId, text, model.name, event.toolsUsed)
+        val reply = withContext(NonCancellable) { edithAttachments(conversationId, text) }
+        val messageId = repo.addAssistantMessage(conversationId, reply.text, model.name, event.toolsUsed, reply.files, reply.resends)
+        if (messageId == null) reply.files.forEach { attachmentStore?.delete(it.storedPath) }
+        if (reply.files.isNotEmpty()) afterAttachments()
         listeners.forEach { it.onFinished(conversationId, messageId, text) }
         event.stats?.let { Log.d(LogTag.Chat, "Reply finished: ${it.totalMs} ms, ${it.evalCount} tokens") }
         return EngineState.Idle
     }
+
+    private class EdithReply(val text: String, val files: List<ChatRepository.NewAttachment>, val resends: List<AttachmentEntity>)
+
+    /**
+     * Edith's `<file>` blocks become stored files, replaced in the text by `[Attached file: name]`; each
+     * `<attachment number="N"/>` becomes a resend of the owner's attachment N, or "Attachment N isn't available"
+     * (C16 §3). Without a store (tests), the reply is kept as written.
+     */
+    private suspend fun edithAttachments(conversationId: Long, text: String): EdithReply {
+        val store = attachmentStore ?: return EdithReply(text, emptyList(), emptyList())
+        val parts = ReplyFormat.parse(text)
+        if (parts.none { it !is ReplyFormat.Part.Text }) return EdithReply(text, emptyList(), emptyList())
+        val session = keepsNothing()
+        val out = StringBuilder()
+        val files = mutableListOf<ChatRepository.NewAttachment>()
+        val resends = mutableListOf<AttachmentEntity>()
+        fun line(s: String) {   // on its own line, after a blank one
+            out.setLength(out.trimEnd().length)
+            if (out.isNotEmpty()) out.append("\n\n")
+            out.append(s)
+        }
+        for (part in parts) when (part) {
+            is ReplyFormat.Part.Text -> out.append(part.text)
+            is ReplyFormat.Part.File -> try {
+                val path = withContext(Dispatchers.IO) { store.write(part.name, part.content, session) }
+                files += ChatRepository.NewAttachment(AttachmentKind.File, part.name, ReplyFormat.mimeType(part.name),
+                    part.content.toByteArray().size.toLong(), path)
+                line(ReplyFormat.placeholder(part.name))
+            } catch (e: java.io.IOException) {
+                Log.w(LogTag.Chat, "Couldn't keep Edith's file", e)
+                line("```\n${part.content}\n```")   // she still sees and shares the content as text
+            }
+            is ReplyFormat.Part.Resend -> {
+                val original = repo.attachmentByNumber(conversationId, part.number)
+                if (original != null && resends.none { it.id == original.id }) resends += original
+                else if (original == null) line("Attachment ${part.number} isn't available.")
+            }
+        }
+        return EdithReply(out.toString().trim(), files, resends)
+    }
+
+    private suspend fun keepsNothing(): Boolean = settings.current().keepRecentAttachments <= 0
 
     private suspend fun fail(conversationId: Long, error: AppError, model: ModelInfo?): EngineState {
         withContext(NonCancellable) { repo.addFailedAssistantMessage(conversationId, model?.name, error) }

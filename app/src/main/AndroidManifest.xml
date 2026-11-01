@@ -60,5 +60,15 @@
             android:name=".voice.handsfree.HandsFreeService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+        <!-- C16: Share on Edith's file cards. Only cacheDir/share (copies made to share) is exposed. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>
