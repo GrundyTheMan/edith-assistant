@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 1 |
-| Status | Not started |
+| Status | **Done** — see "As built" at the end (it differs from §1–§3 in places) |
 | Depends on | C05, C06 |
 | Unblocks | C07 (which adds the conversation list UI, C07 §8) |
 | Size | Medium |
@@ -141,3 +141,49 @@ class CurrentConversation(repo: ChatRepository, settings: SettingsRepository, sc
 - Don't bump the schema version without exporting `2.json`, or the build passes and the migration test
   silently has nothing to check against.
 - Don't let a mid-turn switch move the reply: capture the id once, at the start of the turn.
+
+## As built (2026-10-31)
+
+Where the code differs from the specification above, the code is right. The differences are deliberate.
+
+- **Migration: ADD COLUMN, no table rebuild.** §1 planned a rebuild (AUTOINCREMENT id, nullable title). That
+  would drop a table `messages` references with `ON DELETE CASCADE`, and could delete every message. Instead
+  `MIGRATION_1_2` only adds `title_source` and `updated_at` and an index, so nothing referenced is dropped:
+  - `id` stays a plain `INTEGER PRIMARY KEY`; `ConversationDao.insertNew` inserts without an id and SQLite
+    assigns one. A deleted newest conversation's id can be reused; nothing depends on ids being unique forever.
+  - `title` stays `NOT NULL`; `''` means untitled.
+- **`title_source` instead of `title_set_by_owner`** (`none` / `first_message` / `edith` / `owner`), because
+  the owner chose D12 = Edith writes titles. `ConversationDao.setTitle` ranks them (owner > edith >
+  first_message): a lower source never replaces a higher one, and a first-message title is set only once.
+  The migrated conversation 1 keeps "Edith" as an `owner` title.
+- **`EdithDatabaseCallback` is gone.** A fresh install starts with no conversations; `CurrentConversation.resolve()`
+  creates the first one at startup (`AppContainer.openDatabaseInBackground`).
+- **Repository inserts return `Long?`**: null when the conversation was deleted mid-turn (the foreign-key
+  `SQLiteConstraintException` is caught and logged). The engine also stops a turn whose user message couldn't be
+  stored.
+- **`CurrentConversation`** (in `chat/`) also owns `delete(id)`: `engine.cancelAndJoin(id)`, delete, then open the
+  most recent remaining chat (or a new one). It takes the engine instead of a scope.
+- **D12 titler** (`chat/engine/ConversationTitler.kt`): a `ReplyListener` registered in `AppContainer`. After a
+  reply finishes in a chat that has no Edith or owner title, it makes one non-streaming `chat` call (same model,
+  system instruction "2 to 6 words…") off the turn, in `appScope`, and cleans the answer (`clean`: first line,
+  no quotes, markdown, "Title:" or ending punctuation, ≤ 60 chars). One attempt per chat per app run. On failure
+  the first-message title stays.
+- `ReplyListener` callbacks take the conversation id first; `ChatEngine.activeConversationId` tells the UI which
+  chat a running turn belongs to.
+
+**Verified**
+- `scripts/check.sh --device`: OK (41 device tests), 68 unit tests, lint clean (`build-logs/2026-10-31_19-58-18_check.log`).
+- New tests:
+  - `MigrationTest`: v1 file with messages and an attachment → v2, all rows kept, `foreign_key_check` clean;
+    then opened by Room as the app does.
+  - `ChatRepositoryTest`: 7 new (separation, list order, title ranking, delete cascade, insert after delete,
+    `byNumber` per conversation, pruning).
+  - `ChatEngineTest`: 6 new (reply stays in its chat across a switch, one turn across chats, failures name
+    their chat, delete mid-reply, `CurrentConversation` restore/fallback/new-chat reuse, titler success and
+    failure).
+  - `ConversationTitleTest` (JVM): title cutting and cleaning.
+- Installed over the owner's emulator app with its version-1 `edith.db` (backed up first): it migrated to
+  version 2, conversation 1 "Edith" kept, the app launched with no crash. That database had no messages (no chat
+  UI yet), so message survival rests on `MigrationTest`.
+- Live (`ChatEngineLiveCheckTest`, `-e live true`): first token 133 ms with the model loaded, and Edith's title
+  ("Friendly Greeting Interaction") in 161 ms.

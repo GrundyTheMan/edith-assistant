@@ -5,24 +5,24 @@ import androidx.room.PrimaryKey
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.ColumnInfo
-import androidx.room.Ignore
 
 /**
- * Conversation entity - represents a single chat thread.
+ * A chat thread (decision D6: many conversations). [title] is "" until one is set; [titleSource] says who set it,
+ * so a name the owner chose is never replaced (D12). [updatedAt] is the newest message time: the list sorts by it.
+ * The id stays a plain INTEGER PRIMARY KEY (the v1 shape), so the v1→v2 migration only adds columns and never
+ * rebuilds a table that messages reference with ON DELETE CASCADE. New rows get their id from SQLite.
  */
-@Entity(tableName = "conversations")
+@Entity(tableName = "conversations", indices = [Index("updated_at")])
 data class ConversationEntity(
     @PrimaryKey val id: Long,
     val title: String,
-    @ColumnInfo(name = "created_at") val createdAt: Long
-) {
-    companion object {
-        private const val INITIAL_TITLE = "Edith"
-        
-        @Ignore
-        fun createDefault(): ConversationEntity = ConversationEntity(1, INITIAL_TITLE, System.currentTimeMillis())
-    }
-}
+    @ColumnInfo(name = "title_source", defaultValue = "none") val titleSource: TitleSource,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+    @ColumnInfo(name = "updated_at", defaultValue = "0") val updatedAt: Long,
+)
+
+/** Who titled a conversation (D12): nobody yet, the first message (provisional), Edith, or the owner (final). */
+enum class TitleSource { None, FirstMessage, Edith, Owner }
 
 /**
  * Message entity - represents a chat message (user or assistant).

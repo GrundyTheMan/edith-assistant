@@ -27,8 +27,9 @@ interface AttachmentDao {
     /**
      * Get an attachment by its number within a conversation.
      */
-    @Query("SELECT * FROM attachments WHERE number = :number LIMIT 1")
-    suspend fun byNumber(number: Int): AttachmentEntity?
+    @Query("SELECT a.* FROM attachments a JOIN messages m ON a.message_id = m.id " +
+           "WHERE m.conversation_id = :cid AND a.number = :number LIMIT 1")
+    suspend fun byNumber(cid: Long, number: Int): AttachmentEntity?
 
     /**
      * Get stored attachments (not removed) newest first, per direction.

@@ -1,8 +1,10 @@
 package com.edith.app.di
 
 import android.app.Application
+import com.edith.app.chat.CurrentConversation
 import com.edith.app.chat.engine.ChatEngine
 import com.edith.app.chat.engine.ContextBuilder
+import com.edith.app.chat.engine.ConversationTitler
 import com.edith.app.chat.engine.DateTimeSection
 import com.edith.app.chat.engine.PlainTurnRunner
 import com.edith.app.chat.engine.PromptBuilder
@@ -59,8 +61,11 @@ class AppContainer(val app: Application) {
     /** Replaced by the tool-calling runner in C08. */
     val turnRunner: TurnRunner by lazy { PlainTurnRunner(ollama) }
 
+    /** Edith names new chats (D12). */
+    val conversationTitler: ConversationTitler by lazy { ConversationTitler(chatRepository, ollama, settingsRepository, appScope) }
+
     /** Speech (C13) adds itself here. */
-    val replyListeners: MutableList<ReplyListener> = mutableListOf()
+    val replyListeners: MutableList<ReplyListener> by lazy { mutableListOf<ReplyListener>(conversationTitler) }
 
     val chatEngine: ChatEngine by lazy {
         ChatEngine(
@@ -70,12 +75,21 @@ class AppContainer(val app: Application) {
         )
     }
 
-    /** Creates/opens edith.db on a background thread at launch, so the first chat doesn't wait for it. */
+    /** The open conversation (C06b). Resolved at startup by [openDatabaseInBackground]. */
+    val currentConversation: CurrentConversation by lazy {
+        CurrentConversation(chatRepository, settingsRepository, chatEngine)
+    }
+
+    /**
+     * Creates/opens edith.db on a background thread at launch (running any migration), so the first chat doesn't
+     * wait for it, then picks the conversation to open.
+     */
     fun openDatabaseInBackground() {
         appScope.launch {
             try {
                 database.openHelper.writableDatabase
                 Log.d(LogTag.App, "Database ready")
+                currentConversation.resolve()
             } catch (e: Exception) {
                 Log.e(LogTag.App, "Couldn't open the database", e)
             }

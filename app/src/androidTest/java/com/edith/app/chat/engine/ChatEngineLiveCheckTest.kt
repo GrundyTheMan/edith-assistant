@@ -9,7 +9,6 @@ import com.edith.app.core.log.LogTag
 import com.edith.app.core.permissions.LocalNetworkAccess
 import com.edith.app.data.chat.ChatRepository
 import com.edith.app.data.db.EdithDatabase
-import com.edith.app.data.db.EdithDatabaseCallback
 import com.edith.app.data.db.MessageSource
 import com.edith.app.data.db.MessageStatus
 import kotlinx.coroutines.CoroutineScope
@@ -45,7 +44,7 @@ class ChatEngineLiveCheckTest {
     @Before fun setUp() {
         assumeTrue("live checks run only with -e live true", InstrumentationRegistry.getArguments().getString("live") == "true")
         instrumentation.uiAutomation.grantRuntimePermission("com.edith.app", LocalNetworkAccess.PERMISSION)
-        db = Room.inMemoryDatabaseBuilder(instrumentation.targetContext, EdithDatabase::class.java).addCallback(EdithDatabaseCallback).build()
+        db = Room.inMemoryDatabaseBuilder(instrumentation.targetContext, EdithDatabase::class.java).build()
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     }
 
@@ -58,10 +57,11 @@ class ChatEngineLiveCheckTest {
         val deltaTimes = Collections.synchronizedList(mutableListOf<Long>())
         var started = 0L
         val repo = ChatRepository(db, container.clock, container.dispatchers)
+        val cid = repo.createConversation()
         val engine = ChatEngine(
             repo, container.settingsRepository, container.modelSelection,
             PromptBuilder(container.clock) { container.promptSections }, ContextBuilder(), PlainTurnRunner(container.ollama),
-            listOf(object : ReplyListener { override fun onDelta(text: String) { deltaTimes += System.nanoTime() } }),
+            listOf(object : ReplyListener { override fun onDelta(conversationId: Long, text: String) { deltaTimes += System.nanoTime() } }),
             scope, container.localNetworkAccess,
         )
 
@@ -70,17 +70,24 @@ class ChatEngineLiveCheckTest {
             deltaTimes.clear()
             started = System.nanoTime()
             engine.send(
+                cid,
                 if (round == "warm-up") "Say hi in three words." else "In two sentences, what's a good name for a houseplant?",
                 MessageSource.Typed,
             )
             val end = withTimeout(120_000) { engine.state.first { it is EngineState.Idle || it is EngineState.Failed } }
             assertEquals("turn failed: $end", EngineState.Idle, end)
-            val reply = repo.latest()!!.message
+            val reply = repo.latest(cid)!!.message
             val firstMs = (deltaTimes.first() - started) / 1_000_000
             val totalMs = (System.nanoTime() - started) / 1_000_000
             Log.i(LogTag.Chat, "LIVE $round: model ${reply.model}, ${deltaTimes.size} pieces, first token ${firstMs} ms, total ${totalMs} ms: \"${reply.content}\"")
             assertEquals(MessageStatus.Complete, reply.status)
             assertTrue("should stream in several pieces, got ${deltaTimes.size}", deltaTimes.size > 3)
         }
+
+        // D12: Edith titles the chat from its first exchange.
+        val titleStarted = System.nanoTime()
+        val title = ConversationTitler(repo, container.ollama, container.settingsRepository, scope).titleIfNeeded(cid)
+        Log.i(LogTag.Chat, "LIVE title: \"$title\" in ${(System.nanoTime() - titleStarted) / 1_000_000} ms")
+        assertTrue("Edith should write a title, got $title", !title.isNullOrBlank() && title.length <= ConversationTitler.MAX_CHARS)
     }
 }

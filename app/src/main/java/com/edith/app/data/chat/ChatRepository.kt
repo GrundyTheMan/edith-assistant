@@ -1,46 +1,88 @@
 package com.edith.app.data.chat
 
+import android.database.sqlite.SQLiteConstraintException
+import androidx.room.withTransaction
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.error.AppError
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import com.edith.app.core.time.Clock
+import com.edith.app.data.db.ConversationEntity
+import com.edith.app.data.db.ConversationRow
 import com.edith.app.data.db.EdithDatabase
 import com.edith.app.data.db.MessageEntity
 import com.edith.app.data.db.MessageRole
 import com.edith.app.data.db.MessageSource
 import com.edith.app.data.db.MessageStatus
 import com.edith.app.data.db.MessageWithAttachments
+import com.edith.app.data.db.TitleSource
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
 /**
- * The chat history (C05 §4), and the rules for what may be stored (lesson L3): only user and assistant messages
- * exist (no API for system/tool roles), and assistant text never keeps text-form tool calls — stored history
- * that contains them teaches the model to write tool calls as text instead of making real ones.
+ * The chat history (C05 §4, C06b), and the rules for what may be stored (lesson L3): only user and assistant
+ * messages exist (no API for system/tool roles), and assistant text never keeps text-form tool calls — stored
+ * history that contains them teaches the model to write tool calls as text instead of making real ones.
+ * Every message belongs to a conversation (decision D6); callers always say which.
  */
 class ChatRepository(
     private val db: EdithDatabase,
     private val clock: Clock,
     private val dispatchers: AppDispatchers,
 ) {
-    /** v1 has one continuous conversation (decision D6). */
-    val conversationId = CONVERSATION_ID
+    // --- Conversations ---------------------------------------------------------------------------------------
 
-    /** Every message, oldest first, with its attachments. Room runs the query off the main thread. */
-    fun observe(): Flow<List<MessageWithAttachments>> = db.messageDao().observeConversation(conversationId)
+    /** Every conversation, most recently active first. */
+    fun conversations(): Flow<List<ConversationRow>> = db.conversationDao().observeAll()
 
-    /** The newest [limit] messages, oldest first. */
-    suspend fun recent(limit: Int): List<MessageWithAttachments> = withContext(dispatchers.io) {
-        db.messageDao().recent(conversationId, limit).reversed()
+    fun observeConversation(id: Long): Flow<ConversationEntity?> = db.conversationDao().observe(id)
+
+    suspend fun conversation(id: Long): ConversationEntity? = io { db.conversationDao().get(id) }
+
+    suspend fun mostRecentConversation(): ConversationEntity? = io { db.conversationDao().mostRecent() }
+
+    /** A new, empty, untitled conversation. */
+    suspend fun createConversation(): Long = io { db.conversationDao().insertNew(now()) }
+
+    /** The owner's name for a conversation; never overwritten by automatic titles (D12). Blank is ignored. */
+    suspend fun rename(id: Long, title: String) {
+        val clean = title.trim().replace(whitespace, " ")
+        if (clean.isNotEmpty()) io { db.conversationDao().setTitle(id, clean, TitleSource.Owner) }
     }
 
-    suspend fun addUserMessage(text: String, source: MessageSource): Long =
+    /** A title Edith wrote (D12). Replaces the provisional first-message title, never the owner's. */
+    suspend fun setEdithTitle(id: Long, title: String): Boolean =
+        io { db.conversationDao().setTitle(id, title, TitleSource.Edith) } > 0
+
+    /** Deletes the conversation with its messages and attachment rows. Stop its turn first (ChatEngine.cancelAndJoin). */
+    suspend fun deleteConversation(id: Long) = io { db.conversationDao().delete(id) }
+
+    suspend fun isEmpty(id: Long): Boolean = io { db.conversationDao().isEmpty(id) }
+
+    suspend fun deleteEmptyConversationsExcept(keepId: Long): Int = io { db.conversationDao().deleteEmptyExcept(keepId) }
+
+    // --- Messages --------------------------------------------------------------------------------------------
+
+    /** Every message of a conversation, oldest first, with its attachments. Room runs the query off the main thread. */
+    fun observe(conversationId: Long): Flow<List<MessageWithAttachments>> =
+        db.messageDao().observeConversation(conversationId)
+
+    /** The newest [limit] messages, oldest first. */
+    suspend fun recent(conversationId: Long, limit: Int): List<MessageWithAttachments> =
+        io { db.messageDao().recent(conversationId, limit).reversed() }
+
+    /** The newest message, or null if the conversation is empty. */
+    suspend fun latest(conversationId: Long): MessageWithAttachments? = recent(conversationId, 1).lastOrNull()
+
+    /** Stores the owner's message. The first one also gives an untitled conversation a provisional title (D12). */
+    suspend fun addUserMessage(conversationId: Long, text: String, source: MessageSource): Long? =
         insert(MessageEntity(conversationId = conversationId, role = MessageRole.User, content = text,
-            createdAt = now(), status = MessageStatus.Complete, source = source))
+            createdAt = now(), status = MessageStatus.Complete, source = source)) {
+            firstMessageTitle(text)?.let { db.conversationDao().setTitle(conversationId, it, TitleSource.FirstMessage) }
+        }
 
     /** Stores Edith's reply with any `<tool_call>…</tool_call>` text removed (and a warning logged). */
-    suspend fun addAssistantMessage(text: String, model: String, toolsUsed: List<String>): Long {
+    suspend fun addAssistantMessage(conversationId: Long, text: String, model: String, toolsUsed: List<String>): Long? {
         val cleaned = stripToolCalls(text)
         if (cleaned != text) Log.w(LogTag.Chat, "Stripped tool-call text from an assistant message")
         return insert(MessageEntity(conversationId = conversationId, role = MessageRole.Assistant, content = cleaned,
@@ -49,38 +91,65 @@ class ChatRepository(
     }
 
     /** A reply that failed: empty content, the error's message kept for the UI. */
-    suspend fun addFailedAssistantMessage(model: String?, error: AppError): Long =
+    suspend fun addFailedAssistantMessage(conversationId: Long, model: String?, error: AppError): Long? =
         insert(MessageEntity(conversationId = conversationId, role = MessageRole.Assistant, content = "",
             createdAt = now(), status = MessageStatus.Failed, source = MessageSource.Typed, model = model,
             errorMessage = error.userMessage))
 
     /** A reply the owner stopped part-way (C06): shown in the chat, but never sent back to the model as context. */
-    suspend fun addCancelledAssistantMessage(partialText: String, model: String?): Long =
+    suspend fun addCancelledAssistantMessage(conversationId: Long, partialText: String, model: String?): Long? =
         insert(MessageEntity(conversationId = conversationId, role = MessageRole.Assistant,
             content = stripToolCalls(partialText), createdAt = now(), status = MessageStatus.Cancelled,
             source = MessageSource.Typed, model = model))
 
-    /** The newest message, or null if the conversation is empty. */
-    suspend fun latest(): MessageWithAttachments? = recent(1).lastOrNull()
-
     /** Deletes the message; its attachment rows go with it (foreign key cascade). */
-    suspend fun deleteMessage(id: Long) = withContext(dispatchers.io) { db.messageDao().delete(id) }
+    suspend fun deleteMessage(id: Long) = io { db.messageDao().delete(id) }
 
-    suspend fun clearConversation() = withContext(dispatchers.io) { db.messageDao().clearConversation(conversationId) }
+    suspend fun clearConversation(conversationId: Long) = io { db.messageDao().clearConversation(conversationId) }
 
-    private suspend fun insert(message: MessageEntity): Long = withContext(dispatchers.io) { db.messageDao().insert(message) }
+    /**
+     * Inserts the message and bumps the conversation's `updated_at`, in one transaction. Returns null (and logs)
+     * if the conversation no longer exists — it was deleted while a reply was running — instead of crashing.
+     */
+    private suspend fun insert(message: MessageEntity, alsoInTransaction: suspend () -> Unit = {}): Long? = io {
+        try {
+            db.withTransaction {
+                val id = db.messageDao().insert(message)
+                db.conversationDao().touch(message.conversationId, message.createdAt)
+                alsoInTransaction()
+                id
+            }
+        } catch (e: SQLiteConstraintException) {
+            Log.w(LogTag.Chat, "Message not stored: conversation ${message.conversationId} no longer exists", e)
+            null
+        }
+    }
+
+    private suspend fun <T> io(block: suspend () -> T): T = withContext(dispatchers.io) { block() }
 
     private fun now() = clock.now().toEpochMilli()
 
     companion object {
-        const val CONVERSATION_ID = 1L
-
         private val toolCallText = Regex("""(?s)\s*<tool_call>.*?</tool_call>\s*""")
+        private val whitespace = Regex("""\s+""")
+
+        /** Provisional titles (D12) are at most this long. */
+        const val TITLE_MAX_CHARS = 40
 
         /** Removes text-form tool calls (lesson L3), keeping one space where they were between words. */
         fun stripToolCalls(text: String): String {
             if (!toolCallText.containsMatchIn(text)) return text   // ordinary replies are stored exactly as written
             return text.replace(toolCallText, " ").replace(Regex(" {2,}"), " ").trim()
+        }
+
+        /** The first message as a title: one line, at most [TITLE_MAX_CHARS], cut at a word with "…". Null if blank. */
+        fun firstMessageTitle(text: String): String? {
+            val line = text.trim().replace(whitespace, " ")
+            if (line.isEmpty()) return null
+            if (line.length <= TITLE_MAX_CHARS) return line
+            val cut = line.take(TITLE_MAX_CHARS - 1)
+            val atWord = cut.substringBeforeLast(' ', cut).takeIf { it.length >= TITLE_MAX_CHARS / 2 } ?: cut
+            return atWord.trimEnd(' ', ',', '.', ';', ':', '-') + "…"
         }
     }
 }
