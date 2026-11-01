@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.outlined.Hearing
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.FiberManualRecord
@@ -120,12 +121,17 @@ fun MessageItem(
                 modifier = Modifier.padding(horizontal = 6.dp),
             )
         }
-        Text(
-            message.time,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-        )
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)) {
+            if (message.handsFree) {
+                Icon(
+                    Icons.Outlined.Hearing,
+                    contentDescription = "Said hands-free",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(14.dp).padding(end = 2.dp),
+                )
+            }
+            Text(message.time, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -317,6 +323,8 @@ fun InputRow(
     level: () -> Float = { 0f },
     dictating: Boolean = false,
     voice: VoiceActions = VoiceActions(),
+    /** False while hands-free holds the microphone (C14): dictation waits. */
+    micFree: Boolean = true,
 ) {
     Row(
         modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
@@ -342,7 +350,7 @@ fun InputRow(
             keyboardActions = KeyboardActions(onSend = { if (canSend) onSend() }),
             trailingIcon = if (features.dictation) {
                 {
-                    IconButton(onClick = voice.onDictate) {
+                    IconButton(onClick = voice.onDictate, enabled = micFree || dictating) {
                         Icon(
                             Icons.Filled.Mic,
                             contentDescription = if (dictating) "Stop dictation" else "Speak a message",
