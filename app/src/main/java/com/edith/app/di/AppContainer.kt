@@ -37,6 +37,8 @@ import com.edith.app.tools.framework.Confirmations
 import com.edith.app.tools.framework.ToolGuidanceSection
 import com.edith.app.tools.framework.ToolRegistry
 import com.edith.app.tools.framework.ToolTurnRunner
+import com.edith.app.tools.weather.OpenMeteoClient
+import com.edith.app.tools.weather.WeatherTool
 import com.edith.app.voice.speech.SilentSpeechController
 import com.edith.app.voice.speech.SpeechController
 import kotlinx.coroutines.CoroutineScope
@@ -65,7 +67,10 @@ class AppContainer(val app: Application) {
     val engineScope: CoroutineScope = CoroutineScope(SupervisorJob() + dispatchers.default)
 
     /** Every tool Edith has (C08). Later chunks add theirs here: weather C09, web C10, location C11, Google C18/C19. */
-    val toolRegistry: ToolRegistry by lazy { ToolRegistry(tools = listOf(CurrentTimeTool())) }
+    val toolRegistry: ToolRegistry by lazy { ToolRegistry(tools = listOf(CurrentTimeTool(), WeatherTool(openMeteo))) }
+
+    /** Weather data (C09): Open-Meteo, keyless. Shares the app's HTTP client, with its own 10 s timeouts. */
+    val openMeteo: OpenMeteoClient by lazy { OpenMeteoClient(okHttpLazy, dispatchers) }
 
     /** Tool confirmations waiting for the owner's tap (C08 §6, D11). */
     val confirmations = Confirmations()

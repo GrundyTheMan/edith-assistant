@@ -3,6 +3,7 @@
 | | |
 |---|---|
 | Phase | 2 |
+| Status | **Done** — see "As built" at the end |
 | Depends on | C08 (C11 adds "here") |
 | Size | Small–medium |
 | Read first | C08 spec; 04-lessons L5; 06-decisions D7 |
@@ -72,3 +73,61 @@ Status label: "Checking the weather…".
 - [ ] Live: "What's the weather in Fowlerville?", "…in Boston?", "Will it rain in Chicago tomorrow?" each produce
       a real answer that matches open-meteo.com at the time (paste the app log + reply in the PR).
 - [ ] Network off → a clear message from Edith, no crash.
+
+## As built (2026-11-01)
+
+Where the code differs from the specification above, the code is right.
+
+**Files**
+- `tools/weather/OpenMeteoClient.kt`: the client, plus DTOs taken from responses captured live on 2026-11-01.
+- `tools/weather/Weather.kt`: `Place`, `Forecast`, `WeatherUnits` (D7), `describeWeatherCode` and `PlaceResolver`.
+- `tools/weather/WeatherTool.kt`: `get_weather`.
+- `AppContainer` adds `openMeteo` and registers `WeatherTool`.
+- Test fixtures in `src/test/resources/weather/`: Fowlerville, Springfield (5 results), no results (just
+  `{"generationtime_ms":…}` with no `results` key), an imperial forecast and a metric one.
+
+**Differences from the spec**
+- **Units (D7, owner 2026-11-01):** automatic from the phone's country. US, Liberia and Myanmar get °F and mph;
+  everywhere else gets °C and km/h. The Settings value `units` (Auto / Metric / Imperial, C04) can force either;
+  there's no screen for it yet.
+- **Geocoding asks for 10 results**, not 5, so a state hint has more candidates. Only the name before the first
+  comma is sent; the rest is the hint.
+- **Ambiguous names:** the result says "(other places share this name — say a state or country if you meant
+  another)", and the model passes that on.
+- **The forecast `days` value** is clamped to 0–3 and the reply cut to 400 characters. Days after tomorrow are named
+  by weekday.
+- **"here" / "my location" / "near me"** returns "I need your location — ask the user for a city." until C11.
+- **The HTTP client** shares the app's OkHttp client, with its own 10 s timeouts. A non-200 answer, a network error
+  or a garbled reply all become "The weather service didn't respond — try again shortly."
+- **No regexes**, so nothing depends on Android's regex engine (L25). The tests are JVM tests over the real fixtures
+  and MockWebServer, and the live check covered the device.
+
+**Verified**
+- `scripts/check.sh --device`: OK (71 device tests), 91 unit tests, lint clean
+  (`build-logs/2026-11-01_00-34-14_check.log`).
+- `WeatherToolTest` (10, JVM) covers:
+  - parsing all the fixtures
+  - URL-encoding ("São Paulo & Co")
+  - the units sent and the unit choice by country
+  - hint matching ("IL", "massachusetts")
+  - the most-populous rule, and the ambiguity note
+  - every listed WMO code
+  - the tool end to end: Fowlerville, a 2-day forecast, Paris in metric, Springfield, no match, "here", HTTP 503,
+    a garbled reply, no server, and a missing location
+- **Live on the emulator** (`gemma4:12b`, 2026-11-01 00:14) against Open-Meteo queried directly at the same moment.
+  Edith added "MI", "MA" and "IL" herself:
+
+  | Question | Tool call | Tool result | Open-Meteo directly |
+  |---|---|---|---|
+  | What is the weather in Fowlerville? | `{"location":"Fowlerville, MI"}` | 50°F (feels 45°F), overcast, wind 6 mph, humidity 71% | 50.0°F, feels 45.2°F, code 3, 6.2 mph, 71% |
+  | What is the weather in Boston? | `{"location":"Boston, MA"}` | 36°F (feels 29°F), clear, wind 4 mph, humidity 65% | 36.0°F, feels 29.4°F, code 0, 4.4 mph, 65% |
+  | Will it rain in Chicago tomorrow? | `{"days":1,"location":"Chicago, IL"}` | Tomorrow: high 61°F, low 51°F, 24% chance of rain | max 60.8°F, min 51.4°F, 24% |
+
+  Edith's replies: "Fowlerville is currently looking quite moody and overcast, sitting at a brisk 50°F…"; Chicago:
+  "…There's a 24% chance of drizzle tomorrow in Chicago, with a high of 61°F. It's not exactly a washout…".
+- **Network off** (airplane mode): the turn fails clearly, with "Can't reach your Ollama server at
+  http://10.0.2.2:11434…" and Retry, and nothing crashes. With all networking off Ollama is unreachable too, so the
+  weather service failing alone is covered by the tests (closed server, 503, garbled reply).
+- **Test reliability:** `ChatScreenTest` failed twice in full runs right after the live session: "Stop reply" and
+  the other-chat hint weren't found. It then passed alone twice and in three full runs. Those two checks now wait up
+  to 10 s, and their timeout message dumps the screen and engine state, in case it recurs.

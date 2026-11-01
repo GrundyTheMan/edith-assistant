@@ -8,7 +8,7 @@ history (tag `edith-v1`) — don't reuse its code.
 ## Read first
 **[`docs/design/README.md`](docs/design/README.md)** — the complete design, split into chunks (C01–C21) with
 dependencies and status. Read the shared context it lists, then take one chunk whose dependencies are merged.
-C01–C08 are done (phase 1, plus the tool framework: Edith calls real tools); the table says what's next.
+C01–C09 are done (phase 1, the tool framework, and the weather tool); the table says what's next.
 
 ## Build, test, run (Git Bash; from PowerShell: `& "C:\Program Files\Git\bin\bash.exe" scripts/check.sh`)
 ```bash
