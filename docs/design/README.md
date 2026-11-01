@@ -62,7 +62,7 @@ design in the same PR, or ask the owner.
   - `ChatUiState.inFlight` carries C08's status labels
   - `EngineState.AwaitingConfirmation` already shows an in-flight bubble, waiting for C08's confirmation card
 - Owner decisions still open are in `06-decisions.md`. Ask early about the ones your chunk lists; the first ones
-  needed are **D13** (L24: replies die when the owner leaves the app), **D8** (C03), **D11** (C08), **D7** (C09), **D3** (C10), **D4** (C14), **O1** (C16),
+  needed are **D8** (C03), **D11** (C08), **D7** (C09), **D3** (C10), **D4** (C14), **O1** (C16),
   **D9** (C17), **D5** (C19).
 - No GitHub Release has been published yet; `scripts/publish.sh` is untested until the owner asks for the first one.
 

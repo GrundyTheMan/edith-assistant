@@ -2,6 +2,8 @@ package com.edith.app.di
 
 import android.app.Application
 import com.edith.app.chat.CurrentConversation
+import com.edith.app.chat.service.ReplyKeepAlive
+import com.edith.app.chat.service.ReplyService
 import com.edith.app.chat.engine.ChatEngine
 import com.edith.app.chat.engine.ContextBuilder
 import com.edith.app.chat.engine.ConversationTitler
@@ -103,7 +105,11 @@ class AppContainer(val app: Application) {
                 Log.e(LogTag.App, "Couldn't open the database", e)
             }
         }
+        replyKeepAlive.watch(appScope)
     }
+
+    /** Keeps a reply going when the owner leaves the app (D13): starts [ReplyService] as each turn begins. */
+    val replyKeepAlive: ReplyKeepAlive by lazy { ReplyKeepAlive(chatEngine.state) { ReplyService.start(app) } }
 
     val secretStore: SecretStore by lazy { KeystoreSecretStore(app) }
 

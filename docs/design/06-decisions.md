@@ -23,12 +23,12 @@ answer here in the same PR.
 | A11 | Manual DI (`AppContainer`), OkHttp + kotlinx.serialization, no Retrofit/Gson/Hilt | 2026-10-29 | 01-architecture §1 — design choice, owner may override |
 | D6 | **Multiple conversations**: a conversation list plus "New chat" (not v1's single conversation) | 2026-10-31 | Storage and engine in C06b; list UI in C07 §8 |
 | D12 | Conversation titles: **Edith writes a short title** after the first reply (one extra non-streaming call); until then, and if it fails, the first message (40 chars) is the title; the owner can rename, and Edith never overwrites that | 2026-10-31 | C06b `ConversationTitler` |
+| D13 | **Keep a reply going when the owner leaves the app**: a short foreground service with an "Edith is replying…" notification runs only while a reply is being written (L24) | 2026-10-31 | `chat/service/ReplyService` (asks for notifications on the first Send) |
 
 ## Open (ask the owner when the chunk needs it)
 
 | ID | Question | Recommended default | Alternatives | Needed by |
 |---|---|---|---|---|
-| D13 | Keep a reply going when the owner leaves the app (L24)? Android cuts a background app's network after ~5 s | **Yes: a short foreground service while a reply is being written** (a "Edith is replying…" notification; stops when the reply ends) | Leave as is: leaving the app stops the reply (it shows as failed, Retry works) | before C13/C14 |
 | O1 | "Keep recent attachments, default 10": per direction (10 sent by the owner + 10 sent by Edith) or 10 total? | **Per direction** (matches the owner's earlier wording "each way") | 10 total | C16 |
 | D3 | Web search provider | **Ollama's web search API** (built for model tool use; needs a free ollama.com API key — verify current API and limits) | Brave Search API (key, free tier); self-hosted SearXNG on the PC (no key, more setup); Tavily | C10 |
 | D4 | Wake-word engine for hands-free | **Picovoice Porcupine** with a custom "Hey Edith" keyword (reliable, on-device; needs a free Picovoice AccessKey; check licence terms for personal use) | openWakeWord via ONNX Runtime (free, open, custom model training harder); Vosk keyword spotting (free, less accurate) | C14 |

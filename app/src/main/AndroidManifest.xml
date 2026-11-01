@@ -7,6 +7,11 @@
          10.0.2.2) unless the user grants this runtime permission; without it requests just time out.
          C04 asks for it before connecting (04-lessons L23). -->
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+    <!-- D13 / L24: a short foreground service keeps a reply's connection alive after the owner leaves the app
+         ("shortService" needs no type-specific permission). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Lets the "Edith is replying…" notification show (Android 13+); asked on the first Send (D13). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".EdithApp"
@@ -28,5 +33,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".chat.service.ReplyService"
+            android:exported="false"
+            android:foregroundServiceType="shortService" />
     </application>
 </manifest>

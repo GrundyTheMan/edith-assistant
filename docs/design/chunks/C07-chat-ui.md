@@ -199,6 +199,20 @@ Where the code differs from the specification above, the code is right.
 - **Not done live:** stopping Ollama on the PC to see the failure. A real "Can't reach your Ollama server" failure
   did happen (see L24); its bubble and Retry were checked live.
 
-**Known problem, D13 (owner's decision):** leaving the app (Back or Home) mid-reply kills the reply after about 5 s,
-because Android cuts the network of an app in the background (L24). It shows as a server error, and Retry works.
-Rotation is fine.
+**Replies when the owner leaves the app (D13, L24).** Android cuts the network of an app with nothing on screen
+after about 5 s, which killed a reply mid-stream. Rotation was never affected. Now `chat/service/ReplyService`, a short
+foreground service, keeps the connection while a turn runs:
+- `ReplyKeepAlive` (in `AppContainer`, watched from startup) starts it as each turn begins, while the owner is still
+  on screen, because they just tapped Send.
+- It stops itself when the engine is no longer running a turn, so it's never stopped before it went foreground.
+- Its notification reads "Edith is replying…" with a **Stop** action. It's silent and low priority, and Android shows
+  it only if the reply runs more than a few seconds.
+- Android caps a short service at about 3 minutes (`onTimeout` stops it); replies take well under a minute.
+- The notification needs `POST_NOTIFICATIONS`. The chat screen asks on the first Send of each app run, and re-posts
+  the notification if the owner allows while a reply is running. Without the permission the service still keeps the
+  reply alive; only the notification is hidden.
+
+Verified live: with Home or Back mid-reply, replies of 386–725 tokens finished in the background, and the log shows
+the service stopping when each reply ended. A very short reply followed by leaving at once was clean. Stop in the
+notification stopped the reply and kept the partial text. 0 crashes. `ReplyKeepAliveTest` (JVM) covers the rule of
+one start per turn.
