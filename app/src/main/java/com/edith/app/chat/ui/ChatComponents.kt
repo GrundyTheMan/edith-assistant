@@ -1,11 +1,14 @@
 package com.edith.app.chat.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,6 +35,7 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -41,10 +45,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.layout
@@ -57,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import com.edith.app.chat.engine.ConfirmationRequest
 import com.edith.app.data.db.MessageRole
 import com.edith.app.data.db.MessageStatus
+import kotlinx.coroutines.delay
 
 /** How far Edith's action row is pulled up onto her bubble's bottom edge (the owner's "almost on top of the edge"). */
 val ActionRowOverlap: Dp = 7.dp
@@ -282,7 +292,18 @@ private fun Modifier.pullUpOntoBubble(): Modifier = layout { measurable, constra
     layout(placeable.width, (placeable.height - overlap).coerceAtLeast(0)) { placeable.place(0, -overlap) }
 }
 
-/** The input row (C07 §6). Attach, Record and dictation appear when their chunks switch them on. */
+/** What the input row's voice controls do (C12). */
+data class VoiceActions(
+    val onRecord: () -> Unit = {},
+    val onStopAndSend: () -> Unit = {},
+    val onCancelRecording: () -> Unit = {},
+    val onDictate: () -> Unit = {},
+)
+
+/**
+ * The input row (C07 §6). Attach, Record and dictation appear when their chunks switch them on. While a voice memo
+ * records (C12), the row shows the recording instead: red dot, elapsed time, level meter, Cancel and Stop & send.
+ */
 @Composable
 fun InputRow(
     draft: String,
@@ -291,25 +312,44 @@ fun InputRow(
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
     modifier: Modifier = Modifier,
+    canRecord: Boolean = true,
+    recording: RecordingUi? = null,
+    level: () -> Float = { 0f },
+    dictating: Boolean = false,
+    voice: VoiceActions = VoiceActions(),
 ) {
     Row(
         modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (recording != null) {
+            RecordingControls(recording, level, voice)
+            return@Row
+        }
         if (features.attach) IconButton(onClick = {}) { Icon(Icons.Filled.AttachFile, contentDescription = "Attach a file") }
         if (features.record) {
-            IconButton(onClick = {}) { Icon(Icons.Filled.FiberManualRecord, contentDescription = "Record audio", tint = Color(0xFFD32F2F)) }
+            IconButton(onClick = voice.onRecord, enabled = canRecord) {
+                Icon(Icons.Filled.FiberManualRecord, contentDescription = "Record audio", tint = if (canRecord) RecordRed else LocalContentColor.current.copy(alpha = 0.38f))
+            }
         }
         OutlinedTextField(
             value = draft,
             onValueChange = onDraftChange,
-            placeholder = { Text("Message Edith") },
+            placeholder = { Text(if (dictating) "Listening…" else "Message Edith") },
             shape = RoundedCornerShape(24.dp),
             maxLines = 4,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
             keyboardActions = KeyboardActions(onSend = { if (canSend) onSend() }),
             trailingIcon = if (features.dictation) {
-                { IconButton(onClick = {}) { Icon(Icons.Filled.Mic, contentDescription = "Speak a message") } }
+                {
+                    IconButton(onClick = voice.onDictate) {
+                        Icon(
+                            Icons.Filled.Mic,
+                            contentDescription = if (dictating) "Stop dictation" else "Speak a message",
+                            tint = if (dictating) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                        )
+                    }
+                }
             } else null,
             modifier = Modifier.weight(1f).testTag(INPUT_TAG),
         )
@@ -319,6 +359,40 @@ fun InputRow(
         }
     }
 }
+
+@Composable
+private fun RowScope.RecordingControls(recording: RecordingUi, level: () -> Float, voice: VoiceActions) {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(recording.startedAtMs) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(250)
+        }
+    }
+    val seconds = ((now - recording.startedAtMs) / 1_000).coerceAtLeast(0)
+    IconButton(onClick = voice.onCancelRecording) { Icon(Icons.Filled.Close, contentDescription = "Cancel recording") }
+    Icon(Icons.Filled.FiberManualRecord, contentDescription = null, tint = RecordRed, modifier = Modifier.size(14.dp))
+    Spacer(Modifier.width(8.dp))
+    Text(
+        "%d:%02d".format(seconds / 60, seconds % 60),
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.testTag(RECORDING_TIME_TAG),
+    )
+    Spacer(Modifier.width(12.dp))
+    // The meter reads the level inside drawing only, so it redraws without recomposing the row.
+    val track = MaterialTheme.colorScheme.surfaceVariant
+    val bar = MaterialTheme.colorScheme.primary
+    Canvas(Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp))) {
+        drawRect(track)
+        drawRect(bar, size = size.copy(width = size.width * level().coerceIn(0f, 1f)))
+    }
+    Spacer(Modifier.width(8.dp))
+    FilledIconButton(onClick = voice.onStopAndSend, colors = IconButtonDefaults.filledIconButtonColors(containerColor = RecordRed)) {
+        Icon(Icons.Filled.Stop, contentDescription = "Stop and send recording")
+    }
+}
+
+private val RecordRed = Color(0xFFD32F2F)
 
 /** A line above the input row; [actionLabel] (e.g. "Allow") is optional. */
 @Composable
@@ -337,5 +411,6 @@ fun ErrorLine(message: String, actionLabel: String?, onAction: () -> Unit, onDis
 const val IN_FLIGHT_TAG = "in-flight"
 const val CONFIRMATION_TAG = "confirmation"
 const val INPUT_TAG = "message-input"
+const val RECORDING_TIME_TAG = "recording-time"
 fun bubbleTag(messageId: Long) = "bubble-$messageId"
 fun actionRowTag(messageId: Long) = "action-row-$messageId"

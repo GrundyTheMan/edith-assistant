@@ -28,8 +28,15 @@ data class ChatUiState(
     val speakingMessageId: Long? = null,
     /** False until the open conversation's messages have loaded (so the empty-chat hint doesn't flash). */
     val loaded: Boolean = false,
+    /** A voice memo is being recorded (C12): the input row shows the recording controls. */
+    val recording: RecordingUi? = null,
+    /** A voice memo is starting, recording or being transcribed: Send and Record are off meanwhile. */
+    val voiceBusy: Boolean = false,
+    /** Dictation is listening (C12): the mic in the text field is highlighted. */
+    val dictating: Boolean = false,
 ) {
-    fun canSend(draft: String): Boolean = conversationId != null && !busy && draft.isNotBlank()
+    fun canSend(draft: String): Boolean = conversationId != null && !busy && !voiceBusy && draft.isNotBlank()
+    val canRecord: Boolean get() = conversationId != null && !busy && !voiceBusy
 
     companion object {
         const val NEW_CHAT_TITLE = "New chat"
@@ -65,8 +72,13 @@ data class InFlight(
     val confirmation: ConfirmationRequest? = null,
 )
 
+/** A memo being recorded; the elapsed time is counted on screen from [startedAtMs]. */
 @Immutable
-data class ChatError(val message: String, val needsLocalNetworkPermission: Boolean)
+data class RecordingUi(val startedAtMs: Long)
+
+/** [opensAppSettings]: the action is Open settings (the microphone was refused, C12 §1). */
+@Immutable
+data class ChatError(val message: String, val needsLocalNetworkPermission: Boolean, val opensAppSettings: Boolean = false)
 
 @Immutable
 data class ConversationItem(

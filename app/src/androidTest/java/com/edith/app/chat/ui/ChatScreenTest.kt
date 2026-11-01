@@ -123,6 +123,43 @@ class ChatScreenTest {
         assertEquals(listOf(false, true), answers)
     }
 
+    /** C12: Record and dictation buttons, the recording row's controls, Transcribing…, and Open settings for the mic. */
+    @Test fun voiceControlsRecordStopCancelDictateAndOpenSettings() {
+        val calls = mutableListOf<String>()
+        val actions = ChatActions(
+            voice = VoiceActions(
+                onRecord = { calls += "record" }, onStopAndSend = { calls += "stop" },
+                onCancelRecording = { calls += "cancel" }, onDictate = { calls += "dictate" },
+            ),
+            onOpenAppSettings = { calls += "settings" },
+        )
+        val idle = ChatUiState(conversationId = 1, loaded = true, features = ChatFeatures(record = true, dictation = true))
+        var state by mutableStateOf(idle)
+        compose.setContent { EdithTheme { ChatContent(state, draft = "", actions = actions) } }
+
+        compose.onNodeWithContentDescription("Record audio").performClick()
+        compose.onNodeWithContentDescription("Speak a message").performClick()
+
+        state = idle.copy(recording = RecordingUi(System.currentTimeMillis() - 7_000), voiceBusy = true)
+        compose.onNodeWithTag(RECORDING_TIME_TAG).assert(hasText("0:07").or(hasText("0:08")))
+        assertTrue("the text field gives way to the recording", !exists(hasTestTag(INPUT_TAG)))
+        compose.onNodeWithContentDescription("Stop and send recording").performClick()
+        compose.onNodeWithContentDescription("Cancel recording").performClick()
+
+        state = idle.copy(voiceBusy = true, inFlight = InFlight(ChatViewModel.TRANSCRIBING, "", canStop = false))
+        compose.onNodeWithText("Transcribing…").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Record audio").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
+
+        state = idle.copy(dictating = true)
+        compose.onNodeWithContentDescription("Stop dictation").assertIsDisplayed()
+        compose.onNodeWithText("Listening…").assertIsDisplayed()
+
+        state = idle.copy(error = ChatError(com.edith.app.voice.capture.VoiceMemos.MIC_DENIED, needsLocalNetworkPermission = false, opensAppSettings = true))
+        compose.onNodeWithText("Open settings").performClick()
+        assertEquals(listOf("record", "dictate", "stop", "cancel", "settings"), calls)
+    }
+
     /** The in-flight bubble's look (C07 §4); the streaming states themselves are covered in ChatViewModelTest. */
     @Test fun theInFlightBubbleShowsTheLabelUntilTextArrivesAndCanBeStopped() {
         var stopped = 0
