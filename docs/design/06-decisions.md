@@ -22,6 +22,7 @@ answer here in the same PR.
 | A10 | Deliver as one PR per chunk; each chunk implementable by a different AI model | 2026-10-29 | 02-standards |
 | A11 | Manual DI (`AppContainer`), OkHttp + kotlinx.serialization, no Retrofit/Gson/Hilt | 2026-10-29 | 01-architecture §1 — design choice, owner may override |
 | D6 | **Multiple conversations**: a conversation list plus "New chat" (not v1's single conversation) | 2026-10-31 | Storage and engine in C06b; list UI in C07 §8 |
+| D12 | Conversation titles: **Edith writes a short title** after the first reply (one extra non-streaming call); until then, and if it fails, the first message (40 chars) is the title; the owner can rename, and Edith never overwrites that | 2026-10-31 | C06b `ConversationTitler` |
 
 ## Open (ask the owner when the chunk needs it)
 
@@ -36,4 +37,3 @@ answer here in the same PR.
 | D9 | Google sign-in: which Google Cloud project/OAuth client? The owner may already have one (a client ID appeared in a v1 commit) | Create a new project "Edith" with an Android OAuth client (C17 has the steps) | Reuse the existing client | C17 |
 | D10 | Smart-home backend for v2 | **Decide at v2 start** — options in C20: through Jarvis on the PC, through Home Assistant, or direct from the phone | — | C20 |
 | D11 | Confirmation policy: which actions need an explicit tap? | **Anything that changes data outside the app** (calendar writes, email drafts, later: locks, garage, thermostat) | Also confirm reads of email | C08, C18, C19 |
-| D12 | Conversation titles | **First user message**, trimmed to 40 characters at a word boundary; the owner can rename | Edith writes a short title after the first reply (an extra model call each new chat); always "New chat" + date | C06b |

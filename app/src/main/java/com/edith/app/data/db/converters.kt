@@ -85,6 +85,23 @@ object EnumConverters {
         "file" -> AttachmentKind.File
         else -> throw IllegalArgumentException("Unknown attachment kind: $value")
     }
+
+    @TypeConverter
+    fun fromTitleSource(source: TitleSource): String = when (source) {
+        TitleSource.None -> "none"
+        TitleSource.FirstMessage -> "first_message"
+        TitleSource.Edith -> "edith"
+        TitleSource.Owner -> "owner"
+    }
+
+    @TypeConverter
+    fun toTitleSource(value: String): TitleSource = when (value) {
+        "none" -> TitleSource.None
+        "first_message" -> TitleSource.FirstMessage
+        "edith" -> TitleSource.Edith
+        "owner" -> TitleSource.Owner
+        else -> throw IllegalArgumentException("Unknown title source: $value")
+    }
 }
 
 /** `tools_used` as a JSON array of strings, via kotlinx.serialization (no Gson — 01-architecture §1). */

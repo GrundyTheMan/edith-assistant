@@ -105,16 +105,19 @@ ChatScreen ──send(text, attachments)──► ChatViewModel ──► ChatEn
 
 ## 5. Persistence
 
-### 5.1 Database `edith.db`, schema version 1 — created in full by C05
+### 5.1 Database `edith.db`, schema version 2 — created by C05 (v1), conversations extended by C06b (v2)
 
-All v1 tables are created up front so no chunk needs a migration during the v1 build. After v1 ships,
-every schema change requires a version bump, an explicit `Migration`, and a migration test.
+Every schema change requires a version bump, an explicit `Migration` (`EdithDatabase.MIGRATIONS`), and a
+migration test (`MigrationTest`, against the exported `app/schemas/` JSON). Never destructive migration. Prefer
+`ALTER TABLE … ADD COLUMN`: rebuilding `conversations` (drop + rename) can cascade-delete every message.
 
 ```sql
 conversations(
-  id            INTEGER PRIMARY KEY,            -- v1 uses one conversation, id = 1
-  title         TEXT NOT NULL,
-  created_at    INTEGER NOT NULL                -- epoch millis
+  id            INTEGER PRIMARY KEY,            -- many conversations (D6); new rows get their id from SQLite
+  title         TEXT NOT NULL,                  -- '' until titled
+  title_source  TEXT NOT NULL DEFAULT 'none',   -- 'none' | 'first_message' | 'edith' | 'owner' (D12; owner wins)
+  created_at    INTEGER NOT NULL,               -- epoch millis
+  updated_at    INTEGER NOT NULL DEFAULT 0      -- newest message time; the conversation list sorts by it (v2)
 )
 messages(
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -142,7 +145,7 @@ attachments(
   created_at      INTEGER NOT NULL,
   removed_at      INTEGER
 )
--- indexes: messages(conversation_id, created_at); attachments(message_id); attachments(direction, created_at)
+-- indexes: conversations(updated_at); messages(conversation_id, created_at); attachments(message_id); attachments(direction, created_at)
 ```
 
 ### 5.2 What is stored — and what never is
@@ -169,6 +172,7 @@ attachments(
 | `wake_word_sensitivity` | Float 0..1 | `0.5` | C14 |
 | `follow_up_seconds` | Int | `8` | C14 |
 | `google_account_email` | String? | null | C17 |
+| `current_conversation_id` | Long? | null | C06b (the chat the app reopens on) |
 
 Secrets (API keys) are **not** in this table; they go through `SecretStore` (§9).
 

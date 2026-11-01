@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import kotlinx.coroutines.flow.Flow
@@ -32,6 +33,7 @@ data class Settings(
     val wakeWordSensitivity: Float = 0.5f,
     val followUpSeconds: Int = 8,
     val googleAccountEmail: String? = null,
+    val currentConversationId: Long? = null,   // C06b: the chat the app reopens on
 ) {
     companion object {
         const val DEFAULT_SERVER_URL = "http://10.0.2.2:11434"
@@ -67,6 +69,7 @@ internal object SettingsKeys {
     val WAKE_WORD_SENSITIVITY = floatPreferencesKey("wake_word_sensitivity")
     val FOLLOW_UP_SECONDS = intPreferencesKey("follow_up_seconds")
     val GOOGLE_ACCOUNT_EMAIL = stringPreferencesKey("google_account_email")
+    val CURRENT_CONVERSATION_ID = longPreferencesKey("current_conversation_id")
 }
 
 /** Settings in the Preferences DataStore `settings`. Create one per process (AppContainer does): see [create]. */
@@ -104,6 +107,7 @@ internal fun Preferences.toSettings(): Settings {
         wakeWordSensitivity = this[SettingsKeys.WAKE_WORD_SENSITIVITY] ?: d.wakeWordSensitivity,
         followUpSeconds = this[SettingsKeys.FOLLOW_UP_SECONDS] ?: d.followUpSeconds,
         googleAccountEmail = this[SettingsKeys.GOOGLE_ACCOUNT_EMAIL],
+        currentConversationId = this[SettingsKeys.CURRENT_CONVERSATION_ID],
     )
 }
 
@@ -120,6 +124,7 @@ internal fun MutablePreferences.write(s: Settings) {
     this[SettingsKeys.WAKE_WORD_SENSITIVITY] = s.wakeWordSensitivity
     this[SettingsKeys.FOLLOW_UP_SECONDS] = s.followUpSeconds
     setOrRemove(SettingsKeys.GOOGLE_ACCOUNT_EMAIL, s.googleAccountEmail)
+    if (s.currentConversationId == null) remove(SettingsKeys.CURRENT_CONVERSATION_ID) else this[SettingsKeys.CURRENT_CONVERSATION_ID] = s.currentConversationId
 }
 
 /** A null value removes the key (DataStore can't store null). */

@@ -89,7 +89,7 @@ Every icon button has a content description (used by tests and `adb` recipes): "
 - **Rename**: tap the title in the top bar, or use the row's long-press menu → dialog with the current
   title. Saving calls `rename` (an owner rename is never overwritten by auto-title).
 - **Delete**: long-press menu → confirm dialog "Delete this chat? This can't be undone." →
-  `engine.cancelAndJoin(id)` then `repo.delete(id)`. Deleting the open chat switches to the next most
+  `CurrentConversation.delete(id)` (it stops a reply running there first). Deleting the open chat switches to the next most
   recent one, or a new empty chat if none is left.
 - Switching chats keeps a reply running in the old one; coming back shows it still streaming, or finished.
 - Each conversation keeps its own unsent draft (`SavedStateHandle`, keyed by conversation id).

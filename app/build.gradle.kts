@@ -75,6 +75,9 @@ android {
     // JVM unit tests run without Android: android.util.Log etc. return defaults instead of throwing.
     testOptions.unitTests.isReturnDefaultValues = true
 
+    // Room migration tests read the exported schemas (C06b MigrationTest).
+    sourceSets.getByName("androidTest").assets.directories.add("$projectDir/schemas")
+
     lint {
         abortOnError = true
         // New library versions are adopted deliberately (01-architecture §1), not on every lint run.
