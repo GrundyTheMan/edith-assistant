@@ -17,8 +17,8 @@ import java.io.File
  * only hears silence, so this is how real speech gets in. Only the shell can send it (DUMP permission):
  *
  *   adb push memo.wav /data/local/tmp/memo.wav
- *   adb shell "cat /data/local/tmp/memo.wav | run-as com.edith.app sh -c 'mkdir -p cache/recordings; cat > cache/recordings/debug.wav'"
- *   adb shell am broadcast -n com.edith.app/.debug.DebugVoiceMemoReceiver --es file debug.wav
+ *   adb shell "cat /data/local/tmp/memo.wav | run-as com.edith.app.debug sh -c 'mkdir -p cache/recordings; cat > cache/recordings/debug.wav'"
+ *   adb shell am broadcast -n com.edith.app.debug/com.edith.app.debug.DebugVoiceMemoReceiver --es file debug.wav
  */
 class DebugVoiceMemoReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

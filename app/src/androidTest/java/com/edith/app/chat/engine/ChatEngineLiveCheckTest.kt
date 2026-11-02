@@ -31,7 +31,7 @@ import java.util.Collections
  * C06 acceptance: a real reply from the owner's Ollama streams in piece by piece; logs time to first token and total.
  * Opt-in (needs the live server and depends on the model), so CI and check.sh skip it:
  *   adb shell am instrument -w -e live true -e class com.edith.app.chat.engine.ChatEngineLiveCheckTest \
- *       com.edith.app.test/androidx.test.runner.AndroidJUnitRunner
+ *       com.edith.app.debug.test/androidx.test.runner.AndroidJUnitRunner
  * Results: `adb logcat -d -s Edith/Chat:*`. Uses an in-memory database, so nothing lands in the real chat history.
  */
 @RunWith(AndroidJUnit4::class)
@@ -43,7 +43,7 @@ class ChatEngineLiveCheckTest {
 
     @Before fun setUp() {
         assumeTrue("live checks run only with -e live true", InstrumentationRegistry.getArguments().getString("live") == "true")
-        instrumentation.uiAutomation.grantRuntimePermission("com.edith.app", LocalNetworkAccess.PERMISSION)
+        instrumentation.uiAutomation.grantRuntimePermission(instrumentation.targetContext.packageName, LocalNetworkAccess.PERMISSION)
         db = Room.inMemoryDatabaseBuilder(instrumentation.targetContext, EdithDatabase::class.java).build()
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     }

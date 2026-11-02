@@ -59,7 +59,7 @@ class ChatScreenTest {
 
     @Before fun setUp() {
         // Send asks for notifications once (D13); grant it so no system dialog covers the screen mid-test.
-        InstrumentationRegistry.getInstrumentation().uiAutomation.grantRuntimePermission("com.edith.app", android.Manifest.permission.POST_NOTIFICATIONS)
+        InstrumentationRegistry.getInstrumentation().uiAutomation.grantRuntimePermission(InstrumentationRegistry.getInstrumentation().targetContext.packageName, android.Manifest.permission.POST_NOTIFICATIONS)
         kit = ChatTestKit()
     }
 

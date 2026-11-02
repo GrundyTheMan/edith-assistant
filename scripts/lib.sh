@@ -7,7 +7,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 AVD="${EDITH_AVD:-Pixel_9_API_37}"
-APP_ID="com.edith.app"
+APP_ID="com.edith.app"              # release builds
+DEBUG_APP_ID="com.edith.app.debug"  # debug builds (run.sh, check.sh): own package since C17
+MAIN_ACTIVITY="com.edith.app.MainActivity"
 KEY_DIR="${HOME}/.edith"
 KEYSTORE_PROPERTIES="${EDITH_KEYSTORE_PROPERTIES:-$KEY_DIR/keystore.properties}"
 

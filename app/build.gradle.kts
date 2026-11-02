@@ -29,6 +29,12 @@ val keystoreProperties = Properties().apply {
 }
 val hasReleaseKey = keystoreProperties.getProperty("storeFile") != null
 
+// C17 (D9): the Google Web OAuth client ID, from local.properties (not committed). Empty → Google shows "not set up".
+val googleWebClientId: String = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}.getProperty("edith.googleWebClientId").orEmpty().trim()
+
 android {
     namespace = "com.edith.app"
     compileSdk = 37
@@ -43,6 +49,7 @@ android {
         // C14: ONNX Runtime's native library is ~35 MB per CPU type. Only 64-bit is kept: arm64 for phones,
         // x86_64 for the emulator (32-bit devices can't run the Android versions Edith targets anyway).
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
     }
 
     // Native libraries compressed in the APK (extracted on install): a much smaller download for ONNX Runtime.
@@ -60,6 +67,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // C17: its own package, so its Google OAuth client (package + debug SHA-1) is a pair of its own. Debug and
+            // release builds can also sit side by side on one phone.
+            applicationIdSuffix = ".debug"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -122,6 +134,12 @@ dependencies {
     implementation(libs.jsoup)
     implementation(libs.onnxruntime.android)   // C14: openWakeWord models (D4)
     implementation(libs.coil.compose)   // C15: attachment thumbnails
+    // C17: Google sign-in (Credential Manager) and access to Calendar/Gmail (AuthorizationClient)
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
+    implementation(libs.play.services.auth)
+    implementation(libs.coroutines.play.services)
 
     testImplementation(libs.kotlinx.serialization.json)
     testImplementation(libs.coroutines.test)

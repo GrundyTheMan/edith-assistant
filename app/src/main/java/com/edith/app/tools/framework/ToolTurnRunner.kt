@@ -49,6 +49,7 @@ class ToolTurnRunner(
 
     override fun run(baseUrl: String, model: ModelInfo, messages: List<OllamaMessage>): Flow<TurnEvent> = flow {
         val offered = registry.available(model)
+        if (BuildConfig.DEBUG) Log.d(LogTag.Tools, "Offering tools: ${offered.joinToString { it.spec.name }.ifEmpty { "none" }}")
         val toolsJson = offered.map { it.spec.toOllama() }.ifEmpty { null }
         val ctx = ToolContext(clock, settings.current(), dispatchers)
         val history = messages.toMutableList()

@@ -6,7 +6,8 @@ import com.edith.app.chat.engine.PromptSection
 /**
  * The system prompt's tool section (C08 §4), generated from the tools actually offered, so it's always accurate
  * (v1's prompt promised tools it didn't have). Offered tools' own guidance lines follow, then a note for each
- * integration that isn't set up (C10 §3). A plain "can't look things up" line when the model can't use tools at all.
+ * integration that's connected (C17) and each that isn't set up (C10 §3). A plain "can't look things up" line when the
+ * model can't use tools at all.
  */
 class ToolGuidanceSection(private val registry: () -> ToolRegistry) : PromptSection {
     override fun text(ctx: PromptContext): String? {
@@ -20,6 +21,7 @@ class ToolGuidanceSection(private val registry: () -> ToolRegistry) : PromptSect
                 add(HOW_TO_USE)
                 offered.mapNotNullTo(this) { it.guidance }
             }
+            addAll(reg.connectedNotes())
             addAll(reg.notConnectedNotes())
         }
         return lines.joinToString("\n").ifEmpty { null }

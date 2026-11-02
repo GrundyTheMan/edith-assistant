@@ -28,7 +28,7 @@ import org.junit.runner.RunWith
  * on a running server, installed models and model behaviour (02-standards §3), so CI and check.sh skip it:
  *
  *   adb shell am instrument -w -e live true -e class com.edith.app.ollama.OllamaLiveCheckTest \
- *       com.edith.app.test/androidx.test.runner.AndroidJUnitRunner
+ *       com.edith.app.debug.test/androidx.test.runner.AndroidJUnitRunner
  *
  * Results are logged under Edith/Ollama: `adb logcat -d -s Edith/Ollama:*`.
  */
@@ -44,8 +44,9 @@ class OllamaLiveCheckTest {
         // Android 17 blocks LAN access without this runtime permission (04-lessons L23). `-e grant false` skips the
         // grant, to show what happens without it.
         val ui = InstrumentationRegistry.getInstrumentation().uiAutomation
-        if (args.getString("grant") != "false") ui.grantRuntimePermission("com.edith.app", LOCAL_NETWORK)
-        else ui.revokeRuntimePermission("com.edith.app", LOCAL_NETWORK)
+        val app = InstrumentationRegistry.getInstrumentation().targetContext.packageName
+        if (args.getString("grant") != "false") ui.grantRuntimePermission(app, LOCAL_NETWORK)
+        else ui.revokeRuntimePermission(app, LOCAL_NETWORK)
 
         val version = runBlocking { container.ollama.version(baseUrl) }
         Log.i(LogTag.Ollama, "LIVE version check at $baseUrl: $version")

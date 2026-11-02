@@ -21,7 +21,7 @@ class EdithNavHostTest {
     fun grantLocalNetwork() {
         // The real Settings screen (C04) asks for this on entry; grant it so no system dialog appears mid-test.
         InstrumentationRegistry.getInstrumentation().uiAutomation
-            .grantRuntimePermission("com.edith.app", LocalNetworkAccess.PERMISSION)
+            .grantRuntimePermission(InstrumentationRegistry.getInstrumentation().targetContext.packageName, LocalNetworkAccess.PERMISSION)
     }
 
     @Test

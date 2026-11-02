@@ -115,8 +115,8 @@ tap 'content-desc="Send"'
 - Poll the dump until the "thinking" label disappears to wait for a reply.
 - Screenshots: `adb exec-out screencap -p > shot.png` (Git Bash; PowerShell `>` corrupts binary).
 - App logs: `adb logcat -s Edith/Chat:* Edith/Tools:*`; crashes: `adb logcat -b crash`; ANRs: `adb logcat -d *:E | grep ANR`.
-- App-private files: `adb shell run-as com.edith.app find . -type f`; copy out with
-  `adb exec-out run-as com.edith.app cat <path> > out` (**not** `adb shell … cat`).
+- App-private files (debug builds are `com.edith.app.debug` since C17): `adb shell run-as com.edith.app.debug find . -type f`; copy out with
+  `adb exec-out run-as com.edith.app.debug cat <path> > out` (**not** `adb shell … cat`).
 - Database: copy `databases/edith.db*` out and open with Node 24's `node:sqlite` (`DatabaseSync`) or sqlite3.
 - Pushing test media: `MSYS_NO_PATHCONV=1 adb push C:/path/file.wav /sdcard/Music/` then
   `adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Music/file.wav`.
@@ -163,10 +163,14 @@ Deploy targets (owner decision, 2026-10-29): **the emulator** (debug builds, `sc
    the APK, allow the browser to install unknown apps. Later releases install over it, keeping data.
 
 ### Debug vs release on the same device
-Both builds use the id `com.edith.app` but different signing keys (debug key vs release key), so Android
-refuses to install one over the other; switching requires `adb uninstall com.edith.app`, which **wipes app
-data**. Never do that on the owner's `Pixel_9_API_37` without asking. Test release APKs on the separate AVD
-**`Edith_Release_Test`** (same image, created in C01):
+Since C17, debug builds are **`com.edith.app.debug`** (`applicationIdSuffix`) and release builds are
+**`com.edith.app`**: Google's OAuth needs a package + SHA-1 pair of its own for each, and the debug pair with
+`com.edith.app` was already taken by an Android client nobody could find. So the two install side by side, each with
+its own data. Launch the debug build with `adb shell am start -n com.edith.app.debug/com.edith.app.MainActivity`.
+- Debug builds from before C17 were installed as `com.edith.app`, signed with the debug key. A release APK won't
+  install over one of those (different key); `adb uninstall com.edith.app` first, which **wipes that app's data**.
+  Never do that on the owner's `Pixel_9_API_37` without asking.
+- Release APKs can still be tested on the separate AVD **`Edith_Release_Test`** (same image, created in C01):
 ```bash
 "$ANDROID_HOME/emulator/emulator" -avd Edith_Release_Test -port 5560 -no-snapshot -no-window -no-audio &
 adb -s emulator-5560 wait-for-device      # then poll sys.boot_completed as in §3

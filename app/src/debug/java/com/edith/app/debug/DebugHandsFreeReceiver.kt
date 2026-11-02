@@ -26,14 +26,14 @@ import java.nio.ByteOrder
  *   and, if it reaches the threshold, acts as if the microphone heard it (the beep, then capturing):
  *
  *       adb push hey.wav /data/local/tmp/hey.wav
- *       adb shell "cat /data/local/tmp/hey.wav | run-as com.edith.app sh -c 'mkdir -p cache/handsfree; cat > cache/handsfree/hey.wav'"
- *       adb shell am broadcast -n com.edith.app/.debug.DebugHandsFreeReceiver --es wake hey.wav
+ *       adb shell "cat /data/local/tmp/hey.wav | run-as com.edith.app.debug sh -c 'mkdir -p cache/handsfree; cat > cache/handsfree/hey.wav'"
+ *       adb shell am broadcast -n com.edith.app.debug/com.edith.app.debug.DebugHandsFreeReceiver --es wake hey.wav
  *
  * - **`say`**: stands in for what the speech recognizer heard: with `wake`, as soon as hands-free is capturing;
  *   alone, now (in a follow-up window):
  *
- *       adb shell am broadcast -n com.edith.app/.debug.DebugHandsFreeReceiver --es wake hey.wav --es say "what\'s\ the\ weather\ in\ Boston"
- *       adb shell am broadcast -n com.edith.app/.debug.DebugHandsFreeReceiver --es say "and\ tomorrow?"
+ *       adb shell am broadcast -n com.edith.app.debug/com.edith.app.debug.DebugHandsFreeReceiver --es wake hey.wav --es say "what\'s\ the\ weather\ in\ Boston"
+ *       adb shell am broadcast -n com.edith.app.debug/com.edith.app.debug.DebugHandsFreeReceiver --es say "and\ tomorrow?"
  */
 class DebugHandsFreeReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
