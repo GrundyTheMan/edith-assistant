@@ -47,7 +47,7 @@ design in the same PR, or ask the owner.
 | [C16](chunks/C16-attachment-storage-and-edith-files.md) | Storage, retention (default 10), Edith's files, resends | 4 | C15, C05, C07, C13 | Done |
 | [C17](chunks/C17-google-account.md) | Google account sign-in and authorization | 5 Google | C02, C04, C08 | Done |
 | [C18](chunks/C18-google-calendar.md) | Google Calendar tools and Calendar tab | 5 | C17, C08 | Done |
-| [C19](chunks/C19-gmail.md) | Gmail search, read, draft | 5 | C17, C08 | Not started |
+| [C19](chunks/C19-gmail.md) | Gmail search, read, draft, send | 5 | C17, C08 | Done |
 | [C20](chunks/C20-smart-home-architecture.md) | Smart home architecture (**v2, design only**) | 6 Deferred | C08, C17 | Design |
 | [C21](chunks/C21-smart-home-service-notes.md) | Smart home service notes (**v2 research**) | 6 Deferred | — | Research |
 
@@ -89,8 +89,9 @@ design in the same PR, or ask the owner.
 - **Google Calendar is done (C18)**: five tools in `google/calendar/` (list, find free time, create, update,
   delete; the last three ask for confirmation) and the Calendar tab. Calendar times are local: use
   `ToolArgs.localTime` (L29).
-- **Next: C19** (Gmail). D5 is decided: Edith may **send** email after the owner confirms (record it in 06-decisions in
-  C19, and change "never sends" in Settings → Google account and `docs/google-setup.md`).
+- **Gmail is done (C19)**: four tools in `google/gmail/` (search, read, draft, send). Drafts and sends always show
+  the whole email on a card first (D5, D11).
+- **Phase 5 (Google) is done.** C20 and C21 are v2 design and research; ask the owner what's next.
 - Judge tool reliability with `gemma4:12b`; `e4b` often skips tools (L26).
 - Owner decisions still open are in `06-decisions.md`. Ask early about the ones your chunk lists; the first ones
   needed are **D8** (C03).

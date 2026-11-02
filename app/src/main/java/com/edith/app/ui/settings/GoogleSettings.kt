@@ -86,7 +86,7 @@ fun GoogleContent(state: GoogleState, onSignIn: () -> Unit, onGrant: () -> Unit,
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Google account", style = MaterialTheme.typography.titleMedium)
         Text(
-            "With access, Edith can read and add calendar events, and read your email and write drafts. She never sends email.",
+            "With access, Edith can read and change your calendar, and read, draft and send email. Every change and every email she sends is shown to you first, and only goes ahead when you confirm.",
             style = MaterialTheme.typography.bodyMedium,
         )
         val status = when (state) {
