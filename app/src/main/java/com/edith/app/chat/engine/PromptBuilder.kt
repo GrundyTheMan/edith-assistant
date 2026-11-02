@@ -40,6 +40,7 @@ class PromptBuilder(private val clock: Clock, private val sections: () -> List<P
 class DateTimeSection(private val locale: () -> Locale = Locale::getDefault) : PromptSection {
     override fun text(ctx: PromptContext): String {
         val formatted = ctx.now.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy, h:mm a", locale()))
-        return "Current date and time: $formatted (${ctx.now.zone.id})."
+        // The offset too (C18): without it gemma4 guessed -04:00 the day after daylight saving ended.
+        return "Current date and time: $formatted (${ctx.now.zone.id}, UTC${ctx.now.offset.id.replace("Z", "+00:00")})."
     }
 }

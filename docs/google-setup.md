@@ -31,6 +31,7 @@ Then, in Google Auth Platform:
 4. **Audience** → leave publishing status as **Testing** → **Test users → Add users** → your Gmail address → **Save**.
 5. **Data Access** → **Add or remove scopes** → tick (search for them if needed):
    - `.../auth/calendar.events`
+   - `.../auth/calendar.calendarlist.readonly` (C18: which calendars you have checked)
    - `.../auth/gmail.readonly`
    - `.../auth/gmail.compose`
    - `openid` and `.../auth/userinfo.email`

@@ -67,7 +67,7 @@ data class ToolParam(
 ) {
     fun toJsonSchema(): JsonObject = buildJsonObject {
         put("type", type.jsonType)
-        put("description", if (type == ParamType.DateTime) "$description (ISO-8601, e.g. 2026-10-30T12:00:00-04:00)" else description)
+        put("description", if (type == ParamType.DateTime) "$description (ISO-8601 local time, e.g. 2026-10-30T12:00:00)" else description)
         enumValues?.let { values -> put("enum", JsonArray(values.map { JsonPrimitive(it) })) }
     }
 }

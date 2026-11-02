@@ -46,7 +46,7 @@ class ToolFrameworkTest {
             json("""{"type":"function","function":{"name":"get_weather","description":"Current weather for a place.",
               "parameters":{"type":"object","properties":{
                 "location":{"type":"string","description":"City"},
-                "when":{"type":"string","description":"Time (ISO-8601, e.g. 2026-10-30T12:00:00-04:00)"},
+                "when":{"type":"string","description":"Time (ISO-8601 local time, e.g. 2026-10-30T12:00:00)"},
                 "units":{"type":"string","description":"Units","enum":["metric","imperial"]}},
               "required":["location"]}}}"""),
             json(encoded),

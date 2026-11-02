@@ -1,10 +1,13 @@
 package com.edith.app.ui.navigation
 
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.edith.app.google.calendar.ui.AGENDA_TAG
 import com.edith.app.core.permissions.LocalNetworkAccess
 import com.edith.app.ui.theme.EdithTheme
 import org.junit.Before
@@ -32,7 +35,13 @@ class EdithNavHostTest {
         compose.onNodeWithText("Message Edith").assertExists()   // the chat screen (C07); not its contents, which are the owner's
 
         compose.onNodeWithText("Calendar").performClick()
-        compose.onNodeWithText("Calendar — coming in C18").assertExists()
+        // The Calendar tab (C18): what it shows depends on whether Google is connected on this device.
+        compose.waitUntil(5_000) {
+            compose.onAllNodes(
+                hasText("Connect Google account") or hasText("Grant access in Settings") or hasText("Loading your calendar…") or
+                    hasTestTag(AGENDA_TAG) or hasText("Try again"),
+            ).fetchSemanticsNodes().isNotEmpty()
+        }
 
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Server & model").assertExists()

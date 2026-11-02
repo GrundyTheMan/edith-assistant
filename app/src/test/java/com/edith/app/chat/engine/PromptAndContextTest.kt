@@ -22,7 +22,7 @@ class PromptAndContextTest {
 
     @Test fun `system prompt is the persona verbatim, a blank line, then the date line`() {
         val prompt = PromptBuilder(clock) { listOf(DateTimeSection { Locale.US }) }.system(model)
-        assertEquals(PERSONA + "\n\nCurrent date and time: Thursday, October 29, 2026, 2:30 PM (America/Detroit).", prompt)
+        assertEquals(PERSONA + "\n\nCurrent date and time: Thursday, October 29, 2026, 2:30 PM (America/Detroit, UTC-04:00).", prompt)
         assertTrue(PERSONA.startsWith("You are Edith, a highly sophisticated, warm, and genuinely complimentary personal assistant."))
         assertTrue(PERSONA.endsWith("Let your warmth and wit come through in your word choice, not in extra length."))
         assertEquals(8, PERSONA.lines().size)
