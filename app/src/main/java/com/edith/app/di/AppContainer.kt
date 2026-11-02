@@ -80,6 +80,9 @@ import com.edith.app.google.calendar.DeleteCalendarEventTool
 import com.edith.app.google.calendar.FindFreeTimeTool
 import com.edith.app.google.calendar.ListCalendarEventsTool
 import com.edith.app.google.calendar.UpdateCalendarEventTool
+import com.edith.app.google.gmail.GmailClient
+import com.edith.app.google.gmail.GmailSession
+import com.edith.app.google.gmail.gmailTools
 import com.edith.app.voice.capture.AudioRecorder
 import com.edith.app.voice.capture.LiveSpeech
 import com.edith.app.voice.capture.OllamaTranscriber
@@ -121,6 +124,8 @@ class AppContainer(val app: Application) {
                 ListCalendarEventsTool(calendarSession, calendarClient), FindFreeTimeTool(calendarSession, calendarClient),
                 CreateCalendarEventTool(calendarSession, calendarClient), UpdateCalendarEventTool(calendarSession, calendarClient),
                 DeleteCalendarEventTool(calendarSession, calendarClient),
+                // C19: Gmail (search, read, draft, and send after the owner confirms: D5)
+                *gmailTools(gmailSession, gmailClient).toTypedArray(),
             ),
             integrations = listOf(googleAuth),   // C17: Google's tools (C18, C19) only while connected
         )
@@ -257,6 +262,10 @@ class AppContainer(val app: Application) {
     /** Google Calendar (C18): REST through [googleAuth]; the session remembers the calendars and listed events. */
     val calendarClient: CalendarClient by lazy { CalendarClient(okHttpLazy, googleAuth, dispatchers) }
     val calendarSession: CalendarSession by lazy { CalendarSession(calendarClient) }
+
+    /** Gmail (C19): REST through [googleAuth]; the session keeps the emails Edith has found. */
+    val gmailClient: GmailClient by lazy { GmailClient(okHttpLazy, googleAuth, dispatchers) }
+    val gmailSession: GmailSession by lazy { GmailSession() }
 
     /** Keeps the newest N attachments each way (C16, O1). */
     val retention: Retention by lazy { Retention(database.attachmentDao(), attachmentStore, settingsRepository, clock, dispatchers) }

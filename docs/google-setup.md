@@ -1,7 +1,8 @@
 # Setting up Google for Edith
 
-Edith signs in with your Google account and asks for access to Calendar and Gmail (read, and create drafts — she
-never sends). Google needs a Cloud project that says which app is asking. This takes about 15 minutes in the
+Edith signs in with your Google account and asks for access to Calendar and Gmail (read, drafts, and sending — she
+sends only after you confirm the whole email on screen, decision D5). Google needs a Cloud project that says which
+app is asking. This takes about 15 minutes in the
 browser; nothing is installed and nothing secret goes into the repo.
 
 You'll need these two fingerprints (public, not secret):

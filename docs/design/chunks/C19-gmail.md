@@ -1,4 +1,4 @@
-# C19 — Gmail: search, read, draft
+# C19 — Gmail: search, read, draft, send
 
 | | |
 |---|---|
@@ -44,6 +44,58 @@ persisted — C08). Release builds never log subjects, senders or bodies.
 - Confirmation required for drafts; no send endpoint exists in the code (grep test).
 
 ## Acceptance criteria
-- [ ] Owner's account: "Do I have any unread email from today?" matches Gmail.
-- [ ] "Read the latest email from <sender>" summarises correctly.
-- [ ] "Draft a reply saying thanks" → confirmation → draft appears in Gmail Drafts (owner deletes it afterwards).
+- [ ] Owner's account: "Do I have any unread email from today?" matches Gmail. (Edith listed five; the owner hasn't
+      compared them with Gmail yet.)
+- [x] "Read the latest email from <sender>" summarises correctly.
+- [x] "Draft a reply saying thanks" → confirmation → draft appears in Gmail Drafts (owner deletes it afterwards).
+
+## As built (2026-11-02)
+
+Where the code differs from the specification above, the code is right.
+
+- **D5 changed the goal:** Edith may **send** email, always after the owner confirms a card showing the recipient,
+  subject and the whole message (decided by the owner, recorded in `06-decisions.md`). The `gmail.compose` scope
+  covers both drafts and sending, so C17's scopes are unchanged. Settings → Google account and
+  `docs/google-setup.md` now say so.
+- **`GmailClient`** (`google/gmail/GmailClient.kt`):
+  - `search` lists messages, then fetches their metadata one at a time (at most 10). Headers: From, To, Subject,
+    Date, Message-ID; dates come from `internalDate` in the device zone.
+  - `read` uses `format=full`.
+  - `createDraft` posts to `drafts`; `send` posts to `messages/send`. A reply carries `threadId`.
+  - Errors: 401 → retry once, then Grant access; 403 `insufficientPermissions` → Grant access; 404 and 400 have
+    plain messages.
+- **`MailText`:**
+  - The body is `text/plain` first, otherwise HTML made readable with C10's `PageReader`. Parts with a file name
+    are skipped. Capped at 6,000 characters.
+  - Quoted history is removed: "On … wrote:", "-----Original Message-----" and `>` lines.
+  - The raw message is RFC 2822 with a UTF-8 base64 body; non-ASCII headers use RFC 2047. Line breaks in To and
+    Subject become spaces, so the model can't add headers such as Bcc.
+- **Tools** (`GmailTools.kt`, integration `google`):
+  - Emails get short handles (`m1`, `m2`, …) in `GmailSession`, like the calendar's `e1`.
+  - `search_email`, `read_email`: no confirmation.
+  - `draft_email`: "Save this draft?" → **Save draft**. `send_email`: "Send this email?" → **Send**.
+    - Both show To, Subject and the message (up to 1,500 characters).
+    - A reply (`reply_to_message_id`) fills in the sender's address, "Re: …" and the thread.
+  - The spec's "no send endpoint" grep test became: the only caller of `client.send(` is `GmailTools.kt`.
+
+**Verified**
+- `scripts/check.sh --device`: OK (`build-logs/2026-11-02_14-40-31_check.log`). 207 unit tests (12 new in
+  `GmailTest`), lint clean, 107 device tests.
+  - `GmailTest` (JVM, MockWebServer; the responses follow Gmail's API reference, made up):
+    - MIME: plain preferred, HTML made readable, attachments skipped, base64url
+    - quoted history; the 6,000 cap
+    - the raw message: headers, RFC 2047 subject, reply headers, no header injection
+    - search lines, handles and query parameters; read
+    - a reply draft's card, thread and `In-Reply-To`; send's card and endpoint
+    - **declining the send card through the real tool loop sends no request**
+    - an unknown id sends nothing
+- **Live on the emulator** (the owner's account):
+  - "Do I have any unread email from today?" → five (VIZIO, Garbage Day, Synchrony HOME, Bricks & Minifigs,
+    August Home).
+  - "Read the latest email from August Home" → a correct summary of the battery email.
+  - "Draft a reply to that email saying thanks" → the card (To noreply@august.com, "Re: Change your August Smart
+    Lock batteries immediately") → the owner tapped Save draft → it appeared in Gmail Drafts.
+  - No crash.
+- **Not verified live:** a real send, and a real 401 or 403.
+- **Seen:** Edith drafted to a no-reply address without saying so. Harmless for a draft; worth a warning before a
+  send.
