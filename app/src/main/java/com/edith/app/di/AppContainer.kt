@@ -1,6 +1,7 @@
 package com.edith.app.di
 
 import android.app.Application
+import com.edith.app.BuildConfig
 import android.media.AudioManager
 import android.media.ToneGenerator
 import com.edith.app.chat.CurrentConversation
@@ -69,6 +70,9 @@ import com.edith.app.attachments.MediaAttachmentContext
 import com.edith.app.attachments.EdithFilesSection
 import com.edith.app.attachments.FileAttachmentStore
 import com.edith.app.attachments.Retention
+import com.edith.app.google.CredentialManagerSignIn
+import com.edith.app.google.GoogleAuth
+import com.edith.app.google.PlayServicesAuthorizer
 import com.edith.app.voice.capture.AudioRecorder
 import com.edith.app.voice.capture.LiveSpeech
 import com.edith.app.voice.capture.OllamaTranscriber
@@ -107,6 +111,7 @@ class AppContainer(val app: Application) {
                 CurrentTimeTool(), WeatherTool(openMeteo, deviceLocation),
                 SearchWebTool(webSearch), ReadWebPageTool(webSearch.pages(PageReader(okHttpLazy, dispatchers))),
             ),
+            integrations = listOf(googleAuth),   // C17: Google's tools (C18, C19) only while connected
         )
     }
 
@@ -233,6 +238,11 @@ class AppContainer(val app: Application) {
     /** Attachments' files: `filesDir/attachments` (or `cacheDir/session` when keeping 0), C16. */
     val attachmentStore: FileAttachmentStore by lazy { FileAttachmentStore(app.filesDir, app.cacheDir) }
 
+    /** The Google account (C17, D9): sign-in, and access to Calendar and Gmail. No tokens are stored by the app. */
+    val googleAuth: GoogleAuth by lazy {
+        GoogleAuth(CredentialManagerSignIn(app), PlayServicesAuthorizer(app), settingsRepository, BuildConfig.GOOGLE_WEB_CLIENT_ID, appScope)
+    }
+
     /** Keeps the newest N attachments each way (C16, O1). */
     val retention: Retention by lazy { Retention(database.attachmentDao(), attachmentStore, settingsRepository, clock, dispatchers) }
 
@@ -250,6 +260,7 @@ class AppContainer(val app: Application) {
                 attachmentIntake.clearLeftovers()   // C15: unsent attachments from the last run
                 File(app.cacheDir, "attachments").deleteRecursively()   // C15's one-run store, before C16
                 retention.onStart()   // C16: session files, orphans, then the setting
+                googleAuth.start()    // C17: is a saved account still allowed in? (quietly)
                 database.openHelper.writableDatabase
                 Log.d(LogTag.App, "Database ready")
                 currentConversation.resolve()

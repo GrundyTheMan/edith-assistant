@@ -17,6 +17,9 @@ okhttp = "5.5.1"
 jsoup = "1.23.2"
 onnxruntime = "1.31.0"
 coil = "3.6.3"
+play-services-auth = "22.0.0"
+credentials = "1.6.0"
+googleid = "1.2.1"
 room = "2.8.5"  # C05: upgraded to latest stable (01-architecture §1)
 serialization = "1.12.0"
 junit = "4.13.2"
@@ -50,6 +53,7 @@ room-testing = { group = "androidx.room", name = "room-testing", version.ref = "
 room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 # C02/C03: coroutines, settings storage, JSON (kotlinx-serialization), HTTP (MockWebServer for tests)
 coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
+coroutines-play-services = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-play-services", version.ref = "coroutines" }
 coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 datastore-core = { group = "androidx.datastore", name = "datastore-core", version.ref = "datastore" }
@@ -59,6 +63,10 @@ mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver3", versi
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
+play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "play-services-auth" }
+androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
+androidx-credentials-play-services-auth = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
+googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

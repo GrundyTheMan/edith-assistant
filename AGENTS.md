@@ -8,7 +8,7 @@ history (tag `edith-v1`) — don't reuse its code.
 ## Read first
 **[`docs/design/README.md`](docs/design/README.md)** — the complete design, split into chunks (C01–C21) with
 dependencies and status. Read the shared context it lists, then take one chunk whose dependencies are merged.
-C01–C16 are done (phases 1–4: chat, tools, voice and attachments; hands-free still needs a real-mic check); the table says what's next.
+C01–C17 are done (phases 1–4 and Google sign-in; hands-free still needs a real-mic check); the table says what's next.
 
 ## Build, test, run (Git Bash; from PowerShell: `& "C:\Program Files\Git\bin\bash.exe" scripts/check.sh`)
 ```bash
@@ -17,6 +17,7 @@ scripts/check.sh --device   # also the Compose UI tests on the emulator
 scripts/emulator.sh         # start the Pixel_9_API_37 emulator if needed (--cold if the screen is black)
 scripts/run.sh              # build, install and launch the debug app on the emulator; fails on a crash
 ```
+- Debug builds are `com.edith.app.debug` (since C17; release is `com.edith.app`), so use that with `run-as` and `am`.
 - Never run `connectedDebugAndroidTest` or `adb uninstall`/`pm clear` on the owner's emulator without asking —
   they wipe the owner's app data.
 - Releases (signed APK on GitHub Releases) only when the owner asks: `scripts/release.sh`, then

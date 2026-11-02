@@ -148,7 +148,7 @@ Copy the real samples from 03-ollama-reference §3 into `app/src/test/resources/
 
 ## As built (2026-10-31)
 - Live check: `OllamaLiveCheckTest` (androidTest, opt-in so CI and `check.sh` skip it):
-  `adb shell am instrument -w -e live true -e class com.edith.app.ollama.OllamaLiveCheckTest com.edith.app.test/androidx.test.runner.AndroidJUnitRunner`,
+  `adb shell am instrument -w -e live true -e class com.edith.app.ollama.OllamaLiveCheckTest com.edith.app.debug.test/androidx.test.runner.AndroidJUnitRunner`,
   results in `adb logcat -d -s Edith/Ollama:*`. Result on the owner's emulator via `http://10.0.2.2:11434`, Ollama 0.40.13:
   `gemma4:12b-it-q8_0` and `gemma4:e4b-it-q8_0` audio, completion, thinking, tools, vision · `gpt-oss:20b` completion,
   thinking, tools · `ornith:9b` completion, thinking, tools · `qwen3.5:9b-q8_0` completion, thinking, tools, vision ·

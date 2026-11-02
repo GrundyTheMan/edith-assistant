@@ -33,5 +33,5 @@ cp "$BUILT" "$APK"
 if [ "${1:-}" = "--allow-dirty" ]; then rm -f "$APK.commit"; else git rev-parse HEAD > "$APK.commit"; fi
 echo
 echo "Release APK: $APK ($(du -h "$APK" | cut -f1)), SHA-256 in $APK.sha256"
-echo "Try it on the emulator: adb uninstall $APP_ID; adb install \"$APK\"   (uninstall wipes app data)"
+echo "Try it on the emulator: adb install \"$APK\"   (debug builds are $DEBUG_APP_ID, so they don't clash. A debug build from before C17 installed as $APP_ID does: adb uninstall $APP_ID first, which wipes its data.)"
 echo "Publish it:             scripts/publish.sh   (owner's approval required)"

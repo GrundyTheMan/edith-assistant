@@ -95,6 +95,11 @@ interface Integration {
     val status: StateFlow<IntegrationStatus>
     /** Told to the model while this integration isn't connected, so it says so instead of guessing (L6). */
     val notConnectedNote: kotlin.String? get() = null
+    /**
+     * Told to the model while it's connected (C17: "Google: connected as …"). [tools] are this integration's tools,
+     * so the line can say what she can actually do with it, and not promise more (L6).
+     */
+    fun connectedNote(tools: List<Tool>): kotlin.String? = null
 }
 
 enum class IntegrationStatus { Connected, NotConnected }

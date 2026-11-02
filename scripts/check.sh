@@ -13,7 +13,7 @@ if [ "${1:-}" = "--device" ]; then
   # Not connectedDebugAndroidTest: that uninstalls the app afterwards, wiping the owner's data on the emulator.
   step "Instrumented tests on the device"
   gradle installDebug installDebugAndroidTest
-  out="$(adb shell am instrument -w "$APP_ID.test/androidx.test.runner.AndroidJUnitRunner" | tr -d '\r')"
+  out="$(adb shell am instrument -w "$DEBUG_APP_ID.test/androidx.test.runner.AndroidJUnitRunner" | tr -d '\r')"
   if echo "$out" | grep -q "^OK ("; then
     echo "$out" | tail -5
   else

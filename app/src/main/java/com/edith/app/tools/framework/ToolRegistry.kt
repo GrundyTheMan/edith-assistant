@@ -33,6 +33,11 @@ class ToolRegistry(private val tools: List<Tool>, private val integrations: List
     fun notConnectedNotes(): List<String> =
         integrations.filter { it.status.value != IntegrationStatus.Connected }.mapNotNull { it.notConnectedNote }
 
+    /** What the model should know about connected ones ("Google: connected as …"), given the tools each has (C17). */
+    fun connectedNotes(): List<String> =
+        integrations.filter { it.status.value == IntegrationStatus.Connected }
+            .mapNotNull { i -> i.connectedNote(tools.filter { it.integrationId == i.id }) }
+
     /** For the "Used: …" line: "get_current_time" → "time". Unknown names are shown as they are. */
     fun displayName(toolName: String): String = tools.firstOrNull { it.spec.name == toolName }?.displayName ?: toolName
 

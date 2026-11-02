@@ -14,13 +14,13 @@ gradle installDebug
 
 step "Launch"
 adb logcat -b crash -c
-adb shell am force-stop "$APP_ID"
-adb shell am start -W -n "$APP_ID/.MainActivity" | grep -E "Status|TotalTime" || true
+adb shell am force-stop "$DEBUG_APP_ID"
+adb shell am start -W -n "$DEBUG_APP_ID/$MAIN_ACTIVITY" | grep -E "Status|TotalTime" || true
 
 sleep 3
-if [ -n "$(adb logcat -b crash -d | grep -E "$APP_ID|FATAL" || true)" ]; then
+if [ -n "$(adb logcat -b crash -d | grep -E "$DEBUG_APP_ID|FATAL" || true)" ]; then
   adb logcat -b crash -d
   die "Edith crashed on launch (crash log above)."
 fi
-adb shell pidof "$APP_ID" >/dev/null || die "Edith isn't running after launch."
+adb shell pidof "$DEBUG_APP_ID" >/dev/null || die "Edith isn't running after launch."
 echo "Edith $(version_name) (debug) is running on the emulator."
