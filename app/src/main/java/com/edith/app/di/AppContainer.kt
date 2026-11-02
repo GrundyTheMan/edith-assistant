@@ -73,6 +73,13 @@ import com.edith.app.attachments.Retention
 import com.edith.app.google.CredentialManagerSignIn
 import com.edith.app.google.GoogleAuth
 import com.edith.app.google.PlayServicesAuthorizer
+import com.edith.app.google.calendar.CalendarClient
+import com.edith.app.google.calendar.CalendarSession
+import com.edith.app.google.calendar.CreateCalendarEventTool
+import com.edith.app.google.calendar.DeleteCalendarEventTool
+import com.edith.app.google.calendar.FindFreeTimeTool
+import com.edith.app.google.calendar.ListCalendarEventsTool
+import com.edith.app.google.calendar.UpdateCalendarEventTool
 import com.edith.app.voice.capture.AudioRecorder
 import com.edith.app.voice.capture.LiveSpeech
 import com.edith.app.voice.capture.OllamaTranscriber
@@ -110,6 +117,10 @@ class AppContainer(val app: Application) {
             tools = listOf(
                 CurrentTimeTool(), WeatherTool(openMeteo, deviceLocation),
                 SearchWebTool(webSearch), ReadWebPageTool(webSearch.pages(PageReader(okHttpLazy, dispatchers))),
+                // C18: Google Calendar (offered only while Google is connected)
+                ListCalendarEventsTool(calendarSession, calendarClient), FindFreeTimeTool(calendarSession, calendarClient),
+                CreateCalendarEventTool(calendarSession, calendarClient), UpdateCalendarEventTool(calendarSession, calendarClient),
+                DeleteCalendarEventTool(calendarSession, calendarClient),
             ),
             integrations = listOf(googleAuth),   // C17: Google's tools (C18, C19) only while connected
         )
@@ -242,6 +253,10 @@ class AppContainer(val app: Application) {
     val googleAuth: GoogleAuth by lazy {
         GoogleAuth(CredentialManagerSignIn(app), PlayServicesAuthorizer(app), settingsRepository, BuildConfig.GOOGLE_WEB_CLIENT_ID, appScope)
     }
+
+    /** Google Calendar (C18): REST through [googleAuth]; the session remembers the calendars and listed events. */
+    val calendarClient: CalendarClient by lazy { CalendarClient(okHttpLazy, googleAuth, dispatchers) }
+    val calendarSession: CalendarSession by lazy { CalendarSession(calendarClient) }
 
     /** Keeps the newest N attachments each way (C16, O1). */
     val retention: Retention by lazy { Retention(database.attachmentDao(), attachmentStore, settingsRepository, clock, dispatchers) }

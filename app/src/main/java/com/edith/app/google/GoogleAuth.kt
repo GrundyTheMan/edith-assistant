@@ -24,6 +24,8 @@ import kotlinx.coroutines.sync.withLock
 /** What Edith may ask Google for (C17 §2). Each tool asks only for what it needs. */
 enum class GoogleScope(val uri: String) {
     CalendarEvents("https://www.googleapis.com/auth/calendar.events"),
+    /** C18: which calendars the owner has checked (the owner chose all of them, not only the primary). */
+    CalendarList("https://www.googleapis.com/auth/calendar.calendarlist.readonly"),
     GmailReadonly("https://www.googleapis.com/auth/gmail.readonly"),
     GmailCompose("https://www.googleapis.com/auth/gmail.compose"),
 }
@@ -72,8 +74,10 @@ sealed interface GoogleState {
 /** One Google API call made with an access token (C18, C19): its result, or "the token was refused". */
 sealed interface GoogleCall<out T> {
     data class Ok<T>(val value: T) : GoogleCall<T>
-    /** HTTP 401. */
+    /** HTTP 401: the token was refused. */
     data object Unauthorized : GoogleCall<Nothing>
+    /** HTTP 403 for a missing scope (`insufficientPermissions`): the owner must approve more access. */
+    data object MissingScope : GoogleCall<Nothing>
     data class Failed(val error: AppError) : GoogleCall<Nothing>
 }
 
@@ -175,6 +179,11 @@ class GoogleAuth(
             when (val r = call(token)) {
                 is GoogleCall.Ok -> return Outcome.Success(r.value)
                 is GoogleCall.Failed -> return Outcome.Failure(r.error)
+                GoogleCall.MissingScope -> {
+                    Log.w(LogTag.Google, "Google says Edith lacks a scope for this call")
+                    currentEmail()?.let { _state.value = GoogleState.NeedsConsent(it) }
+                    return Outcome.Failure(AppError.GoogleAuth(NEEDS_PERMISSION))
+                }
                 GoogleCall.Unauthorized -> {
                     Log.w(LogTag.Google, "Google refused the token (attempt ${attempt + 1})")
                     authorizer.clearToken(token)
