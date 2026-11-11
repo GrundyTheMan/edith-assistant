@@ -14,7 +14,8 @@ Edith is a native Android app (Kotlin, Jetpack Compose). There is no cloud backe
 She can:
 - **Chat** — warm, witty, concise conversation with a fixed personality (§5).
 - **Use tools** — look up the weather, search the web, read web pages; later read/write the owner's
-  Google Calendar and read Gmail and draft replies. Tools are called by the model through Ollama's
+  Google Calendar and read Gmail, draft replies and send email (each change and every email only after the
+  owner confirms the card, D5/D11). Tools are called by the model through Ollama's
   tool-calling protocol and executed by the app on the phone.
 - **Listen and speak** — voice memos (record → transcribe → send), live dictation, spoken replies
   using the phone's own text-to-speech, and a **hands-free mode** (wake word → talk → she answers
@@ -30,7 +31,10 @@ but v1's hard-won knowledge is captured in `03-ollama-reference.md` and `04-less
 ## 2. Who it's for
 
 One user: the owner. Not technical in Android internals; uses the app daily on a phone (and tests on
-the Android emulator on their PC). Lives in Michigan, USA (use device locale for units and dates;
+the Android emulator on their PC). **The phone is an iPhone:** Edith runs there inside **Andarium**, an Android
+environment for iOS. It has **no Google Play services** (so Google sign-in goes through the browser, C17b/D16),
+and iOS probably stops background work, so hands-free likely works only while Andarium is on screen. Found with
+the first release on 2026-11-11. Lives in Michigan, USA (use device locale for units and dates;
 don't hard-code). Talks to Edith casually ("is there a Pistons game tonight?", "what's the weather in
 Fowlerville?").
 

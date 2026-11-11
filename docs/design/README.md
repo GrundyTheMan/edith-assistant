@@ -101,7 +101,11 @@ design in the same PR, or ask the owner.
 - Judge tool reliability with `gemma4:12b`; `e4b` often skips tools (L26).
 - Owner decisions still open are in `06-decisions.md`. Ask early about the ones your chunk lists; the first ones
   needed are **D8** (C03).
-- No GitHub Release has been published yet; `scripts/publish.sh` is untested until the owner asks for the first one.
+- Releases: `v2.0.0-dev.1` (2026-11-11) is the first, published with `scripts/release.sh` + `scripts/publish.sh`
+  as in 05-environment §6. Test the release APK on `Edith_Release_Test` with hands-free on before publishing
+  (L30). The next published APK needs `edith.versionCode` bumped to 2.
+- The "Hey Edith" model is trained and in the app (`docs/wake-word-training.md`). Judging it with a real voice is
+  still open.
 
 ### Parallelism
 After C01–C02: C03 and C05 can run in parallel. After C06–C06b–C07: C08, C12, C13 and C15 can run in parallel
