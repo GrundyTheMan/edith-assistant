@@ -74,7 +74,11 @@ Where the code differs from the specification above, the code is right.
   - Emails get short handles (`m1`, `m2`, …) in `GmailSession`, like the calendar's `e1`.
   - `search_email`, `read_email`: no confirmation.
   - `draft_email`: "Save this draft?" → **Save draft**. `send_email`: "Send this email?" → **Send**.
-    - Both show To, Subject and the message (up to 1,500 characters).
+    - Both show To, Subject and the whole message, never a preview, so what the owner confirms is exactly what is
+      saved or sent (D5). The first version cut the card at 1,500 characters while sending the full body; the
+      2026-11-11 gap analysis found it and the cut was removed. Checked live: a 40-item packing-list draft showed
+      every line and the sign-off, the buttons could still be reached, and Cancel saved nothing.
+      (`build-logs/2026-11-11_10-20-30_check.log`: 208 unit tests, 107 device tests.)
     - A reply (`reply_to_message_id`) fills in the sender's address, "Re: …" and the thread.
   - The spec's "no send endpoint" grep test became: the only caller of `client.send(` is `GmailTools.kt`.
 
