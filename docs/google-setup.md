@@ -5,6 +5,10 @@ sends only after you confirm the whole email on screen, decision D5). Google nee
 app is asking. This takes about 15 minutes in the
 browser; nothing is installed and nothing secret goes into the repo.
 
+On a phone with Google Play services, Edith stores no Google tokens: Play services keeps them. Without Play services
+(the iPhone, where Edith runs in Andarium), she signs in through the browser and keeps a **refresh token** on the
+device, encrypted with a key that never leaves the phone (decision D16, section 6 below).
+
 You'll need these two fingerprints (public, not secret):
 - **Debug** SHA-1 (builds from this PC): `53:5E:82:8A:35:5E:33:32:68:D5:0F:9E:67:F6:91:F1:7A:FF:B4:44`
 - **Release** SHA-1 (`scripts/release.sh`): `D1:F6:25:27:35:0F:35:5D:25:42:A1:88:F5:C4:ED:3C:D6:9A:CE:DE`
@@ -55,6 +59,30 @@ edith.googleWebClientId=PASTE-THE-WEB-CLIENT-ID-HERE.apps.googleusercontent.com
 ```
 Then tell me it's there. The ID isn't a secret (it's in every app that uses it), but keeping it out of the repo
 means it isn't in the history either.
+
+## 6. Browser sign-in (for phones without Google Play services; C17b)
+Andarium on the iPhone has no Google Play services, so Edith signs in there the way desktop apps do: Google's page
+in Chrome, then back to Edith. That needs a fourth OAuth client, of type **Desktop app**.
+
+1. Google Auth Platform → **Clients** → **Create client**.
+2. Application type **Desktop app**, name **Edith browser sign-in** → **Create**.
+3. Google shows a **Client ID** and a **client secret**. For Desktop clients Google says the secret isn't
+   confidential, but treat it like one anyway: don't commit it, and don't paste it into a chat. Add both lines to
+   `D:\Dev Projects\edith\local.properties`:
+   ```
+   edith.googleDesktopClientId=PASTE-THE-DESKTOP-CLIENT-ID-HERE.apps.googleusercontent.com
+   edith.googleDesktopClientSecret=PASTE-THE-SECRET-HERE
+   ```
+   Then tell me they're there. Release builds contain the secret if Google's token endpoint needs it. That's
+   accepted for a Desktop client.
+4. Nothing else changes: same project, same consent screen, same scopes, same test user.
+
+What to expect:
+- **Settings → Google account → Use a browser instead** (on a phone with Play services), or **Sign in with Google**
+  (without it), opens Google's page in the browser. Sign in, allow access, and the browser comes back to Edith. If
+  it ends on a page that won't load, copy its address (it starts with `http://127.0.0.1`) and paste it into Edith.
+- While the project is in **Testing**, Google lets this sign-in last **7 days**. After that, Settings shows **Grant
+  access**, and one browser round signs Edith back in.
 
 ## Good to know
 - **Testing mode** lets only the test users (you) sign in. Google may ask you to approve access again from time to

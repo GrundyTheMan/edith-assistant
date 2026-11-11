@@ -49,6 +49,14 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- C17b §4: the browser sign-in page's "Back to Edith" link (`<applicationId>://signed-in`). It only
+                 brings Edith forward; it carries no code (that arrives on the loopback listener). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="${applicationId}" android:host="signed-in" />
+            </intent-filter>
         </activity>
 
         <service

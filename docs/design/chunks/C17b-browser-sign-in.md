@@ -274,3 +274,56 @@ Device (Compose, `scripts/check.sh --device`):
   Weekly sign-ins are accepted in Testing.
 - Any iOS-native Edith.
 - Hands-free limits under iOS: Andarium can't listen in the background. That's a separate topic.
+
+## As built (2026-11-11, in progress)
+
+Where the code differs from the specification above, the code is right.
+
+**Files**
+- `google/browser/BrowserOAuth.kt`: PKCE, the sign-in address, exchange, refresh, revoke and `parseRedirect`.
+  The base URLs are constructor parameters.
+- `google/browser/LoopbackReceiver.kt`: listens on 127.0.0.1 only, port 0. It serves each connection on its own,
+  so a spare connection Chrome opens can't hold up the real request. Request lines are never logged.
+- `google/browser/BrowserGoogle.kt`: `GoogleSignIn` + `GoogleAuthorizer`, the waiting state, paste and cancel, and
+  the pending sign-in in `SecretStore` (`google_pending_sign_in`).
+- `google/ChoosingGoogle.kt`: the chooser. The rule is `ChoosingGoogle.chooseBrowser`.
+- `GoogleAuth.kt`: a new `GoogleBrowserFlow` interface (the browser's extras), and `NeedsConsent.viaBrowser`.
+- DataStore `google_sign_in_mode` (`Settings.googleSignInMode`). `BuildConfig.GOOGLE_DESKTOP_CLIENT_ID` and
+  `_SECRET` come from `local.properties`.
+
+**Differences from the spec**
+- **Resuming a pending sign-in** is `GoogleAuth.resumeBrowserSignIn()`, which `AppContainer` calls at launch next
+  to `start()`. It's not inside `start()`, because Grant access calls `start()` again.
+- **Grant access / Try again** moved from the ViewModel into `GoogleAuth.grant(activity, show)`. Browser mode
+  rechecks quietly first: after "Couldn't reach Google", Try again just refreshes. If Google still wants the owner,
+  it signs in through the browser again, in one tap.
+- **Sign-in runs in the app's scope** (main thread), not the ViewModel's. A browser sign-in waits minutes and must
+  survive leaving Settings.
+- **The browser's input channel exists before the browser opens**, so an early paste or Cancel can't be lost.
+- **Use a browser instead** shows only when the build has the Desktop client ID.
+- **GoogleAuth's browser cases** are tested in `ChoosingGoogleTest` (GoogleAuth + ChoosingGoogle + a real
+  `BrowserGoogle` against MockWebServer), not `GoogleAuthTest`, whose fakes are Play-only. `GoogleAuthTest`,
+  `CalendarTest`, `GmailTest` and `ErrorMapperTest` are unchanged and pass.
+- A token response that leaves out `scope` is taken as granting everything asked for. A missing scope then shows
+  up as Google's 403 (`MissingScope` → NeedsConsent).
+
+**Verified so far**
+- `scripts/check.sh`: OK (`build-logs/2026-11-11_18-02-00_check.log`): 244 unit tests, 31 of them new
+  (`BrowserOAuthTest` 8, `LoopbackReceiverTest` 5, `BrowserGoogleTest` 11, `ChoosingGoogleTest` 7). Lint: no new
+  warnings; the one it found, `UseKtx`, is changed.
+  - Covered: RFC 7636's test vector; every sign-in parameter; the exchange form with and without the secret; a full
+    loopback sign-in, with no code, state, verifier, token, id_token or redirect in the log; paste; wrong state;
+    declined; cancel; timeout; no browser; `invalid_client`; resuming after a killed process (same redirect URI);
+    dropping a pending sign-in after 10 minutes; the cached token; refresh when expired; one refresh for 5
+    callers; fewer scopes; `invalid_grant` deleting the token; no network keeping it; revoke; the choice rule; Play
+    unchanged; disconnect; Grant access signing in again; NotSetUp only when both IDs are missing.
+
+- `scripts/check.sh --device`: OK (`build-logs/2026-11-11_18-03-20_check.log`): 110 device tests, including the new
+  `GoogleSettingsTest.browserSignIn` (Use a browser instead, the waiting dialog, a pasted address, Cancel, the
+  weekly sign-in text). The crash log has nothing from Edith.
+
+**Not verified yet**
+- Everything live: it needs the Desktop client (`docs/google-setup.md` §6). Also open: whether Google's token
+  endpoint accepts the Desktop client without its secret, and whether Chrome's **Back to Edith** brings back the
+  same `MainActivity` or starts a second one.
+- The release APK on `Edith_Release_Test`, and Andarium on the owner's iPhone.

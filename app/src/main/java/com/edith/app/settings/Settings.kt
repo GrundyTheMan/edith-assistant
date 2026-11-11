@@ -32,6 +32,8 @@ data class Settings(
     val wakeWordSensitivity: Float = 0.5f,
     val followUpSeconds: Int = 8,
     val googleAccountEmail: String? = null,
+    /** C17b: how the owner last signed in to Google, `play` or `browser` (the chooser reads it after a restart). */
+    val googleSignInMode: String? = null,
     val currentConversationId: Long? = null,   // C06b: the chat the app reopens on
 ) {
     companion object {
@@ -67,6 +69,7 @@ internal object SettingsKeys {
     val WAKE_WORD_SENSITIVITY = floatPreferencesKey("wake_word_sensitivity")
     val FOLLOW_UP_SECONDS = intPreferencesKey("follow_up_seconds")
     val GOOGLE_ACCOUNT_EMAIL = stringPreferencesKey("google_account_email")
+    val GOOGLE_SIGN_IN_MODE = stringPreferencesKey("google_sign_in_mode")
     val CURRENT_CONVERSATION_ID = longPreferencesKey("current_conversation_id")
 }
 
@@ -104,6 +107,7 @@ internal fun Preferences.toSettings(): Settings {
         wakeWordSensitivity = this[SettingsKeys.WAKE_WORD_SENSITIVITY] ?: d.wakeWordSensitivity,
         followUpSeconds = this[SettingsKeys.FOLLOW_UP_SECONDS] ?: d.followUpSeconds,
         googleAccountEmail = this[SettingsKeys.GOOGLE_ACCOUNT_EMAIL],
+        googleSignInMode = this[SettingsKeys.GOOGLE_SIGN_IN_MODE],
         currentConversationId = this[SettingsKeys.CURRENT_CONVERSATION_ID],
     )
 }
@@ -120,6 +124,7 @@ internal fun MutablePreferences.write(s: Settings) {
     this[SettingsKeys.WAKE_WORD_SENSITIVITY] = s.wakeWordSensitivity
     this[SettingsKeys.FOLLOW_UP_SECONDS] = s.followUpSeconds
     setOrRemove(SettingsKeys.GOOGLE_ACCOUNT_EMAIL, s.googleAccountEmail)
+    setOrRemove(SettingsKeys.GOOGLE_SIGN_IN_MODE, s.googleSignInMode)
     if (s.currentConversationId == null) remove(SettingsKeys.CURRENT_CONVERSATION_ID) else this[SettingsKeys.CURRENT_CONVERSATION_ID] = s.currentConversationId
 }
 

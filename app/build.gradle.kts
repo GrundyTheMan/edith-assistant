@@ -29,11 +29,16 @@ val keystoreProperties = Properties().apply {
 }
 val hasReleaseKey = keystoreProperties.getProperty("storeFile") != null
 
-// C17 (D9): the Google Web OAuth client ID, from local.properties (not committed). Empty → Google shows "not set up".
-val googleWebClientId: String = Properties().apply {
+// C17 (D9): the Google OAuth client IDs, from local.properties (not committed). Both empty → Google shows "not set up".
+val localProperties = Properties().apply {
     val file = rootProject.file("local.properties")
     if (file.exists()) file.inputStream().use { load(it) }
-}.getProperty("edith.googleWebClientId").orEmpty().trim()
+}
+val googleWebClientId: String = localProperties.getProperty("edith.googleWebClientId").orEmpty().trim()
+// C17b (D16): the Desktop client for browser sign-in. Empty → browser sign-in isn't set up. Google treats a Desktop
+// client's secret as not confidential; it's only included if the token endpoint needs it.
+val googleDesktopClientId: String = localProperties.getProperty("edith.googleDesktopClientId").orEmpty().trim()
+val googleDesktopClientSecret: String = localProperties.getProperty("edith.googleDesktopClientSecret").orEmpty().trim()
 
 android {
     namespace = "com.edith.app"
@@ -50,6 +55,8 @@ android {
         // x86_64 for the emulator (32-bit devices can't run the Android versions Edith targets anyway).
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
+        buildConfigField("String", "GOOGLE_DESKTOP_CLIENT_ID", "\"$googleDesktopClientId\"")
+        buildConfigField("String", "GOOGLE_DESKTOP_CLIENT_SECRET", "\"$googleDesktopClientSecret\"")
     }
 
     // Native libraries compressed in the APK (extracted on install): a much smaller download for ONNX Runtime.
