@@ -156,7 +156,14 @@ Deploy targets (owner decision, 2026-10-29): **the emulator** (debug builds, `sc
    update whose versionCode is higher than the installed one.
 2. `scripts/release.sh` → runs unit tests and release lint, builds the R8-minified, signed APK, verifies the
    signature and key, writes `dist/Edith-<name>.<code>.apk` + `.sha256` (`dist/` is git-ignored).
-3. Install it on the **release-test emulator** and check it launches (below).
+3. Install it on the **release-test emulator** and check it launches (below). Then check the paths R8 can break
+   and that only a release build has:
+   - **hands-free on** for ~20 s (ONNX Runtime through JNI; it crashed the first release build, L30)
+   - a **chat with a tool call**
+   - **Sign in with Google** reaching Google's screen
+
+   `adb -s emulator-5560 logcat -b crash -d` must stay empty. Check the APK's `.sha256` from inside `dist/` (it
+   names the file without a path).
 4. Ask the owner, then `scripts/publish.sh` → tags the commit `v<name>.<code>`, pushes the tag, creates the
    GitHub Release with the APK attached (marked pre-release while the name contains `-`, e.g. `2.0.0-dev`).
 5. On the phone: open the release page in the browser **signed in to GitHub** (the repo is private), download
