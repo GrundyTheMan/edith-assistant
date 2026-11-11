@@ -52,8 +52,33 @@ object Log {
     internal fun redact(text: String, debug: Boolean): String = if (debug) text else "<${text.length} chars>"
 
     private fun write(priority: Int, tag: LogTag, msg: String, t: Throwable?) {
-        val full = if (t != null) "$msg\n${AndroidLog.getStackTraceString(t)}" else msg
+        val full = if (t != null) "$msg\n${stackTrace(t, BuildConfig.DEBUG)}" else msg
         AndroidLog.println(priority, tag.value, full)
-        LogRingBuffer.append(tag.value, if (t != null) "$msg ($t)" else msg)
+        LogRingBuffer.append(tag.value, if (t != null) "$msg (${summary(t, BuildConfig.DEBUG)})" else msg)
     }
+
+    /**
+     * A parse error's message quotes the text it couldn't read (an email, an event, a reply), so in release builds
+     * it shows only the type. Other messages (a host, an HTTP status) are kept: they're what makes a log useful.
+     */
+    internal fun summary(t: Throwable, debug: Boolean): String =
+        if (debug || !quotesInput(t)) t.toString() else "${t.javaClass.name}: <message hidden>"
+
+    /** Like Android's stack trace string, with [summary] for the throwable and each cause. */
+    internal fun stackTrace(t: Throwable, debug: Boolean): String = buildString {
+        var current: Throwable? = t
+        var first = true
+        val seen = HashSet<Throwable>()
+        while (current != null && seen.add(current)) {
+            if (!first) append("Caused by: ")
+            append(summary(current, debug)).append('\n')
+            current.stackTrace.forEach { append("\tat ").append(it).append('\n') }
+            current = current.cause
+            first = false
+        }
+    }.trimEnd()
+
+    private fun quotesInput(t: Throwable): Boolean =
+        t is kotlinx.serialization.SerializationException ||
+            t.stackTrace.take(8).any { it.className.startsWith("kotlinx.serialization.") }
 }

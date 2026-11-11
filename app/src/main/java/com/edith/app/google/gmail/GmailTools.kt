@@ -53,9 +53,9 @@ private fun emailError(e: AppError): ToolResult = ToolResult.Error(
 class SearchEmailTool(private val session: GmailSession, private val client: GmailClient) : Tool {
     override val spec = ToolSpec(
         "search_email",
-        "Search the user's Gmail. Uses Gmail search syntax: from:name, to:, subject:word, is:unread, newer_than:7d, after:2026/11/01, has:attachment",
+        "Search the user's Gmail. Uses Gmail search syntax: from:name, to:, subject:word, is:unread, after:today, after:yesterday, newer_than:7d, after:2026/11/01, has:attachment",
         listOf(
-            ToolParam("query", ParamType.String, "Gmail search, e.g. \"from:school newer_than:7d\" or \"is:unread newer_than:1d\"", required = true, aliases = listOf("q", "search")),
+            ToolParam("query", ParamType.String, "Gmail search, e.g. \"from:school newer_than:7d\" or \"is:unread after:today\"", required = true, aliases = listOf("q", "search")),
             ToolParam("max_results", ParamType.Integer, "How many, 1–10 (default 5)", aliases = listOf("max", "limit")),
         ),
     )
@@ -63,11 +63,14 @@ class SearchEmailTool(private val session: GmailSession, private val client: Gma
     override val displayName = "email"
     override val integrationId = GoogleAuth.ID
     override val guidance = "For questions about the user's email, call search_email with Gmail search syntax, then read_email with a message_id " +
-        "when the content matters. \"Today\" is newer_than:1d; dates use after:YYYY/MM/DD."
+        "when the content matters. For today's email use after:today (also after:yesterday before:today). " +
+        "For another day: after:YYYY/MM/DD before:the next day. newer_than:1d means the last 24 hours, not today."
 
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
         val max = (args.int("max_results") ?: 5).coerceIn(1, GmailClient.MAX_SEARCH)
-        val found = when (val r = client.search(args.string("query")!!, max)) { is Outcome.Success -> r.value; is Outcome.Failure -> return emailError(r.error) }
+        val zone = ctx.clock.zone()
+        val query = GmailQuery.localDates(args.string("query")!!, ctx.clock.now().atZone(zone).toLocalDate(), zone)
+        val found = when (val r = client.search(query, max)) { is Outcome.Success -> r.value; is Outcome.Failure -> return emailError(r.error) }
         if (found.isEmpty()) return ToolResult.Ok("No emails match.")
         return ToolResult.Ok(found.mapIndexed { i, e ->
             "${i + 1}. ${day.format(e.date)} — ${e.from} — \"${e.subject}\"${if (e.unread) " (unread)" else ""} — ${e.snippet.take(120)} {message_id: ${session.handleFor(e)}}"

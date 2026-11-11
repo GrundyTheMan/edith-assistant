@@ -170,6 +170,30 @@ class GmailTest {
         assertEquals("metadata", requests[1].url.queryParameter("format"))
     }
 
+    @Test fun `dates in a search become local midnight in seconds, not Gmail's Pacific midnight`() = runBlocking {
+        // 2026-11-11 00:00 in Detroit (EST, -05:00) = 05:00 UTC; Gmail would have used 08:00 UTC.
+        val today = java.time.LocalDate.of(2026, 11, 11)
+        val nov11 = today.atStartOfDay(zone).toEpochSecond()
+        assertEquals(1794373200L, nov11)
+        fun q(s: String) = GmailQuery.localDates(s, today, zone)
+        assertEquals("is:unread after:$nov11 before:${nov11 + 86_400}", q("is:unread after:2026/11/11 before:2026-11-12"))
+        assertEquals("from:sam newer:$nov11", q("from:sam newer:2026/11/11"))
+        assertEquals("unchanged", "newer_than:1d subject:2026/11/11 after:2026/02/30", q("newer_than:1d subject:2026/11/11 after:2026/02/30"))
+        val summer = java.time.LocalDate.of(2026, 7, 4).atStartOfDay(zone).toEpochSecond()
+        assertEquals("summer uses EDT", 1783137600L, summer)
+    }
+
+    @Test fun `today and yesterday are worked out by Edith, not the model`() = runBlocking {
+        val today = java.time.LocalDate.of(2026, 11, 11)
+        val nov11 = today.atStartOfDay(zone).toEpochSecond()
+        assertEquals("after:${nov11 - 86_400} before:$nov11", GmailQuery.localDates("after:yesterday before:Today", today, zone))
+        assertEquals("before:${nov11 + 86_400}", GmailQuery.localDates("before:tomorrow", today, zone))
+        // The test clock says 2026-11-02 13:00 in Detroit, so "today" is Nov 2.
+        val nov2 = java.time.LocalDate.of(2026, 11, 2).atStartOfDay(zone).toEpochSecond()
+        tools.getValue("search_email").execute(args(tools.getValue("search_email"), "query" to "is:unread after:today"), ctx)
+        assertEquals("is:unread after:$nov2", requests.first().url.queryParameter("q"))
+    }
+
     @Test fun `read gives the headers and the cleaned body`() = runBlocking {
         tools.getValue("search_email").execute(args(tools.getValue("search_email"), "query" to "from:sam"), ctx)
         routes["GET /gmail/v1/users/me/messages/b2"] = {
