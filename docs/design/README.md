@@ -46,6 +46,7 @@ design in the same PR, or ask the owner.
 | [C15](chunks/C15-attachment-intake.md) | Attachments in (photos, audio files) | 4 Attachments | C05, C06, C07 | Done |
 | [C16](chunks/C16-attachment-storage-and-edith-files.md) | Storage, retention (default 10), Edith's files, resends | 4 | C15, C05, C07, C13 | Done |
 | [C17](chunks/C17-google-account.md) | Google account sign-in and authorization | 5 Google | C02, C04, C08 | Done |
+| [C17b](chunks/C17b-browser-sign-in.md) | Google sign-in through the browser (no Play services: Andarium on the owner's iPhone) | 5 | C17 | Not started |
 | [C18](chunks/C18-google-calendar.md) | Google Calendar tools and Calendar tab | 5 | C17, C08 | Done |
 | [C19](chunks/C19-gmail.md) | Gmail search, read, draft, send | 5 | C17, C08 | Done |
 | [C20](chunks/C20-smart-home-architecture.md) | Smart home architecture (**v2, design only**) | 6 Deferred | C08, C17 | Design |
@@ -91,7 +92,12 @@ design in the same PR, or ask the owner.
   `ToolArgs.localTime` (L29).
 - **Gmail is done (C19)**: four tools in `google/gmail/` (search, read, draft, send). Drafts and sends always show
   the whole email on a card first (D5, D11).
-- **Phase 5 (Google) is done.** C20 and C21 are v2 design and research; ask the owner what's next.
+- **Phase 5 (Google) is done on Android phones.**
+- **Next: C17b.** The owner's phone is an iPhone, and Edith runs there in Andarium, which has no Google Play
+  services. So Google sign-in has to work through the browser (D16).
+- The first release, v2.0.0-dev.1, was published on 2026-11-11. Chat with Ollama works from Andarium over the
+  home Wi-Fi.
+- C20 and C21 are v2 design and research.
 - Judge tool reliability with `gemma4:12b`; `e4b` often skips tools (L26).
 - Owner decisions still open are in `06-decisions.md`. Ask early about the ones your chunk lists; the first ones
   needed are **D8** (C03).
