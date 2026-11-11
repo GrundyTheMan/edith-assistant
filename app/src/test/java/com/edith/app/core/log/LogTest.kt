@@ -1,6 +1,7 @@
 package com.edith.app.core.log
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -24,6 +25,33 @@ class LogTest {
     @Test fun `log calls land in the ring buffer with their tag`() {
         Log.i(LogTag.Ollama, "Chat stream started")
         assertTrue(LogRingBuffer.tail(1).single().endsWith("[Edith/Ollama] Chat stream started"))
+    }
+
+    private val email = """{"id":"a1","payload":{"headers":[{"name":"Subject","value":"Biopsy results"}]},"snippet":"Your results are in"""
+
+    private fun parseError(): Throwable = runCatching {
+        kotlinx.serialization.json.Json.parseToJsonElement(email)
+    }.exceptionOrNull()!!
+
+    @Test fun `a parse error quotes what it couldn't read`() {
+        // Why release builds hide these messages: kotlinx puts the input in them.
+        assertTrue(parseError().message!!.contains("Biopsy results"))
+    }
+
+    @Test fun `in release a parse error and its wrapper show only their types`() {
+        val wrapped = RuntimeException("Unreadable reply", parseError())
+        val trace = Log.stackTrace(wrapped, debug = false)
+        assertFalse(trace.contains("Biopsy") || trace.contains("Your results"))
+        assertTrue(trace.startsWith("java.lang.RuntimeException: Unreadable reply\n\tat "))
+        assertTrue(Regex("""Caused by: kotlinx\.serialization\.[\w.]+: <message hidden>\n""").containsMatchIn(trace))
+        assertTrue(trace.contains("\tat kotlinx.serialization."))
+        assertFalse(Log.summary(parseError(), debug = false).contains("Biopsy"))
+    }
+
+    @Test fun `debug builds and other errors keep their messages`() {
+        assertTrue(Log.stackTrace(parseError(), debug = true).contains("Biopsy results"))
+        val io = java.io.IOException("failed to connect to /10.0.2.2 (port 11434)")
+        assertEquals(io.toString(), Log.summary(io, debug = false))
     }
 
     @Test fun `redact hides content in release and keeps it in debug`() {

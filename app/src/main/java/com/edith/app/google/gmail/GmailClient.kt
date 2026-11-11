@@ -20,6 +20,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.jsoup.Jsoup
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.util.Base64
@@ -166,6 +167,30 @@ class GmailClient(
         private val METADATA_HEADERS = listOf("From", "To", "Subject", "Date", "Message-ID")
         private val JSON_TYPE = "application/json; charset=utf-8".toMediaType()
         private val json = Json { ignoreUnknownKeys = true }
+    }
+}
+
+/** Gmail search words `search_email` adjusts before sending. */
+object GmailQuery {
+    private val DATE = Regex("""\b(after|before|newer|older):(today|yesterday|tomorrow|(\d{4})[/-](\d{1,2})[/-](\d{1,2}))\b""", RegexOption.IGNORE_CASE)
+
+    /**
+     * Dates become local midnight in [zone], in epoch seconds:
+     * - Gmail reads `after:2026/11/11` as midnight *Pacific* time, so "today" in Michigan would start at 3 AM; its
+     *   guide says to pass seconds for other zones.
+     * - `today`, `yesterday` and `tomorrow` are Edith's own words, so the model needn't work out the date (it wrote
+     *   yesterday's date for "today" in the live check).
+     * A date that doesn't exist is left as it is (Gmail then answers 400, which the tool explains).
+     */
+    fun localDates(query: String, today: LocalDate, zone: ZoneId): String = DATE.replace(query) { m ->
+        val (op, word, y, mo, d) = m.destructured
+        val day = when (word.lowercase()) {
+            "today" -> today
+            "yesterday" -> today.minusDays(1)
+            "tomorrow" -> today.plusDays(1)
+            else -> runCatching { LocalDate.of(y.toInt(), mo.toInt(), d.toInt()) }.getOrNull()
+        }
+        day?.let { "$op:${it.atStartOfDay(zone).toEpochSecond()}" } ?: m.value
     }
 }
 

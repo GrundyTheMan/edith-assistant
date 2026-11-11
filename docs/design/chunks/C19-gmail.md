@@ -103,3 +103,23 @@ Where the code differs from the specification above, the code is right.
 - **Not verified live:** a real send, and a real 401 or 403.
 - **Seen:** Edith drafted to a no-reply address without saying so. Harmless for a draft; worth a warning before a
   send.
+
+### Changes after the gap analysis (2026-11-11)
+- **"Today" is the calendar day.** The first version told the model `"Today" is newer_than:1d`, which is the last
+  24 hours. Gmail also reads `after:2026/11/11` as midnight *Pacific* time (its "Searching for messages" guide), so
+  a plain date would start Michigan's day at 3 AM.
+  - Now `search_email` turns `after:`/`before:` (and `newer:`/`older:`) dates into local midnight in epoch
+    seconds, which the same guide gives as the way to be exact (`GmailQuery.localDates`).
+  - The model can write `today`, `yesterday` or `tomorrow` instead of a date. In the live check it had written
+    yesterday's date for "today".
+  - Live: "Do I have any unread email from today?" → `is:unread after:today` → five from Nov 11.
+- **Release logs don't quote what a parse error couldn't read.** A kotlinx parse error's message holds part of
+  its input (a test proves it), and Gmail, Calendar, Ollama and the chat engine logged the whole exception. That
+  text went to logcat and to the crash report's last log lines.
+  - In release builds `Log` now shows only the type for a `SerializationException`, or for anything thrown inside
+    kotlinx.serialization, and for each cause. Stack frames and other messages (hosts, HTTP codes) are kept.
+    Debug builds are unchanged.
+- **Still open:** search returns at most 5 by default and doesn't tell the model whether more match, so "you have
+  five unread" can be an undercount.
+- Verified: `scripts/check.sh --device` passed (`build-logs/2026-11-11_10-50-39_check.log`): 213 unit tests
+  (3 new in `LogTest`, 2 new in `GmailTest`), lint clean, 107 device tests.
