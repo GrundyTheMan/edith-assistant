@@ -72,8 +72,8 @@ design in the same PR, or ask the owner.
 - **Hands-free is done (C14)**, apart from a check with a real microphone (a phone, or the emulator's host mic):
   openWakeWord on the phone (D4), then Android's recognizer, Edith's answer spoken, and follow-ups without the wake
   word.
-  - "Hey Edith" needs the owner's trained model in `app/src/main/assets/wakeword/hey_edith.onnx`
-    (`docs/wake-word-training.md`); until then the wake word is the stand-in "Hey Jarvis".
+  - The "Hey Edith" model was trained on 2026-11-11 and is in `app/src/main/assets/wakeword/hey_edith.onnx`.
+    How it was made, how good it is and how to retrain it: `docs/wake-word-training.md` and `scripts/wakeword/`.
   - On the emulator, speech gets in through `DebugHandsFreeReceiver`.
 - **Phase 3 (voice) is done.**
 - **Attachments are done (C15, C16)**: photos and audio in, labels and media in the context, and a capability check
