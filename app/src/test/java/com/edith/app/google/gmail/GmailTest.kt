@@ -210,6 +210,18 @@ class GmailTest {
         assertEquals("/gmail/v1/users/me/messages/send", requests.last().url.encodedPath)
     }
 
+    @Test fun `a long email is shown on the card in full, exactly as it is sent`() = runBlocking {
+        routes["POST /gmail/v1/users/me/messages/send"] = { json("""{"id":"s2","threadId":"t9"}""") }
+        val send = tools.getValue("send_email")
+        val body = (1..400).joinToString("\n") { "Line $it of a long email." }
+        val a = args(send, "to" to "sam@example.com", "subject" to "Long", "body" to body)
+        assertEquals("Message" to body, send.confirmation(a)!!.details.last())
+        send.execute(a, ctx)
+        val raw = Json.parseToJsonElement(requests.last().body!!.utf8()).jsonObject["raw"]!!.jsonPrimitive.content
+        val sent = String(Base64.getUrlDecoder().decode(raw)).split("\r\n\r\n", limit = 2)[1]
+        assertEquals(body.replace("\n", "\r\n"), String(Base64.getMimeDecoder().decode(sent)))
+    }
+
     @Test fun `declining the send card means nothing is sent`() = runBlocking {
         val confirmations = Confirmations()
         val ollama = object : OllamaClient {

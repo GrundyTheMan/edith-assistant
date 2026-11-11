@@ -124,16 +124,14 @@ private abstract class WriteEmailTool(protected val session: GmailSession, prote
         return OutgoingEmail(to, subject, args.string("body")!!, original?.messageIdHeader, original?.threadId)
     }
 
+    /** The card shows the whole message, never a preview: what the owner confirms is exactly what goes out (D5). */
     protected fun details(e: OutgoingEmail) = listOf(
         "To" to e.to,
         "Subject" to e.subject.ifBlank { "(none)" },
-        "Message" to e.body.let { if (it.length > PREVIEW) it.take(PREVIEW) + "…" else it },
+        "Message" to e.body,
     )
 
     companion object {
-        /** The whole message is shown when it fits a card. */
-        const val PREVIEW = 1_500
-
         /** "Sam Lee <sam@example.com>" → "sam@example.com". */
         fun replyAddress(from: String): String = Regex("<([^>]+)>").find(from)?.groupValues?.get(1) ?: from.trim()
     }
