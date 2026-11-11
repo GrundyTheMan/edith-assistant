@@ -173,7 +173,7 @@ Also:
 - **Not verified:**
   - **The real microphone path end to end:** wake-word accuracy in a room, and the recognizer hearing real speech.
     The emulator's mic hears silence. This needs a phone (or the emulator's host microphone).
-  - **"Hey Edith" itself:** the owner's model doesn't exist yet.
+  - **"Hey Edith" itself:** trained on 2026-11-11 (below); judged only on synthetic and Windows voices so far.
   - **Battery on a phone.**
   - **Another app taking the mic:** not reproduced; Android's callback is wired but untested.
 - **An emulator system crash during the first full check (not Edith):**
@@ -184,3 +184,21 @@ Also:
   - The traces in `/data/anr` aren't readable without root, so the blocked thread isn't known.
   - A rerun right after had two slow-emulator timeouts in older chat tests. After a cold boot the full check passed.
     Same pattern as C10's emulator graphics hang.
+
+### "Hey Edith" model (2026-11-11)
+The owner asked for the model to be trained on their PC instead of in Colab. `hey_edith.onnx` is now in
+`app/src/main/assets/wakeword/`, so `WakeWordModel.find` uses it and Settings no longer shows the stand-in notice.
+How it was made, how good it is and how to retrain it: `docs/wake-word-training.md`; the scripts are in
+`scripts/wakeword/`.
+- **Training:** openWakeWord's own steps and defaults on Windows (RTX 5080, ~1.5 h), with Piper voices through
+  `piper-tts` because openWakeWord's generator is Linux-only. There were three versions; v3 shipped.
+- **Held-out results at the default sensitivity:**
+  - Windows' David and Zira voices, never heard in training: 18/18 "Hey Edith" (also "Hey, Edith!" with a pause,
+    and "Hey Edith, what time is it?"); 0/30 other phrases.
+  - New synthetic clips: 92% clean, 73% with echo and noise (openWakeWord's Hey Jarvis: 91% on its phrase).
+  - 1.5 false wakes per hour on 1.4 h of real AudioSet audio never used in training (Hey Jarvis: 1.5).
+  - "Hey Eden" wakes it about a third of the time.
+- **New device test:** `HeyEdithDeviceTest` checks that the app picks "Hey Edith" (not the stand-in), and that two
+  Windows-voice clips wake it through the Kotlin pipeline and "Hey Jarvis" and other speech don't. "Hey Jarvis"
+  stays in the assets as `OpenWakeWordDeviceTest`'s fixture.
+- **Still not verified:** a real voice in a real room. That needs a phone (or the emulator's host microphone).

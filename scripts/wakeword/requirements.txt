@@ -1,0 +1,23 @@
+# The versions that trained hey_edith.onnx on 2026-11-11 (Python 3.11, Windows 11, RTX 5080).
+# Install torch first, from PyTorch's CUDA 12.8 index:
+#   uv pip install torch==2.11.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cu128
+acoustics==0.2.6
+audiomentations==0.43.1
+datasets==5.2.0
+huggingface-hub==2.4.0
+mutagen==1.48.1
+numpy==2.4.6
+onnx==1.23.2
+onnxruntime==1.31.1
+openwakeword==0.6.0
+piper-tts==1.8.0
+pronouncing==0.3.0
+pyarrow==26.0.1
+pyyaml==6.0.3
+scipy==1.16.3          # not 1.17: acoustics needs scipy.special.sph_harm, which 1.17 removed
+soundfile==0.14.0
+speechbrain==1.1.2
+torch-audiomentations==0.12.0
+torchinfo==1.8.0
+torchmetrics==1.9.0
+tqdm==4.70.1
