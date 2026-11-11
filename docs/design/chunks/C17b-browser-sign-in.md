@@ -230,6 +230,45 @@ Device (Compose, `scripts/check.sh --device`):
 - [ ] `scripts/check.sh --device` passes. The release APK is tested on `Edith_Release_Test` first (05-environment
       §6), and R8 rules are added if the release build needs them (lesson from 2026-11-11: ONNX Runtime).
 
+## Implementation notes (traps found while planning)
+1. **Edith may be killed while the owner is in Chrome.** On a low-memory device (Andarium runs inside an iPhone
+   app), Android can stop Edith's process while the browser is in front. The loopback listener dies with it, and
+   so do the PKCE verifier and `state` if they're only in memory, so even the paste fallback would fail. Keep the
+   pending `verifier`, `state`, `redirectUri` and start time in `SecretStore` (key `google_pending_sign_in`,
+   JSON) until the exchange finishes. Delete it on success, cancel, or after **10 minutes**. On start, if a pending
+   sign-in exists, `GoogleAuth`/Settings shows the waiting dialog again so a pasted address still works. The
+   `redirect_uri` sent in the exchange must be the one used in `authUrl`, even though the port is gone.
+2. **One refresh at a time.** Calendar and Gmail tools can ask for a token in the same turn, and `start()`
+   checks at launch too. Guard the refresh-or-cached path in `BrowserGoogle.authorize` with a `Mutex`, so two
+   callers get the same new token instead of two refreshes. Every refresh can count against Google's 100
+   refresh-token limit.
+3. **No network at startup isn't "signed out".** In browser mode `start()` refreshes quietly. An `IOException`
+   must give `GoogleState.Error(email, "Couldn't reach Google…")` with **Try again**, keeping the refresh token.
+   Only `invalid_grant` means sign in again.
+4. **Code that has to change with it:**
+   - `GoogleAuthTest`, `CalendarTest`, `GmailTest` and `ErrorMapperTest` construct `GoogleAuth` directly. Give
+     the new Desktop-client parameter a default (`""`), so they keep compiling, then add the browser cases to
+     `GoogleAuthTest`.
+   - The `NotSetUp` text in `GoogleSettings.kt` ("the Web client ID is missing") must mention both clients, and
+     `GoogleSettingsTest` must follow.
+   - `GoogleAuth`'s class comment and `docs/google-setup.md`'s intro both say the app stores no tokens. Change
+     them for D16.
+   - `DebugGoogleReceiver` needs **no** change: it calls `GoogleAuth.authorized`, so it checks a real token in
+     either mode. Use it to verify browser mode on the emulator.
+5. **The way back to Edith.** Chrome may ask "Open in Edith?" before following
+   `${applicationId}://signed-in`, or open nothing if the owner ignores it. The page must say "Then switch back to
+   Edith", and nothing may depend on the link being tapped: the code arrived on loopback before the page was
+   sent.
+6. **Things that are *not* problems** (don't spend time on them):
+   - Chrome loading `http://127.0.0.1:port` isn't affected by Edith's cleartext or network-security settings;
+     those only govern Edith's own requests, which all go to `https://` Google endpoints.
+   - Listening on a local port needs only `INTERNET`, which Edith already has.
+   - No new library is needed (plain `ServerSocket`, OkHttp, kotlinx.serialization), so no new R8 rules are
+     expected. Still test the release APK on `Edith_Release_Test`.
+7. **How to test browser mode on the PC.** `Pixel_9_API_37` has Play services, so use **Use a browser instead**
+   there. To test the "no Play services" choice itself, the chooser takes availability as a lambda (§1). A unit
+   test covers it; there's no need for an emulator without Play.
+
 ## Not in scope
 - Publishing the Google project to Production (Gmail's restricted scopes would need Google's verification).
   Weekly sign-ins are accepted in Testing.
