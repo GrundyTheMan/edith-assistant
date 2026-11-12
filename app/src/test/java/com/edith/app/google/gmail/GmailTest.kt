@@ -6,10 +6,11 @@ import com.edith.app.chat.engine.TurnEvent
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
-import com.edith.app.google.GoogleAuth
+import com.edith.app.accounts.sources.OutgoingMail
+import com.edith.app.accounts.tools.MailHandles
+import com.edith.app.accounts.tools.mailTools
+import com.edith.app.testing.AccountsHarness
 import com.edith.app.google.GoogleAuthorizer
-import com.edith.app.google.GoogleScope
-import com.edith.app.google.GoogleSignIn
 import com.edith.app.ollama.ChatCall
 import com.edith.app.ollama.ChatEvent
 import com.edith.app.ollama.ModelInfo
@@ -69,12 +70,12 @@ class GmailTest {
     private val routes = mutableMapOf<String, () -> MockResponse>()
     private val dispatchers = AppDispatchers(Dispatchers.Unconfined, Dispatchers.Unconfined, Dispatchers.Unconfined)
     private val settings = FakeSettingsRepository()
-    private lateinit var google: GoogleAuth
-    private lateinit var client: GmailClient
-    private val session = GmailSession()
+    private lateinit var h: AccountsHarness
+
+    private val handles = MailHandles()
     private val clock = FakeClock(Instant.parse("2026-11-02T18:00:00Z"), zone)
     private val ctx get() = ToolContext(clock, Settings(), dispatchers)
-    private val tools by lazy { gmailTools(session, client).associateBy { it.spec.name } }
+    private val tools by lazy { mailTools(h.accounts, handles).associateBy { it.spec.name } }
 
     private fun json(body: String, code: Int = 200) = MockResponse.Builder().code(code).body(body).addHeader("Content-Type", "application/json").build()
     private fun b64(s: String) = Base64.getUrlEncoder().withoutPadding().encodeToString(s.toByteArray())
@@ -88,19 +89,9 @@ class GmailTest {
             }
         }
         server.start()
-        val signIn = object : GoogleSignIn {
-            override suspend fun signIn(activity: Activity, webClientId: String) = GoogleSignIn.Result.SignedIn("owner@gmail.com", null)
-            override suspend fun signOut() {}
-        }
-        val authorizer = object : GoogleAuthorizer {
-            override suspend fun authorize(scopes: Set<GoogleScope>) = GoogleAuthorizer.Result.Granted("token")
-            override fun fromConsent(data: Intent?) = GoogleAuthorizer.Result.Granted("token")
-            override suspend fun clearToken(token: String) {}
-            override suspend fun revoke(email: String) {}
-        }
-        google = GoogleAuth(signIn, authorizer, settings, "web", CoroutineScope(SupervisorJob() + Dispatchers.Unconfined))
-        runBlocking { google.signIn(Activity()) }
-        client = GmailClient(lazy { OkHttpClient() }, google, dispatchers, { zone }, server.url("/gmail/v1/users/me").toString())
+        h = AccountsHarness(baseUrl = server.url("/").toString())
+        h.play.default = GoogleAuthorizer.Result.Granted("token")
+        runBlocking { h.accounts.addGoogle(Activity()) }
         routes["GET /gmail/v1/users/me/messages"] = { json("""{"messages":[{"id":"a1","threadId":"t1"},{"id":"b2","threadId":"t2"}],"resultSizeEstimate":2}""") }
         routes["GET /gmail/v1/users/me/messages/a1"] = { json(metadata("a1", "t1", "Lincoln Elementary <office@lincoln.example>", "Field trip Friday", "<abc@lincoln.example>", "Permission slips are due &amp; buses leave at 8.", unread = true)) }
         routes["GET /gmail/v1/users/me/messages/b2"] = { json(metadata("b2", "t2", "Sam Lee <sam@example.com>", "Friday?", "<sam-1@example.com>", "Are we still on for Friday?", unread = false)) }
@@ -145,7 +136,7 @@ class GmailTest {
     }
 
     @Test fun `the raw message has the headers, a UTF-8 subject in RFC 2047, and the body`() {
-        val raw = MailText.raw(OutgoingEmail("sam@example.com", "Café on Friday", "Thanks!\nSee you there.", inReplyTo = "<sam-1@example.com>"))
+        val raw = MailText.raw(OutgoingMail("sam@example.com", "Café on Friday", "Thanks!\nSee you there.", inReplyTo = "<sam-1@example.com>"))
         val text = String(Base64.getUrlDecoder().decode(raw))
         val (head, body) = text.split("\r\n\r\n", limit = 2)
         assertTrue(head.contains("To: sam@example.com\r\n"))
@@ -154,7 +145,7 @@ class GmailTest {
         assertTrue(head.contains("Content-Type: text/plain; charset=UTF-8"))
         assertEquals("Thanks!\r\nSee you there.", String(Base64.getMimeDecoder().decode(body)))
         assertEquals("plain ASCII stays", "Lunch", MailText.encodeHeader("Lunch"))
-        assertFalse("no header injection", String(Base64.getUrlDecoder().decode(MailText.raw(OutgoingEmail("a@b.c\r\nBcc: x@y.z", "s", "b")))).contains("\r\nBcc:"))
+        assertFalse("no header injection", String(Base64.getUrlDecoder().decode(MailText.raw(OutgoingMail("a@b.c\r\nBcc: x@y.z", "s", "b")))).contains("\r\nBcc:"))
     }
 
     // --- Tools -----------------------------------------------------------------------------------------------
@@ -214,8 +205,8 @@ class GmailTest {
         val a = args(draft, "reply_to_message_id" to "m2", "body" to "Thanks, see you Friday!")
         val card = draft.confirmation(a)!!
         assertEquals("Save this draft?", card.title)
-        assertEquals(listOf("To" to "sam@example.com", "Subject" to "Re: Friday?", "Message" to "Thanks, see you Friday!"), card.details)
-        assertEquals("Draft saved in Gmail — open Gmail to send it.", draft.execute(a, ctx).text)
+        assertEquals(listOf("From" to "owner@gmail.com", "To" to "sam@example.com", "Subject" to "Re: Friday?", "Message" to "Thanks, see you Friday!"), card.details)
+        assertEquals("Draft saved in owner@gmail.com — open that mailbox to send it.", draft.execute(a, ctx).text)
         val body = Json.parseToJsonElement(requests.last().body!!.utf8()).jsonObject["message"]!!.jsonObject
         assertEquals("t2", body["threadId"]!!.jsonPrimitive.content)
         val raw = String(Base64.getUrlDecoder().decode(body["raw"]!!.jsonPrimitive.content))
@@ -230,7 +221,7 @@ class GmailTest {
         assertEquals("Send this email?", card.title)
         assertEquals("Send", card.confirmLabel)
         assertEquals("Message" to "I'll be there at 7.", card.details.last())
-        assertEquals("Sent to sam@example.com.", send.execute(a, ctx).text)
+        assertEquals("Sent to sam@example.com from owner@gmail.com.", send.execute(a, ctx).text)
         assertEquals("/gmail/v1/users/me/messages/send", requests.last().url.encodedPath)
     }
 
@@ -263,7 +254,7 @@ class GmailTest {
             override suspend fun show(baseUrl: String, model: String) = Outcome.Success(OllamaShow(listOf("tools")))
             override suspend fun version(baseUrl: String) = Outcome.Success("x")
         }
-        val runner = ToolTurnRunner(ollama, ToolRegistry(gmailTools(session, client), listOf(google)), confirmations, settings, clock, dispatchers)
+        val runner = ToolTurnRunner(ollama, ToolRegistry(mailTools(h.accounts, handles), listOf(h.accounts)), confirmations, settings, clock, dispatchers)
         var asked = false
         runner.run("http://ollama", ModelInfo("gemma4:12b", setOf("tools")), listOf(OllamaMessage("user", "send it"))).collect { e ->
             if (e is TurnEvent.NeedsConfirmation) { asked = true; confirmations.resolve(e.request.id, false) }
@@ -272,14 +263,14 @@ class GmailTest {
         assertTrue("nothing reached Gmail", requests.isEmpty())
     }
 
-    @Test fun `every tool that can send or save asks first`() {
+    @Test fun `every tool that can send or save asks first`() = runBlocking {
         val write = tools.values.filter { it.spec.name in setOf("draft_email", "send_email") }
         assertEquals(2, write.size)
         write.forEach { t -> assertTrue(t.spec.name, t.confirmation(args(t, "to" to "a@b.c", "subject" to "s", "body" to "b")) != null) }
-        // The only call to Gmail's send endpoint is SendEmailTool's, behind its confirmation (D5).
-        val sources = File("src/main/java/com/edith/app/google").walkTopDown().filter { it.extension == "kt" }
-        val sendCallers = sources.filter { it.readText().contains("client.send(") }.map { it.name }.toList()
-        assertEquals(listOf("GmailTools.kt"), sendCallers)
+        // The only way to Gmail's send endpoint is SendEmailTool's, behind its confirmation (D5).
+        val sources = File("src/main/java/com/edith/app").walkTopDown().filter { it.extension == "kt" }.toList()
+        assertEquals("Gmail's send: only GmailSource", listOf("GoogleSources.kt"), sources.filter { it.readText().contains("client.send(") }.map { it.name })
+        assertEquals("a source's send: only the tools", listOf("MailTools.kt"), sources.filter { it.readText().contains("source.send(") }.map { it.name })
     }
 
     @Test fun `an unknown message id sends nothing and says to search first`() = runBlocking {
@@ -288,9 +279,9 @@ class GmailTest {
         assertTrue(requests.isEmpty())
     }
 
-    @Test fun `a reply to an unknown message is an argument error, before any card`() {
+    @Test fun `a reply to an unknown message is an argument error, before any card`() = runBlocking {
         val draft = tools.getValue("draft_email")
-        val e = runCatching { draft.confirmation(args(draft, "reply_to_message_id" to "m9", "body" to "hi")) }.exceptionOrNull()
+        val e = try { draft.confirmation(args(draft, "reply_to_message_id" to "m9", "body" to "hi")); null } catch (x: com.edith.app.tools.framework.ArgumentError) { x }
         assertTrue(e is com.edith.app.tools.framework.ArgumentError)
     }
 }

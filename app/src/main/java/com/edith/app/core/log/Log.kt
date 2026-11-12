@@ -14,6 +14,7 @@ enum class LogTag(val value: String) {
     Voice("Edith/Voice"),
     Attachments("Edith/Attachments"),
     Google("Edith/Google"),
+    Accounts("Edith/Accounts"),
 }
 
 /** In-memory ring buffer for the last [CAPACITY] log lines, used by [com.edith.app.core.CrashReporter]. Thread-safe. */

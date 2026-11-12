@@ -8,7 +8,7 @@ history (tag `edith-v1`) — don't reuse its code.
 ## Read first
 **[`docs/design/README.md`](docs/design/README.md)** — the complete design, split into chunks (C01–C21) with
 dependencies and status. Read the shared context it lists, then take one chunk whose dependencies are merged.
-C01–C19 and C17b are done (phases 1–5, including Google Calendar and Gmail, and Google sign-in through the browser for Andarium on the owner's iPhone; hands-free still needs a real-mic check). Next is C22–C24: several accounts at once (Google, Microsoft, iCloud; D17); the table says what's next.
+C01–C19, C17b and C22 are done (phases 1–5, including Google Calendar and Gmail, Google sign-in through the browser for Andarium on the owner's iPhone, and several Google accounts at once in `accounts/` (D17); hands-free still needs a real-mic check). Next is C23 (Microsoft) and C24 (iCloud); the table says what's next.
 
 ## Build, test, run (Git Bash; from PowerShell: `& "C:\Program Files\Git\bin\bash.exe" scripts/check.sh`)
 ```bash

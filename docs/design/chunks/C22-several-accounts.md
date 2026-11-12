@@ -170,16 +170,19 @@ idempotent and safe if the app is killed half-way: write the new keys first, del
   stay.
 
 ## Acceptance criteria
-- [ ] Install over v2.0.0-dev.2 (release emulator): the existing Google account is still Connected, with no sign-in.
-- [ ] Add a second Google account (the owner's choice, added as a test user first) → both listed, both Connected.
+- [x] Install over v2.0.0-dev.2 (release emulator): the existing Google account is still Connected, with no sign-in.
+- [x] Add a second Google account (the owner's choice, added as a test user first) → both listed, both Connected.
 - [ ] "What's on my calendar this week?" lists both accounts' events, labelled; matches Google Calendar for each.
-- [ ] "Any unread email today?" covers both, labelled.
-- [ ] "Add a test event tomorrow at 3pm" → Edith asks which account → "work" → the card shows the account → it
+      (Both listed and labelled; the owner hasn't compared them with Google Calendar yet.)
+- [x] "Any unread email today?" covers both, labelled.
+- [x] "Add a test event tomorrow at 3pm" → Edith asks which account → "work" → the card shows the account → it
       appears in that account only. "Delete it" → no question, deleted from that account. (Clean up.)
-- [ ] "Draft a reply to <an email in account 2>" → the card's From is account 2 → the draft is in account 2.
-- [ ] Disconnect account 2 → account 1 still works; account 2 is gone from its Google permissions page.
+- [x] "Draft a reply to <an email in account 2>" → the card's From is account 2 → the draft is in account 2.
+- [x] Disconnect account 2 → account 1 still works; account 2 is gone from its Google permissions page.
 - [ ] After a restart both are still Connected. `scripts/check.sh --device` passes; release APK tested on
-      `Edith_Release_Test`, then in Andarium on the owner's iPhone.
+      `Edith_Release_Test`, then in Andarium on the owner's iPhone. (`--device` passes and the release APK was tested.
+      A restart was checked with one account on `Pixel_9_API_37` and
+      on the release emulator, not with two at once; the iPhone is still to do.)
 
 ## Implementation notes (traps)
 1. **Migration is the riskiest part.** A bug signs the owner out of Google or loses the refresh token. Test the
@@ -203,3 +206,109 @@ idempotent and safe if the app is killed half-way: write the new keys first, del
 - Choosing which calendars to read per account inside Edith. Google still uses the calendars checked in Google
   Calendar (D15).
 - Unified "reply from a different account than it was sent to".
+
+## As built (2026-11-12)
+
+Where the code differs from the specification above, the code is right.
+
+**Files**
+- `accounts/Account.kt`: `Provider`, `Account` (`display` = "work (sam@contoso.com)", or the address while the label
+  is the address), `AccountState`, `Capabilities`, `AccountSecrets` (`account/<id>/refresh_token`, `…/password`).
+- `accounts/AccountStore.kt`: `DataStoreAccountStore` (key `accounts`, JSON, in the `settings` file) and
+  `AccountMigration` (§7).
+- `accounts/Accounts.kt`: the registry and the `Integration` (id `accounts`): the live list, `addGoogle`, `grant`,
+  `rename`, `disconnect`, `byName` (`Accounts.match`), the prompt line. `AccountDirectory` is what the tools see;
+  `AccountConnection` is one live account.
+- `accounts/sources/`: `Sources.kt` (`CalendarSource`, `MailSource` and their models; `EventDraft` is a typealias of
+  `EventChange`), `Reads.kt` (`Reads.readAll`: one coroutine per account with a 10 s timeout; `CalendarMerge`; the
+  failure lines).
+- `accounts/tools/`: `CalendarTools.kt`, `MailTools.kt` (moved from `google/`), `WhichAccount.kt`.
+- `accounts/ui/CalendarScreen.kt` (moved from `google/calendar/ui/`).
+- `google/GoogleAccountAuth.kt` (was `GoogleAuth.kt`): one account's state, Grant access, the 401 retry.
+  `google/GoogleAccounts.kt` (was `ChoosingGoogle.kt`): Google as a provider: the Play-or-browser rule per account,
+  sign-in for a new account, each account's `GoogleConnection`. `google/GoogleSources.kt`: `GoogleCalendarSource`
+  (calendars cached 5 minutes) and `GmailSource`. `BrowserGoogle` keeps the one app-wide sign-in flow
+  (`pending_sign_in`, with `provider` and `accountId`) and a separate authorizer, cache and refresh lock per account.
+- `ui/settings/AccountsSettings.kt` (was `GoogleSettings.kt`).
+
+**Decisions made while building**
+- **Play services names the account.** play-services-auth 22.0.0 has `AuthorizationRequest.Builder.setAccount(Account)`
+  (checked in the AAR with `javap`), so every Google account that's signed in to Android can use Play services; any
+  other account uses the browser. Verified live: the first account on `Pixel_9_API_37` through Play services, the
+  second through the browser, both Connected at once.
+- **`Tool.confirmation` suspends** (a change to C08's framework). The card for a new event names the account *and*
+  its calendar ("work (…) — Work"), which can need the calendar list, and the "which account?" rule can need every
+  account's calendar names (rule 2). When Edith must ask, `confirmation` returns null and `execute` returns the
+  instruction, so there's no card and no request.
+- **States**: `AccountState.NeedsSignIn` also says `viaBrowser`, so Settings says **Sign in again** (browser) or
+  **Grant access** (Play services' consent screen). An `Error` account shows **Try again**.
+- **Labels can't be another account's address** either, so `byName` stays unambiguous. A new account's label is its
+  address (made unique with " (2)" in the odd case another account already uses it as a label).
+- **Add account** is a bottom sheet with **Google** and **Google, using a browser instead** (C17b's button). A sign-in
+  that fails says why under the list (`Accounts.message`).
+- **Removed from `Settings`**: `googleAccountEmail` and `googleSignInMode`; the migration deletes their keys.
+  `DataStoreSettingsRepository.store` is shared with `DataStoreAccountStore` (same file).
+- **Read lines**: calendar lines end `[calendar · label] {event_id: e3}` (the handle stays last, as in C18). The
+  calendar name shows when there's more than one account, or when one account's events come from more than one
+  calendar. Email lines end `{message_id: m1} [label]`. "More emails match than are shown here; don't say this is all
+  of them." comes from Gmail's `nextPageToken`, which closes C19's undercount.
+- **`search_email`'s `text`** also takes the aliases `query`/`q`; for Gmail it goes through `GmailQuery.localDates`, so a
+  model that still writes `is:unread after:today` gets the same exact local day as before. "Today" comes from the
+  app's `Clock`.
+- **Logging**: account ids only. Release builds rename class names, so states are logged as words
+  (`GoogleAccountAuth.stateName`), not `::class.simpleName` (seen as `t2` in the first release test).
+- **Not changed**: Edith sometimes quotes the handles ("(m1)") to the owner. That was already so in C19.
+
+**Verified**
+- `scripts/check.sh`: OK (`build-logs/2026-11-12_15-25-31_check.log`, after the last code change), 280 unit tests. Lint: no new warnings (the 2
+  `ExifInterface` ones are C15's).
+  - New: `AccountsTest` (store round trip; settings writes leave the list alone; an unreadable list; `byName`;
+    labels; ids; migration from C17 Play, C17 before the mode existed, C17b browser with its token, killed after the
+    list, killed after the token, run twice, nothing to carry over) and `MultiAccountToolsTest` (merged reads; labels
+    only with two; the invite once; a failing and a signed-out account named; a slow account timing out alone;
+    `find_free_time` across two; update/delete to the event's own account; no card for an account that needs signing
+    in; through the real tool loop against MockWebServer with two Google accounts: must ask → no card and **no
+    request**, named, no such account, a calendar only one account has, one connected → no question, declining sends
+    nothing, a new email must ask, mail from both newest first with "more match", a reply from the receiving account;
+    Gmail's query from each field; search dates).
+  - Moved to the per-account API with their cases kept: `GoogleAuthTest` (plus a second account, no duplicate,
+    disconnecting one, rename, the prompt line with a Connected and a needs-permission account), `ChoosingGoogleTest`
+    (plus the account chooser, the same account again replacing its token), `BrowserGoogleTest` (plus per-account
+    tokens, caches and revoke), `CalendarTest`, `GmailTest`, `BrowserOAuthTest`, `SettingsRepositoryTest`.
+  - JVM tests on Windows can't replace a DataStore file twice, so tests that write more than once use
+    `MemoryPreferences` (`testing/AccountFakes.kt`).
+- `scripts/check.sh --device`: OK (`build-logs/2026-11-12_15-35-02_check.log`), 112 device tests, including the rewritten
+  `AccountsSettingsTest` (the list, Add account sheet with Google and the browser, rename with a taken name, Sign in
+  again, the disconnect confirm; Google not set up; the browser dialog) and `CalendarScreenTest` (two accounts
+  labelled, an invite in both, a banner for an account that can't be read). The owner's app data was kept.
+- **Install over v2.0.0-dev.2 on `Edith_Release_Test`** (release APK from `scripts/release.sh --allow-dirty`,
+  `build-logs/2026-11-12_14-24-09_release.log`, not published; the published dev.2 files in `dist/` were set aside and
+  put back): the owner signed in to dev.2 through the browser ("Connected as …"), then the C22 build was installed
+  with `adb install -r`. Log: "carried the Google account over as cfc3ac", "moved the browser sign-in to cfc3ac".
+  Settings → Accounts: the address, **Connected**, no sign-in. Under R8: the Calendar tab showed a real event; "Any
+  unread email today?" → `search_email` → five emails; after a force-stop, Connected again quietly. Crash log empty.
+- **`Pixel_9_API_37`** (debug build, `build-logs/2026-11-12_14-50-13_run.log`; the debug app had no Google account
+  saved, so its migration had nothing to do):
+  - Add account → Google (Play services) → Connected. Add account → Google, using a browser instead → Google's
+    "Access blocked" until the owner added the second account as a test user (now in `docs/google-setup.md` §7),
+    then Connected. Renamed in the app to "personal" and "work".
+  - "What is on my calendar this week?" → `list_calendar_events` across both; the Calendar tab labels each event
+    (personal / work).
+  - "Any unread email today?" → `search_email` with `after: today`, `unread_only: true` → both accounts.
+  - "Add a test event called Edith C22 test tomorrow at 3pm" → the tool answered "Ask the owner which account to use:
+    personal (…) or work (…)"; Edith asked; no card → "work" → card "Account: work (…) — <its default calendar>" →
+    the owner tapped Add → in work only (the owner checked). "Delete the Edith C22 test event" → no question, the
+    card, Delete → "Deleted … from work".
+  - "What is the latest email in my work account?" → "Draft a reply to that email saying thanks" → card **From: work
+    (…)** → Save draft → in work's Gmail Drafts only (the owner checked and deleted it).
+  - Disconnect work → its token deleted from the phone, no revoke error; the owner saw Edith gone from work's Google
+    permissions page. After a restart, personal was Connected again quietly; in a new chat "What is on my calendar
+    tomorrow?" → `list_calendar_events` → personal only.
+  - Seen: in the same chat, right after the disconnect, Edith answered the calendar question from earlier messages
+    without calling the tool (L26), quoting a work event. A new chat called the tool.
+  - No crash from Edith (one emulator Bluetooth crash, `com.google.android.bluetooth`, as in L19).
+
+**Not verified yet**
+- The owner comparing "this week" with Google Calendar for each account.
+- A restart with two accounts connected at once; a real 7-day expiry of one account while another works.
+- The release APK in Andarium on the owner's iPhone (needs the next published build).

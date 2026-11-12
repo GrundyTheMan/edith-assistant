@@ -3,11 +3,19 @@ package com.edith.app.google.calendar
 import android.app.Activity
 import android.content.Intent
 import com.edith.app.core.error.Outcome
-import com.edith.app.google.GoogleAuth
+import com.edith.app.accounts.AccountState
+import com.edith.app.accounts.sources.CalendarEvent
+import com.edith.app.accounts.tools.CalendarFormat
+import com.edith.app.accounts.tools.CalendarHandles
+import com.edith.app.accounts.tools.CreateCalendarEventTool
+import com.edith.app.accounts.tools.DeleteCalendarEventTool
+import com.edith.app.accounts.tools.FindFreeTimeTool
+import com.edith.app.accounts.tools.ListCalendarEventsTool
+import com.edith.app.accounts.tools.UpdateCalendarEventTool
+import com.edith.app.accounts.tools.localTime
+import com.edith.app.google.GoogleConnection
+import com.edith.app.testing.AccountsHarness
 import com.edith.app.google.GoogleAuthorizer
-import com.edith.app.google.GoogleScope
-import com.edith.app.google.GoogleSignIn
-import com.edith.app.google.GoogleState
 import com.edith.app.ollama.ChatCall
 import com.edith.app.ollama.ChatEvent
 import com.edith.app.ollama.ModelInfo
@@ -60,7 +68,7 @@ import java.time.ZonedDateTime
 import java.util.Collections
 
 /**
- * C18 against a stand-in for Google Calendar (MockWebServer). The responses follow the shapes in Google's Calendar API
+ * C18 (per account since C22) against a stand-in for Google Calendar (MockWebServer). The responses follow the shapes in Google's Calendar API
  * reference (calendarList.list, events.list, events.insert/patch/delete); they're made up, not the owner's data.
  */
 class CalendarTest {
@@ -71,11 +79,11 @@ class CalendarTest {
     private val dispatchers = AppDispatchers(Dispatchers.Unconfined, Dispatchers.Unconfined, Dispatchers.Unconfined)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
     private val settings = FakeSettingsRepository()
-    private val tokens = ArrayDeque<String>()
-    private val cleared = mutableListOf<String>()
-    private lateinit var google: GoogleAuth
+    private lateinit var h: AccountsHarness
+    private val dir get() = h.accounts
+
     private lateinit var client: CalendarClient
-    private lateinit var session: CalendarSession
+    private val handles = CalendarHandles()
     private val clock = FakeClock(Instant.parse("2026-11-02T14:00:00Z"), zone)
     private val ctx get() = ToolContext(clock, Settings(), dispatchers)
 
@@ -90,20 +98,11 @@ class CalendarTest {
             }
         }
         server.start()
-        val signIn = object : GoogleSignIn {
-            override suspend fun signIn(activity: Activity, webClientId: String) = GoogleSignIn.Result.SignedIn("owner@gmail.com", null)
-            override suspend fun signOut() {}
-        }
-        val authorizer = object : GoogleAuthorizer {
-            override suspend fun authorize(scopes: Set<GoogleScope>) = GoogleAuthorizer.Result.Granted(tokens.removeFirstOrNull() ?: "token")
-            override fun fromConsent(data: Intent?) = GoogleAuthorizer.Result.Granted("token")
-            override suspend fun clearToken(token: String) { cleared += token }
-            override suspend fun revoke(email: String) {}
-        }
-        google = GoogleAuth(signIn, authorizer, settings, "web", scope)
-        runBlocking { google.signIn(Activity()) }
-        client = CalendarClient(lazy { OkHttpClient() }, google, dispatchers, { zone }, server.url("/calendar/v3").toString())
-        session = CalendarSession(client)
+        h = AccountsHarness(baseUrl = server.url("/").toString())
+        h.play.default = GoogleAuthorizer.Result.Granted("token")
+        runBlocking { h.accounts.addGoogle(Activity()) }
+        val id = h.accounts.accounts.value.single().first.id
+        client = CalendarClient(lazy { OkHttpClient() }, (h.accounts.connection(id) as GoogleConnection).auth, dispatchers, { zone }, server.url("/calendar/v3").toString(), id)
         routes["GET /calendar/v3/users/me/calendarList"] = { json(CALENDAR_LIST) }
         routes["GET /calendar/v3/calendars/primary%40gmail.com/events"] = { json(PRIMARY_EVENTS) }
         routes["GET /calendar/v3/calendars/family"] = { json(FAMILY_EVENTS) }
@@ -120,7 +119,8 @@ class CalendarTest {
         val cals = (client.calendars() as Outcome.Success).value
         assertEquals(listOf("primary@gmail.com", "family"), cals.map { it.id })
         assertEquals(listOf("Blake", "Sample family"), cals.map { it.name })   // summaryOverride wins
-        assertTrue(cals.first().primary)
+        assertTrue(cals.first().isDefault)
+        assertTrue("the owner can write to both", cals.all { it.canWrite })
         assertEquals("reader", requests.last().url.queryParameter("minAccessRole"))
     }
 
@@ -150,35 +150,35 @@ class CalendarTest {
     @Test fun `a refused token is cleared and the call tried once more`() = runBlocking {
         var first = true
         routes["GET /calendar/v3/users/me/calendarList"] = { if (first) { first = false; json("{}", 401) } else json(CALENDAR_LIST) }
-        tokens += listOf("stale", "fresh")
+        h.play.answers += listOf(GoogleAuthorizer.Result.Granted("stale"), GoogleAuthorizer.Result.Granted("fresh"))
         assertTrue(client.calendars() is Outcome.Success)
-        assertEquals(listOf("stale"), cleared)
+        assertEquals(listOf("stale"), h.play.cleared)
         assertEquals("Bearer fresh", requests.last().headers["Authorization"])
     }
 
     @Test fun `a 403 for a missing scope asks for permission`() = runBlocking {
         routes["GET /calendar/v3/users/me/calendarList"] = { json("""{"error":{"code":403,"errors":[{"reason":"insufficientPermissions"}]}}""", 403) }
-        val r = ListCalendarEventsTool(session, client).let { it.execute(args(it, "start" to "2026-11-02", "end" to "2026-11-03"), ctx) }
-        assertTrue(r.text, r is ToolResult.Error && r.text.contains("Grant access"))
-        assertEquals(GoogleState.NeedsConsent("owner@gmail.com"), google.state.value)
+        val r = ListCalendarEventsTool(dir, handles).let { it.execute(args(it, "start" to "2026-11-02", "end" to "2026-11-03"), ctx) }
+        assertTrue(r.text, r is ToolResult.Error && r.text.contains("needs signing in again — Settings → Accounts"))
+        assertTrue(h.accounts.accounts.value.single().second is AccountState.NeedsSignIn)
     }
 
     // --- Tools -----------------------------------------------------------------------------------------------
 
     @Test fun `list gives each event a short id and says which calendar`() = runBlocking {
-        val tool = ListCalendarEventsTool(session, client)
+        val tool = ListCalendarEventsTool(dir, handles)
         val r = tool.execute(args(tool, "start" to "2026-11-02T00:00", "end" to "2026-11-08T23:59"), ctx)
         val lines = r.text.lines()
         assertEquals("Mon Nov 2, 9:00–9:15 AM — Standup [Blake] {event_id: e1}", lines[0])
         assertEquals("Mon Nov 2, 1:00–2:00 PM — Dentist (Main St Dental) [Blake] {event_id: e2}", lines[1])
         assertEquals("Wed Nov 4, all day — Mom's birthday [Blake] {event_id: e3}", lines[2])
         assertEquals("Thu Nov 5, 5:30–7:00 PM — Soccer practice [Sample family] {event_id: e4}", lines[3])
-        assertEquals("Dentist", session.event("e2")!!.title)
+        assertEquals("Dentist", handles.event("e2")!!.title)
     }
 
     @Test fun `a day written in UTC by the model is read as the owner's local day`() = runBlocking {
         // Live, gemma4 sent 2026-11-03T00:00:00Z..23:59:59Z for "tomorrow" in Detroit (7 PM the day before in UTC terms).
-        val tool = ListCalendarEventsTool(session, client)
+        val tool = ListCalendarEventsTool(dir, handles)
         tool.execute(args(tool, "start" to "2026-11-03T00:00:00Z", "end" to "2026-11-03T23:59:59Z"), ctx)
         val q = requests.first { it.url.encodedPath.contains("primary") }.url
         assertEquals("2026-11-03T00:00:00-05:00", q.queryParameter("timeMin"))
@@ -196,7 +196,7 @@ class CalendarTest {
     @Test fun `no events says so`() = runBlocking {
         routes["GET /calendar/v3/calendars/primary%40gmail.com/events"] = { json("""{"items":[]}""") }
         routes["GET /calendar/v3/calendars/family"] = { json("""{"items":[]}""") }
-        val tool = ListCalendarEventsTool(session, client)
+        val tool = ListCalendarEventsTool(dir, handles)
         assertEquals("No events.", tool.execute(args(tool, "start" to "2026-11-09", "end" to "2026-11-10"), ctx).text)
     }
 
@@ -218,13 +218,13 @@ class CalendarTest {
         routes["POST /calendar/v3/calendars/primary%40gmail.com/events"] = {
             json("""{"id":"new1","summary":"Lunch with Sam","location":"Café X","start":{"dateTime":"2026-11-06T12:00:00-05:00"},"end":{"dateTime":"2026-11-06T13:00:00-05:00"}}""")
         }
-        val tool = CreateCalendarEventTool(session, client) { zone }
+        val tool = CreateCalendarEventTool(dir, handles) { zone }
         val a = args(tool, "title" to "Lunch with Sam", "start" to "2026-11-06T12:00", "location" to "Café X")
         val card = tool.confirmation(a)
-        assertEquals("Add to your calendar?", card.title)
-        assertEquals(listOf("What" to "Lunch with Sam", "When" to "Fri Nov 6, 12:00–1:00 PM", "Where" to "Café X"), card.details)
+        assertEquals("Add to your calendar?", card!!.title)
+        assertEquals(listOf("What" to "Lunch with Sam", "When" to "Fri Nov 6, 12:00–1:00 PM", "Where" to "Café X", "Account" to "owner@gmail.com — Blake"), card!!.details)
 
-        assertEquals("Added \"Lunch with Sam\" on Fri Nov 6, 12:00–1:00 PM.", tool.execute(a, ctx).text)
+        assertEquals("Added \"Lunch with Sam\" on Fri Nov 6, 12:00–1:00 PM to owner@gmail.com.", tool.execute(a, ctx).text)
         val body = Json.parseToJsonElement(requests.last { it.method == "POST" }.body!!.utf8()).jsonObject
         assertEquals("Lunch with Sam", body["summary"]!!.jsonPrimitive.content)
         assertEquals("2026-11-06T12:00:00-05:00", body["start"]!!.jsonObject["dateTime"]!!.jsonPrimitive.content)
@@ -236,19 +236,19 @@ class CalendarTest {
         routes["POST /calendar/v3/calendars/primary%40gmail.com/events"] = {
             json("""{"id":"new2","summary":"Day off","start":{"date":"2026-11-09"},"end":{"date":"2026-11-10"}}""")
         }
-        val tool = CreateCalendarEventTool(session, client) { zone }
-        assertEquals("Added \"Day off\" on Mon Nov 9, all day.", tool.execute(args(tool, "title" to "Day off", "start" to "2026-11-09", "all_day" to "true"), ctx).text)
+        val tool = CreateCalendarEventTool(dir, handles) { zone }
+        assertEquals("Added \"Day off\" on Mon Nov 9, all day to owner@gmail.com.", tool.execute(args(tool, "title" to "Day off", "start" to "2026-11-09", "all_day" to "true"), ctx).text)
         val body = Json.parseToJsonElement(requests.last { it.method == "POST" }.body!!.utf8()).jsonObject
         assertEquals("2026-11-09", body["start"]!!.jsonObject["date"]!!.jsonPrimitive.content)
         assertEquals("2026-11-10", body["end"]!!.jsonObject["date"]!!.jsonPrimitive.content)
     }
 
     @Test fun `update shows before and after, keeps the length, and sends only the change`() = runBlocking {
-        ListCalendarEventsTool(session, client).let { it.execute(args(it, "start" to "2026-11-02", "end" to "2026-11-08"), ctx) }
+        ListCalendarEventsTool(dir, handles).let { it.execute(args(it, "start" to "2026-11-02", "end" to "2026-11-08"), ctx) }
         routes["PATCH /calendar/v3/calendars/primary%40gmail.com/events/dentist1"] = {
             json("""{"id":"dentist1","summary":"Dentist","location":"Main St Dental","start":{"dateTime":"2026-11-02T15:00:00-05:00"},"end":{"dateTime":"2026-11-02T16:00:00-05:00"}}""")
         }
-        val tool = UpdateCalendarEventTool(session, client) { zone }
+        val tool = UpdateCalendarEventTool(dir, handles) { zone }
         val a = args(tool, "event_id" to "e2", "start" to "2026-11-02T15:00")
         val card = tool.confirmation(a)!!
         assertEquals("Change this event?", card.title)
@@ -259,17 +259,17 @@ class CalendarTest {
     }
 
     @Test fun `delete shows the event and removes it`() = runBlocking {
-        ListCalendarEventsTool(session, client).let { it.execute(args(it, "start" to "2026-11-02", "end" to "2026-11-08"), ctx) }
+        ListCalendarEventsTool(dir, handles).let { it.execute(args(it, "start" to "2026-11-02", "end" to "2026-11-08"), ctx) }
         routes["DELETE /calendar/v3/calendars/primary%40gmail.com/events/standup1_20261102T140000Z"] = { MockResponse.Builder().code(204).build() }
-        val tool = DeleteCalendarEventTool(session, client)
+        val tool = DeleteCalendarEventTool(dir, handles)
         val a = args(tool, "event_id" to "e1")
-        assertEquals(listOf("Event" to "Standup", "When" to "Mon Nov 2, 9:00–9:15 AM"), tool.confirmation(a)!!.details)
-        assertEquals("Deleted \"Standup\" (Mon Nov 2, 9:00–9:15 AM).", tool.execute(a, ctx).text)
-        assertNull("forgotten", session.event("e1"))
+        assertEquals(listOf("Event" to "Standup", "When" to "Mon Nov 2, 9:00–9:15 AM", "Account" to "owner@gmail.com — Blake"), tool.confirmation(a)!!.details)
+        assertEquals("Deleted \"Standup\" (Mon Nov 2, 9:00–9:15 AM) from owner@gmail.com.", tool.execute(a, ctx).text)
+        assertNull("forgotten", handles.event("e1"))
     }
 
     @Test fun `an unknown event id sends nothing and says to list first`() = runBlocking {
-        val tool = DeleteCalendarEventTool(session, client)
+        val tool = DeleteCalendarEventTool(dir, handles)
         assertNull(tool.confirmation(args(tool, "event_id" to "e99")))
         val r = tool.execute(args(tool, "event_id" to "e99"), ctx)
         assertTrue(r is ToolResult.Error && r.text.contains("list_calendar_events"))
@@ -277,7 +277,7 @@ class CalendarTest {
     }
 
     @Test fun `declining the card means Google is never called`() = runBlocking {
-        val tool = CreateCalendarEventTool(session, client) { zone }
+        val tool = CreateCalendarEventTool(dir, handles) { zone }
         val confirmations = Confirmations()
         val ollama = object : OllamaClient {
             var round = 0
@@ -296,13 +296,13 @@ class CalendarTest {
             override suspend fun show(baseUrl: String, model: String) = Outcome.Success(OllamaShow(listOf("tools")))
             override suspend fun version(baseUrl: String) = Outcome.Success("x")
         }
-        val runner = ToolTurnRunner(ollama, ToolRegistry(listOf(tool), listOf(google)), confirmations, settings, clock, dispatchers)
+        val runner = ToolTurnRunner(ollama, ToolRegistry(listOf(tool), listOf(h.accounts)), confirmations, settings, clock, dispatchers)
         var asked = false
         runner.run("http://ollama", ModelInfo("gemma4:12b", setOf("tools")), listOf(OllamaMessage("user", "add it"))).collect { e ->
             if (e is TurnEvent.NeedsConfirmation) { asked = true; confirmations.resolve(e.request.id, false) }
         }
         assertTrue(asked)
-        assertTrue("no request reached Google", requests.isEmpty())
+        assertTrue("nothing was written (the card only read the calendar names)", requests.none { it.method != "GET" })
     }
 
     @Test fun `formats - same half of the day, crossing noon, all day, several days`() {

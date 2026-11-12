@@ -83,7 +83,7 @@ in Chrome, then back to Edith. That needs a fourth OAuth client, of type **Deskt
 4. Nothing else changes: same project, same consent screen, same scopes, same test user.
 
 What to expect:
-- **Settings → Google account → Use a browser instead** (on a phone with Play services), or **Sign in with Google**
+- **Settings → Accounts → Add account → Google, using a browser instead** (on a phone with Play services), or **Google**
   (without it), opens Google's page in the browser. Sign in, allow access, and the browser comes back to Edith. If
   it ends on a page that won't load, copy its address (it starts with `http://127.0.0.1`) and paste it into Edith.
 - While the project is in **Testing**, Google lets this sign-in last **7 days**. After that, Settings shows **Grant
@@ -94,3 +94,17 @@ What to expect:
   time (for Testing apps, roughly weekly); Edith shows **Grant access** when that happens.
 - You can see and remove Edith's access any time at <https://myaccount.google.com/permissions>.
 - The emulator needs to be signed in to a Google account (Settings → Google) for sign-in to work there.
+
+## 7. More than one Google account (C22)
+Edith can use any number of Google accounts at once (Settings → **Accounts** → **Add account** → **Google**).
+Nothing new is needed in the Console except this: while the project is in **Testing**, Google only lets in accounts
+that are on its test-user list. Each extra account must be added first, or Google shows "Access blocked: Edith has
+not completed the Google verification process" (Error 403: access_denied).
+
+1. Google Cloud Console → project **Edith** → **Google Auth Platform → Audience → Test users → Add users**.
+2. Enter the extra account's address → **Save**. (The limit is 100 test users.) It can take a minute to apply.
+3. In Edith: **Add account → Google**. An account that's signed in to Android can use Play services; any other
+   account uses **Google, using a browser instead**, where Google shows its account chooser (**Use another account**).
+
+No new client and no new scopes. Each account signed in through the browser has its own weekly sign-in while the
+project is in Testing; Settings → Accounts shows **Sign in again** on the one that needs it.

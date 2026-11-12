@@ -71,24 +71,20 @@ import com.edith.app.attachments.MediaAttachmentContext
 import com.edith.app.attachments.EdithFilesSection
 import com.edith.app.attachments.FileAttachmentStore
 import com.edith.app.attachments.Retention
-import com.edith.app.google.ChoosingGoogle
 import com.edith.app.google.CredentialManagerSignIn
 import com.edith.app.google.browser.BrowserGoogle
 import com.edith.app.google.browser.BrowserOAuth
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
-import com.edith.app.google.GoogleAuth
 import com.edith.app.google.PlayServicesAuthorizer
-import com.edith.app.google.calendar.CalendarClient
-import com.edith.app.google.calendar.CalendarSession
-import com.edith.app.google.calendar.CreateCalendarEventTool
-import com.edith.app.google.calendar.DeleteCalendarEventTool
-import com.edith.app.google.calendar.FindFreeTimeTool
-import com.edith.app.google.calendar.ListCalendarEventsTool
-import com.edith.app.google.calendar.UpdateCalendarEventTool
-import com.edith.app.google.gmail.GmailClient
-import com.edith.app.google.gmail.GmailSession
-import com.edith.app.google.gmail.gmailTools
+import com.edith.app.google.GoogleAccounts
+import com.edith.app.accounts.AccountMigration
+import com.edith.app.accounts.Accounts
+import com.edith.app.accounts.DataStoreAccountStore
+import com.edith.app.accounts.tools.CalendarHandles
+import com.edith.app.accounts.tools.MailHandles
+import com.edith.app.accounts.tools.calendarTools
+import com.edith.app.accounts.tools.mailTools
 import com.edith.app.voice.capture.AudioRecorder
 import com.edith.app.voice.capture.LiveSpeech
 import com.edith.app.voice.capture.OllamaTranscriber
@@ -126,14 +122,11 @@ class AppContainer(val app: Application) {
             tools = listOf(
                 CurrentTimeTool(), WeatherTool(openMeteo, deviceLocation),
                 SearchWebTool(webSearch), ReadWebPageTool(webSearch.pages(PageReader(okHttpLazy, dispatchers))),
-                // C18: Google Calendar (offered only while Google is connected)
-                ListCalendarEventsTool(calendarSession, calendarClient), FindFreeTimeTool(calendarSession, calendarClient),
-                CreateCalendarEventTool(calendarSession, calendarClient), UpdateCalendarEventTool(calendarSession, calendarClient),
-                DeleteCalendarEventTool(calendarSession, calendarClient),
-                // C19: Gmail (search, read, draft, and send after the owner confirms: D5)
-                *gmailTools(gmailSession, gmailClient).toTypedArray(),
+                // C18/C22: calendars across every account; C19/C22: email (send only after the owner confirms: D5)
+                *calendarTools(accounts, calendarHandles).toTypedArray(),
+                *mailTools(accounts, mailHandles).toTypedArray(),
             ),
-            integrations = listOf(googleAuth),   // C17: Google's tools (C18, C19) only while connected
+            integrations = listOf(accounts),   // C22: offered while at least one account is connected
         )
     }
 
@@ -261,42 +254,39 @@ class AppContainer(val app: Application) {
     val attachmentStore: FileAttachmentStore by lazy { FileAttachmentStore(app.filesDir, app.cacheDir) }
 
     /**
-     * The Google account (C17, D9): sign-in, and access to Calendar and Gmail. With Play services no tokens are stored
-     * by the app; without it (C17b, D16) the browser path keeps a refresh token, encrypted in [secretStore].
+     * Google as an account provider (C17, D9; any number of accounts since C22). With Play services no tokens are
+     * stored by the app; without it (C17b, D16) each account's browser sign-in keeps a refresh token, encrypted in
+     * [secretStore].
      */
-    val googleAuth: GoogleAuth by lazy {
+    val googleAccounts: GoogleAccounts by lazy {
         val browser = BrowserGoogle(
             oauth = BrowserOAuth(okHttpLazy, dispatchers, BuildConfig.GOOGLE_DESKTOP_CLIENT_ID, BuildConfig.GOOGLE_DESKTOP_CLIENT_SECRET),
             secrets = secretStore,
             clock = clock,
             dispatchers = dispatchers,
             backLink = "${BuildConfig.APPLICATION_ID}://signed-in",
-            knownEmail = { settingsRepository.current().googleAccountEmail },
             appVisible = AppVisibility.visible,
         )
-        val google = ChoosingGoogle(
+        GoogleAccounts(
             play = CredentialManagerSignIn(app),
-            playAuthorizer = PlayServicesAuthorizer(app),
+            playAuthorizer = { email -> PlayServicesAuthorizer(app, email) },
             browser = browser,
-            settings = settingsRepository,
-            playConfigured = BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank(),
+            webClientId = BuildConfig.GOOGLE_WEB_CLIENT_ID,
             playServicesAvailable = {
                 GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(app) == ConnectionResult.SUCCESS
             },
-        )
-        GoogleAuth(
-            google, google, settingsRepository, BuildConfig.GOOGLE_WEB_CLIENT_ID, appScope,
-            desktopClientId = BuildConfig.GOOGLE_DESKTOP_CLIENT_ID, browser = google,
+            http = okHttpLazy,
+            clock = clock,
+            dispatchers = dispatchers,
         )
     }
 
-    /** Google Calendar (C18): REST through [googleAuth]; the session remembers the calendars and listed events. */
-    val calendarClient: CalendarClient by lazy { CalendarClient(okHttpLazy, googleAuth, dispatchers) }
-    val calendarSession: CalendarSession by lazy { CalendarSession(calendarClient) }
+    /** Every email-and-calendar account (C22, D17), saved in the `settings` file under `accounts`. */
+    val accounts: Accounts by lazy { Accounts(DataStoreAccountStore(settingsStore.store), googleAccounts, appScope) }
 
-    /** Gmail (C19): REST through [googleAuth]; the session keeps the emails Edith has found. */
-    val gmailClient: GmailClient by lazy { GmailClient(okHttpLazy, googleAuth, dispatchers) }
-    val gmailSession: GmailSession by lazy { GmailSession() }
+    /** Short handles for listed events (`e1`) and found emails (`m1`): one sequence each for the app run (C22 trap 4). */
+    val calendarHandles: CalendarHandles by lazy { CalendarHandles() }
+    val mailHandles: MailHandles by lazy { MailHandles() }
 
     /** Keeps the newest N attachments each way (C16, O1). */
     val retention: Retention by lazy { Retention(database.attachmentDao(), attachmentStore, settingsRepository, clock, dispatchers) }
@@ -315,8 +305,7 @@ class AppContainer(val app: Application) {
                 attachmentIntake.clearLeftovers()   // C15: unsent attachments from the last run
                 File(app.cacheDir, "attachments").deleteRecursively()   // C15's one-run store, before C16
                 retention.onStart()   // C16: session files, orphans, then the setting
-                googleAuth.resumeBrowserSignIn()   // C17b: a browser sign-in an earlier run left waiting
-                googleAuth.start()    // C17: is a saved account still allowed in? (quietly)
+                startAccounts()
                 database.openHelper.writableDatabase
                 Log.d(LogTag.App, "Database ready")
                 currentConversation.resolve()
@@ -325,6 +314,26 @@ class AppContainer(val app: Application) {
             }
         }
         replyKeepAlive.watch(appScope)
+    }
+
+    /**
+     * C22: carries C17's one Google account over (once), then connects every account and checks each quietly (C17),
+     * and picks up a browser sign-in an earlier run left waiting (C17b). A failure here never stops the database.
+     */
+    private suspend fun startAccounts() {
+        try {
+            AccountMigration(settingsStore.store, secretStore).run()
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.e(LogTag.Accounts, "Couldn't carry the Google account over", e)
+        }
+        try {
+            accounts.load()
+            accounts.resumePending()
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.e(LogTag.Accounts, "Couldn't load the accounts", e)
+        }
     }
 
     /** Keeps a reply going when the owner leaves the app (D13): starts [ReplyService] as each turn begins. */
@@ -352,7 +361,8 @@ class AppContainer(val app: Application) {
     val modelCatalog: ModelCatalog by lazy { ModelCatalog(ollama) }
 
     /** One DataStore per file per process, so the repository is created exactly once here (C04). */
-    val settingsRepository: SettingsRepository by lazy { DataStoreSettingsRepository.create(app) }
+    private val settingsStore: DataStoreSettingsRepository by lazy { DataStoreSettingsRepository.create(app) }
+    val settingsRepository: SettingsRepository get() = settingsStore
     val modelSelection: ModelSelection by lazy { ModelSelection(settingsRepository, modelCatalog) }
     val localNetworkAccess: LocalNetworkAccess by lazy { AndroidLocalNetworkAccess(app) }
 

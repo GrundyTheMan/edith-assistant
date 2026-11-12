@@ -68,7 +68,9 @@ class BrowserOAuthTest {
         assertEquals("owner@gmail.com", url.queryParameter("login_hint"))
         val scopes = url.queryParameter("scope")!!.split(' ').toSet()
         assertEquals(setOf("openid", "email") + GoogleScope.entries.map { it.uri }, scopes)
-        assertNull(oauth().authUrl("http://127.0.0.1:1", "c", "s", GoogleScope.entries.toSet()).toHttpUrl().queryParameter("login_hint"))
+        val chooser = oauth().authUrl("http://127.0.0.1:1", "c", "s", GoogleScope.entries.toSet()).toHttpUrl()
+        assertNull(chooser.queryParameter("login_hint"))
+        assertEquals("a new account (C22): Google's account chooser", "select_account consent", chooser.queryParameter("prompt"))
     }
 
     @Test fun `the exchange sends the form and reads tokens and the email`() = runBlocking {

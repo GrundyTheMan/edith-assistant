@@ -6,6 +6,7 @@
 | Depends on | C17, C08 |
 | Size | Medium |
 | Read first | C17; 06-decisions **D5** (drafts only vs send — ask the owner), D11 |
+| Since C22 | The tools work across every account and moved to `accounts/tools/` (`MailTools.kt`). `search_email` no longer takes Gmail syntax: it has `from`, `to`, `subject`, `text`, `unread_only`, `after`, `before`, `account` (C22 §4); `GmailQuery.build` turns them into Gmail's syntax. |
 
 ## Goal
 

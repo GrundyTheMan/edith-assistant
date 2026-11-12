@@ -5,7 +5,12 @@ import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
-import com.edith.app.google.GoogleAuth
+import com.edith.app.accounts.sources.MailMessage
+import com.edith.app.accounts.sources.MailQuery
+import com.edith.app.accounts.sources.MailSearchResult
+import com.edith.app.accounts.sources.MailSummary
+import com.edith.app.accounts.sources.OutgoingMail
+import com.edith.app.google.GoogleAccountAuth
 import com.edith.app.google.GoogleCall
 import com.edith.app.google.GoogleScope
 import com.edith.app.tools.web.PageReader
@@ -22,83 +27,61 @@ import org.jsoup.Jsoup
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.ZonedDateTime
 import java.util.Base64
 
-/** One email in a search result (C19 §1): who, what, when, and the ids a reply needs. */
-data class EmailSummary(
-    val id: String,
-    val threadId: String,
-    val from: String,
-    val to: String?,
-    val subject: String,
-    val date: ZonedDateTime,
-    val snippet: String,
-    /** The `Message-ID` header, for a reply's `In-Reply-To`. */
-    val messageIdHeader: String?,
-    val unread: Boolean,
-)
-
-/** An email to read: its summary and the body as plain text (quoted history removed, capped). */
-data class EmailMessage(val summary: EmailSummary, val cc: String?, val body: String)
-
-/** An email to save as a draft or send. For a reply, [inReplyTo] and [threadId] come from the original. */
-data class OutgoingEmail(
-    val to: String,
-    val subject: String,
-    val body: String,
-    val inReplyTo: String? = null,
-    val threadId: String? = null,
-)
-
 /**
- * Gmail over its REST API (C19 §1), with a token from [GoogleAuth]: read-only for searching and reading, compose for
- * drafts and sending (D5: sending only after the owner confirms, which the tools enforce). Email content is never
- * logged.
+ * One Google account's Gmail over its REST API (C19 §1, per account since C22), with a token from that account's
+ * [GoogleAccountAuth]: read-only for searching and reading, compose for drafts and sending (D5: sending only after
+ * the owner confirms, which the tools enforce). Email content is never logged.
  */
 class GmailClient(
     private val http: Lazy<OkHttpClient>,
-    private val google: GoogleAuth,
+    private val auth: GoogleAccountAuth,
     private val dispatchers: AppDispatchers,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
     private val baseUrl: String = BASE_URL,
+    /** Stamped on every message, so a reply goes from the account the email came to (C22). */
+    private val accountId: String = "",
 ) {
-    /** Messages matching a Gmail search ([query] uses Gmail's syntax), newest first, at most [max] (≤ 10). */
-    suspend fun search(query: String, max: Int): Outcome<List<EmailSummary>> = call(setOf(GoogleScope.GmailReadonly)) { token ->
+    /**
+     * Messages matching a Gmail search ([query] uses Gmail's syntax), newest first, at most [max] (≤ 10), and whether
+     * more matched (Gmail gives a `nextPageToken` then).
+     */
+    suspend fun search(query: String, max: Int): Outcome<MailSearchResult> = call(setOf(GoogleScope.GmailReadonly)) { token ->
         val list = get(token, url("messages") { addQueryParameter("q", query); addQueryParameter("maxResults", max.coerceIn(1, MAX_SEARCH).toString()) }) {
-            json.decodeFromString<MessageListDto>(it).messages
+            json.decodeFromString<MessageListDto>(it)
         }
-        if (list !is GoogleCall.Ok) return@call list.map { emptyList() }
-        val out = mutableListOf<EmailSummary>()
-        for (ref in list.value) {   // one at a time: at most 10, and Gmail limits concurrent requests per user
+        if (list !is GoogleCall.Ok) return@call list.map { MailSearchResult(emptyList(), false) }
+        val out = mutableListOf<MailSummary>()
+        for (ref in list.value.messages) {   // one at a time: at most 10, and Gmail limits concurrent requests per user
             val meta = get(token, url("messages/${ref.id}") {
                 addQueryParameter("format", "metadata")
                 METADATA_HEADERS.forEach { addQueryParameter("metadataHeaders", it) }
             }) { json.decodeFromString<MessageDto>(it).summary() }
             when (meta) {
                 is GoogleCall.Ok -> out += meta.value
-                else -> return@call meta.map { emptyList() }
+                else -> return@call meta.map { MailSearchResult(emptyList(), false) }
             }
         }
-        GoogleCall.Ok(out)
+        GoogleCall.Ok(MailSearchResult(out, more = list.value.nextPageToken != null))
     }
 
     /** One message in full, its body as plain text. */
-    suspend fun read(id: String): Outcome<EmailMessage> = call(setOf(GoogleScope.GmailReadonly)) { token ->
+    suspend fun read(id: String): Outcome<MailMessage> = call(setOf(GoogleScope.GmailReadonly)) { token ->
         get(token, url("messages/$id") { addQueryParameter("format", "full") }) { body ->
             val dto = json.decodeFromString<MessageDto>(body)
-            EmailMessage(dto.summary(), dto.header("Cc"), MailText.body(dto.payload))
+            MailMessage(dto.summary(), dto.header("Cc"), MailText.body(dto.payload))
         }
     }
 
     /** Saves [email] as a Gmail draft. Returns the draft's id. */
-    suspend fun createDraft(email: OutgoingEmail): Outcome<String> = call(setOf(GoogleScope.GmailCompose)) { token ->
+    suspend fun createDraft(email: OutgoingMail): Outcome<String> = call(setOf(GoogleScope.GmailCompose)) { token ->
         val body = """{"message":{"raw":"${MailText.raw(email)}"${email.threadId?.let { ",\"threadId\":\"$it\"" }.orEmpty()}}}"""
         post(token, url("drafts") {}, body) { json.decodeFromString<IdDto>(it).id }
     }
 
     /** Sends [email] (D5: the tool asks the owner first). Returns the sent message's id. */
-    suspend fun send(email: OutgoingEmail): Outcome<String> = call(setOf(GoogleScope.GmailCompose)) { token ->
+    suspend fun send(email: OutgoingMail): Outcome<String> = call(setOf(GoogleScope.GmailCompose)) { token ->
         val body = """{"raw":"${MailText.raw(email)}"${email.threadId?.let { ",\"threadId\":\"$it\"" }.orEmpty()}}"""
         post(token, url("messages/send") {}, body) { json.decodeFromString<IdDto>(it).id }
     }
@@ -106,7 +89,7 @@ class GmailClient(
     // --- HTTP -------------------------------------------------------------------------------------------------
 
     private suspend fun <T> call(scopes: Set<GoogleScope>, block: (String) -> GoogleCall<T>): Outcome<T> =
-        google.authorized(scopes) { token -> withContext(dispatchers.io) { block(token) } }
+        auth.authorized(scopes) { token -> withContext(dispatchers.io) { block(token) } }
 
     private fun <T> get(token: String, url: HttpUrl, parse: (String) -> T) =
         execute(Request.Builder().url(url).header("Authorization", "Bearer $token").build(), parse)
@@ -149,7 +132,7 @@ class GmailClient(
 
     private fun MessageDto.header(name: String): String? = payload?.headers?.firstOrNull { it.name.equals(name, ignoreCase = true) }?.value
 
-    private fun MessageDto.summary() = EmailSummary(
+    private fun MessageDto.summary() = MailSummary(
         id = id,
         threadId = threadId ?: id,
         from = header("From") ?: "(unknown sender)",
@@ -159,6 +142,7 @@ class GmailClient(
         snippet = Jsoup.parse(snippet.orEmpty()).text(),   // Gmail's snippets carry HTML entities
         messageIdHeader = header("Message-ID") ?: header("Message-Id"),
         unread = "UNREAD" in labelIds,
+        accountId = accountId,
     )
 
     companion object {
@@ -191,6 +175,32 @@ object GmailQuery {
             else -> runCatching { LocalDate.of(y.toInt(), mo.toInt(), d.toInt()) }.getOrNull()
         }
         day?.let { "$op:${it.atStartOfDay(zone).toEpochSecond()}" } ?: m.value
+    }
+
+    /**
+     * A provider-neutral search (C22 §3) in Gmail's syntax. Dates are already exact instants (local midnight, from the
+     * tool), so they go as epoch seconds; free text keeps Gmail's own words, with any dates in it made local too.
+     */
+    fun build(q: MailQuery, today: LocalDate, zone: ZoneId): String = buildList {
+        q.from?.takeIf { it.isNotBlank() }?.let { add("from:${term(it)}") }
+        q.to?.takeIf { it.isNotBlank() }?.let { add("to:${term(it)}") }
+        q.subject?.takeIf { it.isNotBlank() }?.let { add("subject:${group(it)}") }
+        if (q.unreadOnly) add("is:unread")
+        q.after?.let { add("after:${it.epochSecond}") }
+        q.before?.let { add("before:${it.epochSecond}") }
+        q.text?.takeIf { it.isNotBlank() }?.let { add(localDates(it.trim(), today, zone)) }
+    }.joinToString(" ")
+
+    /** `Lincoln Elementary` → `"Lincoln Elementary"`; one word stays as it is. */
+    private fun term(value: String): String {
+        val v = value.replace("\"", "").trim()
+        return if (v.any { it.isWhitespace() }) "\"$v\"" else v
+    }
+
+    /** `field trip` → `(field trip)`: every word in the subject, in any order. */
+    private fun group(value: String): String {
+        val v = value.replace("(", "").replace(")", "").replace("\"", "").trim()
+        return if (v.any { it.isWhitespace() }) "($v)" else v
     }
 }
 
@@ -235,7 +245,7 @@ object MailText {
     }
 
     /** RFC 2822, base64url: To, Subject (RFC 2047 when not ASCII), reply headers, a UTF-8 plain-text body. */
-    fun raw(email: OutgoingEmail): String {
+    fun raw(email: OutgoingMail): String {
         val headers = buildList {
             add("To: ${email.to.replace(Regex("[\r\n]"), " ")}")
             add("Subject: ${encodeHeader(email.subject.replace(Regex("[\r\n]"), " "))}")
@@ -254,7 +264,7 @@ object MailText {
         if (value.all { it.code in 32..126 }) value else "=?UTF-8?B?" + Base64.getEncoder().encodeToString(value.toByteArray(Charsets.UTF_8)) + "?="
 }
 
-@Serializable private class MessageListDto(val messages: List<MessageRefDto> = emptyList())
+@Serializable private class MessageListDto(val messages: List<MessageRefDto> = emptyList(), val nextPageToken: String? = null)
 @Serializable private class MessageRefDto(val id: String)
 @Serializable private class IdDto(val id: String)
 @Serializable internal class MessageDto(

@@ -13,7 +13,7 @@ import com.edith.app.ui.components.CrashBanner
 import com.edith.app.ui.components.CrashReportViewModel
 import com.edith.app.ui.navigation.EdithNavHost
 import com.edith.app.ui.settings.BrowserSignInDialogHost
-import com.edith.app.ui.settings.GoogleSettingsViewModel
+import com.edith.app.ui.settings.AccountsViewModel
 import com.edith.app.ui.theme.EdithTheme
 
 class MainActivity : ComponentActivity() {
@@ -27,7 +27,7 @@ class MainActivity : ComponentActivity() {
                 val report by crash.report.collectAsStateWithLifecycle()
                 EdithNavHost(banner = { report?.let { CrashBanner(it, onDismiss = crash::dismiss) } })
                 // C17b: a browser sign-in in progress shows its dialog on any screen.
-                BrowserSignInDialogHost(viewModel(factory = GoogleSettingsViewModel.Factory))
+                BrowserSignInDialogHost(viewModel(factory = AccountsViewModel.Factory))
             }
         }
     }
