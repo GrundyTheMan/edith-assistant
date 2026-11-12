@@ -17,6 +17,7 @@ import com.edith.app.chat.engine.ReplyListener
 import com.edith.app.chat.engine.TurnRunner
 import com.edith.app.chat.ui.ChatFeatures
 import com.edith.app.core.dispatchers.AppDispatchers
+import com.edith.app.core.lifecycle.AppVisibility
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import com.edith.app.core.net.TaggedSocketFactory
@@ -70,7 +71,12 @@ import com.edith.app.attachments.MediaAttachmentContext
 import com.edith.app.attachments.EdithFilesSection
 import com.edith.app.attachments.FileAttachmentStore
 import com.edith.app.attachments.Retention
+import com.edith.app.google.ChoosingGoogle
 import com.edith.app.google.CredentialManagerSignIn
+import com.edith.app.google.browser.BrowserGoogle
+import com.edith.app.google.browser.BrowserOAuth
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
 import com.edith.app.google.GoogleAuth
 import com.edith.app.google.PlayServicesAuthorizer
 import com.edith.app.google.calendar.CalendarClient
@@ -254,9 +260,34 @@ class AppContainer(val app: Application) {
     /** Attachments' files: `filesDir/attachments` (or `cacheDir/session` when keeping 0), C16. */
     val attachmentStore: FileAttachmentStore by lazy { FileAttachmentStore(app.filesDir, app.cacheDir) }
 
-    /** The Google account (C17, D9): sign-in, and access to Calendar and Gmail. No tokens are stored by the app. */
+    /**
+     * The Google account (C17, D9): sign-in, and access to Calendar and Gmail. With Play services no tokens are stored
+     * by the app; without it (C17b, D16) the browser path keeps a refresh token, encrypted in [secretStore].
+     */
     val googleAuth: GoogleAuth by lazy {
-        GoogleAuth(CredentialManagerSignIn(app), PlayServicesAuthorizer(app), settingsRepository, BuildConfig.GOOGLE_WEB_CLIENT_ID, appScope)
+        val browser = BrowserGoogle(
+            oauth = BrowserOAuth(okHttpLazy, dispatchers, BuildConfig.GOOGLE_DESKTOP_CLIENT_ID, BuildConfig.GOOGLE_DESKTOP_CLIENT_SECRET),
+            secrets = secretStore,
+            clock = clock,
+            dispatchers = dispatchers,
+            backLink = "${BuildConfig.APPLICATION_ID}://signed-in",
+            knownEmail = { settingsRepository.current().googleAccountEmail },
+            appVisible = AppVisibility.visible,
+        )
+        val google = ChoosingGoogle(
+            play = CredentialManagerSignIn(app),
+            playAuthorizer = PlayServicesAuthorizer(app),
+            browser = browser,
+            settings = settingsRepository,
+            playConfigured = BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank(),
+            playServicesAvailable = {
+                GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(app) == ConnectionResult.SUCCESS
+            },
+        )
+        GoogleAuth(
+            google, google, settingsRepository, BuildConfig.GOOGLE_WEB_CLIENT_ID, appScope,
+            desktopClientId = BuildConfig.GOOGLE_DESKTOP_CLIENT_ID, browser = google,
+        )
     }
 
     /** Google Calendar (C18): REST through [googleAuth]; the session remembers the calendars and listed events. */
@@ -284,6 +315,7 @@ class AppContainer(val app: Application) {
                 attachmentIntake.clearLeftovers()   // C15: unsent attachments from the last run
                 File(app.cacheDir, "attachments").deleteRecursively()   // C15's one-run store, before C16
                 retention.onStart()   // C16: session files, orphans, then the setting
+                googleAuth.resumeBrowserSignIn()   // C17b: a browser sign-in an earlier run left waiting
                 googleAuth.start()    // C17: is a saved account still allowed in? (quietly)
                 database.openHelper.writableDatabase
                 Log.d(LogTag.App, "Database ready")

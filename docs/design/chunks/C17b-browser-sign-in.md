@@ -219,15 +219,15 @@ Device (Compose, `scripts/check.sh --device`):
 - `GoogleSettingsTest`: the **Use a browser instead** button, the waiting dialog, a pasted address, and Cancel.
 
 ## Acceptance criteria
-- [ ] PC emulator (`Pixel_9_API_37`, debug build): **Use a browser instead** → Chrome → sign in → automatically
+- [x] PC emulator (`Pixel_9_API_37`, debug build): **Use a browser instead** → Chrome → sign in → automatically
       back in Settings, showing "Connected as …". "What's on my calendar tomorrow?" and "Any unread email from
       today?" work.
-- [ ] Same, but pasting the address instead (cancel Chrome's return and paste the 127.0.0.1 address).
+- [x] Same, but pasting the address instead (cancel Chrome's return and paste the 127.0.0.1 address).
 - [ ] Release build in **Andarium on the owner's iPhone**: Sign in with Google → Chrome inside Andarium → Connected;
       the calendar and email questions work; Disconnect revokes (check <https://myaccount.google.com/permissions>).
-- [ ] After a restart of the app it's still Connected, with no browser.
+- [x] After a restart of the app it's still Connected, with no browser.
 - [ ] A Play-services phone or emulator still signs in exactly as before. C17's tests pass unchanged.
-- [ ] `scripts/check.sh --device` passes. The release APK is tested on `Edith_Release_Test` first (05-environment
+- [x] `scripts/check.sh --device` passes. The release APK is tested on `Edith_Release_Test` first (05-environment
       §6), and R8 rules are added if the release build needs them (lesson from 2026-11-11: ONNX Runtime).
 
 ## Implementation notes (traps found while planning)
@@ -274,3 +274,112 @@ Device (Compose, `scripts/check.sh --device`):
   Weekly sign-ins are accepted in Testing.
 - Any iOS-native Edith.
 - Hands-free limits under iOS: Andarium can't listen in the background. That's a separate topic.
+
+## As built (2026-11-11)
+
+Where the code differs from the specification above, the code is right.
+
+**Files**
+- `google/browser/BrowserOAuth.kt`: PKCE, the sign-in address, exchange, refresh, revoke and `parseRedirect`.
+  The base URLs are constructor parameters.
+- `google/browser/LoopbackReceiver.kt`: listens on 127.0.0.1 only, port 0. It serves each connection on its own,
+  so a spare connection Chrome opens can't hold up the real request. Request lines are never logged.
+- `google/browser/BrowserGoogle.kt`: `GoogleSignIn` + `GoogleAuthorizer`, the waiting state, paste and cancel, and
+  the pending sign-in in `SecretStore` (`google_pending_sign_in`).
+- `google/ChoosingGoogle.kt`: the chooser. The rule is `ChoosingGoogle.chooseBrowser`.
+- `GoogleAuth.kt`: a new `GoogleBrowserFlow` interface (the browser's extras), and `NeedsConsent.viaBrowser`.
+- DataStore `google_sign_in_mode` (`Settings.googleSignInMode`). `BuildConfig.GOOGLE_DESKTOP_CLIENT_ID` and
+  `_SECRET` come from `local.properties`.
+
+**Differences from the spec**
+- **Resuming a pending sign-in** is `GoogleAuth.resumeBrowserSignIn()`, which `AppContainer` calls at launch next
+  to `start()`. It's not inside `start()`, because Grant access calls `start()` again.
+- **Grant access / Try again** moved from the ViewModel into `GoogleAuth.grant(activity, show)`. Browser mode
+  rechecks quietly first: after "Couldn't reach Google", Try again just refreshes. If Google still wants the owner,
+  it signs in through the browser again, in one tap.
+- **Sign-in runs in the app's scope** (main thread), not the ViewModel's. A browser sign-in waits minutes and must
+  survive leaving Settings.
+- **The browser's input channel exists before the browser opens**, so an early paste or Cancel can't be lost.
+- **`MainActivity` is `launchMode="singleTask"`** (not in the spec). On the emulator, Chrome's **Back to Edith**
+  link with the default launch mode made Android finish the running activity and start a new one on the Chat tab,
+  losing Settings and its sign-in dialog. With `singleTask` the same activity comes back, still on Settings
+  (checked by its `ActivityRecord` before and after). The notification taps (`SINGLE_TOP`) behave as before.
+- **The "Finish signing in" dialog is shown over the whole app** (`BrowserSignInDialogHost` in `MainActivity`),
+  not only in Settings. After Edith was killed while the owner was in the browser, she reopened on Chat, and the
+  dialog was only visible after opening Settings (seen on the emulator).
+- **The code is exchanged once Edith is back on screen** (`AppVisibility`, set by `MainActivity`). Android 17
+  blocks her network while Chrome is in front (`blocked=APP_BACKGROUND`, L36): every exchange made then failed with
+  `UnknownHostException`. Now a code that arrives off screen waits, up to the 5-minute limit, for the owner to
+  tap **Back to Edith** or switch back (the page says "Go back to Edith to finish"). Implementation note 6 had
+  this wrong: listening needs only `INTERNET`, but reaching Google from the background is blocked.
+- **The client secret is needed.** Google's token endpoint answered `invalid_request` "client_secret is missing."
+  for the Desktop client without it, so builds include `edith.googleDesktopClientSecret` (accepted for a Desktop
+  client, §"Before you start").
+- **Use a browser instead** shows only when the build has the Desktop client ID.
+- **GoogleAuth's browser cases** are tested in `ChoosingGoogleTest` (GoogleAuth + ChoosingGoogle + a real
+  `BrowserGoogle` against MockWebServer), not `GoogleAuthTest`, whose fakes are Play-only. `GoogleAuthTest`,
+  `CalendarTest`, `GmailTest` and `ErrorMapperTest` are unchanged and pass.
+- A token response that leaves out `scope` is taken as granting everything asked for. A missing scope then shows
+  up as Google's 403 (`MissingScope` → NeedsConsent).
+
+**Verified so far**
+- `scripts/check.sh`: OK (`build-logs/2026-11-11_18-02-00_check.log`): 244 unit tests, 31 of them new
+  (`BrowserOAuthTest` 8, `LoopbackReceiverTest` 5, `BrowserGoogleTest` 11, `ChoosingGoogleTest` 7). Lint: no new
+  warnings; the one it found, `UseKtx`, is changed.
+  - Covered: RFC 7636's test vector; every sign-in parameter; the exchange form with and without the secret; a full
+    loopback sign-in, with no code, state, verifier, token, id_token or redirect in the log; paste; wrong state;
+    declined; cancel; timeout; no browser; `invalid_client`; resuming after a killed process (same redirect URI);
+    dropping a pending sign-in after 10 minutes; the cached token; refresh when expired; one refresh for 5
+    callers; fewer scopes; `invalid_grant` deleting the token; no network keeping it; revoke; the choice rule; Play
+    unchanged; disconnect; Grant access signing in again; NotSetUp only when both IDs are missing.
+
+- `scripts/check.sh --device`: OK (`build-logs/2026-11-11_19-25-38_check.log`, with `singleTask` and the app-wide dialog): 110 device tests, including the new
+  `GoogleSettingsTest.browserSignIn` (Use a browser instead, the waiting dialog, a pasted address, Cancel, the
+  weekly sign-in text). The crash log has nothing from Edith.
+
+- **Back to Edith, on the emulator:** a page on 127.0.0.1 (forwarded with `adb reverse`) opened in Chrome, and its
+  `com.edith.app.debug://signed-in` link brought Edith back on Settings, with no "Open in Edith?" prompt.
+
+- **Live on the emulator** (`Pixel_9_API_37`, debug build, the owner's Cloud project, 2026-11-11):
+  - **Use a browser instead** → Chrome → Google's account chooser → the owner approved access → the code arrived on
+    the loopback at 19:15:55, the exchange took 0.3 s → **Connected as owner.one@example.com**, with Edith in front.
+  - `DebugGoogleReceiver`: a Calendar token from the browser path (253 characters, from the cache) and a Calendar
+    request → **HTTP 200**.
+  - "What is on my calendar tomorrow": `list_calendar_events` for Nov 12 in local time; "no events" (not checked
+    against the owner's real calendar). "Any unread email from today": `search_email` `is:unread after:today`;
+    Edith summarised five.
+  - After `am force-stop` and a relaunch: **Connected** again quietly by a refresh, no browser.
+  - **Paste, after Edith was killed:** Disconnect → Use a browser instead → Edith force-stopped while Chrome showed
+    Google → the owner signed in, Chrome couldn't load the 127.0.0.1 page → Edith relaunched ("resuming a pending
+    sign-in (listening again: true)") → the address pasted into the dialog → **Connected** at 19:22:35. (The dialog
+    was then only in Settings; it's now app-wide, see above.)
+  - Disconnect (twice): "Google disconnected", no revoke error.
+  - logcat had no access token, refresh token, code or verifier; the crash log was empty throughout.
+  - Found on the way: a Desktop client created in a **different Cloud project** gave Google's "Access blocked … has
+    not completed the verification process" (the owner isn't a test user there). `docs/google-setup.md` §6 now says
+    to use the same project.
+
+- **Release APK on `Edith_Release_Test`** (`scripts/release.sh --allow-dirty`, a test build, not published;
+  `build-logs/2026-11-11_19-28-45_release.log`): installed and launched; **Use a browser instead** saved the pending
+  sign-in and opened Chrome (stopped at Chrome's first-run screen there); Edith force-stopped and reopened →
+  "resuming a pending sign-in (listening again: true)" and the dialog **over Chat**; a pasted old address → "That
+  address isn't from this sign-in…", signed out. Hands-free on ~20 s (ONNX Runtime loaded), a weather question
+  (`get_weather` → ok, 3.1 s). Crash log empty. No new R8 rules needed. A full sign-in in a release build (the
+  token response parsed under R8) is still to be seen, on the iPhone.
+
+- **Access removed at Google** (the owner, at myaccount.google.com/permissions, 19:35; Edith wasn't listed
+  afterwards): Edith's next refresh got `invalid_grant` (HTTP 400) → **NeedsConsent**, and Settings showed "Google
+  needs you to sign in again (about once a week…)" with **Grant access**. This is the path the weekly expiry takes.
+
+- **Back on screen to finish** (19:52 build, `build-logs/2026-11-11_19-51-54_check.log`): Grant access (after the
+  access was removed) → Chrome → the code arrived at 20:37:19 while Chrome was in front ("waiting for Edith to be
+  on screen to finish") → back to Edith → signed in at 20:37:42, **Connected**. No crash; no token, code or verifier
+  in logcat. Before this change, five tries in a row failed with `UnknownHostException`.
+
+- **Disconnect revokes at Google:** after the 20:37 sign-in, Disconnect in Edith → the owner reloaded
+  <https://myaccount.google.com/permissions> and Edith was gone.
+
+**Not verified yet**
+- An actual 7-day expiry (the same `invalid_grant` path as access removed at Google, which was seen live).
+- The release APK again after the "back on screen" change (the release test above was before it).
+- The release APK on `Edith_Release_Test`, and Andarium on the owner's iPhone.

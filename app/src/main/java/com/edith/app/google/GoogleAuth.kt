@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -42,7 +43,10 @@ interface GoogleSignIn {
     suspend fun signOut()
 }
 
-/** Access (what): Google's `AuthorizationClient`, which keeps the tokens (the app stores none). A fake in tests. */
+/**
+ * Access (what): Google's `AuthorizationClient`, which keeps the tokens itself, or, without Play services, the browser
+ * path (C17b), which keeps a refresh token encrypted (D16). A fake in tests.
+ */
 interface GoogleAuthorizer {
     sealed interface Result {
         data class Granted(val accessToken: String) : Result
@@ -59,15 +63,34 @@ interface GoogleAuthorizer {
     suspend fun revoke(email: String)
 }
 
+/** The browser sign-in's extras (C17b), beyond [GoogleSignIn]: implemented by [ChoosingGoogle]. */
+interface GoogleBrowserFlow {
+    /** Whether this build has the Desktop client ID browser sign-in needs. */
+    val browserConfigured: Boolean
+    /** True while Edith waits for the browser (Settings shows the "Finish signing in" dialog). */
+    val waiting: StateFlow<Boolean>
+    /** Whether sign-in and access go through the browser now. */
+    suspend fun usesBrowser(): Boolean
+    /** **Use a browser instead**: the browser, whatever the chooser would pick. */
+    suspend fun signInWithBrowser(activity: Activity): GoogleSignIn.Result
+    /** A sign-in left waiting by an earlier run of Edith; null when there's none. */
+    suspend fun resumePending(): GoogleSignIn.Result?
+    fun paste(address: String)
+    fun cancel()
+}
+
 /** The account as Settings shows it (C17 §3). */
 sealed interface GoogleState {
-    /** No Web client ID in this build (docs/google-setup.md). */
+    /** Neither a Web nor a Desktop client ID in this build (docs/google-setup.md). */
     data object NotSetUp : GoogleState
     data object SignedOut : GoogleState
     data class Checking(val email: String) : GoogleState
     data class Connected(val email: String) : GoogleState
-    /** Signed in, but Google wants the owner to approve access (first time, or again). */
-    data class NeedsConsent(val email: String) : GoogleState
+    /**
+     * Signed in, but Google wants the owner to approve access (first time, or again). [viaBrowser]: Grant access
+     * signs in through the browser again (C17b; weekly while the Google project is in Testing).
+     */
+    data class NeedsConsent(val email: String, val viaBrowser: Boolean = false) : GoogleState
     data class Error(val email: String?, val message: String) : GoogleState
 }
 
@@ -82,21 +105,37 @@ sealed interface GoogleCall<out T> {
 }
 
 /**
- * The Google account (C17, decision D9). Sign-in keeps only the email (DataStore `google_account_email`); access
- * tokens come from Google Play services on every call and are never stored by the app. Google's tools (C18, C19)
- * are offered only while [status] is Connected (L6), and the model is told what she can actually do.
+ * The Google account (C17, decision D9). Sign-in keeps the email (DataStore `google_account_email`). With Google
+ * Play services, access tokens come from Play services on every call and the app stores none. Without it (C17b,
+ * D16) Edith signs in through the browser and keeps a refresh token, encrypted in `SecretStore`; access tokens stay
+ * in memory. Google's tools (C18, C19) are offered only while [status] is Connected (L6), and the model is told what
+ * she can actually do.
  */
 class GoogleAuth(
     private val signIn: GoogleSignIn,
     private val authorizer: GoogleAuthorizer,
     private val settings: SettingsRepository,
     private val webClientId: String,
-    scope: CoroutineScope,
+    private val scope: CoroutineScope,
+    /** C17b: the Desktop client ID for browser sign-in ("" when it isn't set up). */
+    private val desktopClientId: String = "",
+    /** C17b: the browser path's extras (usually the same [ChoosingGoogle] as [signIn] and [authorizer]). */
+    private val browser: GoogleBrowserFlow? = null,
 ) : Integration {
     override val id = ID
 
-    private val _state = MutableStateFlow<GoogleState>(if (webClientId.isBlank()) GoogleState.NotSetUp else GoogleState.SignedOut)
+    /** Browser sign-in is possible in this build. */
+    val browserAvailable: Boolean = browser != null && desktopClientId.isNotBlank()
+
+    /** Not set up only when **both** client IDs are missing (C17b §1). */
+    private val notSetUp = webClientId.isBlank() && !browserAvailable
+
+    private val _state = MutableStateFlow<GoogleState>(if (notSetUp) GoogleState.NotSetUp else GoogleState.SignedOut)
     val state: StateFlow<GoogleState> = _state.asStateFlow()
+
+    private val noWaiting = MutableStateFlow(false)
+    /** True while Edith waits for the browser: Settings shows the "Finish signing in" dialog (C17b §3). */
+    val browserWaiting: StateFlow<Boolean> get() = browser?.waiting ?: noWaiting
 
     override val status: StateFlow<IntegrationStatus> = _state
         .map { if (it is GoogleState.Connected) IntegrationStatus.Connected else IntegrationStatus.NotConnected }
@@ -126,15 +165,61 @@ class GoogleAuth(
 
     /** At startup: if an account is saved, check quietly whether access is still granted (no screens shown). */
     suspend fun start() {
-        if (webClientId.isBlank()) return
+        if (notSetUp) return
         val email = settings.current().googleAccountEmail ?: return
         lock.withLock { check(email) }
     }
 
+    /**
+     * At launch: a browser sign-in that an earlier run left waiting (Edith was killed while the owner was in the
+     * browser) waits again, so the dialog is back and a pasted address still works (C17b note 1).
+     */
+    fun resumeBrowserSignIn() {
+        val flow = browser?.takeIf { browserAvailable } ?: return
+        scope.launch { flow.resumePending()?.let { finishSignIn(it) } }
+    }
+
     /** Settings → Sign in with Google. Then asks for access; [state] says whether Google wants approval. */
     suspend fun signIn(activity: Activity) {
-        if (webClientId.isBlank()) return
-        when (val r = signIn.signIn(activity, webClientId)) {
+        if (notSetUp) return
+        finishSignIn(signIn.signIn(activity, webClientId))
+    }
+
+    /** Settings → **Use a browser instead** (C17b §3). */
+    suspend fun signInWithBrowser(activity: Activity) {
+        val flow = browser?.takeIf { browserAvailable } ?: return
+        finishSignIn(flow.signInWithBrowser(activity))
+    }
+
+    /** The waiting dialog's **Use this address**. */
+    fun pasteBrowserAddress(address: String) {
+        browser?.paste(address)
+    }
+
+    /** The waiting dialog's **Cancel**. */
+    fun cancelBrowserSignIn() {
+        browser?.cancel()
+    }
+
+    /**
+     * Grant access / Try again. Through the browser (C17b): check quietly first (Try again after no network), and if
+     * Google still wants the owner, sign in through the browser again. With Play services: show Google's consent
+     * screen; if Edith has none in hand (a cancelled consent used it up, or an error), she asks Google again first
+     * and shows the screen it returns, so one tap is enough.
+     */
+    suspend fun grant(activity: Activity, show: (PendingIntent) -> Unit) {
+        val flow = browser
+        if (flow != null && browserAvailable && consentIntent == null && flow.usesBrowser()) {
+            start()
+            if (_state.value is GoogleState.NeedsConsent) signInWithBrowser(activity)
+            return
+        }
+        val intent = consentIntent ?: run { start(); consentIntent }
+        intent?.let(show)
+    }
+
+    private suspend fun finishSignIn(r: GoogleSignIn.Result) {
+        when (r) {
             is GoogleSignIn.Result.SignedIn -> {
                 settings.update { it.copy(googleAccountEmail = r.email) }
                 Log.i(LogTag.Google, "Signed in to Google")
@@ -151,8 +236,8 @@ class GoogleAuth(
         consentIntent = null
         _state.value = when (val r = authorizer.fromConsent(data)) {
             is GoogleAuthorizer.Result.Granted -> GoogleState.Connected(email).also { Log.i(LogTag.Google, "Google access granted") }
-            is GoogleAuthorizer.Result.NeedsConsent -> { consentIntent = r.intent; GoogleState.NeedsConsent(email) }
-            is GoogleAuthorizer.Result.Failed -> GoogleState.NeedsConsent(email).also { Log.w(LogTag.Google, "Consent not given: ${r.message}") }
+            is GoogleAuthorizer.Result.NeedsConsent -> { consentIntent = r.intent; needsConsent(email) }
+            is GoogleAuthorizer.Result.Failed -> needsConsent(email).also { Log.w(LogTag.Google, "Consent not given: ${r.message}") }
         }
     }
 
@@ -160,7 +245,7 @@ class GoogleAuth(
     suspend fun disconnect() = lock.withLock {
         currentEmail()?.let { email -> runCatching { authorizer.revoke(email) }.onFailure { Log.w(LogTag.Google, "Couldn't revoke Google access", it) } }
         runCatching { signIn.signOut() }
-        settings.update { it.copy(googleAccountEmail = null) }
+        settings.update { it.copy(googleAccountEmail = null, googleSignInMode = null) }
         consentIntent = null
         _state.value = GoogleState.SignedOut
         Log.i(LogTag.Google, "Google disconnected")
@@ -181,7 +266,7 @@ class GoogleAuth(
                 is GoogleCall.Failed -> return Outcome.Failure(r.error)
                 GoogleCall.MissingScope -> {
                     Log.w(LogTag.Google, "Google says Edith lacks a scope for this call")
-                    currentEmail()?.let { _state.value = GoogleState.NeedsConsent(it) }
+                    currentEmail()?.let { _state.value = needsConsent(it) }
                     return Outcome.Failure(AppError.GoogleAuth(NEEDS_PERMISSION))
                 }
                 GoogleCall.Unauthorized -> {
@@ -191,7 +276,7 @@ class GoogleAuth(
             }
         }
         val email = currentEmail()
-        if (email != null) _state.value = GoogleState.NeedsConsent(email)
+        if (email != null) _state.value = needsConsent(email)
         return Outcome.Failure(AppError.GoogleAuth(NEEDS_PERMISSION))
     }
 
@@ -206,7 +291,7 @@ class GoogleAuth(
             }
             is GoogleAuthorizer.Result.NeedsConsent -> {
                 consentIntent = r.intent
-                _state.value = GoogleState.NeedsConsent(email)
+                _state.value = needsConsent(email)
                 Outcome.Failure(AppError.GoogleAuth(NEEDS_PERMISSION))
             }
             is GoogleAuthorizer.Result.Failed -> Outcome.Failure(AppError.GoogleAuth(r.message))
@@ -218,11 +303,14 @@ class GoogleAuth(
         _state.value = GoogleState.Checking(email)
         _state.value = when (val r = authorizer.authorize(GoogleScope.entries.toSet())) {
             is GoogleAuthorizer.Result.Granted -> GoogleState.Connected(email)
-            is GoogleAuthorizer.Result.NeedsConsent -> { consentIntent = r.intent; GoogleState.NeedsConsent(email) }
+            is GoogleAuthorizer.Result.NeedsConsent -> { consentIntent = r.intent; needsConsent(email) }
             is GoogleAuthorizer.Result.Failed -> GoogleState.Error(email, r.message)
         }
         Log.d(LogTag.Google, "Google account: ${_state.value::class.simpleName}")
     }
+
+    private suspend fun needsConsent(email: String) =
+        GoogleState.NeedsConsent(email, viaBrowser = consentIntent == null && browserAvailable && browser?.usesBrowser() == true)
 
     private suspend fun currentEmail(): String? = when (val s = _state.value) {
         is GoogleState.Connected -> s.email
