@@ -51,6 +51,9 @@ design in the same PR, or ask the owner.
 | [C19](chunks/C19-gmail.md) | Gmail search, read, draft, send | 5 | C17, C08 | Done |
 | [C20](chunks/C20-smart-home-architecture.md) | Smart home architecture (**v2, design only**) | 6 Deferred | C08, C17 | Design |
 | [C21](chunks/C21-smart-home-service-notes.md) | Smart home service notes (**v2 research**) | 6 Deferred | — | Research |
+| [C22](chunks/C22-several-accounts.md) | Several accounts: the account model, and several Google accounts (D17) | 7 Accounts | C17, C17b, C18, C19 | Design |
+| [C23](chunks/C23-microsoft-account.md) | Microsoft account: Outlook mail and calendar | 7 | C22 | Design |
+| [C24](chunks/C24-icloud-account.md) | iCloud account: iCloud Mail and Calendar | 7 | C22 | Design |
 
 ### State at handoff (2026-10-29)
 - `master` has the design and the C01 skeleton with its build/deploy tooling (`05-environment.md` §2, §6). Tag
@@ -100,6 +103,10 @@ design in the same PR, or ask the owner.
   and a refresh token encrypted in `SecretStore`. `ChoosingGoogle` picks Play services or the browser; Play-services
   phones work as before, with **Use a browser instead**. Expect no network while Edith is off screen (L36).
   `MainActivity` is `singleTask`.
+- **Next: C22, several accounts (D17, 2026-11-12).** The owner wants several inboxes and calendars at once: any
+  number of Google accounts, then Microsoft (C23) and iCloud (C24). Reads cover every account; for a new event
+  or email Edith always asks which account. C22 comes first; C23 and C24 each need only C22. Ask the owner
+  D18 before C23.
 - The first release, v2.0.0-dev.1, was published on 2026-11-11; v2.0.0-dev.2 (with C17b) on 2026-11-12. Chat with Ollama works from Andarium over the
   home Wi-Fi.
 - C20 and C21 are v2 design and research.
