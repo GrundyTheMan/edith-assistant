@@ -5,7 +5,10 @@ import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
-import com.edith.app.google.GoogleAuth
+import com.edith.app.accounts.sources.CalendarEvent
+import com.edith.app.accounts.sources.CalendarInfo
+import com.edith.app.accounts.sources.EventChange
+import com.edith.app.google.GoogleAccountAuth
 import com.edith.app.google.GoogleCall
 import com.edith.app.google.GoogleScope
 import kotlinx.coroutines.withContext
@@ -25,50 +28,27 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
-/** A calendar the owner has checked in Google Calendar (C18; the owner chose all of them, not only the primary). */
-data class CalendarInfo(val id: String, val name: String, val primary: Boolean)
-
-/** One event, in the device's zone. All-day events have [allDay] and run from [start] (midnight) to [end] (exclusive). */
-data class CalendarEvent(
-    val id: String,
-    val calendarId: String,
-    val calendarName: String,
-    val title: String,
-    val start: ZonedDateTime,
-    val end: ZonedDateTime,
-    val allDay: Boolean,
-    val location: String? = null,
-    val description: String? = null,
-)
-
-/** A new event, or the changes to one ([CalendarClient.patch]): only the fields that are set are sent. */
-data class EventChange(
-    val title: String? = null,
-    val start: ZonedDateTime? = null,
-    val end: ZonedDateTime? = null,
-    val allDay: Boolean = false,
-    val location: String? = null,
-    val description: String? = null,
-)
-
 /**
- * Google Calendar over its REST API (C18 §1), with OkHttp and a token from [GoogleAuth] for each call. Times go out as
+ * One Google account's calendars over the REST API (C18 §1; per account since C22), with a token from its
+ * [GoogleAccountAuth] for each call. Times go out as
  * RFC 3339 with an offset and come back in the device's zone; all-day events use `date`.
  */
 class CalendarClient(
     private val http: Lazy<OkHttpClient>,
-    private val google: GoogleAuth,
+    private val auth: GoogleAccountAuth,
     private val dispatchers: AppDispatchers,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
     private val baseUrl: String = BASE_URL,
+    /** Stamped on every event, so a change or delete goes to the account it came from (C22). */
+    private val accountId: String = "",
 ) {
     /** The calendars checked in Google Calendar, primary first. */
     suspend fun calendars(): Outcome<List<CalendarInfo>> = call(setOf(GoogleScope.CalendarList)) { token ->
         get(token, url("users/me/calendarList") { addQueryParameter("minAccessRole", "reader") }) { body ->
             json.decodeFromString<CalendarListDto>(body).items
                 .filter { it.selected == true || it.primary == true }
-                .map { CalendarInfo(it.id, it.summaryOverride ?: it.summary ?: it.id, it.primary == true) }
-                .sortedByDescending { it.primary }
+                .map { CalendarInfo(it.id, it.summaryOverride ?: it.summary ?: it.id, isDefault = it.primary == true, canWrite = it.accessRole == "owner" || it.accessRole == "writer") }
+                .sortedByDescending { it.isDefault }
         }
     }
 
@@ -101,7 +81,7 @@ class CalendarClient(
     }
 
     suspend fun patch(event: CalendarEvent, change: EventChange): Outcome<CalendarEvent> = call(setOf(GoogleScope.CalendarEvents)) { token ->
-        val calendar = CalendarInfo(event.calendarId, event.calendarName, primary = false)
+        val calendar = CalendarInfo(event.calendarId, event.calendarName, isDefault = false)
         send(token, "PATCH", url("calendars/${enc(event.calendarId)}/events/${enc(event.id)}") {}, change.toJson()) { body ->
             json.decodeFromString<EventDto>(body).toEvent(calendar)
         }
@@ -114,7 +94,7 @@ class CalendarClient(
     // --- HTTP -------------------------------------------------------------------------------------------------
 
     private suspend fun <T> call(scopes: Set<GoogleScope>, block: (String) -> GoogleCall<T?>): Outcome<T> =
-        when (val r = google.authorized(scopes) { token -> withContext(dispatchers.io) { block(token) } }) {
+        when (val r = auth.authorized(scopes) { token -> withContext(dispatchers.io) { block(token) } }) {
             is Outcome.Success -> r.value?.let { Outcome.Success(it) } ?: Outcome.Failure(AppError.ToolFailed("calendar", "Google sent an event Edith couldn't read."))
             is Outcome.Failure -> r
         }
@@ -166,7 +146,7 @@ class CalendarClient(
         val allDay = start?.date != null
         val s = start?.parse(zone) ?: return null
         val e = end?.parse(zone) ?: (if (allDay) s.plusDays(1) else s.plusHours(1))
-        return CalendarEvent(id ?: return null, cal.id, cal.name, summary?.takeIf { it.isNotBlank() } ?: "(No title)", s, e, allDay, location, description)
+        return CalendarEvent(id ?: return null, cal.id, cal.name, summary?.takeIf { it.isNotBlank() } ?: "(No title)", s, e, allDay, location, description, accountId, iCalUID)
     }
 
     private fun EventTimeDto.parse(zone: ZoneId): ZonedDateTime? = when {
@@ -197,11 +177,13 @@ class CalendarClient(
     val summaryOverride: String? = null,
     val primary: Boolean? = null,
     val selected: Boolean? = null,
+    val accessRole: String? = null,
 )
 
 @Serializable private class EventsDto(val items: List<EventDto> = emptyList())
 @Serializable private class EventDto(
     val id: String? = null,
+    val iCalUID: String? = null,
     val status: String? = null,
     val summary: String? = null,
     val location: String? = null,

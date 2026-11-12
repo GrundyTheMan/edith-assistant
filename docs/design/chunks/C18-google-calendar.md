@@ -6,6 +6,7 @@
 | Depends on | C17, C08 |
 | Size | Medium–large |
 | Read first | C08 (confirmations), C17, 06-decisions D11 |
+| Since C22 | The tools work across every account and moved to `accounts/tools/` (`CalendarTools.kt`); the Calendar tab is `accounts/ui/`. New parameters (`account`, `calendar`), labels and the "which account?" rule: [C22](C22-several-accounts.md) §4 and As built. |
 
 ## Goal
 

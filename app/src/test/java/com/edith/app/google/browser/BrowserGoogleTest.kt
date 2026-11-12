@@ -2,6 +2,7 @@ package com.edith.app.google.browser
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import com.edith.app.accounts.AccountSecrets
 import com.edith.app.core.log.LogRingBuffer
 import com.edith.app.google.GoogleAuthorizer
 import com.edith.app.google.GoogleScope
@@ -38,9 +39,13 @@ import java.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 
-/** C17b: browser sign-in end to end (loopback, paste, cancel, timeout) and access through the refresh token. */
+/**
+ * C17b: browser sign-in end to end (loopback, paste, cancel, timeout) and access through the refresh token; C22: per
+ * account (`account/<id>/refresh_token`, its own cache and refresh lock), and the account chooser for a new account.
+ */
 class BrowserGoogleTest {
     private val server = MockWebServer()
+    private val KEY = AccountSecrets.refreshToken("a1")
     private val dispatchers = testDispatchers().copy(io = Dispatchers.IO)
     private val secrets = InMemorySecretStore()
     private val clock = FakeClock()
@@ -61,7 +66,6 @@ class BrowserGoogleTest {
 
     private fun browser(timeout: kotlin.time.Duration = 1.minutes, visible: StateFlow<Boolean>? = null) = BrowserGoogle(
         oauth(), secrets, clock, dispatchers, backLink = "com.edith.app.debug://signed-in",
-        knownEmail = { "owner@gmail.com" },
         openBrowser = { _, url -> if (noBrowser) throw ActivityNotFoundException() else synchronized(opened) { opened += url } },
         loopbackTimeout = timeout,
         appVisible = visible,
@@ -71,9 +75,9 @@ class BrowserGoogleTest {
         MockResponse.Builder().code(code).body(body).addHeader("Content-Type", "application/json").build()
 
     /** Starts a sign-in and waits until "the browser" was opened; returns the sign-in and Google's page address. */
-    private suspend fun CoroutineScope.startSignIn(b: BrowserGoogle): Pair<Deferred<GoogleSignIn.Result>, okhttp3.HttpUrl> {
+    private suspend fun CoroutineScope.startSignIn(b: BrowserGoogle, hint: String? = "owner@gmail.com", id: String? = "a1"): Pair<Deferred<GoogleSignIn.Result>, okhttp3.HttpUrl> {
         val before = synchronized(opened) { opened.size }
-        val result = async(Dispatchers.IO) { b.signIn(Activity(), "") }
+        val result = async(Dispatchers.IO) { b.signIn(Activity(), hint, id) }
         withTimeout(5_000) { while (synchronized(opened) { opened.size } == before) delay(10) }
         return result to synchronized(opened) { opened.last() }.toHttpUrl()
     }
@@ -92,27 +96,39 @@ class BrowserGoogleTest {
         URLDecoder.decode(k, "UTF-8") to URLDecoder.decode(v, "UTF-8")
     }
 
+    /** A successful sign-in: the address, and the grant to [BrowserGoogle.keep]. */
+    private fun assertSignedIn(r: GoogleSignIn.Result): BrowserGrant {
+        assertTrue("signed in: $r", r is GoogleSignIn.Result.SignedIn)
+        r as GoogleSignIn.Result.SignedIn
+        assertEquals("owner@gmail.com", r.email)
+        return requireNotNull(r.grant)
+    }
+
     @Test fun `a full sign-in through the loopback stores the refresh token and caches the access token`() = runBlocking {
         server.enqueue(json(BrowserOAuthTest.tokens(access = "ya29.first-access", refresh = "1//the-refresh-token")))
         val b = browser()
         val (result, page) = startSignIn(b)
         assertEquals("owner@gmail.com", page.queryParameter("login_hint"))
+        assertEquals("signing an account in again: no account chooser", "consent", page.queryParameter("prompt"))
+        assertTrue("the account rides along", secrets.get(BrowserGoogle.PENDING_KEY)!!.contains("\"accountId\":\"a1\""))
         assertTrue(b.waiting.value)
         assertNotNull("pending sign-in kept until the exchange", secrets.get(BrowserGoogle.PENDING_KEY))
         val redirect = page.queryParameter("redirect_uri")!!
         val state = page.queryParameter("state")!!
         browserReturns(redirect, "state=$state&code=4/0the-code&scope=email")
 
-        assertEquals(GoogleSignIn.Result.SignedIn("owner@gmail.com", null), result.await())
+        val grant = assertSignedIn(result.await())
+        assertNull("nothing stored until Edith knows which account it is", secrets.get(KEY))
+        b.keep("a1", grant)
         assertFalse(b.waiting.value)
-        assertEquals("1//the-refresh-token", secrets.get(BrowserGoogle.REFRESH_TOKEN_KEY))
+        assertEquals("1//the-refresh-token", secrets.get(KEY))
         assertNull("pending deleted", secrets.get(BrowserGoogle.PENDING_KEY))
         val exchange = form(server.takeRequest().body!!.utf8())
         assertEquals("4/0the-code", exchange["code"])
         assertEquals(redirect, exchange["redirect_uri"])
         assertEquals(page.queryParameter("code_challenge"), BrowserOAuth.challengeFor(exchange["code_verifier"]!!))
 
-        assertEquals("cached, no refresh", GoogleAuthorizer.Result.Granted("ya29.first-access"), b.authorize(GoogleScope.entries.toSet()))
+        assertEquals("cached, no refresh", GoogleAuthorizer.Result.Granted("ya29.first-access"), b.authorizer("a1").authorize(GoogleScope.entries.toSet()))
         assertEquals(1, server.requestCount)
 
         // §6: none of the secrets reached the log.
@@ -132,7 +148,7 @@ class BrowserGoogleTest {
         assertEquals("nothing sent while off screen", 0, server.requestCount)
         assertTrue("still waiting", b.waiting.value)
         visible.value = true   // the owner taps Back to Edith
-        assertEquals(GoogleSignIn.Result.SignedIn("owner@gmail.com", null), result.await())
+        assertSignedIn(result.await())
         assertEquals("4/held", form(server.takeRequest().body!!.utf8())["code"])
     }
 
@@ -141,7 +157,7 @@ class BrowserGoogleTest {
         val b = browser()
         val (result, page) = startSignIn(b)
         b.paste("  ${page.queryParameter("redirect_uri")!!.removePrefix("http://")}/?state=${page.queryParameter("state")}&code=4/pasted ")
-        assertEquals(GoogleSignIn.Result.SignedIn("owner@gmail.com", null), result.await())
+        assertSignedIn(result.await())
         assertEquals("4/pasted", form(server.takeRequest().body!!.utf8())["code"])
 
         val (again, _) = startSignIn(b)
@@ -164,13 +180,13 @@ class BrowserGoogleTest {
         val (timedOut, _) = startSignIn(browser(timeout = 300.milliseconds))
         assertEquals(GoogleSignIn.Result.Failed(BrowserGoogle.TIMED_OUT), timedOut.await())
         assertNull(secrets.get(BrowserGoogle.PENDING_KEY))
-        assertNull(secrets.get(BrowserGoogle.REFRESH_TOKEN_KEY))
+        assertNull(secrets.get(KEY))
         assertEquals(0, server.requestCount)
     }
 
     @Test fun `no browser on the device says so`() = runBlocking {
         noBrowser = true
-        assertEquals(GoogleSignIn.Result.Failed(BrowserGoogle.NO_BROWSER), browser().signIn(Activity(), ""))
+        assertEquals(GoogleSignIn.Result.Failed(BrowserGoogle.NO_BROWSER), browser().signIn(Activity()))
         assertNull(secrets.get(BrowserGoogle.PENDING_KEY))
     }
 
@@ -192,11 +208,11 @@ class BrowserGoogleTest {
         server.enqueue(json(BrowserOAuthTest.tokens()))
         val second = browser()   // the next run of Edith
         clock.advance(Duration.ofMinutes(3))
-        val resumed = async(Dispatchers.IO) { second.resumePending() }
+        val resumed = async(Dispatchers.IO) { requireNotNull(second.resumePending()).also { assertEquals("for the account it was started for", "a1", it.first) }.second }
         withTimeout(5_000) { while (!second.waiting.value) delay(10) }
         val redirect = page.queryParameter("redirect_uri")!!
         second.paste("$redirect/?state=${page.queryParameter("state")}&code=4/late")
-        assertEquals(GoogleSignIn.Result.SignedIn("owner@gmail.com", null), resumed.await())
+        assertSignedIn(resumed.await())
         assertEquals("the redirect from the first run", redirect, form(server.takeRequest().body!!.utf8())["redirect_uri"])
     }
 
@@ -210,54 +226,84 @@ class BrowserGoogleTest {
     }
 
     @Test fun `authorize refreshes an expired token`() = runBlocking {
-        secrets.put(BrowserGoogle.REFRESH_TOKEN_KEY, "1//stored")
+        secrets.put(KEY, "1//stored")
         server.enqueue(json("""{"access_token":"ya29.one","expires_in":3599,"scope":"${GoogleScope.entries.joinToString(" ") { it.uri }}"}"""))
         server.enqueue(json("""{"access_token":"ya29.two","expires_in":3599,"scope":"${GoogleScope.entries.joinToString(" ") { it.uri }}"}"""))
         val b = browser()
-        assertEquals(GoogleAuthorizer.Result.Granted("ya29.one"), b.authorize(setOf(GoogleScope.CalendarEvents)))
-        assertEquals(GoogleAuthorizer.Result.Granted("ya29.one"), b.authorize(setOf(GoogleScope.GmailReadonly)))
+        assertEquals(GoogleAuthorizer.Result.Granted("ya29.one"), b.authorizer("a1").authorize(setOf(GoogleScope.CalendarEvents)))
+        assertEquals(GoogleAuthorizer.Result.Granted("ya29.one"), b.authorizer("a1").authorize(setOf(GoogleScope.GmailReadonly)))
         clock.advance(Duration.ofSeconds(3599 - 30))   // under a minute left
-        assertEquals(GoogleAuthorizer.Result.Granted("ya29.two"), b.authorize(setOf(GoogleScope.CalendarEvents)))
+        assertEquals(GoogleAuthorizer.Result.Granted("ya29.two"), b.authorizer("a1").authorize(setOf(GoogleScope.CalendarEvents)))
         assertEquals(2, server.requestCount)
         assertEquals("1//stored", form(server.takeRequest().body!!.utf8())["refresh_token"])
     }
 
     @Test fun `two callers at once share one refresh`() = runBlocking {
-        secrets.put(BrowserGoogle.REFRESH_TOKEN_KEY, "1//stored")
+        secrets.put(KEY, "1//stored")
         server.enqueue(json("""{"access_token":"ya29.shared","expires_in":3599}"""))
         val b = browser()
-        val results = List(5) { async(Dispatchers.IO) { b.authorize(setOf(GoogleScope.CalendarEvents)) } }.awaitAll()
+        val results = List(5) { async(Dispatchers.IO) { b.authorizer("a1").authorize(setOf(GoogleScope.CalendarEvents)) } }.awaitAll()
         assertTrue(results.all { it == GoogleAuthorizer.Result.Granted("ya29.shared") })
         assertEquals(1, server.requestCount)
     }
 
     @Test fun `fewer scopes, an expired grant, no token and no network`() = runBlocking {
         val b = browser()
-        assertEquals("no refresh token", GoogleAuthorizer.Result.NeedsConsent(null), b.authorize(setOf(GoogleScope.CalendarEvents)))
+        assertEquals("no refresh token", GoogleAuthorizer.Result.NeedsConsent(null), b.authorizer("a1").authorize(setOf(GoogleScope.CalendarEvents)))
 
-        secrets.put(BrowserGoogle.REFRESH_TOKEN_KEY, "1//stored")
+        secrets.put(KEY, "1//stored")
         server.enqueue(json("""{"access_token":"ya29.partial","expires_in":3599,"scope":"${GoogleScope.CalendarEvents.uri}"}"""))
-        assertEquals("Gmail unticked on Google's page", GoogleAuthorizer.Result.NeedsConsent(null), b.authorize(setOf(GoogleScope.GmailReadonly)))
-        assertEquals("1//stored", secrets.get(BrowserGoogle.REFRESH_TOKEN_KEY))
+        assertEquals("Gmail unticked on Google's page", GoogleAuthorizer.Result.NeedsConsent(null), b.authorizer("a1").authorize(setOf(GoogleScope.GmailReadonly)))
+        assertEquals("1//stored", secrets.get(KEY))
 
         server.enqueue(json("""{"error":"invalid_grant","error_description":"Token has been expired or revoked."}""", 400))
-        b.clearToken("ya29.partial")
-        assertEquals(GoogleAuthorizer.Result.NeedsConsent(null), b.authorize(setOf(GoogleScope.CalendarEvents)))
-        assertNull("an expired grant is deleted", secrets.get(BrowserGoogle.REFRESH_TOKEN_KEY))
+        b.authorizer("a1").clearToken("ya29.partial")
+        assertEquals(GoogleAuthorizer.Result.NeedsConsent(null), b.authorizer("a1").authorize(setOf(GoogleScope.CalendarEvents)))
+        assertNull("an expired grant is deleted", secrets.get(KEY))
 
-        secrets.put(BrowserGoogle.REFRESH_TOKEN_KEY, "1//stored")
+        secrets.put(KEY, "1//stored")
         server.close()
-        assertEquals(GoogleAuthorizer.Result.Failed(BrowserGoogle.NO_NETWORK), b.authorize(setOf(GoogleScope.CalendarEvents)))
-        assertEquals("kept when Google can't be reached", "1//stored", secrets.get(BrowserGoogle.REFRESH_TOKEN_KEY))
+        assertEquals(GoogleAuthorizer.Result.Failed(BrowserGoogle.NO_NETWORK), b.authorizer("a1").authorize(setOf(GoogleScope.CalendarEvents)))
+        assertEquals("kept when Google can't be reached", "1//stored", secrets.get(KEY))
     }
 
     @Test fun `revoke tells Google and forgets the token`() = runBlocking {
-        secrets.put(BrowserGoogle.REFRESH_TOKEN_KEY, "1//stored")
+        secrets.put(KEY, "1//stored")
         server.enqueue(MockResponse.Builder().code(200).build())
         val b = browser()
-        b.revoke("owner@gmail.com")
+        b.authorizer("a1").revoke("owner@gmail.com")
         assertEquals(mapOf("token" to "1//stored"), form(server.takeRequest().body!!.utf8()))
-        assertNull(secrets.get(BrowserGoogle.REFRESH_TOKEN_KEY))
-        assertFalse(b.hasRefreshToken())
+        assertNull(secrets.get(KEY))
+        assertFalse(b.hasRefreshToken("a1"))
+    }
+
+    @Test fun `a new account gets Google's account chooser and no hint`() = runBlocking {
+        server.enqueue(json(BrowserOAuthTest.tokens()))
+        val b = browser()
+        val (result, page) = startSignIn(b, hint = null, id = null)
+        assertEquals("select_account consent", page.queryParameter("prompt"))
+        assertNull(page.queryParameter("login_hint"))
+        b.paste("${page.queryParameter("redirect_uri")}/?state=${page.queryParameter("state")}&code=4/new")
+        assertSignedIn(result.await())
+        Unit
+    }
+
+    @Test fun `each account has its own token, cache and refresh`() = runBlocking {
+        secrets.put(KEY, "1//first")
+        secrets.put(AccountSecrets.refreshToken("b2"), "1//second")
+        server.enqueue(json("""{"access_token":"ya29.a","expires_in":3599}"""))
+        server.enqueue(json("""{"access_token":"ya29.b","expires_in":3599}"""))
+        val b = browser()
+        assertEquals(GoogleAuthorizer.Result.Granted("ya29.a"), b.authorizer("a1").authorize(setOf(GoogleScope.CalendarEvents)))
+        assertEquals(GoogleAuthorizer.Result.Granted("ya29.b"), b.authorizer("b2").authorize(setOf(GoogleScope.CalendarEvents)))
+        assertEquals("1//first", form(server.takeRequest().body!!.utf8())["refresh_token"])
+        assertEquals("1//second", form(server.takeRequest().body!!.utf8())["refresh_token"])
+
+        server.enqueue(MockResponse.Builder().code(200).build())
+        b.authorizer("b2").revoke("second@gmail.com")
+        assertEquals(mapOf("token" to "1//second"), form(server.takeRequest().body!!.utf8()))
+        assertNull(secrets.get(AccountSecrets.refreshToken("b2")))
+        assertEquals("the other account is untouched", "1//first", secrets.get(KEY))
+        assertEquals(GoogleAuthorizer.Result.Granted("ya29.a"), b.authorizer("a1").authorize(setOf(GoogleScope.CalendarEvents)))
     }
 }

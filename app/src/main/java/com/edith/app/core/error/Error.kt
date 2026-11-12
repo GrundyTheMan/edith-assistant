@@ -58,7 +58,7 @@ sealed interface AppError {
     }
 
     data object GoogleNotConnected : AppError {
-        override val userMessage get() = "Your Google account isn't connected yet. Connect it in Settings."
+        override val userMessage get() = "That account isn't connected. Check Settings → Accounts."
     }
 
     data class GoogleAuth(val detail: String, override val cause: Throwable? = null) : AppError {

@@ -65,7 +65,11 @@ com.edith.app
 │   ├── speech/                 SpeechOutput (TextToSpeech), SentenceChunker
 │   └── handsfree/              HandsFreeService (foreground), WakeWordEngine, ConversationLoop
 ├── attachments/                AttachmentIntake, AttachmentStore, Retention, views
-├── google/                     GoogleAuth, CalendarClient/Tools/Screen, GmailClient/Tools
+├── accounts/                   C22: Account, AccountStore, AccountMigration, Accounts (the integration, D17)
+│   ├── sources/                CalendarSource, MailSource, Reads (parallel reads, merging), the shared models
+│   ├── tools/                  The calendar and email tools, WhichAccount (the "which account?" rule)
+│   └── ui/                     The Calendar tab (every account)
+├── google/                     GoogleAccounts (provider), GoogleAccountAuth (per account), Calendar/Gmail clients and sources
 └── ui/
     ├── theme/                  EdithTheme (light/dark), colors, typography
     └── navigation/             EdithNavHost, Destinations, bottom bar
@@ -172,7 +176,7 @@ attachments(
 | `hands_free_enabled` | Boolean | `false` | C14 |
 | `wake_word_sensitivity` | Float 0..1 | `0.5` | C14 |
 | `follow_up_seconds` | Int | `8` | C14 |
-| `google_account_email` | String? | null | C17 |
+| `accounts` | String (JSON list of `Account`) | absent | C22 (replaced C17's `google_account_email` and C17b's `google_sign_in_mode`, which the migration removes) |
 | `current_conversation_id` | Long? | null | C06b (the chat the app reopens on) |
 
 Secrets (API keys) are **not** in this table; they go through `SecretStore` (§9).
@@ -188,7 +192,7 @@ Built fresh for every request by `PromptBuilder` (C06):
 - "Current date and time: Thursday, October 29, 2026, 2:30 PM (America/Detroit)."         (C06)
 - Tool guidance generated from the registered, enabled tools (names + one-line purpose)    (C08)
 - Attachment conventions (<file>, <attachment number="N"/>, how labels look)               (C15/C16)
-- Integration status lines, e.g. "Google Calendar: connected as x@gmail.com."              (C17)
+- Integration status lines, e.g. "Accounts: personal — a@gmail.com (Google: calendar and email)."  (C17, C22)
 ```
 
 Rules: no capability text for features that are off or disconnected; never claim a capability that
@@ -238,8 +242,10 @@ Long work uses injected `AppDispatchers.io/default`.
   `base-config cleartextTrafficPermitted="true"`. All other traffic (Open-Meteo, search, Google) is
   HTTPS. Document the trade-off in the PR that adds it (C03).
 - `SecretStore`: AES/GCM key in Android Keystore (`KeyGenParameterSpec`, non-exportable); ciphertext +
-  IV stored in DataStore. Used for search API keys and the wake-word key. Google tokens are not stored
-  by the app (C17 uses `AuthorizationClient`, which caches them in Google Play services).
+  IV stored in DataStore. Used for search API keys, the wake-word key, and per account (C22) `account/<id>/refresh_token`
+  (a Google account signed in through the browser, D16; Microsoft C23) and `account/<id>/password` (iCloud, C24), plus
+  the one pending browser sign-in (`pending_sign_in`). An account's id is random, never its address. A Google account
+  on Play services stores no token (`AuthorizationClient` keeps it in Google Play services).
 - Permissions are requested only at the moment of use, with a one-line reason: microphone (record,
   dictate, hands-free), location (only when the owner asks about "here"), notifications (Android 13+: the
   "Edith is replying…" notification, asked on the first Send (D13), and the hands-free foreground service).
@@ -248,9 +254,9 @@ Long work uses injected `AppDispatchers.io/default`.
 ## 10. Navigation and screens
 
 Single activity, Navigation Compose. Bottom bar destinations: **Chat** (start), **Calendar** (C18;
-shows "Connect Google Calendar" until C17/C18), **Settings**. Smart home ("Home") is added in v2.
-Settings sections in order: Server & model · Voice · Hands-free · Attachments · Web search · Google
-account · About (version, crash report, licenses).
+every account's events since C22; "Add an account" until one is connected), **Settings**. Smart home ("Home") is added in v2.
+Settings sections in order: Server & model · Voice · Hands-free · Attachments · Web search · Accounts
+(C22; was Google account) · About (version, crash report, licenses).
 
 ## 11. Performance budgets (measure; put numbers in PRs)
 
@@ -266,7 +272,7 @@ account · About (version, crash report, licenses).
 
 - **Tools:** implement `Tool` (C08) and register it in `AppContainer`. A tool declares its JSON schema,
   a status label, whether it needs confirmation, and which integration it belongs to (for enable/disable).
-- **Integrations** (Google now, smart home later): implement `Integration` — `id`, `displayName`,
+- **Integrations** (email and calendar accounts since C22, smart home later): implement `Integration` — `id`, `displayName`,
   `status: StateFlow<IntegrationStatus>` (`NotConfigured`/`Connected(account)`/`Error`), `tools()`,
   `promptLines()`, and a Settings section composable. The chat engine only offers tools from
   integrations that are `Connected`. This is how smart home plugs in for v2 (C20).

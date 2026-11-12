@@ -31,8 +31,12 @@ interface Tool {
     val maxResultChars: Int get() = ToolTurnRunner.RESULT_MAX_CHARS
     /** Integration this tool belongs to (null = built in). Tools of disconnected integrations aren't offered. */
     val integrationId: String? get() = null
-    /** Non-null when the call changes something outside the app and needs the owner's OK first (D11). */
-    fun confirmation(args: ToolArgs): ConfirmationRequest? = null
+    /**
+     * Non-null when the call changes something outside the app and needs the owner's OK first (D11). Null when it
+     * doesn't, or when [execute] will only explain why it can't go ahead (C22: "ask the owner which account").
+     * Suspends because the answer may need a read first (C22: which account has a calendar of that name).
+     */
+    suspend fun confirmation(args: ToolArgs): ConfirmationRequest? = null
     /** Non-null when this call needs a runtime permission (C11), asked with Android's dialog before [execute]. */
     fun permission(args: ToolArgs): PermissionNeed? = null
     suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult

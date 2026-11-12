@@ -59,12 +59,18 @@ class CredentialManagerSignIn(context: Context) : GoogleSignIn {
     }
 }
 
-/** Access to Calendar and Gmail through Google's `AuthorizationClient` (C17 §2): tokens stay in Play services. */
-class PlayServicesAuthorizer(context: Context) : GoogleAuthorizer {
+/**
+ * Access to one account's Calendar and Gmail through Google's `AuthorizationClient` (C17 §2): tokens stay in Play
+ * services. C22: the request names the account (`setAccount`), so every Google account on the phone can use it.
+ */
+class PlayServicesAuthorizer(context: Context, private val email: String) : GoogleAuthorizer {
     private val client = Identity.getAuthorizationClient(context.applicationContext)
 
     override suspend fun authorize(scopes: Set<GoogleScope>): GoogleAuthorizer.Result = try {
-        val request = AuthorizationRequest.builder().setRequestedScopes(scopes.map { Scope(it.uri) }).build()
+        val request = AuthorizationRequest.builder()
+            .setRequestedScopes(scopes.map { Scope(it.uri) })
+            .setAccount(Account(email, GOOGLE_ACCOUNT_TYPE))
+            .build()
         val result = client.authorize(request).await()
         when {
             result.hasResolution() -> GoogleAuthorizer.Result.NeedsConsent(result.pendingIntent)
@@ -96,7 +102,7 @@ class PlayServicesAuthorizer(context: Context) : GoogleAuthorizer {
     override suspend fun revoke(email: String) {
         client.revokeAccess(
             RevokeAccessRequest.builder()
-                .setAccount(Account(email, "com.google"))
+                .setAccount(Account(email, GOOGLE_ACCOUNT_TYPE))
                 .setScopes(GoogleScope.entries.map { Scope(it.uri) })
                 .build(),
         ).await()
@@ -109,3 +115,6 @@ class PlayServicesAuthorizer(context: Context) : GoogleAuthorizer {
         else -> "Google said no (code ${e.statusCode})."
     }
 }
+
+/** Android's account type for Google accounts. */
+private const val GOOGLE_ACCOUNT_TYPE = "com.google"

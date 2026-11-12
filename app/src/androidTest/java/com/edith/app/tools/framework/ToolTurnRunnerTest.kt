@@ -106,7 +106,7 @@ class ToolTurnRunnerTest {
         override val spec = ToolSpec(name, "Does $name.", params)
         override val statusLabel = "Running $name…"
         override val displayName = name
-        override fun confirmation(args: ToolArgs) = if (confirm) ConfirmationRequest("Do $name?", listOf("What" to name)) else null
+        override suspend fun confirmation(args: ToolArgs) = if (confirm) ConfirmationRequest("Do $name?", listOf("What" to name)) else null
         override fun permission(args: ToolArgs) = needs?.let { PermissionNeed(it, "No $it.") }
         override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
             calls += args.raw

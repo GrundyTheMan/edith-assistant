@@ -79,7 +79,11 @@ class BrowserOAuth(
     /** A random, unguessable `state` for one sign-in. */
     fun newState(): String = randomToken(24)
 
-    /** Google's sign-in page for [scopes] (plus `openid email`, for the id_token's email). */
+    /**
+     * Google's sign-in page for [scopes] (plus `openid email`, for the id_token's email). With [loginHint] it signs
+     * that account in again; without one it's a new account (C22 §2): `prompt=select_account consent` shows Google's
+     * account chooser instead of taking the account the browser is signed in to.
+     */
     fun authUrl(redirect: String, challenge: String, state: String, scopes: Set<GoogleScope>, loginHint: String? = null): String =
         authBaseUrl.toHttpUrl().newBuilder()
             .addQueryParameter("client_id", clientId)
@@ -90,7 +94,7 @@ class BrowserOAuth(
             .addQueryParameter("code_challenge_method", "S256")
             .addQueryParameter("state", state)
             .addQueryParameter("access_type", "offline")
-            .addQueryParameter("prompt", "consent")
+            .addQueryParameter("prompt", if (loginHint.isNullOrBlank()) "select_account consent" else "consent")
             .apply { if (!loginHint.isNullOrBlank()) addQueryParameter("login_hint", loginHint) }
             .build()
             .toString()

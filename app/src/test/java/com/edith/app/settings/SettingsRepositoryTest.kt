@@ -49,7 +49,7 @@ class SettingsRepositoryTest {
             serverUrl = "http://192.168.4.82:11434", model = "gemma4:12b-it-q8_0", speakReplies = false,
             speechRate = 1.5f, units = Units.Imperial, searchProvider = "ollama",
             keepRecentAttachments = 0, handsFreeEnabled = true, wakeWordSensitivity = 0.8f, followUpSeconds = 12,
-            googleAccountEmail = "owner@example.com",
+            currentConversationId = 7L,
         )
         repository(file).update { changed }
         restart()
@@ -61,12 +61,12 @@ class SettingsRepositoryTest {
     // replace an existing file in a JVM test (Java's rename won't overwrite there). Android and Linux CI are fine.
     @Test fun `setting a nullable value back to null clears it`() {
         val prefs = mutablePreferencesOf()
-        prefs.write(Settings(model = "m", googleAccountEmail = "a@b.c"))
+        prefs.write(Settings(model = "m", currentConversationId = 3L))
         assertEquals("m", prefs.toSettings().model)
 
-        prefs.write(Settings(model = null, googleAccountEmail = null))
+        prefs.write(Settings(model = null, currentConversationId = null))
         assertNull(prefs.toSettings().model)
-        assertNull(prefs.toSettings().googleAccountEmail)
+        assertNull(prefs.toSettings().currentConversationId)
         assertNull("key removed, not stored as empty", prefs[SettingsKeys.MODEL])
     }
 

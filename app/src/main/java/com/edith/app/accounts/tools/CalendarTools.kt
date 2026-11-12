@@ -1,9 +1,19 @@
-package com.edith.app.google.calendar
+package com.edith.app.accounts.tools
 
+import com.edith.app.accounts.Account
+import com.edith.app.accounts.AccountDirectory
+import com.edith.app.accounts.AccountEntry
+import com.edith.app.accounts.Accounts
+import com.edith.app.accounts.sources.CalendarEvent
+import com.edith.app.accounts.sources.CalendarMerge
+import com.edith.app.accounts.sources.CalendarSource
+import com.edith.app.accounts.sources.EventChange
+import com.edith.app.accounts.sources.MergedEvent
+import com.edith.app.accounts.sources.ReadAll
+import com.edith.app.accounts.sources.Readable
+import com.edith.app.accounts.sources.Reads
 import com.edith.app.chat.engine.ConfirmationRequest
-import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
-import com.edith.app.google.GoogleAuth
 import com.edith.app.tools.framework.ArgumentError
 import com.edith.app.tools.framework.ParamType
 import com.edith.app.tools.framework.Tool
@@ -20,23 +30,16 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * The calendars Edith reads (C18), remembered for a few minutes so a turn with several tool calls asks Google once.
- * Events she lists get short handles (`e1`, `e2`, …) the model passes back to change or delete them: Google's ids are
- * long, and the handle keeps what the event looked like, for the confirmation card's "before → after".
+ * Events Edith lists get short handles (`e1`, `e2`, …) the model passes back to change or delete them (C18). One
+ * sequence for the whole app run, across accounts (C22 trap 4), so a handle is never ambiguous; each keeps the event
+ * as listed, with its account, for the confirmation card's "before → after".
  */
-class CalendarSession(private val client: CalendarClient, private val nowMs: () -> Long = System::currentTimeMillis) {
-    private var calendars: List<CalendarInfo>? = null
-    private var fetchedAtMs = 0L
+class CalendarHandles {
     private val handles = LinkedHashMap<String, CalendarEvent>()
     private var next = 1
 
-    suspend fun calendars(): Outcome<List<CalendarInfo>> {
-        calendars?.takeIf { nowMs() - fetchedAtMs < CACHE_MS }?.let { return Outcome.Success(it) }
-        return client.calendars().also { if (it is Outcome.Success) { calendars = it.value; fetchedAtMs = nowMs() } }
-    }
-
     @Synchronized fun handleFor(event: CalendarEvent): String {
-        handles.entries.firstOrNull { it.value.id == event.id && it.value.calendarId == event.calendarId }?.let {
+        handles.entries.firstOrNull { it.value.accountId == event.accountId && it.value.id == event.id && it.value.calendarId == event.calendarId }?.let {
             it.setValue(event)
             return it.key
         }
@@ -53,7 +56,6 @@ class CalendarSession(private val client: CalendarClient, private val nowMs: () 
     @Synchronized fun forget(handle: String) { handles.remove(handle) }
 
     companion object {
-        const val CACHE_MS = 5 * 60_000L
         const val MAX_HANDLES = 300
     }
 }
@@ -75,10 +77,19 @@ object CalendarFormat {
         return "${day.format(start)}, ${if (sameHalf) timeNoAmPm.format(start) else time.format(start)}–${time.format(end)}"
     }
 
-    fun line(e: CalendarEvent, handle: String, showCalendar: Boolean): String = buildString {
+    /**
+     * `Mon Nov 2, 1:00–2:00 PM — Dentist (Main St Dental) [Blake · work] {event_id: e2}`. The bracket names the
+     * calendar when [showCalendar], and the account when [showAccount] (more than one account); an invite in two
+     * accounts names both.
+     */
+    fun line(m: MergedEvent, handle: String, showCalendar: Boolean, showAccount: Boolean): String = buildString {
+        val e = m.event
         append(whenText(e.start, e.end, e.allDay)).append(" — ").append(e.title)
         e.location?.takeIf { it.isNotBlank() }?.let { append(" (").append(it.take(60)).append(')') }
-        if (showCalendar) append(" [").append(e.calendarName).append(']')
+        val where = (listOf(m.account to e) + m.alsoIn).map { (a, ev) ->
+            listOfNotNull(ev.calendarName.takeIf { showCalendar }, a.label.takeIf { showAccount }).joinToString(" · ")
+        }.filter { it.isNotEmpty() }
+        if (where.isNotEmpty()) append(" [").append(where.joinToString("; ")).append(']')
         append(" {event_id: ").append(handle).append('}')
     }
 }
@@ -113,68 +124,89 @@ internal fun ToolArgs.localTime(name: String, zone: ZoneId): ZonedDateTime? {
 private const val LOCAL_TIMES = "Give times in the user's local time without an offset or Z, e.g. 2026-11-03T15:00:00."
 private const val NEEDS_LIST = "I don't have that event. List the events first (list_calendar_events) and use the event_id it gives."
 
-private fun calendarError(e: AppError): ToolResult = ToolResult.Error(
-    when (e) {
-        AppError.GoogleNotConnected -> "Google isn't connected. Tell the user to connect it in Settings → Google account."
-        is AppError.GoogleAuth -> if (e.detail == GoogleAuth.NEEDS_PERMISSION) "I need permission to see the calendar. Tell the user to tap Grant access in Settings → Google account." else "Google: ${e.detail}"
-        is AppError.ToolFailed -> e.detail
-        else -> e.userMessage
-    },
-)
+/** The accounts to read: all with a calendar, or the one [named]. Null with a [ToolResult] when the name matches none. */
+private fun calendarTargets(dir: AccountDirectory, named: String?): Pair<List<Readable<CalendarSource>>, ToolResult?> {
+    val all = dir.entries().filter { it.calendar != null }
+    val chosen = if (named == null) all else {
+        val ids = dir.byName(named).map { it.id }.toSet()
+        val hit = all.filter { it.account.id in ids }
+        if (hit.size != 1) {
+            return emptyList<Readable<CalendarSource>>() to ToolResult.Error("There's no account called '$named'. The accounts are: ${all.joinToString { it.account.display }}.")
+        }
+        hit
+    }
+    return chosen.map { Readable(it.account, it.state, requireNotNull(it.calendar)) } to null
+}
 
-/** `list_calendar_events` (C18 §2): what's on the owner's calendars between two times. */
-class ListCalendarEventsTool(private val session: CalendarSession, private val client: CalendarClient) : Tool {
+/** The account named on a card: "work (sam@contoso.com) — Calendar". */
+private fun accountRow(account: Account, calendarName: String?): Pair<String, String> =
+    "Account" to (account.display + (calendarName?.let { " — $it" } ?: ""))
+
+/** `list_calendar_events` (C18, C22): what's on the owner's calendars between two times, across every account. */
+class ListCalendarEventsTool(private val dir: AccountDirectory, private val handles: CalendarHandles) : Tool {
     override val spec = ToolSpec(
         "list_calendar_events",
-        "List events on the user's Google calendars between two times, optionally matching words",
-        listOf(START, END, ToolParam("query", ParamType.String, "Words to look for in events (optional)", aliases = listOf("q", "search"))),
+        "List events on the user's calendars (every connected account) between two times, optionally matching words",
+        listOf(START, END, ToolParam("query", ParamType.String, "Words to look for in events (optional)", aliases = listOf("q", "search")), ACCOUNT_PARAM),
     )
     override val statusLabel = "Checking your calendar…"
     override val displayName = "calendar"
-    override val integrationId = GoogleAuth.ID
+    override val integrationId = Accounts.ID
     override val guidance = "For the user's schedule, call list_calendar_events with ISO start and end covering the days asked about " +
         "(a whole day: 00:00 to 23:59). Results carry an event_id for changing or deleting an event. $LOCAL_TIMES"
 
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
         val zone = ctx.clock.zone()
-        val from = args.localTime("start", zone)!!
-        val to = args.localTime("end", zone)!!.let { if (it == from) it.plusDays(1) else it }
+        val from = requireNotNull(args.localTime("start", zone))
+        val to = requireNotNull(args.localTime("end", zone)).let { if (it == from) it.plusDays(1) else it }
         if (!to.isAfter(from)) throw ArgumentError("end", "end must be after start")
-        val calendars = when (val r = session.calendars()) { is Outcome.Success -> r.value; is Outcome.Failure -> return calendarError(r.error) }
-        val events = when (val r = client.events(calendars, from, to, args.string("query"))) { is Outcome.Success -> r.value; is Outcome.Failure -> return calendarError(r.error) }
-        if (events.isEmpty()) return ToolResult.Ok("No events.")
-        val shown = events.take(MAX_EVENTS)
-        val lines = shown.map { CalendarFormat.line(it, session.handleFor(it), calendars.size > 1) }
-        val more = if (events.size > shown.size) "\n…and ${events.size - shown.size} more; ask for a shorter period." else ""
-        return ToolResult.Ok(lines.joinToString("\n") + more)
+        val (targets, refused) = calendarTargets(dir, args.string("account"))
+        refused?.let { return it }
+        val read = Reads.readAll(targets) { it.events(from.toInstant(), to.toInstant(), args.string("query")) }
+        return listResult(read, showAccount = dir.entries().count { it.calendar != null } > 1)
+    }
+
+    private fun listResult(read: ReadAll<List<CalendarEvent>>, showAccount: Boolean): ToolResult {
+        if (read.results.isEmpty() && read.failures.isNotEmpty()) return ToolResult.Error(read.failureText())
+        val events = CalendarMerge.merge(read.results)
+        val showCalendar = showAccount || read.results.any { (_, list) -> list.map { it.calendarId }.distinct().size > 1 }
+        val text = if (events.isEmpty()) "No events." else {
+            val shown = events.take(MAX_EVENTS)
+            shown.joinToString("\n") { CalendarFormat.line(it, handles.handleFor(it.event), showCalendar, showAccount) } +
+                if (events.size > shown.size) "\n…and ${events.size - shown.size} more; ask for a shorter period." else ""
+        }
+        return ToolResult.Ok(listOf(text, read.failureText()).filter { it.isNotEmpty() }.joinToString("\n"))
     }
 
     companion object { const val MAX_EVENTS = 20 }
 }
 
-/** `find_free_time` (C18 §2): open slots of at least a given length, 8 AM–8 PM each day. All-day events don't block. */
-class FindFreeTimeTool(private val session: CalendarSession, private val client: CalendarClient) : Tool {
+/** `find_free_time` (C18, C22): open slots of at least a given length, 8 AM–8 PM; busy in any account = busy. */
+class FindFreeTimeTool(private val dir: AccountDirectory) : Tool {
     override val spec = ToolSpec(
         "find_free_time",
-        "Find free time on the user's calendars between two times, between 8 AM and 8 PM",
+        "Find free time on the user's calendars (every connected account) between two times, between 8 AM and 8 PM",
         listOf(START, END, ToolParam("duration_minutes", ParamType.Integer, "How long the free time must be, in minutes (default 30)", aliases = listOf("duration", "minutes"))),
     )
     override val statusLabel = "Checking your calendar…"
     override val displayName = "calendar"
-    override val integrationId = GoogleAuth.ID
+    override val integrationId = Accounts.ID
     override val guidance = "For \"am I free…\" or \"when could I…\", call find_free_time."
 
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
         val zone = ctx.clock.zone()
-        val from = args.localTime("start", zone)!!
-        val to = args.localTime("end", zone)!!
+        val from = requireNotNull(args.localTime("start", zone))
+        val to = requireNotNull(args.localTime("end", zone))
         if (!to.isAfter(from)) throw ArgumentError("end", "end must be after start")
         val minutes = (args.int("duration_minutes") ?: 30).coerceIn(5, 24 * 60)
-        val calendars = when (val r = session.calendars()) { is Outcome.Success -> r.value; is Outcome.Failure -> return calendarError(r.error) }
-        val events = when (val r = client.events(calendars, from, to)) { is Outcome.Success -> r.value; is Outcome.Failure -> return calendarError(r.error) }
-        val slots = freeSlots(events, from, to, Duration.ofMinutes(minutes.toLong()), zone)
-        if (slots.isEmpty()) return ToolResult.Ok("No free time of $minutes minutes or more between 8 AM and 8 PM in that period.")
-        return ToolResult.Ok(slots.take(MAX_SLOTS).joinToString("\n") { (s, e) -> "Free: " + CalendarFormat.whenText(s, e, allDay = false) })
+        val (targets, _) = calendarTargets(dir, null)
+        val read = Reads.readAll(targets) { it.events(from.toInstant(), to.toInstant()) }
+        if (read.results.isEmpty() && read.failures.isNotEmpty()) return ToolResult.Error(read.failureText())
+        val slots = freeSlots(read.results.flatMap { it.second }, from, to, Duration.ofMinutes(minutes.toLong()), zone)
+        val text = if (slots.isEmpty()) "No free time of $minutes minutes or more between 8 AM and 8 PM in that period."
+        else slots.take(MAX_SLOTS).joinToString("\n") { (s, e) -> "Free: " + CalendarFormat.whenText(s, e, allDay = false) }
+        val missing = read.failures.joinToString("\n") { it.line.removeSuffix(".") + "; its events aren't counted." }
+        return ToolResult.Ok(listOf(text, missing).filter { it.isNotEmpty() }.joinToString("\n"))
     }
 
     companion object {
@@ -204,11 +236,14 @@ class FindFreeTimeTool(private val session: CalendarSession, private val client:
     }
 }
 
-/** `create_calendar_event` (C18 §2): adds an event to the primary calendar, after the owner confirms (D11). */
-class CreateCalendarEventTool(private val session: CalendarSession, private val client: CalendarClient, private val zone: () -> ZoneId = ZoneId::systemDefault) : Tool {
+/**
+ * `create_calendar_event` (C18, C22): adds an event, after the owner confirms (D11). Which account it goes to is
+ * [WhichAccount]'s decision; when Edith must ask, there's no card and no request.
+ */
+class CreateCalendarEventTool(private val dir: AccountDirectory, private val handles: CalendarHandles, private val zone: () -> ZoneId = ZoneId::systemDefault) : Tool {
     override val spec = ToolSpec(
         "create_calendar_event",
-        "Add an event to the user's primary Google calendar (the user confirms first)",
+        "Add an event to the user's calendar (the user confirms first)",
         listOf(
             ToolParam("title", ParamType.String, "What the event is", required = true, aliases = listOf("summary", "name")),
             ToolParam("start", ParamType.DateTime, "When it starts", required = true),
@@ -216,48 +251,60 @@ class CreateCalendarEventTool(private val session: CalendarSession, private val 
             ToolParam("all_day", ParamType.Boolean, "True for an all-day event"),
             ToolParam("location", ParamType.String, "Where (optional)", aliases = listOf("where", "place")),
             ToolParam("description", ParamType.String, "Notes (optional)", aliases = listOf("notes")),
+            ToolParam("calendar", ParamType.String, "A calendar's name, from list_calendar_events, only when the user named one", aliases = listOf("calendar_name")),
+            ACCOUNT_PARAM,
         ),
     )
     override val statusLabel = "Adding to your calendar…"
     override val displayName = "calendar"
-    override val integrationId = GoogleAuth.ID
+    override val integrationId = Accounts.ID
     override val guidance = "To add, change or delete an event, call the tool straight away: the app asks the user to confirm on screen, so don't ask in chat first."
 
     private fun change(args: ToolArgs): EventChange {
         val z = zone()
         val allDay = args.bool("all_day") == true
-        val start = args.localTime("start", z)!!.let { if (allDay) it.toLocalDate().atStartOfDay(z) else it }
+        val start = requireNotNull(args.localTime("start", z)).let { if (allDay) it.toLocalDate().atStartOfDay(z) else it }
         val end = args.localTime("end", z)?.let { if (allDay) it.toLocalDate().atStartOfDay(z).plusDays(1) else it }
             ?: if (allDay) start.plusDays(1) else start.plusHours(1)
         if (!end.isAfter(start)) throw ArgumentError("end", "end must be after start")
         return EventChange(args.string("title"), start, end, allDay, args.string("location"), args.string("description"))
     }
 
-    override fun confirmation(args: ToolArgs): ConfirmationRequest {
+    private suspend fun target(args: ToolArgs) = WhichAccount.forCalendar(dir, args.string("account"), args.string("calendar"))
+
+    override suspend fun confirmation(args: ToolArgs): ConfirmationRequest? {
         val c = change(args)
+        val use = target(args) as? WhichAccount.Choice.Use ?: return null   // execute explains: no card, no request
+        val calendarName = use.calendar?.name ?: defaultCalendarName(use.entry)
         return ConfirmationRequest(
             "Add to your calendar?",
-            listOfNotNull("What" to c.title!!, "When" to CalendarFormat.whenText(c.start!!, c.end!!, c.allDay), c.location?.let { "Where" to it }),
+            listOfNotNull(
+                "What" to requireNotNull(c.title), "When" to CalendarFormat.whenText(requireNotNull(c.start), requireNotNull(c.end), c.allDay),
+                c.location?.let { "Where" to it }, accountRow(use.entry.account, calendarName),
+            ),
             confirmLabel = "Add",
         )
     }
 
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
         val c = change(args)
-        val calendars = when (val r = session.calendars()) { is Outcome.Success -> r.value; is Outcome.Failure -> return calendarError(r.error) }
-        val primary = calendars.firstOrNull { it.primary } ?: CalendarInfo("primary", "Calendar", primary = true)
-        return when (val r = client.insert(primary, c)) {
+        val use = when (val t = target(args)) { is WhichAccount.Choice.Use -> t; is WhichAccount.Choice.Stop -> return t.result }
+        val source = requireNotNull(use.entry.calendar)
+        return when (val r = source.create(use.calendar?.id, c)) {
             is Outcome.Success -> {
-                session.handleFor(r.value)
-                ToolResult.Ok("Added \"${r.value.title}\" on ${CalendarFormat.whenText(r.value.start, r.value.end, r.value.allDay)}.")
+                handles.handleFor(r.value)
+                ToolResult.Ok("Added \"${r.value.title}\" on ${CalendarFormat.whenText(r.value.start, r.value.end, r.value.allDay)} to ${use.entry.account.display}.")
             }
-            is Outcome.Failure -> calendarError(r.error)
+            is Outcome.Failure -> accountError(use.entry.account, r.error)
         }
     }
+
+    private suspend fun defaultCalendarName(e: AccountEntry): String? =
+        (e.calendar?.calendars() as? Outcome.Success)?.value?.let { cals -> (cals.firstOrNull { it.isDefault } ?: cals.firstOrNull())?.name }
 }
 
-/** `update_calendar_event` (C18 §2): changes an event Edith listed, after the owner sees before → after. */
-class UpdateCalendarEventTool(private val session: CalendarSession, private val client: CalendarClient, private val zone: () -> ZoneId = ZoneId::systemDefault) : Tool {
+/** `update_calendar_event` (C18): changes an event Edith listed, in its own account, after the owner sees before → after. */
+class UpdateCalendarEventTool(private val dir: AccountDirectory, private val handles: CalendarHandles, private val zone: () -> ZoneId = ZoneId::systemDefault) : Tool {
     override val spec = ToolSpec(
         "update_calendar_event",
         "Change an event from list_calendar_events: its title, time or place (the user confirms first)",
@@ -271,7 +318,7 @@ class UpdateCalendarEventTool(private val session: CalendarSession, private val 
     )
     override val statusLabel = "Changing your calendar…"
     override val displayName = "calendar"
-    override val integrationId = GoogleAuth.ID
+    override val integrationId = Accounts.ID
 
     private fun change(args: ToolArgs, e: CalendarEvent): EventChange {
         val z = zone()
@@ -281,8 +328,9 @@ class UpdateCalendarEventTool(private val session: CalendarSession, private val 
         return EventChange(args.string("title"), start ?: end?.let { e.start }, end, e.allDay && start == null, args.string("location"))
     }
 
-    override fun confirmation(args: ToolArgs): ConfirmationRequest? {
-        val e = session.event(args.string("event_id")) ?: return null   // unknown: execute says so, nothing changes
+    override suspend fun confirmation(args: ToolArgs): ConfirmationRequest? {
+        val e = handles.event(args.string("event_id")) ?: return null   // unknown: execute says so, nothing changes
+        val entry = ownAccount(dir, e.accountId).first ?: return null
         val c = change(args, e)
         val details = buildList {
             add("Event" to e.title)
@@ -291,28 +339,31 @@ class UpdateCalendarEventTool(private val session: CalendarSession, private val 
                 add("When" to "${CalendarFormat.whenText(e.start, e.end, e.allDay)} → ${CalendarFormat.whenText(c.start ?: e.start, c.end ?: e.end, false)}")
             }
             c.location?.let { add("Where" to "${e.location ?: "—"} → $it") }
+            add(accountRow(entry.account, e.calendarName))
         }
         return ConfirmationRequest("Change this event?", details, confirmLabel = "Change")
     }
 
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
-        val handle = args.string("event_id")!!
-        val e = session.event(handle) ?: return ToolResult.Error(NEEDS_LIST)
+        val handle = requireNotNull(args.string("event_id"))
+        val e = handles.event(handle) ?: return ToolResult.Error(NEEDS_LIST)
+        val (entry, refused) = ownAccount(dir, e.accountId)
+        if (entry == null) return requireNotNull(refused)
         val c = change(args, e)
         if (c.title == null && c.start == null && c.end == null && c.location == null) return ToolResult.Error("Nothing to change: give a new title, start, end or location.")
-        return when (val r = client.patch(e, c)) {
+        return when (val r = requireNotNull(entry.calendar).update(e, c)) {
             is Outcome.Success -> {
-                session.update(handle, r.value)
+                handles.update(handle, r.value)
                 ToolResult.Ok("Changed \"${r.value.title}\": now ${CalendarFormat.whenText(r.value.start, r.value.end, r.value.allDay)}" +
                     (r.value.location?.let { " at $it" } ?: "") + ".")
             }
-            is Outcome.Failure -> calendarError(r.error)
+            is Outcome.Failure -> accountError(entry.account, r.error)
         }
     }
 }
 
-/** `delete_calendar_event` (C18 §2): removes an event Edith listed, after the owner confirms. */
-class DeleteCalendarEventTool(private val session: CalendarSession, private val client: CalendarClient) : Tool {
+/** `delete_calendar_event` (C18): removes an event Edith listed, from its own account, after the owner confirms. */
+class DeleteCalendarEventTool(private val dir: AccountDirectory, private val handles: CalendarHandles) : Tool {
     override val spec = ToolSpec(
         "delete_calendar_event",
         "Delete an event from list_calendar_events (the user confirms first)",
@@ -320,23 +371,32 @@ class DeleteCalendarEventTool(private val session: CalendarSession, private val 
     )
     override val statusLabel = "Changing your calendar…"
     override val displayName = "calendar"
-    override val integrationId = GoogleAuth.ID
+    override val integrationId = Accounts.ID
 
-    override fun confirmation(args: ToolArgs): ConfirmationRequest? {
-        val e = session.event(args.string("event_id")) ?: return null
+    override suspend fun confirmation(args: ToolArgs): ConfirmationRequest? {
+        val e = handles.event(args.string("event_id")) ?: return null
+        val entry = ownAccount(dir, e.accountId).first ?: return null
         return ConfirmationRequest(
             "Delete from your calendar?",
-            listOfNotNull("Event" to e.title, "When" to CalendarFormat.whenText(e.start, e.end, e.allDay), e.location?.let { "Where" to it }),
+            listOfNotNull("Event" to e.title, "When" to CalendarFormat.whenText(e.start, e.end, e.allDay), e.location?.let { "Where" to it }, accountRow(entry.account, e.calendarName)),
             confirmLabel = "Delete",
         )
     }
 
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
-        val handle = args.string("event_id")!!
-        val e = session.event(handle) ?: return ToolResult.Error(NEEDS_LIST)
-        return when (val r = client.delete(e)) {
-            is Outcome.Success -> { session.forget(handle); ToolResult.Ok("Deleted \"${e.title}\" (${CalendarFormat.whenText(e.start, e.end, e.allDay)}).") }
-            is Outcome.Failure -> calendarError(r.error)
+        val handle = requireNotNull(args.string("event_id"))
+        val e = handles.event(handle) ?: return ToolResult.Error(NEEDS_LIST)
+        val (entry, refused) = ownAccount(dir, e.accountId)
+        if (entry == null) return requireNotNull(refused)
+        return when (val r = requireNotNull(entry.calendar).delete(e)) {
+            is Outcome.Success -> { handles.forget(handle); ToolResult.Ok("Deleted \"${e.title}\" (${CalendarFormat.whenText(e.start, e.end, e.allDay)}) from ${entry.account.display}.") }
+            is Outcome.Failure -> accountError(entry.account, r.error)
         }
     }
 }
+
+/** The calendar tools (C18, C22), sharing one set of handles. */
+fun calendarTools(dir: AccountDirectory, handles: CalendarHandles): List<Tool> = listOf(
+    ListCalendarEventsTool(dir, handles), FindFreeTimeTool(dir), CreateCalendarEventTool(dir, handles),
+    UpdateCalendarEventTool(dir, handles), DeleteCalendarEventTool(dir, handles),
+)
