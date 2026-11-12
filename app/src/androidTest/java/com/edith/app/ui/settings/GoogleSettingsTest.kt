@@ -65,10 +65,8 @@ class GoogleSettingsTest {
                     state, { calls += "sign in" }, { calls += "grant" }, { calls += "disconnect" },
                     offerBrowser = true,
                     onUseBrowser = { calls += "browser"; waiting = true },
-                    waitingForBrowser = waiting,
-                    onPaste = { calls += "paste $it" },
-                    onCancelBrowser = { calls += "cancel"; waiting = false },
                 )
+                if (waiting) BrowserWaitingDialog(onPaste = { calls += "paste $it" }, onCancel = { calls += "cancel"; waiting = false })
             }
         }
         compose.onNodeWithText("Use a browser instead").performClick()

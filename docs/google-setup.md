@@ -64,7 +64,10 @@ means it isn't in the history either.
 Andarium on the iPhone has no Google Play services, so Edith signs in there the way desktop apps do: Google's page
 in Chrome, then back to Edith. That needs a fourth OAuth client, of type **Desktop app**.
 
-1. Google Auth Platform → **Clients** → **Create client**.
+1. Make sure you're in the **same project** as the other three clients (the project picker at the top; the
+   client list shows Edith debug, Edith release and Edith web). A Desktop client in another project gets "Access
+   blocked: Edith has not completed the Google verification process": that project's test users don't include
+   you. Google Auth Platform → **Clients** → **Create client**.
 2. Application type **Desktop app**, name **Edith browser sign-in** → **Create**.
 3. Google shows a **Client ID** and a **client secret**. For Desktop clients Google says the secret isn't
    confidential, but treat it like one anyway: don't commit it, and don't paste it into a chat. Add both lines to
@@ -73,8 +76,10 @@ in Chrome, then back to Edith. That needs a fourth OAuth client, of type **Deskt
    edith.googleDesktopClientId=PASTE-THE-DESKTOP-CLIENT-ID-HERE.apps.googleusercontent.com
    edith.googleDesktopClientSecret=PASTE-THE-SECRET-HERE
    ```
-   Then tell me they're there. Release builds contain the secret if Google's token endpoint needs it. That's
-   accepted for a Desktop client.
+   Then tell me they're there. Google's token endpoint **needs** the secret for a Desktop client ("client_secret
+   is missing" without it, checked 2026-11-11), so release builds contain it. That's accepted for a Desktop client.
+   Google shows a new secret in full only once: copy it from the creation dialog (or **Download JSON**). If it's
+   masked later, open the client and use **Add secret**.
 4. Nothing else changes: same project, same consent screen, same scopes, same test user.
 
 What to expect:

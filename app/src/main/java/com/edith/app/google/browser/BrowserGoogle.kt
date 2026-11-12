@@ -17,6 +17,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -50,6 +51,11 @@ class BrowserGoogle(
     /** Opens the loopback listener at a port (0: any). */
     private val openReceiver: (Int) -> LoopbackReceiver = { LoopbackReceiver.open(dispatchers.io, backLink, it) },
     private val loopbackTimeout: Duration = 5.minutes,
+    /**
+     * Whether Edith is on screen (null: always, as in JVM tests). Android 17 blocks her network while the browser
+     * is in front, so a code that arrives then is exchanged once she's back (C17b As built).
+     */
+    private val appVisible: StateFlow<Boolean>? = null,
 ) : GoogleSignIn, GoogleAuthorizer {
 
     private sealed interface Input {
@@ -184,6 +190,12 @@ class BrowserGoogle(
             BrowserOAuth.Redirect.WrongState -> return failed(WRONG_ADDRESS, "the address had the wrong state")
             BrowserOAuth.Redirect.Denied -> return failed(DECLINED, "access_denied")
             is BrowserOAuth.Redirect.Error -> return failed("Google didn't sign you in (${r.error}). Try again.", r.error)
+        }
+        appVisible?.let { visible ->
+            if (!visible.value) {
+                Log.i(LogTag.Google, "Browser sign-in: waiting for Edith to be on screen to finish")
+                withTimeoutOrNull(loopbackTimeout) { visible.first { it } }
+            }
         }
         val result = when (val t = oauth.exchange(code, pending.verifier, pending.redirectUri)) {
             is BrowserOAuth.TokenResult.Tokens -> {

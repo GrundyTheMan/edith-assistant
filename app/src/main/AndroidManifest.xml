@@ -42,9 +42,13 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Edith.Splash">
 
+        <!-- singleTask (C17b §4): Chrome's "Back to Edith" link must bring back the running activity. With the default
+             launch mode Android finished it and started a new one on the Chat tab, losing Settings and its
+             sign-in dialog (seen on the emulator, 2026-11-11). -->
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

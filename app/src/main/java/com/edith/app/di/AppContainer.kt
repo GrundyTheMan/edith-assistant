@@ -17,6 +17,7 @@ import com.edith.app.chat.engine.ReplyListener
 import com.edith.app.chat.engine.TurnRunner
 import com.edith.app.chat.ui.ChatFeatures
 import com.edith.app.core.dispatchers.AppDispatchers
+import com.edith.app.core.lifecycle.AppVisibility
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import com.edith.app.core.net.TaggedSocketFactory
@@ -271,6 +272,7 @@ class AppContainer(val app: Application) {
             dispatchers = dispatchers,
             backLink = "${BuildConfig.APPLICATION_ID}://signed-in",
             knownEmail = { settingsRepository.current().googleAccountEmail },
+            appVisible = AppVisibility.visible,
         )
         val google = ChoosingGoogle(
             play = CredentialManagerSignIn(app),

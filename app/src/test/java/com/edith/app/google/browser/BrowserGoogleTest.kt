@@ -15,6 +15,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import mockwebserver3.MockResponse
@@ -57,11 +59,12 @@ class BrowserGoogleTest {
         tokenUrl = server.url("/token").toString(), revokeUrl = server.url("/revoke").toString(),
     )
 
-    private fun browser(timeout: kotlin.time.Duration = 1.minutes) = BrowserGoogle(
+    private fun browser(timeout: kotlin.time.Duration = 1.minutes, visible: StateFlow<Boolean>? = null) = BrowserGoogle(
         oauth(), secrets, clock, dispatchers, backLink = "com.edith.app.debug://signed-in",
         knownEmail = { "owner@gmail.com" },
         openBrowser = { _, url -> if (noBrowser) throw ActivityNotFoundException() else synchronized(opened) { opened += url } },
         loopbackTimeout = timeout,
+        appVisible = visible,
     )
 
     private fun json(body: String, code: Int = 200) =
@@ -117,6 +120,20 @@ class BrowserGoogleTest {
         listOf("4/0the-code", state, exchange["code_verifier"]!!, "ya29.first-access", "1//the-refresh-token", redirect, "signature-not-checked")
             .forEach { assertFalse("'$it' in log: $log", log.contains(it)) }
         assertTrue(log.contains("Browser sign-in: signed in"))
+    }
+
+    @Test fun `a code that arrives while Edith is off screen is exchanged once she's back`() = runBlocking {
+        server.enqueue(json(BrowserOAuthTest.tokens()))
+        val visible = MutableStateFlow(false)   // the browser is in front: Android blocks Edith's network
+        val b = browser(visible = visible)
+        val (result, page) = startSignIn(b)
+        browserReturns(page.queryParameter("redirect_uri")!!, "state=${page.queryParameter("state")}&code=4/held")
+        delay(300)
+        assertEquals("nothing sent while off screen", 0, server.requestCount)
+        assertTrue("still waiting", b.waiting.value)
+        visible.value = true   // the owner taps Back to Edith
+        assertEquals(GoogleSignIn.Result.SignedIn("owner@gmail.com", null), result.await())
+        assertEquals("4/held", form(server.takeRequest().body!!.utf8())["code"])
     }
 
     @Test fun `a pasted address signs in, and a wrong one is refused`() = runBlocking {

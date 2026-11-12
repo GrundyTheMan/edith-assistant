@@ -83,7 +83,6 @@ class GoogleSettingsViewModel(private val google: GoogleAuth, private val appSco
 @Composable
 fun GoogleSection(vm: GoogleSettingsViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
-    val waiting by vm.waitingForBrowser.collectAsStateWithLifecycle()
     val activity = LocalActivity.current
     val consent = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
         vm.onConsentResult(result.data)
@@ -95,10 +94,18 @@ fun GoogleSection(vm: GoogleSettingsViewModel) {
         onDisconnect = vm::disconnect,
         offerBrowser = vm.offerBrowser,
         onUseBrowser = { activity?.let(vm::signInWithBrowser) },
-        waitingForBrowser = waiting,
-        onPaste = vm::paste,
-        onCancelBrowser = vm::cancel,
     )
+}
+
+/**
+ * C17b §3: the "Finish signing in" dialog, over the whole app (MainActivity hosts it), not only in Settings. After
+ * Edith was killed while the owner was in the browser she reopens on Chat, and the owner must still see where to
+ * paste the address.
+ */
+@Composable
+fun BrowserSignInDialogHost(vm: GoogleSettingsViewModel) {
+    val waiting by vm.waitingForBrowser.collectAsStateWithLifecycle()
+    if (waiting) BrowserWaitingDialog(onPaste = vm::paste, onCancel = vm::cancel)
 }
 
 @Composable
@@ -109,9 +116,6 @@ fun GoogleContent(
     onDisconnect: () -> Unit,
     offerBrowser: Boolean = false,
     onUseBrowser: () -> Unit = {},
-    waitingForBrowser: Boolean = false,
-    onPaste: (String) -> Unit = {},
-    onCancelBrowser: () -> Unit = {},
 ) {
     var confirmDisconnect by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -158,7 +162,6 @@ fun GoogleContent(
             TextButton(onClick = onUseBrowser) { Text("Use a browser instead") }
         }
     }
-    if (waitingForBrowser) BrowserWaitingDialog(onPaste, onCancelBrowser)
     if (confirmDisconnect) {
         AlertDialog(
             onDismissRequest = { confirmDisconnect = false },
@@ -172,7 +175,7 @@ fun GoogleContent(
 
 /** C17b §3: shown while Edith waits for the browser; closes by itself when the loopback gets the code. */
 @Composable
-private fun BrowserWaitingDialog(onPaste: (String) -> Unit, onCancel: () -> Unit) {
+fun BrowserWaitingDialog(onPaste: (String) -> Unit, onCancel: () -> Unit) {
     var address by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = {},   // only Cancel stops waiting
