@@ -223,8 +223,8 @@ Device (Compose, `scripts/check.sh --device`):
       back in Settings, showing "Connected as …". "What's on my calendar tomorrow?" and "Any unread email from
       today?" work.
 - [x] Same, but pasting the address instead (cancel Chrome's return and paste the 127.0.0.1 address).
-- [ ] Release build in **Andarium on the owner's iPhone**: Sign in with Google → Chrome inside Andarium → Connected;
-      the calendar and email questions work; Disconnect revokes (check <https://myaccount.google.com/permissions>).
+- [x] Release build in **Andarium on the owner's iPhone**: Sign in with Google → Chrome inside Andarium → Connected;
+      the calendar and email questions work; Disconnect revokes (2026-11-12, v2.0.0-dev.2).
 - [x] After a restart of the app it's still Connected, with no browser.
 - [ ] A Play-services phone or emulator still signs in exactly as before. C17's tests pass unchanged.
 - [x] `scripts/check.sh --device` passes. The release APK is tested on `Edith_Release_Test` first (05-environment
@@ -379,7 +379,16 @@ Where the code differs from the specification above, the code is right.
 - **Disconnect revokes at Google:** after the 20:37 sign-in, Disconnect in Edith → the owner reloaded
   <https://myaccount.google.com/permissions> and Edith was gone.
 
+- **v2.0.0-dev.2 on `Edith_Release_Test`** (published release, master `54c58e3`,
+  `build-logs/2026-11-12_09-02-22_release.log`): installed over v2.0.0-dev.1 with data kept; a weather question
+  (`weather` tool); Use a browser instead → Edith force-stopped → reopened with the dialog over Chat, Cancel closed
+  it. Crash log empty; no code, verifier or token in logcat.
+
+- **Andarium on the owner's iPhone** (v2.0.0-dev.2, 2026-11-12, the owner): Sign in with Google → Chrome in
+  Andarium → Connected. Asking about the calendar and about email from chat worked, and Edith added a meeting to
+  the calendar, which the owner then saw in Google Calendar in a browser. Disconnect worked there too. This is the
+  full sign-in in a release build (the token response parsed under R8), so no R8 rules are needed.
+
 **Not verified yet**
 - An actual 7-day expiry (the same `invalid_grant` path as access removed at Google, which was seen live).
-- The release APK again after the "back on screen" change (the release test above was before it).
-- The release APK on `Edith_Release_Test`, and Andarium on the owner's iPhone.
+- `scripts/check.sh --device` after the "back on screen" change.
