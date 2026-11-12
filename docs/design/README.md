@@ -46,7 +46,7 @@ design in the same PR, or ask the owner.
 | [C15](chunks/C15-attachment-intake.md) | Attachments in (photos, audio files) | 4 Attachments | C05, C06, C07 | Done |
 | [C16](chunks/C16-attachment-storage-and-edith-files.md) | Storage, retention (default 10), Edith's files, resends | 4 | C15, C05, C07, C13 | Done |
 | [C17](chunks/C17-google-account.md) | Google account sign-in and authorization | 5 Google | C02, C04, C08 | Done |
-| [C17b](chunks/C17b-browser-sign-in.md) | Google sign-in through the browser (no Play services: Andarium on the owner's iPhone) | 5 | C17 | In progress |
+| [C17b](chunks/C17b-browser-sign-in.md) | Google sign-in through the browser (no Play services: Andarium on the owner's iPhone) | 5 | C17 | Done (iPhone check pending) |
 | [C18](chunks/C18-google-calendar.md) | Google Calendar tools and Calendar tab | 5 | C17, C08 | Done |
 | [C19](chunks/C19-gmail.md) | Gmail search, read, draft, send | 5 | C17, C08 | Done |
 | [C20](chunks/C20-smart-home-architecture.md) | Smart home architecture (**v2, design only**) | 6 Deferred | C08, C17 | Design |
@@ -93,8 +93,12 @@ design in the same PR, or ask the owner.
 - **Gmail is done (C19)**: four tools in `google/gmail/` (search, read, draft, send). Drafts and sends always show
   the whole email on a card first (D5, D11).
 - **Phase 5 (Google) is done on Android phones.**
-- **Next: C17b.** The owner's phone is an iPhone, and Edith runs there in Andarium, which has no Google Play
-  services. So Google sign-in has to work through the browser (D16).
+- **Google sign-in through the browser is done (C17b)**, apart from the check on the owner's iPhone. Andarium has no
+  Google Play services, so there Edith signs in in Chrome (D16): a Desktop OAuth client (`edith.googleDesktopClientId`
+  and `…Secret` in `local.properties`, same Cloud project as the others), PKCE, the code back on 127.0.0.1 or pasted,
+  and a refresh token encrypted in `SecretStore`. `ChoosingGoogle` picks Play services or the browser; Play-services
+  phones work as before, with **Use a browser instead**. Expect no network while Edith is off screen (L36).
+  `MainActivity` is `singleTask`.
 - The first release, v2.0.0-dev.1, was published on 2026-11-11. Chat with Ollama works from Andarium over the
   home Wi-Fi.
 - C20 and C21 are v2 design and research.
