@@ -115,6 +115,8 @@ fun SettingsScreen(
             WebSearchSection(webSearch)
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             AccountsSection(accounts)
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            HomeSection()
         },
     )
 }

@@ -30,6 +30,8 @@ interface AttachmentStore {
     fun keep(pending: PendingAttachment, session: Boolean): String
     /** Writes one of Edith's files (C16 §3). Returns its `stored_path`. */
     fun write(fileName: String, content: String, session: Boolean): String
+    /** Writes a picture a tool brought back (C25: a camera snapshot). Returns its `stored_path`. */
+    fun writeBytes(fileName: String, bytes: ByteArray, session: Boolean): String = throw IOException("This store can't keep pictures")
     /** The file, or null if it's gone (removed, or a session file from an earlier run). */
     fun file(storedPath: String?): File?
     /** An audio file's length, read once and remembered. */
@@ -59,6 +61,15 @@ class FileAttachmentStore(private val filesDir: File, private val cacheDir: File
         val target = resolve(path)
         val tmp = File(target.parentFile, target.name + ".tmp")
         tmp.writeText(content)
+        if (!tmp.renameTo(target)) throw IOException("Couldn't store $fileName")
+        return path
+    }
+
+    override fun writeBytes(fileName: String, bytes: ByteArray, session: Boolean): String {
+        val path = newPath(fileName, session)
+        val target = resolve(path)
+        val tmp = File(target.parentFile, target.name + ".tmp")
+        tmp.writeBytes(bytes)
         if (!tmp.renameTo(target)) throw IOException("Couldn't store $fileName")
         return path
     }

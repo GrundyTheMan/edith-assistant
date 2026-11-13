@@ -26,7 +26,13 @@ sealed interface TurnEvent {
     data object TextReset : TurnEvent
     data class NeedsConfirmation(val request: ConfirmationRequest) : TurnEvent
     /** [text] is the final round's text only: that's what's stored (C08 §5). */
-    data class Finished(val text: String, val toolsUsed: List<String>, val stats: ReplyStats?) : TurnEvent
+    data class Finished(
+        val text: String,
+        val toolsUsed: List<String>,
+        val stats: ReplyStats?,
+        /** Pictures tools brought back (C25: camera snapshots), kept with the reply as Edith's attachments. */
+        val images: List<com.edith.app.tools.framework.ToolImage> = emptyList(),
+    ) : TurnEvent
 }
 
 /**
@@ -41,6 +47,11 @@ data class ConfirmationRequest(
     val denyLabel: String = "Cancel",
     val id: String = "",
     val toolName: String = "",
+    /**
+     * Only a tap on the screen may approve it, never a voice (D10: unlocking a door, opening the garage). Hands-free
+     * says so out loud instead of waiting silently.
+     */
+    val screenOnly: Boolean = false,
 )
 
 /** No tools: one streamed chat call. */

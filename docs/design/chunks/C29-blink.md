@@ -17,14 +17,16 @@ that isn't a UUID) until the libraries caught up.
   for the install; tokens encrypted.
 - **Devices:** cameras (`Camera`; `Snapshot`, `Events`), armed state, battery.
 - **Snapshots:** ask the camera for a new thumbnail, wait for it, fetch the JPEG; **clips:** list recent motion clips
-  (`recent_events`). No live view.
+  (`recent_events`). **Clips (D19, as Jarvis's `blinkClips.ts`):** in the Home tab's Clips chip (added by C27, or
+  here if Blink comes first), played in the app. No live view (C32).
 
 ## Tests
 The sign-in steps against made-up captures that follow `blinkpy`; the UUID kept; thumbnail polling with a time limit;
 a sign-in Blink refuses → a plain message and Sign in again, no retry loop.
 
 ## Acceptance
-- [ ] Owner: sign in, "Show me the backyard camera", "Any motion on the Blink cameras today?", the Home tab.
+- [ ] Owner: sign in, "Show me the backyard camera", "Any motion on the Blink cameras today?", the Home tab, a
+      clip played.
 
 ## Traps
 Expect outages: when Blink changes something, Edith says Blink can't be reached; other services keep working.

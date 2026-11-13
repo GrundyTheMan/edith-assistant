@@ -57,6 +57,7 @@ class HandsFreeTest {
         var beeps = 0
         var speechStops = 0
         var replyCancels = 0
+        val said = mutableListOf<String>()
         val handsFree = HandsFree(
             wake = wake,
             recognizer = recognizer,
@@ -69,6 +70,7 @@ class HandsFreeTest {
             settings = FakeSettingsRepository(settings),
             scope = scope,
             phrase = "Hey Edith",
+            say = { said += it },
         )
         val state get() = handsFree.state.value
 
@@ -273,5 +275,21 @@ class HandsFreeTest {
         assertEquals(0.9f, OpenWakeWord.threshold(0f), 0.001f)
         assertEquals(0.1f, OpenWakeWord.threshold(1f), 0.001f)
         assertTrue(OpenWakeWord.threshold(0.8f) < OpenWakeWord.threshold(0.2f))
+    }
+
+    /** C25, D10: a card can't be approved by voice; she says to tap it, once per card, and waits for the tap. */
+    @Test fun `a waiting card is announced - tap it on the screen`() = runTest(UnconfinedTestDispatcher()) {
+        val k = Kit(backgroundScope)
+        k.handsFree.start()
+        k.wake.hear()
+        k.recognizer.say("unlock the back door")
+        val card = com.edith.app.chat.engine.ConfirmationRequest("Unlock: Back door?", confirmLabel = "Unlock", id = "c1", screenOnly = true)
+        k.engine.value = EngineState.AwaitingConfirmation(1, card, "")
+        k.engine.value = EngineState.AwaitingConfirmation(1, card, "")   // the same card again: said once
+        assertEquals(listOf("For safety, this needs a tap on the screen: tap Unlock to go ahead."), k.said)
+        assertTrue("it waits; nothing is approved by voice", k.state == HandsFree.State.Thinking)
+
+        k.engine.value = EngineState.AwaitingConfirmation(1, card.copy(id = "c2", screenOnly = false, confirmLabel = "Close"), "")
+        assertEquals("Tap Close on the screen to go ahead, or Cancel.", k.said.last())
     }
 }

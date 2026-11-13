@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.edith.app.data.db.EdithDatabase
 import com.edith.app.data.db.MIGRATION_1_2
+import com.edith.app.data.db.MIGRATION_2_3
 import com.edith.app.data.db.TitleSource
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -67,6 +68,19 @@ class MigrationTest {
         helper.createDatabase(dbName, 1).use { it.execSQL("INSERT INTO conversations (id, title, created_at) VALUES (1, 'Edith', 1000)") }
         helper.runMigrationsAndValidate(dbName, 2, true, MIGRATION_1_2).use { v2 ->
             v2.query("SELECT updated_at FROM conversations WHERE id = 1").use { it.moveToFirst(); assertEquals(1000L, it.getLong(0)) }
+        }
+    }
+
+    /** C25: v2 → v3 adds the smart home's command log and leaves the chats alone. */
+    @Test fun v2GainsTheCommandLog() {
+        helper.createDatabase(dbName, 2).use { v2 ->
+            v2.execSQL("INSERT INTO conversations (id, title, title_source, created_at, updated_at) VALUES (1, 'Chat', 'owner', 1000, 2000)")
+            v2.execSQL("INSERT INTO messages (conversation_id, role, content, created_at, status, source, tools_used) VALUES (1, 'user', 'Hi', 2000, 'complete', 'typed', '[]')")
+        }
+        helper.runMigrationsAndValidate(dbName, 3, true, MIGRATION_2_3).use { v3 ->
+            v3.query("SELECT COUNT(*) FROM messages").use { it.moveToFirst(); assertEquals(1, it.getInt(0)) }
+            v3.execSQL("INSERT INTO home_commands (at, device_name, backend, action, value, ok, result, source) VALUES (5, 'Front door', 'demo', 'unlock', NULL, 1, 'Unlocked', 'chat')")
+            v3.query("SELECT device_name, action FROM home_commands").use { it.moveToFirst(); assertEquals("Front door", it.getString(0)) }
         }
     }
 }
