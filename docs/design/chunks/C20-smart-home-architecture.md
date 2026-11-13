@@ -87,6 +87,26 @@ a lock/garage section with explicit buttons. Edith's chat answers can include a 
   and API is written and maintained in Kotlin. Services without an official API can break at any time, so each
   backend is its own chunk and fails on its own (one broken service never stops the others).
 
+## Jarvis parity (D19, 2026-11-13)
+Before C25 started, Jarvis's home code (`jarvis/src/main/alexa.ts`, `ring*.ts`, `blink*.ts`,
+`src/renderer/src/lib/alexaTools.ts`, `homeTiles.ts`, `HomeView.tsx`) was compared with this design. The owner chose:
+- **Alexa: Jarvis's full control** (C30): on/off, brightness, fan speed (percentage), colour, white tone, thermostat
+  setpoint and mode, lock and unlock. Jarvis asks before any lock, garage, security-panel or camera command; Edith
+  keeps §2's rules instead (lock needs no card; unlock always does, and never by voice alone).
+- **Alexa plus direct:** devices linked to Alexa (August locks included) work through Alexa; C28 (Resideo) and C31
+  (Philips) stay as a second route. A device both report shows once, through the direct service while it answers.
+- **Tools in Jarvis's shape** (replaces §2's list of one tool per action): `home_devices(filter?)` lists devices with
+  their state; `home_control(device, action, value?)` acts on one; cameras add `camera_snapshot` and `recent_events`.
+  §2's confirmation rules apply per action. Fewer tools suit a 12B local model better than eleven.
+- **Home tab as Jarvis's Home page:** chips (Favorites, Lights, Plugs and switches, Fans, Climate, Locks and doors,
+  Cameras, and Clips once a camera chunk adds it, All), starred favourites, hidden devices (also hidden from Edith),
+  a state re-check after a command (clouds lag: 3 s, 10 s, 30 s for thermostats and locks), the last-known state
+  with its age, thermostat steps sent after a short pause, fan speed presets.
+- **Camera clips** (browse and play): in C27 (Ring) and C29 (Blink). **Live view** and a wall of every camera: C32.
+  **Alerts** (doorbell, person, motion notifications with a snapshot; tapping opens the clip): C33. **3D printer
+  card** (Moonraker): C34, after the home chunks.
+- **Not matched:** Jarvis's scheduled tasks (Edith has no scheduler), Windows notifications (C33 uses Android's).
+
 ## Before any v2 chunk is written
 1. Verify each service's current access against official sources (C21's *(verify)* items), plus Meross and the
    Philips lock, which C21 doesn't cover yet. Record per service: official API or not, sign-in, what's possible

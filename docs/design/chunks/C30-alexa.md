@@ -21,12 +21,19 @@ owner. Consider controlling some devices through their own brand instead (many A
 - **Sign-in:** Amazon's sign-in page in a WebView inside Edith (so its cookies can be kept), with app-based 2FA (SMS
   or email 2FA reportedly fails); keep only the resulting tokens/cookies, encrypted. The password never passes
   through Edith's code.
-- **Devices:** the smart-home devices linked to the account: lights, plugs, switches (`OnOff`, `Brightness`), with
-  their state.
-- **Commands:** on/off and brightness (no card, C20 §2). Routines and speakers are out of scope.
+- **Devices (D19, Jarvis's full set):** every smart-home device linked to the account, with its state: lights,
+  plugs, switches, fans, thermostats, temperature sensors, locks (August included), garage doors and cameras (listed
+  only; Jarvis can't control those two through Alexa either). `isHub = true`: a device a direct backend also reports
+  is shown through that one (C25).
+- **Commands:** Jarvis's `ALEXA_ACTIONS`: on/off, brightness, percentage (fans), colour, white tone, setpoint, mode,
+  lock, unlock, under C25's card rules (unlock: always a card, never by voice alone). Each command is checked against
+  Alexa's answer (Jarvis's `controlProblem`). The temperature scale follows the Amazon site (`.com` → °F).
+- **State:** Alexa's state query in batches (Jarvis's `stateBatches`); a device that doesn't answer keeps its last
+  known state with its age. Routines and speakers are out of scope.
 
 ## Tests
 Parsing the device list and state from made-up answers; commands; an expired session → Sign in again.
 
 ## Acceptance
-- [ ] Owner: sign in, "Turn on the living room lamp", "Which lights are on?", the Home tab.
+- [ ] Owner: sign in, "Turn on the living room lamp", "Which lights are on?", "Set the thermostat to 70",
+      "Lock the front door" (the August lock through Alexa), the Home tab.

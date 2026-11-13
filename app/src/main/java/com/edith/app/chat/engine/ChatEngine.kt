@@ -231,7 +231,8 @@ class ChatEngine(
     private suspend fun finish(conversationId: Long, event: TurnEvent.Finished, model: ModelInfo): EngineState {
         val text = event.text.trim()   // models often start with a space or newline
         if (text.isEmpty()) return fail(conversationId, AppError.EmptyReply, model)
-        val reply = withContext(NonCancellable) { edithAttachments(conversationId, text) }
+        val written = withContext(NonCancellable) { edithAttachments(conversationId, text) }
+        val reply = if (event.images.isEmpty()) written else withContext(NonCancellable) { written.withPictures(event.images) }
         val messageId = repo.addAssistantMessage(conversationId, reply.text, model.name, event.toolsUsed, reply.files, reply.resends)
         if (messageId == null) reply.files.forEach { attachmentStore?.delete(it.storedPath) }
         if (reply.files.isNotEmpty()) afterAttachments()
@@ -241,6 +242,22 @@ class ChatEngine(
     }
 
     private class EdithReply(val text: String, val files: List<ChatRepository.NewAttachment>, val resends: List<AttachmentEntity>)
+
+    /** Tools' pictures (C25: camera snapshots) kept as Edith's image attachments; one that can't be kept is skipped. */
+    private suspend fun EdithReply.withPictures(images: List<com.edith.app.tools.framework.ToolImage>): EdithReply {
+        val store = attachmentStore ?: return this
+        val session = keepsNothing()
+        val pictures = images.mapNotNull { image ->
+            try {
+                val path = withContext(Dispatchers.IO) { store.writeBytes(image.fileName, image.jpeg, session) }
+                ChatRepository.NewAttachment(AttachmentKind.Image, image.fileName, "image/jpeg", image.jpeg.size.toLong(), path)
+            } catch (e: java.io.IOException) {
+                Log.w(LogTag.Chat, "Couldn't keep a tool's picture", e)
+                null
+            }
+        }
+        return EdithReply(text, files + pictures, resends)
+    }
 
     /**
      * Edith's `<file>` blocks become stored files, replaced in the text by `[Attached file: name]`; each

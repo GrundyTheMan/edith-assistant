@@ -17,7 +17,10 @@ The owner has Ring. Ring's official API is for business partners only, so Edith 
   new one before using the access token**, every time (as C23 does for Microsoft); losing it signs the owner out.
 - **Devices:** doorbells and cameras (`Camera`, `Doorbell`; `Snapshot`, `Events`), with battery and online state.
 - **Snapshots** (`camera_snapshot`) and **event history** (`recent_events`: rings and motion, last 24 h by default).
-- No live view (WebRTC/SIP) and no push notifications in this chunk.
+- **Clips (D19, as Jarvis's `ringClips.ts`):** a **Clips** chip on the Home tab lists recorded clips (newest first,
+  older pages on scroll; what made it record: Ring, Motion, Person) and plays one in the app (Media3 ExoPlayer; ask
+  the owner before adding the library). No subscription → Ring's own "no plan" message, not an error.
+- No live view (C32) and no push notifications (C33) in this chunk.
 
 ## Tests
 Sign-in with 2FA; the rotated token stored before use; snapshots (JPEG bytes); event parsing; a dead token → Sign in
@@ -25,7 +28,7 @@ again; one Ring failure not stopping other backends.
 
 ## Acceptance
 - [ ] Owner: sign in, "Show me the front door camera" (a snapshot in the bubble), "Did anyone ring today?", the Home
-      tab; a restart keeps it signed in.
+      tab, a clip played from the Clips chip; a restart keeps it signed in.
 
 ## Traps
 Unofficial; never log tokens or images; snapshots of a sleeping battery camera can be old or slow; say so.
