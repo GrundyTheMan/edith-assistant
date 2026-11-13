@@ -61,6 +61,7 @@ design in the same PR, or ask the owner.
 | [C29](chunks/C29-blink.md) | Blink cameras (fragile) | 8 | C25 | Design |
 | [C30](chunks/C30-alexa.md) | Alexa devices (fragile) | 8 | C25 | Design |
 | [C31](chunks/C31-philips-lock.md) | Philips smart lock (fragile; unlock needs the owner's OK) | 8 | C25 | Design |
+| [C35](chunks/C35-google-tasks.md) | To-dos: Google Tasks, as in Jarvis (D20) | 7 Accounts | C22, C08, C03 | Design |
 
 ### State at handoff (2026-10-29)
 - `master` has the design and the C01 skeleton with its build/deploy tooling (`05-environment.md` §2, §6). Tag
