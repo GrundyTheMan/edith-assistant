@@ -76,6 +76,12 @@ import com.edith.app.google.browser.BrowserGoogle
 import com.edith.app.google.browser.BrowserOAuth
 import com.edith.app.google.browser.BrowserSignIn
 import com.edith.app.icloud.ICloudAccounts
+import com.edith.app.home.DataStoreHomePrefs
+import com.edith.app.home.DemoPicture
+import com.edith.app.home.FakeHomeBackend
+import com.edith.app.home.Home
+import com.edith.app.home.RoomCommandLog
+import com.edith.app.home.homeTools
 import com.edith.app.microsoft.MicrosoftAccounts
 import com.edith.app.microsoft.MicrosoftOAuth
 import com.google.android.gms.common.ConnectionResult
@@ -135,8 +141,10 @@ class AppContainer(val app: Application) {
                 *mailTools(accounts, mailHandles).toTypedArray(),
                 // C35: to-dos (Google Tasks), every change on a card (D11, D20)
                 *taskTools(accounts, taskHandles, taskRanker, clock) { settingsRepository.current() }.toTypedArray(),
+                // C25: the smart home (D10, D19)
+                *homeTools(home).toTypedArray(),
             ),
-            integrations = listOf(accounts),   // C22: offered while at least one account is connected
+            integrations = listOf(accounts, home),   // C22: offered while at least one account is connected; C25: one home service
         )
     }
 
@@ -239,6 +247,7 @@ class AppContainer(val app: Application) {
             settings = settingsRepository,
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
             phrase = wakeWordModel.phrase,
+            say = { speechOutput.announce(it) },
         )
     }
 
@@ -318,6 +327,20 @@ class AppContainer(val app: Application) {
 
     /** Every email-and-calendar account (C22, D17), saved in the `settings` file under `accounts`. */
     val accounts: Accounts by lazy { Accounts(DataStoreAccountStore(settingsStore.store), googleAccounts, appScope, microsoftAccounts, icloudAccounts) }
+
+    /**
+     * The smart home (C25, D10): every connected service's devices, the home tools and the Home tab. Debug builds add
+     * the Demo home's fake backend behind a switch in Settings → Home; release builds have none.
+     */
+    /** Every command sent to a device (C25 §8), kept in Room. */
+    val homeCommandLog: RoomCommandLog by lazy { RoomCommandLog(database.homeCommandDao()) }
+
+    val home: Home by lazy {
+        Home(
+            DataStoreHomePrefs(settingsStore.store), homeCommandLog, appScope, clock,
+            demo = if (BuildConfig.DEBUG) FakeHomeBackend(clock, DemoPicture::jpeg) else null,
+        )
+    }
 
     /** Short handles for listed events (`e1`) and found emails (`m1`): one sequence each for the app run (C22 trap 4). */
     val calendarHandles: CalendarHandles by lazy { CalendarHandles() }

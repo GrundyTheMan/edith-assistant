@@ -43,6 +43,12 @@ class EdithNavHostTest {
             ).fetchSemanticsNodes().isNotEmpty()
         }
 
+        compose.onNodeWithText("Home").performClick()
+        // The Home tab (C25): its chips with a service connected (the Demo home in debug), or the way to Settings.
+        compose.waitUntil(5_000) {
+            compose.onAllNodes(hasText("Settings → Home") or hasTestTag(com.edith.app.home.ui.CHIPS_TAG)).fetchSemanticsNodes().isNotEmpty()
+        }
+
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Server & model").assertExists()
 

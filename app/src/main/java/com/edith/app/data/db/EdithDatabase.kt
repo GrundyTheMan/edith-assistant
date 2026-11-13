@@ -7,16 +7,18 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.edith.app.home.HomeCommandDao
+import com.edith.app.home.HomeCommandEntity
 
 /**
- * Edith's database, schema version 2 (01-architecture §5.1). Version 1 (C05) had one conversation; version 2
- * (C06b, decision D6) adds what a list of conversations needs. The schema is exported to app/schemas/ at build
- * time. Every schema change needs a version bump, a [Migration] and a migration test — never destructive
+ * Edith's database, schema version 3 (01-architecture §5.1). Version 1 (C05) had one conversation; version 2
+ * (C06b, decision D6) adds what a list of conversations needs; version 3 (C25) the smart home's command log. The
+ * schema is exported to app/schemas/ at build time. Every schema change needs a version bump, a [Migration] and a migration test — never destructive
  * migration: the owner's chat history lives here.
  */
 @Database(
-    entities = [ConversationEntity::class, MessageEntity::class, AttachmentEntity::class],
-    version = 2,
+    entities = [ConversationEntity::class, MessageEntity::class, AttachmentEntity::class, HomeCommandEntity::class],
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(EnumConverters::class, ListConverters::class)
@@ -24,11 +26,12 @@ abstract class EdithDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao
     abstract fun messageDao(): MessageDao
     abstract fun attachmentDao(): AttachmentDao
+    abstract fun homeCommandDao(): HomeCommandDao
 
     companion object {
         const val FILE_NAME = "edith.db"
 
-        val MIGRATIONS = arrayOf(MIGRATION_1_2)
+        val MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
 
         /** The app's database. Create once per process (AppContainer does). */
         fun create(context: Context): EdithDatabase =
@@ -51,5 +54,17 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
                 "COALESCE((SELECT MAX(created_at) FROM messages WHERE conversation_id = conversations.id), created_at)",
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS index_conversations_updated_at ON conversations (updated_at)")
+    }
+}
+
+/** v2 → v3 (C25): the smart home's command log, a new table; nothing else changes. */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `home_commands` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `at` INTEGER NOT NULL, " +
+                "`device_name` TEXT NOT NULL, `backend` TEXT NOT NULL, `action` TEXT NOT NULL, `value` TEXT, `ok` INTEGER NOT NULL, " +
+                "`result` TEXT NOT NULL, `source` TEXT NOT NULL)",
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_home_commands_at` ON `home_commands` (`at`)")
     }
 }

@@ -159,7 +159,9 @@ fun EdithAttachments(
             when {
                 a.isResend && a.file == null ->
                     Text("Attachment ${a.number} is no longer available.", color = muted, style = MaterialTheme.typography.bodySmall)
-                a.isResend -> MessageAttachments(listOf(a), playingId, onTogglePlay, onOpenImage, MaterialTheme.colorScheme.onSurface)
+                // A resend, or a picture a tool brought back (C25: a camera snapshot): shown as the picture itself.
+                a.isResend || (a.kind == AttachmentKind.Image && a.file != null) ->
+                    MessageAttachments(listOf(a), playingId, onTogglePlay, onOpenImage, MaterialTheme.colorScheme.onSurface)
                 a.file == null -> Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.Description, contentDescription = null, tint = muted, modifier = Modifier.size(18.dp))
                     Text(" ${a.fileName} — no longer kept", color = muted, style = MaterialTheme.typography.bodySmall)

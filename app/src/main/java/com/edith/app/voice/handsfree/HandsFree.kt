@@ -48,6 +48,8 @@ class HandsFree(
     private val scope: CoroutineScope,
     /** What to say in notices, e.g. "Hey Edith". */
     val phrase: String,
+    /** Says a line without stopping the reply (C25: "tap the card on the screen"). */
+    private val say: (String) -> Unit = {},
 ) {
     sealed interface State {
         data object Off : State
@@ -223,6 +225,16 @@ class HandsFree(
         }
         _state.value = State.Thinking
         job = scope.launch {
+            // Hands-free can't approve a card by voice (C25, D10): she says so, and the reply waits for the tap.
+            var prompted: String? = null
+            val prompts = launch {
+                engineState.collect { s ->
+                    if (s is EngineState.AwaitingConfirmation && s.request.id != prompted) {
+                        prompted = s.request.id
+                        say(confirmPrompt(s.request))
+                    }
+                }
+            }
             send(text)
             // Wait for the reply to be written and spoken. Speaking starts while it's still streaming (C13).
             combine(engineState, speaking) { engine, voice -> engine.isRunning() to (voice != null) }
@@ -234,6 +246,7 @@ class HandsFree(
                     }
                     !running && !talking
                 }
+            prompts.cancel()
             wake.stop()
             if (settings.current().followUpSeconds > 0) capture(followUp = true) else listen()
         }
@@ -254,5 +267,10 @@ class HandsFree(
         const val BUSY = "Edith is still answering — ask again when she's done."
         const val CALL = "Hands-free stopped for a call."
         const val MIC_TAKEN = "Hands-free stopped: another app is using the microphone."
+
+        /** What she says while a card waits: hands-free has no voice approval, and some cards never allow one (D10). */
+        fun confirmPrompt(request: com.edith.app.chat.engine.ConfirmationRequest): String =
+            if (request.screenOnly) "For safety, this needs a tap on the screen: tap ${request.confirmLabel} to go ahead."
+            else "Tap ${request.confirmLabel} on the screen to go ahead, or ${request.denyLabel}."
     }
 }

@@ -91,9 +91,15 @@ sealed interface ToolResult {
     /** What the model reads; plain and factual. */
     val text: kotlin.String
 
-    data class Ok(override val text: kotlin.String) : ToolResult
+    /** [images]: pictures the owner sees with the reply (C25: a camera snapshot); the model sees them only if it can. */
+    data class Ok(override val text: kotlin.String, val images: List<ToolImage> = emptyList()) : ToolResult
     /** Says plainly what failed, so the model tells the owner instead of guessing. */
     data class Error(override val text: kotlin.String) : ToolResult
+}
+
+/** A JPEG a tool brought back, and the file name it's kept under. */
+class ToolImage(val fileName: kotlin.String, val jpeg: ByteArray) {
+    override fun toString() = "ToolImage($fileName, ${jpeg.size} bytes)"
 }
 
 data class ToolContext(val clock: Clock, val settings: Settings, val dispatchers: AppDispatchers)

@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withTimeout
+import java.util.Base64
 import java.util.UUID
 
 /**
@@ -54,6 +55,7 @@ class ToolTurnRunner(
         val ctx = ToolContext(clock, settings.current(), dispatchers)
         val history = messages.toMutableList()
         val used = linkedSetOf<String>()
+        val images = mutableListOf<ToolImage>()
 
         repeat(MAX_ROUNDS) { round ->
             if (round > 0) emit(TurnEvent.TextReset)
@@ -69,7 +71,7 @@ class ToolTurnRunner(
                 }
             }
             if (assistant == null) {
-                emit(TurnEvent.Finished(reply.text, used.toList(), reply.stats))
+                emit(TurnEvent.Finished(reply.text, used.toList(), reply.stats, images.toList()))
                 return@flow
             }
             history += assistant   // exactly as received (03 §4 rule 1)
@@ -77,7 +79,11 @@ class ToolTurnRunner(
                 val (name, result) = runCall(call, offered, ctx)
                 if (name != null) used += name
                 val limit = offered.firstOrNull { it.spec.name == name }?.maxResultChars ?: RESULT_MAX_CHARS
-                history += OllamaMessage("tool", result.text.take(limit), toolName = name ?: call.function.name)
+                val pictures = (result as? ToolResult.Ok)?.images.orEmpty()
+                images += pictures
+                // The model sees a picture only if it can (C25 §4, C15's vision check); the owner always does.
+                val seen = if (model.canSee && pictures.isNotEmpty()) pictures.map { Base64.getEncoder().encodeToString(it.jpeg) } else null
+                history += OllamaMessage("tool", result.text.take(limit), images = seen, toolName = name ?: call.function.name)
             }
         }
         // Still asking for tools after MAX_ROUNDS: answer with what she has.
@@ -85,7 +91,7 @@ class ToolTurnRunner(
         emit(TurnEvent.TextReset)
         emit(TurnEvent.Status(PlainTurnRunner.THINKING))
         val final = streamRound(baseUrl, model, history, tools = null)
-        emit(TurnEvent.Finished(final.text, used.toList(), final.stats))
+        emit(TurnEvent.Finished(final.text, used.toList(), final.stats, images.toList()))
     }
 
     private class Round(val text: String, val assistant: OllamaMessage?, val stats: ReplyStats?)

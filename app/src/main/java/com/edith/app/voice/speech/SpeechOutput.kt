@@ -82,6 +82,17 @@ class SpeechOutput(
         }
     }
 
+    /**
+     * Says [text] after whatever is being said, without stopping or muting the reply being written (C25: hands-free
+     * says to tap a card on the screen; the reply carries on, and is spoken, once the owner answers).
+     */
+    fun announce(text: String) {
+        synchronized(lock) {
+            if (live && !liveMuted) chunker.flush().forEach { enqueueLive(it) }
+            if (enqueue(text) && _speaking.value == null) _speaking.value = LIVE_REPLY
+        }
+    }
+
     /** Says a short line so the owner can hear the voice and speed (Settings → Test voice). */
     fun test() = play(TEST_VOICE, TEST_LINE)
 
