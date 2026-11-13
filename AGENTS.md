@@ -6,7 +6,7 @@ memos and attachments, and speaks her replies. She is being rebuilt from scratch
 history (tag `edith-v1`) — don't reuse its code.
 
 ## Read first
-**[`docs/design/README.md`](docs/design/README.md)** — the complete design, split into chunks (C01–C21) with
+**[`docs/design/README.md`](docs/design/README.md)** — the complete design, split into chunks (C01–C31) with
 dependencies and status. Read the shared context it lists, then take one chunk whose dependencies are merged.
 C01–C19, C17b, C22 and C23 are done (phases 1–5, including Google Calendar and Gmail, Google sign-in through the browser for Andarium on the owner's iPhone, and several Google accounts at once in `accounts/` (D17); hands-free still needs a real-mic check). C23 (Microsoft Outlook mail and calendar, `microsoft/`, D18) is done too. Next is C24 (iCloud); the table says what's next.
 

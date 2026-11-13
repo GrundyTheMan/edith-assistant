@@ -49,11 +49,18 @@ design in the same PR, or ask the owner.
 | [C17b](chunks/C17b-browser-sign-in.md) | Google sign-in through the browser (no Play services: Andarium on the owner's iPhone) | 5 | C17 | Done |
 | [C18](chunks/C18-google-calendar.md) | Google Calendar tools and Calendar tab | 5 | C17, C08 | Done |
 | [C19](chunks/C19-gmail.md) | Gmail search, read, draft, send | 5 | C17, C08 | Done |
-| [C20](chunks/C20-smart-home-architecture.md) | Smart home architecture (**v2, design only**) | 6 Deferred | C08, C17 | Design |
-| [C21](chunks/C21-smart-home-service-notes.md) | Smart home service notes (**v2 research**) | 6 Deferred | — | Research |
+| [C20](chunks/C20-smart-home-architecture.md) | Smart home architecture (**v2, design only**) | 6 Deferred | C08, C17 | Done (D10: direct from the phone; v2 split into C25–C31) |
+| [C21](chunks/C21-smart-home-service-notes.md) | Smart home service notes (**v2 research**) | 6 Deferred | — | Done (services checked 2026-11-12) |
 | [C22](chunks/C22-several-accounts.md) | Several accounts: the account model, and several Google accounts (D17) | 7 Accounts | C17, C17b, C18, C19 | Done (iPhone check pending) |
 | [C23](chunks/C23-microsoft-account.md) | Microsoft account: Outlook mail and calendar | 7 | C22 | Done (iPhone check pending) |
 | [C24](chunks/C24-icloud-account.md) | iCloud account: iCloud Mail and Calendar | 7 | C22 | Design |
+| [C25](chunks/C25-home-core.md) | Smart home core: device model, tools, Home tab, command log (fake backend) | 8 Smart home (v2) | C08, C14, C22 | Design |
+| [C26](chunks/C26-meross-garage.md) | Meross garage door opener | 8 | C25 | Design |
+| [C27](chunks/C27-ring.md) | Ring doorbell and cameras (snapshots, events) | 8 | C25 | Design |
+| [C28](chunks/C28-resideo-thermostat.md) | Honeywell/Resideo thermostat (official API; needs a developer key) | 8 | C25, C23 | Design |
+| [C29](chunks/C29-blink.md) | Blink cameras (fragile) | 8 | C25 | Design |
+| [C30](chunks/C30-alexa.md) | Alexa devices (fragile) | 8 | C25 | Design |
+| [C31](chunks/C31-philips-lock.md) | Philips smart lock (fragile; unlock needs the owner's OK) | 8 | C25 | Design |
 
 ### State at handoff (2026-10-29)
 - `master` has the design and the C01 skeleton with its build/deploy tooling (`05-environment.md` §2, §6). Tag
@@ -116,7 +123,9 @@ design in the same PR, or ask the owner.
 - **Next: C24 (iCloud)**, built and tested on its own branch but not verified live (the owner has no iCloud account).
 - The first release, v2.0.0-dev.1, was published on 2026-11-11; v2.0.0-dev.2 (with C17b) on 2026-11-12. Chat with Ollama works from Andarium over the
   home Wi-Fi.
-- C20 and C21 are v2 design and research.
+- **Smart home (v2):** D10 is decided (each service directly from the phone, 2026-11-12) and v2 is split into C25–C31
+  (the core first, then Meross, Ring, Resideo, Blink, Alexa, Philips). August locks are out: Yale/August require a
+  partner key now (C21). The owner should apply for a Resideo developer key early (C28).
 - Judge tool reliability with `gemma4:12b`; `e4b` often skips tools (L26).
 - Owner decisions still open are in `06-decisions.md`. Ask early about the ones your chunk lists; the first ones
   needed are **D8** (C03).
