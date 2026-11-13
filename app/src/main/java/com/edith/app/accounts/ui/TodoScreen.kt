@@ -143,6 +143,14 @@ class TodoViewModel(
         viewModelScope.launch { load() }
     }
 
+    /**
+     * The view was opened again (the Agenda | To-do switch, or another tab): what Edith changed in the meantime
+     * isn't shown until it reloads. The first open already loads, so only a view that has lists reloads.
+     */
+    fun refreshIfShown() {
+        if (_state.value is TodoUi.Lists) refresh()
+    }
+
     fun setShowDone(show: Boolean) {
         showDone = show
         refresh()
@@ -246,6 +254,7 @@ fun TodoScreen(onOpenSettings: () -> Unit, vm: TodoViewModel = viewModel(factory
     val snackbar = remember { SnackbarHostState() }
     val activity = LocalActivity.current
     val consent = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result -> vm.onConsentResult(result.data) }
+    LaunchedEffect(vm) { vm.refreshIfShown() }
     LaunchedEffect(vm) {
         vm.events.collect { e ->
             snackbar.currentSnackbarData?.dismiss()   // a newer tick replaces the last one's Undo
