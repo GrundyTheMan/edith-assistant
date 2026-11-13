@@ -6,9 +6,9 @@ memos and attachments, and speaks her replies. She is being rebuilt from scratch
 history (tag `edith-v1`) — don't reuse its code.
 
 ## Read first
-**[`docs/design/README.md`](docs/design/README.md)** — the complete design, split into chunks (C01–C34) with
+**[`docs/design/README.md`](docs/design/README.md)** — the complete design, split into chunks (C01–C35) with
 dependencies and status. Read the shared context it lists, then take one chunk whose dependencies are merged.
-C01–C19, C17b and C22–C24 are done (phases 1–5, including Google Calendar and Gmail, Google sign-in through the browser for Andarium on the owner's iPhone, and several Google accounts at once in `accounts/` (D17); hands-free still needs a real-mic check). C23 (Microsoft Outlook mail and calendar, `microsoft/`, D18) is done too. C24 (iCloud, `icloud/`) is done too. C25 (the smart-home core, `home/`, with a Demo home in debug builds) is done too. The table says what's next.
+C01–C19, C17b and C22–C24 are done (phases 1–5, including Google Calendar and Gmail, Google sign-in through the browser for Andarium on the owner's iPhone, and several Google accounts at once in `accounts/` (D17); hands-free still needs a real-mic check). C23 (Microsoft Outlook mail and calendar, `microsoft/`, D18) is done too. C24 (iCloud, `icloud/`) is done too. C25 (the smart-home core, `home/`, with a Demo home in debug builds) is done too. C35 (to-dos: Google Tasks as in Jarvis, D20) is designed. The table says what's next.
 
 ## Build, test, run (Git Bash; from PowerShell: `& "C:\Program Files\Git\bin\bash.exe" scripts/check.sh`)
 ```bash
