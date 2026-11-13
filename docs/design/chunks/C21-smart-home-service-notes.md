@@ -55,3 +55,35 @@ Alexa, Ring, Blink, thermostat, garage door opener, locks, "etc."
 2. Do you already run, or are you willing to run, Home Assistant? Where (PC, Raspberry Pi, NAS)?
 3. Should Edith control the home only while your PC (Jarvis) is on, or always?
 4. Which actions should never be possible by voice alone? (Recommended: unlock, garage open.)
+
+## Checked on 2026-11-12 for D10 (directly from the phone)
+Web research only (vendor pages, library repositories and issue trackers, community reports); nothing tried against
+the owner's accounts yet. Every service below except the thermostat's official API is **unofficial**: it uses the
+vendor's own app endpoints, which may be against its terms, and can stop working without notice. Ranked from the
+most to the least dependable route.
+
+| Service | Official API for us? | Best route from the phone | Main risks | Verdict |
+|---|---|---|---|---|
+| **Meross** garage (MSG100-type) | No | Meross cloud (HTTP sign-in + MQTT over TLS), as `meross-iot` (Python, release Jan 2026) does; LAN control needs a key from the cloud and works only at home | Unofficial; MQTT client library needed in Kotlin | **Good**: maintained references, simple device |
+| **Ring** | Partner-only (business agreement) | `ring-client-api`'s flow: email + password + 2FA once, then a **rotating refresh token saved on every refresh**; snapshots and event history over REST | Unofficial; token rotation must never lose a token (as C23's Microsoft); live view (WebRTC) out of scope | **Workable** |
+| **Honeywell/Resideo** thermostat | **Yes**, `developer.honeywellhome.com` (OAuth, consumer key) | The official API | New developer apps reportedly sit in "pending review" for a long time; the API's address moved in 2026 | **Workable if the key is granted**: the owner should apply now |
+| **Blink** | No | blinkpy's OAuth flow | Broke for everyone in July 2026 (406 at sign-in; Blink began rejecting a non-UUID `hardware_id`); fixed in Home Assistant 2026.8 | **Fragile**: expect outages |
+| **Alexa** devices | No (the Smart Home Skill API is the other direction) | `alexa-remote2`/`alexa-cookie`: Amazon's own sign-in page, then a cookie/token | Needs app-based 2FA, not SMS/email; maintainers fix login breaks every few months; reported to be on its way out | **Fragile** |
+| **Philips** lock (Home Access) | No | Community integrations call the Philips Home Access cloud with a signing key embedded in the app; unlock goes through the Wi-Fi gateway | The key can rotate with any app update; the owner can't be signed in to the Philips app and Edith at once (share the lock to a second account); an unlock path built this way is a security concern | **Fragile, and risky for unlocking** |
+| **August** lock | Partner-only | None found: `yalexs` says the public key in community code is **no longer accepted** and a vendor-issued partner key is required; Yale switched off password sign-in (July 2026) | Blocked for an app like Edith | **Not possible now** (check whether the owner's model supports Matter or HomeKit) |
+
+Sources: Resideo/Honeywell — <https://developer.honeywellhome.com>, <https://gbu.im/2026/03/12/resideo-thermostat-reverse-engineering.html>,
+<https://community.openhab.org/t/resideo-api-binding-for-honeywell-thermostats-and-sensors/159903>. Meross —
+<https://pypi.org/project/meross-iot/>, <https://github.com/albertogeniola/MerossIot>, <https://github.com/krahabb/meross_lan/discussions/63>.
+August/Yale — <https://github.com/Yale-Libs/yalexs>, <https://github.com/homebridge-plugins/august-yale>,
+<https://help.getseam.com/articles/6502053647-understanding-yale-s-smart-lock-services>. Philips —
+<https://github.com/dinhhuy258/ha-philips-lock>, <https://github.com/swils23/philips_home_access>,
+<https://community.home-assistant.io/t/support-for-philips-smart-locks/342198>. Alexa — <https://github.com/Apollon77/alexa-remote/>,
+<https://github.com/Apollon77/alexa-cookie>, <https://discourse.nodered.org/t/node-red-contrib-alexa-remote2-applestrudel-oauth-enabling/100548>.
+Ring — <https://github.com/dgreif/ring/wiki/Refresh-Tokens>, <https://github.com/dgreif/ring/issues/1715>,
+<https://developer.amazon.com/docs/ring/api-documentation.html>. Blink — <https://github.com/fronzbot/blinkpy/issues/1266>,
+<https://github.com/home-assistant/core/issues/176836>.
+
+**Still to confirm with the owner:** the exact models (Meross garage, Philips lock, August lock, Honeywell thermostat);
+whether the August lock has Matter or HomeKit; whether they'll apply for a Resideo developer key; and whether
+relying on unofficial vendor endpoints is acceptable for each service.
