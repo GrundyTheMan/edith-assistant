@@ -51,9 +51,9 @@ design in the same PR, or ask the owner.
 | [C19](chunks/C19-gmail.md) | Gmail search, read, draft, send | 5 | C17, C08 | Done |
 | [C20](chunks/C20-smart-home-architecture.md) | Smart home architecture (**v2, design only**) | 6 Deferred | C08, C17 | Done (D10: direct from the phone; v2 split into C25–C31) |
 | [C21](chunks/C21-smart-home-service-notes.md) | Smart home service notes (**v2 research**) | 6 Deferred | — | Done (services checked 2026-11-12) |
-| [C22](chunks/C22-several-accounts.md) | Several accounts: the account model, and several Google accounts (D17) | 7 Accounts | C17, C17b, C18, C19 | Done (iPhone check pending) |
-| [C23](chunks/C23-microsoft-account.md) | Microsoft account: Outlook mail and calendar | 7 | C22 | Done (iPhone check pending) |
-| [C24](chunks/C24-icloud-account.md) | iCloud account: iCloud Mail and Calendar | 7 | C22 | Done (iPhone check pending) |
+| [C22](chunks/C22-several-accounts.md) | Several accounts: the account model, and several Google accounts (D17) | 7 Accounts | C17, C17b, C18, C19 | Done |
+| [C23](chunks/C23-microsoft-account.md) | Microsoft account: Outlook mail and calendar | 7 | C22 | Done |
+| [C24](chunks/C24-icloud-account.md) | iCloud account: iCloud Mail and Calendar | 7 | C22 | Done |
 | [C25](chunks/C25-home-core.md) | Smart home core: device model, tools, Home tab, command log (fake backend) | 8 Smart home (v2) | C08, C14, C22 | Design |
 | [C26](chunks/C26-meross-garage.md) | Meross garage door opener | 8 | C25 | Design |
 | [C27](chunks/C27-ring.md) | Ring doorbell and cameras (snapshots, events) | 8 | C25 | Design |

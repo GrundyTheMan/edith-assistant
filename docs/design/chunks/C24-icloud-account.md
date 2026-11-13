@@ -260,6 +260,7 @@ changes marked **(live)** below.
   subjects (both still unread); the iCloud calendar; a restart with Google, Microsoft and iCloud all reconnecting. No
   crash. (A first attempt was on the wrong emulator: the release app had no iCloud account until it was added there.)
 
+- **Andarium on the owner's iPhone** (published v2.0.0-dev.3, 2026-11-13): the owner reported everything working.
+
 **Not verified**
-- Andarium on the owner's iPhone (needs the next published build).
 - An `@me.com`/`@mac.com` or custom-domain address; mail-only when CalDAV fails (tested, not seen live).
