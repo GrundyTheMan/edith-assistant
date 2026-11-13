@@ -75,6 +75,7 @@ import com.edith.app.google.CredentialManagerSignIn
 import com.edith.app.google.browser.BrowserGoogle
 import com.edith.app.google.browser.BrowserOAuth
 import com.edith.app.google.browser.BrowserSignIn
+import com.edith.app.icloud.ICloudAccounts
 import com.edith.app.microsoft.MicrosoftAccounts
 import com.edith.app.microsoft.MicrosoftOAuth
 import com.google.android.gms.common.ConnectionResult
@@ -306,8 +307,11 @@ class AppContainer(val app: Application) {
         )
     }
 
+    /** iCloud as an account provider (C24): mail over IMAP/SMTP, calendars over CalDAV, an app-specific password. */
+    val icloudAccounts: ICloudAccounts by lazy { ICloudAccounts(secretStore, okHttpLazy, dispatchers) }
+
     /** Every email-and-calendar account (C22, D17), saved in the `settings` file under `accounts`. */
-    val accounts: Accounts by lazy { Accounts(DataStoreAccountStore(settingsStore.store), googleAccounts, appScope, microsoftAccounts) }
+    val accounts: Accounts by lazy { Accounts(DataStoreAccountStore(settingsStore.store), googleAccounts, appScope, microsoftAccounts, icloudAccounts) }
 
     /** Short handles for listed events (`e1`) and found emails (`m1`): one sequence each for the app run (C22 trap 4). */
     val calendarHandles: CalendarHandles by lazy { CalendarHandles() }

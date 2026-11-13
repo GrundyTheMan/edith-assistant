@@ -3,13 +3,16 @@ package com.edith.app.accounts
 import android.app.Activity
 import android.app.PendingIntent
 import android.content.Intent
+import com.edith.app.accounts.sources.CalendarInfo
 import com.edith.app.accounts.sources.CalendarSource
+import com.edith.app.accounts.sources.DefaultCalendarSource
 import com.edith.app.accounts.sources.MailSource
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import com.edith.app.google.GoogleAccounts
 import com.edith.app.google.GoogleSignIn
 import com.edith.app.google.browser.BrowserOAuth
+import com.edith.app.icloud.ICloudAccounts
 import com.edith.app.microsoft.MicrosoftAccounts
 import com.edith.app.microsoft.MicrosoftOAuth
 import com.edith.app.tools.framework.Integration
@@ -74,6 +77,8 @@ class Accounts(
     private val scope: CoroutineScope,
     /** C23: Microsoft accounts (null in tests that don't need it). */
     val microsoft: MicrosoftAccounts? = null,
+    /** C24: iCloud accounts (null in tests that don't need it). */
+    val icloud: ICloudAccounts? = null,
 ) : Integration, AccountDirectory {
     override val id = ID
 
@@ -109,7 +114,21 @@ class Accounts(
 
     override fun entries(): List<AccountEntry> = list.value.map { a ->
         val c = connections[a.id]
-        AccountEntry(a, c?.state?.value ?: AccountState.Error(UNSUPPORTED), c?.capabilities ?: Capabilities(false, false), c?.calendar, c?.mail)
+        // The owner's default calendar, when chosen, replaces the provider's (Settings → Accounts).
+        val calendar = c?.calendar?.let { src -> a.defaultCalendar?.let { DefaultCalendarSource(src, it) } ?: src }
+        AccountEntry(a, c?.state?.value ?: AccountState.Error(UNSUPPORTED), c?.capabilities ?: Capabilities(false, false), calendar, c?.mail)
+    }
+
+    /** One account's writable calendars, with the current default marked, for Settings → Accounts. */
+    suspend fun writableCalendars(id: String): List<CalendarInfo> =
+        (entries().firstOrNull { it.account.id == id }?.calendar?.calendars() as? com.edith.app.core.error.Outcome.Success)
+            ?.value?.filter { it.canWrite }.orEmpty()
+
+    /** Settings → Accounts → Default calendar: where new events go when no calendar is named (null: the provider's). */
+    suspend fun setDefaultCalendar(id: String, calendarId: String?) = editLock.withLock {
+        store.update { current -> current.map { if (it.id == id) it.copy(defaultCalendar = calendarId) else it } }
+        list.value = store.current()
+        Log.i(LogTag.Accounts, "Accounts: $id default calendar ${if (calendarId == null) "reset" else "chosen"}")
     }
 
     /** One account's live connection (the debug hook checks each Google account's token with it). */
@@ -148,6 +167,26 @@ class Accounts(
     suspend fun addGoogle(activity: Activity, useBrowser: Boolean = false) {
         _message.value = null
         onGoogleSignIn(google.signInNew(activity, useBrowser))
+    }
+
+    /**
+     * Add account → iCloud (C24 §1): checks the address and app-specific password, then adds the account (or signs
+     * it in again with the new password). Returns why not, or a note when only mail works; null when all is well.
+     */
+    suspend fun addICloud(address: String, password: String): String? {
+        _message.value = null
+        val ic = icloud ?: return NOT_SET_UP_ICLOUD
+        val check = ic.check(address, password)
+        if (check is ICloudAccounts.Check.Failed) return check.message
+        check as ICloudAccounts.Check.Ok
+        val account = upsert(Provider.ICloud, address.trim(), null)
+        editLock.withLock {
+            store.update { current -> current.map { if (it.id == account.id) it.copy(login = check.login) else it } }
+            list.value = store.current()
+        }
+        ic.keep(account.id, password)
+        connections[account.id]?.start()
+        return if (check.calendar) null else ICloudAccounts.CALENDAR_UNAVAILABLE
     }
 
     /** Add account → Microsoft (C23). */
@@ -234,7 +273,7 @@ class Accounts(
         val connection = when (account.provider) {
             Provider.Google -> google.connect(accountOf) { activity -> onGoogleSignIn(google.signInAgain(activity, accountOf())) }
             Provider.Microsoft -> microsoft?.connect(accountOf) { activity -> microsoft.signInAgain(activity, accountOf()).let { onMicrosoftSignIn(it) } }
-            Provider.ICloud -> null   // C24
+            Provider.ICloud -> icloud?.connect(accountOf)
         } ?: return
         connections[id] = connection
         connectionsFlow.value = connections.toMap()
@@ -294,6 +333,7 @@ class Accounts(
 
     companion object {
         const val ID = "accounts"
+        const val NOT_SET_UP_ICLOUD = "iCloud isn't available in this build."
         const val UNSUPPORTED = "This version of Edith can't use this kind of account."
 
         /** A label no other account has (ignoring case): the address, or "address (2)" in the odd case it's taken. */

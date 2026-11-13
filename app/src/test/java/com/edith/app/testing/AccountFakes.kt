@@ -79,6 +79,8 @@ class AccountsHarness(
     desktop: String = "desktop.apps.googleusercontent.com",
     var playAvailable: Boolean = true,
     microsoftClientId: String = "ms-client-id",
+    /** C24: where iCloud mail is (GreenMail in tests); CalDAV is at [baseUrl]'s root, as at caldav.icloud.com. */
+    icloudMail: com.edith.app.icloud.mail.MailServers = com.edith.app.icloud.mail.MailServers(imapHost = "127.0.0.1", imapPort = 9, imapSsl = false, smtpHost = "127.0.0.1", smtpPort = 9, smtpStartTls = false, timeoutMs = 3_000),
     zone: ZoneId = ZoneId.of("America/Detroit"),
     clock: com.edith.app.core.time.Clock = FakeClock(java.time.Instant.parse("2026-11-02T18:00:00Z"), zone),
 ) {
@@ -129,7 +131,9 @@ class AccountsHarness(
         graphBaseUrl = url("/graph/v1.0"),
     )
 
-    val accounts = Accounts(store, google, scope, microsoft)
+    val icloud = com.edith.app.icloud.ICloudAccounts(secrets, lazy { OkHttpClient() }, AppDispatchersForTests.unconfined, { zone }, icloudMail, url("/"))
+
+    val accounts = Accounts(store, google, scope, microsoft, icloud)
 }
 
 /** Dispatchers that run everything in place (MockWebServer calls block the test thread, which is fine in JVM tests). */

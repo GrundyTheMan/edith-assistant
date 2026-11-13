@@ -367,15 +367,41 @@ class DeleteCalendarEventTool(private val dir: AccountDirectory, private val han
     override val spec = ToolSpec(
         "delete_calendar_event",
         "Delete an event from list_calendar_events (the user confirms first)",
-        listOf(ToolParam("event_id", ParamType.String, "The event_id from list_calendar_events, e.g. e3", required = true, aliases = listOf("id", "event"))),
+        listOf(
+            ToolParam("event_id", ParamType.String, "The event_id from list_calendar_events, e.g. e3", required = true, aliases = listOf("id", "event")),
+            ToolParam(
+                "whole_series", ParamType.Boolean,
+                "True to delete every occurrence of a repeating event. Only when the user asked to delete the whole series.",
+                aliases = listOf("series", "all_occurrences"),
+            ),
+        ),
     )
     override val statusLabel = "Changing your calendar…"
     override val displayName = "calendar"
     override val integrationId = Accounts.ID
 
+    /**
+     * C24: an occurrence that can only go with its whole series (iCloud) needs `whole_series`, which the model may send
+     * only when the owner asked for the series. Without it there's no card: the result tells Edith to ask.
+     */
+    private fun wholeSeries(args: ToolArgs) = args.bool("whole_series") == true
+
     override suspend fun confirmation(args: ToolArgs): ConfirmationRequest? {
         val e = handles.event(args.string("event_id")) ?: return null
         val entry = ownAccount(dir, e.accountId).first ?: return null
+        if (e.inSeries && !wholeSeries(args)) return null
+        if (e.inSeries) {
+            return ConfirmationRequest(
+                "Delete the whole repeating series?",
+                listOfNotNull(
+                    "Event" to e.title,
+                    "Deletes" to "Every occurrence, past and future (one is ${CalendarFormat.whenText(e.start, e.end, e.allDay)})",
+                    e.location?.let { "Where" to it },
+                    accountRow(entry.account, e.calendarName),
+                ),
+                confirmLabel = "Delete series",
+            )
+        }
         return ConfirmationRequest(
             "Delete from your calendar?",
             listOfNotNull("Event" to e.title, "When" to CalendarFormat.whenText(e.start, e.end, e.allDay), e.location?.let { "Where" to it }, accountRow(entry.account, e.calendarName)),
@@ -388,8 +414,21 @@ class DeleteCalendarEventTool(private val dir: AccountDirectory, private val han
         val e = handles.event(handle) ?: return ToolResult.Error(NEEDS_LIST)
         val (entry, refused) = ownAccount(dir, e.accountId)
         if (entry == null) return requireNotNull(refused)
-        return when (val r = requireNotNull(entry.calendar).delete(e)) {
-            is Outcome.Success -> { handles.forget(handle); ToolResult.Ok("Deleted \"${e.title}\" (${CalendarFormat.whenText(e.start, e.end, e.allDay)}) from ${entry.account.display}.") }
+        val source = requireNotNull(entry.calendar)
+        if (e.inSeries && !wholeSeries(args)) {
+            return ToolResult.Ok(
+                "\"${e.title}\" repeats, and in ${entry.account.display} one occurrence can't be deleted on its own. Ask the owner " +
+                    "whether to delete the whole series (every occurrence). Only if they say yes, call this tool again with " +
+                    "whole_series true.",
+            )
+        }
+        val r = if (e.inSeries) source.deleteSeries(e) else source.delete(e)
+        return when (r) {
+            is Outcome.Success -> {
+                handles.forget(handle)
+                if (e.inSeries) ToolResult.Ok("Deleted the whole repeating series \"${e.title}\" from ${entry.account.display}.")
+                else ToolResult.Ok("Deleted \"${e.title}\" (${CalendarFormat.whenText(e.start, e.end, e.allDay)}) from ${entry.account.display}.")
+            }
             is Outcome.Failure -> accountError(entry.account, r.error)
         }
     }

@@ -24,6 +24,13 @@ data class Account(
     val label: String,
     /** Google only: how it signs in, [SIGN_IN_PLAY] or [SIGN_IN_BROWSER] (C17b's mode, now per account). */
     val signIn: String? = null,
+    /** iCloud only (C24): the IMAP user name that worked, the mail name or the full address. Not a secret. */
+    val login: String? = null,
+    /**
+     * The calendar new events go to when none is named: the owner's choice in Settings → Accounts (C24; any provider).
+     * Null: the provider's own default. iCloud's server-side default can differ from the iPhone's, which no app can read.
+     */
+    val defaultCalendar: String? = null,
 ) {
     /** "work (sam@contoso.com)", or just the address while the label is the address. */
     val display: String get() = if (label.equals(address, ignoreCase = true)) address else "$label ($address)"

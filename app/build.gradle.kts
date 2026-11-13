@@ -63,7 +63,12 @@ android {
     }
 
     // Native libraries compressed in the APK (extracted on install): a much smaller download for ONNX Runtime.
-    packaging { jniLibs { useLegacyPackaging = true } }
+    packaging {
+        jniLibs { useLegacyPackaging = true }
+        // C24: the Jakarta Mail jars each carry these; only their licence texts. Their META-INF service and provider
+        // files (javamail.providers, mailcap, services/) are kept: the library finds its classes through them.
+        resources { excludes += listOf("META-INF/LICENSE.md", "META-INF/NOTICE.md") }
+    }
 
     signingConfigs {
         if (hasReleaseKey) {
@@ -134,6 +139,10 @@ dependencies {
     implementation(libs.datastore.core)
     implementation(libs.coroutines.core)
     implementation(libs.okhttp)
+    // C24: iCloud mail over IMAP and SMTP
+    implementation(libs.jakarta.mail.api)
+    implementation(libs.angus.mail)
+    implementation(libs.angus.activation)
 
     // C05: Room (KSP — never kapt, lessons L1)
     implementation(libs.room.runtime)
@@ -155,6 +164,7 @@ dependencies {
     testImplementation(libs.coroutines.test)
     testImplementation(libs.junit)
     testImplementation(libs.mockwebserver)
+    testImplementation(libs.greenmail)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

@@ -159,3 +159,107 @@ C22's tools include iCloud's calendars and mail.
 - iCloud Contacts and Reminders.
 - Shared and subscribed calendars beyond what discovery lists as `VEVENT` collections in the home.
 - Push/IDLE.
+
+## As built (2026-11-13)
+
+Where the code differs from the specification above, the code is right. Built on 2026-11-12 with tests only (the owner
+had no iCloud account then); verified live on 2026-11-13 with the owner's iCloud account, which also turned up the
+changes marked **(live)** below.
+
+**Files**
+- `icloud/ICloudAccounts.kt`: the provider (the add-account check, 20 s) and `ICloudConnection` (state, capabilities,
+  disconnect). `Account.login` (new, optional) keeps the IMAP user name that worked.
+- `icloud/mail/ICloudMailSource.kt`: IMAP and SMTP with Jakarta Mail; `MailServers` (Apple's hosts; tests point it at
+  GreenMail).
+- `icloud/calendar/`: `CalDavClient` (discovery, `REPORT`, `GET`/`PUT`/`DELETE` with ETags), `ICalendar` (the parser and
+  writer), `ICloudCalendarSource`.
+- `accounts/sources/DefaultCalendar.kt` (new, **live**): `DefaultCalendarSource`, the owner's chosen default calendar
+  over the provider's, for any account (`Account.defaultCalendar`).
+- Settings → Accounts: **iCloud** in Add account; a dialog with the address and the password (masked, **Show**);
+  **Sign in again** opens the same dialog for a new password; Disconnect says where to revoke it at Apple; **Default
+  calendar** for every account with more than one writable calendar.
+- `docs/icloud-setup.md` (new).
+
+**The libraries (trap 1)**
+- Jakarta Mail API 2.1.5, Angus Mail 2.0.5, Angus Activation 2.0.3 (latest stable; the 2.1/2.2 lines are milestones).
+  GreenMail 2.1.15 for tests only. The jars' duplicate `META-INF/LICENSE.md`/`NOTICE.md` are left out of the APK.
+- Proven before anything else, with a temporary probe (since removed) that logged in to `imap.mail.me.com` and
+  `smtp.mail.me.com` with a made-up user: Apple's "authentication failed" proves TLS, STARTTLS, the protocols and
+  the provider loading.
+  - Debug build on `Pixel_9_API_37` (Android 17): IMAP refused in 0.6 s, SMTP (STARTTLS) in 1.2 s. ✔
+  - Release build on `Edith_Release_Test`: at first every connection failed at once with `NoSuchProviderException`
+    ("imaps", "smtp"): R8 had renamed the classes the library loads by name. Keep rules for `Provider`, `Service`
+    subclasses' `(Session, URLName)` constructors and the activation handlers, plus `-dontwarn` for `java.awt` (the
+    image handlers) and `javax.security.sasl` (optional SASL, never enabled). Then IMAP 0.7 s, SMTP 1.1 s. ✔
+- **No ical4j:** iCloud honours `<C:expand>` (live: a daily series came back as one instance per day with
+  `RECURRENCE-ID`, no `RRULE`), so nothing is expanded on the phone.
+
+**Decisions made while building**
+- **Mail never marks anything read:** the inbox is opened read-only (`EXAMINE`) and `mail.imap.peek` makes every body
+  fetch `BODY.PEEK`. Tested with GreenMail, and live: the welcome email stayed unread after Edith searched and read it.
+- **Search:** `SEARCH` with `FROM`/`TO`/`SUBJECT`/`UNSEEN`/`SINCE`/`BEFORE`; free text is `SUBJECT` or `BODY` (Angus
+  has no `TEXT` term). The exact `after`/`before` instants are checked on the phone with each message's
+  `INTERNALDATE`. A search without words looks at the newest 50. Only the envelope is fetched, so results have no
+  snippet.
+- **Message ids** are `UIDVALIDITY:UID`; a changed `UIDVALIDITY` says "list the emails again".
+- **Drafts and Sent (live):** found by SPECIAL-USE flag first. iCloud has **no SPECIAL-USE capability** and flags only
+  `\Sent` ("Sent Messages") and `\Trash` ("Deleted Messages"); "Drafts" carries no flag, so the first live draft
+  failed. Now, when no folder has the flag, iCloud's own server name is used ("Drafts", "Sent Messages"); these IMAP
+  names are fixed, not translated with the phone's language. Tested with a scripted IMAP server replaying iCloud's
+  LIST, and the localised-names case.
+- **Sent copies:** `APPEND_TO_SENT` stays false. Live: one SMTP send (to the owner's own address, after the owner
+  tapped Send) → exactly one copy in "Sent Messages", so iCloud keeps them itself.
+- **The SMTP login is the full address; the IMAP login is the mail name first, then the full address** (Apple's
+  settings). The one that worked is saved as `Account.login`.
+- **CalDAV credentials** are added by a network interceptor, only for the CalDAV host and `*.icloud.com`, so they
+  follow Apple's redirect to the partition host and go nowhere else. The XML parser refuses DTDs.
+- **The default calendar (live):** RFC 6638 names it on the **scheduling inbox** (`schedule-default-calendar-URL`),
+  not the principal, and iCloud writes it as plain text rather than in `<href>`; both are handled now. iCloud's
+  default for this account is "Birthday calendar" (the account's oldest calendar), not the iPhone's default, which
+  is a setting on the phone that no app can read. So the owner chooses: **Settings → Accounts → Default calendar**
+  (`Account.defaultCalendar`, any provider); naming a calendar still overrides it, and a chosen calendar that's gone
+  or read-only falls back to the server's.
+- **Repeating events (live, at the owner's request):** an occurrence's id is `<href>#<RECURRENCE-ID>` and it's marked
+  `inSeries`. One occurrence can't be changed or deleted on its own. `delete_calendar_event` takes `whole_series`:
+  without it, no card and nothing sent (Edith is told to ask whether to delete every occurrence); with it, the card
+  "Delete the whole repeating series?" ("Every occurrence, past and future") and one `DELETE` with `If-Match` of the
+  series' resource. Google and Outlook occurrences are deleted one by one as before.
+- **Times:** timed events are written in UTC (`Z`), all-day as `VALUE=DATE`. A `TZID` that isn't an IANA id is mapped
+  from a short list of Windows names, else read in the device's zone; never as UTC (L29).
+- **Errors:** a refused password (IMAP `AUTHENTICATIONFAILED`, CalDAV 401) → NeedsSignIn ("needs a new app-specific
+  password"), no retry; the button says **Sign in again** (it said "Grant access", Google's wording, until the live
+  check). Errors reuse `AppError.GoogleAuth` for account sign-in problems, as C23 does.
+- **The check at startup** makes one IMAP login (a one-message search) and the calendar's discovery.
+- **Diagnosing live:** a temporary debug receiver wrote iCloud's raw answers to a private file (never the log). One
+  dump also held other people's birthdays from the account's calendar; it was deleted from the phone and the PC at
+  once, and the receiver is removed.
+
+**Verified**
+- `scripts/check.sh`: OK (`build-logs/2026-11-13_13-01-58_check.log`), 344 unit tests; lint: no new warnings (the 2
+  `ExifInterface` ones are C15's).
+  - `ICalendarTest` (5), `CalDavTest` (7, the default named by the scheduling inbox), `ICloudMailTest` (8, GreenMail:
+    **no `\Seen` set by search or read**), `SpecialUseFolderTest` (2, with iCloud's real LIST), `ICloudAccountsTest`
+    (7: the add-account check; through the tool loop next to Google, including the whole-series delete with no card
+    and nothing sent until `whole_series`), `DefaultCalendarTest` (2).
+- `scripts/check.sh --device`: OK (112 tests, `build-logs/2026-11-13_13-03-54_check.log`). No new device tests for the
+  iCloud dialog or Default calendar; both were checked live.
+- **Live on `Pixel_9_API_37` (debug), with the owner's iCloud account:**
+  - Add account → iCloud → "iCloud check: mail OK, calendar OK" → **Connected** (3 calendars).
+  - A daily series made on the iPhone → one occurrence per day (Sat–Wed) from `list_calendar_events`.
+  - "Any unread email in my iCloud account?" → the welcome email; Edith read it; still unread at icloud.com.
+  - "Add a test event…" → Edith asked which account (no card) → iCloud → card "… — Birthday calendar" (cancelled) →
+    after choosing Default calendar "Calendar": card "… — Calendar" → Add → on the iPhone. "Delete…" → gone.
+  - "Delete my daily Workout event, the whole repeating series" → the series card → every occurrence gone.
+  - A reply draft → (after the Drafts fix) in Drafts with only "Thanks,".
+  - A send to the owner's own address (the owner tapped Send) → one copy in Sent Messages.
+  - A restart → reconnected. Revoked the app-specific password at Apple → "The app-specific password stopped working…"
+    and "Needs a new app-specific password" → a new password with **Sign in again** → Connected.
+  - No crash from Edith.
+- **Release APK (R8) on `Edith_Release_Test`** (`build-logs/2026-11-13_13-05-39_gradle_app-assembleRelease.log`, not
+  published, 34.14 MB): Add account → iCloud → "mail OK, calendar OK" → Connected; the two newest iCloud emails'
+  subjects (both still unread); the iCloud calendar; a restart with Google, Microsoft and iCloud all reconnecting. No
+  crash. (A first attempt was on the wrong emulator: the release app had no iCloud account until it was added there.)
+
+**Not verified**
+- Andarium on the owner's iPhone (needs the next published build).
+- An `@me.com`/`@mac.com` or custom-domain address; mail-only when CalDAV fails (tested, not seen live).

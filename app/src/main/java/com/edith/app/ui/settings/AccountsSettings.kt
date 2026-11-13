@@ -47,8 +47,10 @@ import com.edith.app.accounts.Account
 import com.edith.app.accounts.AccountState
 import com.edith.app.accounts.Accounts
 import com.edith.app.accounts.Provider
+import com.edith.app.accounts.sources.CalendarInfo
 import com.edith.app.di.viewModelFactory
 import com.edith.app.google.GoogleAccounts
+import com.edith.app.icloud.ICloudAccounts
 import com.edith.app.microsoft.MicrosoftAccounts
 import androidx.compose.ui.platform.LocalUriHandler
 import kotlinx.coroutines.CoroutineScope
@@ -84,6 +86,14 @@ class AccountsViewModel(private val accounts: Accounts, private val appScope: Co
         appScope.launch(Dispatchers.Main.immediate) { accounts.addGoogle(activity, useBrowser) }
     }
 
+    /** Add account → iCloud, or Sign in again with a new password (C24 §1). [done] gets the check's answer. */
+    fun addICloud(address: String, password: String, done: (ICloudAnswer) -> Unit) {
+        viewModelScope.launch {
+            val message = accounts.addICloud(address, password)
+            done(ICloudAnswer(added = message == null || message == ICloudAccounts.CALENDAR_UNAVAILABLE, message = message))
+        }
+    }
+
     fun addMicrosoft(activity: Activity) {
         appScope.launch(Dispatchers.Main.immediate) { accounts.addMicrosoft(activity) }
     }
@@ -94,6 +104,15 @@ class AccountsViewModel(private val accounts: Accounts, private val appScope: Co
 
     fun onConsentResult(data: android.content.Intent?) {
         viewModelScope.launch { accounts.onConsentResult(data) }
+    }
+
+    /** The account's writable calendars, the current default marked, for the Default calendar choice. */
+    fun calendarsOf(id: String, done: (List<CalendarInfo>) -> Unit) {
+        viewModelScope.launch { done(accounts.writableCalendars(id)) }
+    }
+
+    fun setDefaultCalendar(id: String, calendarId: String) {
+        viewModelScope.launch { accounts.setDefaultCalendar(id, calendarId) }
     }
 
     fun rename(id: String, label: String, onResult: (Accounts.RenameResult) -> Unit) {
@@ -129,8 +148,11 @@ fun AccountsSection(vm: AccountsViewModel) {
         onAddGoogle = { browser -> activity?.let { vm.addGoogle(it, browser) } },
         microsoftNotSetUp = vm.microsoftNotSetUp,
         onAddMicrosoft = { activity?.let { vm.addMicrosoft(it) } },
+        onAddICloud = vm::addICloud,
         onGrant = { id -> activity?.let { a -> vm.grant(id, a) { consent.launch(IntentSenderRequest.Builder(it.intentSender).build()) } } },
         onRename = vm::rename,
+        loadCalendars = vm::calendarsOf,
+        onSetDefaultCalendar = vm::setDefaultCalendar,
         onDisconnect = vm::disconnect,
     )
 }
@@ -167,12 +189,17 @@ fun AccountsContent(
     onAddGoogle: (useBrowser: Boolean) -> Unit,
     onGrant: (id: String) -> Unit,
     onRename: (id: String, label: String, onResult: (Accounts.RenameResult) -> Unit) -> Unit,
+    loadCalendars: (id: String, done: (List<CalendarInfo>) -> Unit) -> Unit = { _, _ -> },
+    onSetDefaultCalendar: (id: String, calendarId: String) -> Unit = { _, _ -> },
     onDisconnect: (id: String) -> Unit,
     microsoftNotSetUp: String? = MicrosoftAccounts.NOT_SET_UP,
     onAddMicrosoft: () -> Unit = {},
+    onAddICloud: (address: String, password: String, done: (ICloudAnswer) -> Unit) -> Unit = { _, _, _ -> },
 ) {
     var open by remember { mutableStateOf<String?>(null) }
     var adding by remember { mutableStateOf(false) }
+    // C24: the iCloud dialog, for a new account ("") or a given address (Sign in again).
+    var icloudFor by remember { mutableStateOf<String?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Accounts", style = MaterialTheme.typography.titleMedium)
         Text(
@@ -190,8 +217,13 @@ fun AccountsContent(
     accounts.firstOrNull { it.first.id == open }?.let { (account, state) ->
         AccountDialog(
             account, state,
-            onGrant = { open = null; onGrant(account.id) },
+            onGrant = {
+                open = null
+                if (account.provider == Provider.ICloud && state is AccountState.NeedsSignIn) icloudFor = account.address else onGrant(account.id)
+            },
             onRename = { label, done -> onRename(account.id, label, done) },
+            loadCalendars = { done -> loadCalendars(account.id, done) },
+            onSetDefaultCalendar = { calendarId -> onSetDefaultCalendar(account.id, calendarId) },
             onDisconnect = { open = null; onDisconnect(account.id) },
             onClose = { open = null },
         )
@@ -214,7 +246,6 @@ fun AccountsContent(
                         Text("Google, using a browser instead")
                     }
                 }
-                // iCloud (C24) appears here once its chunk is done.
                 ListItem(
                     headlineContent = { Text("Microsoft") },
                     supportingContent = { Text(microsoftNotSetUp ?: "Outlook.com, Hotmail and Microsoft 365") },
@@ -223,9 +254,104 @@ fun AccountsContent(
                         if (microsoftNotSetUp == null) m.clickable { adding = false; onAddMicrosoft() } else m
                     },
                 )
+                ListItem(
+                    headlineContent = { Text("iCloud") },
+                    supportingContent = { Text("iCloud Mail and Calendar, with an app-specific password") },
+                    leadingContent = { ProviderBadge(Provider.ICloud) },
+                    modifier = Modifier.testTag(ADD_ICLOUD_TAG).clickable { adding = false; icloudFor = "" },
+                )
             }
         }
     }
+
+    icloudFor?.let { address ->
+        ICloudDialog(fixedAddress = address.ifEmpty { null }, onAdd = onAddICloud, onClose = { icloudFor = null })
+    }
+}
+
+/** What the iCloud dialog's check answered (C24 §1): [added], and a message to show (the reason, or "mail only"). */
+data class ICloudAnswer(val added: Boolean, val message: String?)
+
+/**
+ * C24 §1: the iCloud address and an app-specific password, which the owner types or pastes here themselves. The
+ * password is masked (with a show toggle), checked before anything is saved, and never shown again. [fixedAddress]:
+ * Sign in again for that account, with a new password.
+ */
+@Composable
+private fun ICloudDialog(
+    fixedAddress: String?,
+    onAdd: (address: String, password: String, done: (ICloudAnswer) -> Unit) -> Unit,
+    onClose: () -> Unit,
+) {
+    var address by remember { mutableStateOf(fixedAddress.orEmpty()) }
+    var password by remember { mutableStateOf("") }
+    var show by remember { mutableStateOf(false) }
+    var checking by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var addedWithNote by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = { if (!checking) onClose() },
+        title = { Text(if (fixedAddress == null) "Add iCloud" else "Sign in to iCloud again") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!addedWithNote) {
+                    Text(
+                        "Make an app-specific password at account.apple.com → Sign-In and Security → App-Specific Passwords, " +
+                            "and paste it here. Not your Apple Account password. It lets Edith use this account's mail and calendars.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    OutlinedTextField(
+                        value = address, onValueChange = { address = it; message = null }, singleLine = true,
+                        enabled = fixedAddress == null && !checking, label = { Text("iCloud email") },
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Email),
+                        modifier = Modifier.fillMaxWidth().testTag(ICLOUD_ADDRESS_TAG),
+                    )
+                    OutlinedTextField(
+                        value = password, onValueChange = { password = it; message = null }, singleLine = true,
+                        enabled = !checking, label = { Text("App-specific password") }, placeholder = { Text("xxxx-xxxx-xxxx-xxxx") },
+                        visualTransformation = if (show) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Password, autoCorrectEnabled = false,
+                        ),
+                        trailingIcon = { TextButton(onClick = { show = !show }) { Text(if (show) "Hide" else "Show") } },
+                        modifier = Modifier.fillMaxWidth().testTag(ICLOUD_PASSWORD_TAG),
+                    )
+                    if (checking) Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Text("Checking with iCloud…")
+                    }
+                }
+                message?.let {
+                    Text(
+                        it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag(ICLOUD_MESSAGE_TAG),
+                        color = if (addedWithNote) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            if (addedWithNote) {
+                TextButton(onClick = onClose) { Text("OK") }
+            } else {
+                TextButton(
+                    onClick = {
+                        checking = true
+                        onAdd(address, password) { answer ->
+                            checking = false
+                            when {
+                                answer.added && answer.message == null -> onClose()
+                                answer.added -> { addedWithNote = true; message = answer.message }
+                                else -> message = answer.message
+                            }
+                        }
+                    },
+                    enabled = !checking && address.isNotBlank() && password.isNotBlank(),
+                    modifier = Modifier.testTag(ICLOUD_ADD_TAG),
+                ) { Text(if (fixedAddress == null) "Add" else "Sign in") }
+            }
+        },
+        dismissButton = { if (!addedWithNote) TextButton(onClick = onClose, enabled = !checking) { Text("Cancel") } },
+    )
 }
 
 @Composable
@@ -264,6 +390,8 @@ private fun AccountDialog(
     state: AccountState,
     onGrant: () -> Unit,
     onRename: (String, (Accounts.RenameResult) -> Unit) -> Unit,
+    loadCalendars: ((List<CalendarInfo>) -> Unit) -> Unit = {},
+    onSetDefaultCalendar: (String) -> Unit = {},
     onDisconnect: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -297,8 +425,9 @@ private fun AccountDialog(
                 } else {
                     OutlinedButton(onClick = { renaming = true }) { Text("Rename") }
                 }
+                DefaultCalendarChoice(state is AccountState.Connected, loadCalendars, onSetDefaultCalendar)
                 when (state) {
-                    is AccountState.NeedsSignIn -> Button(onClick = onGrant) { Text(if (state.viaBrowser) "Sign in again" else "Grant access") }
+                    is AccountState.NeedsSignIn -> Button(onClick = onGrant) { Text(if (state.viaBrowser || account.provider == Provider.ICloud) "Sign in again" else "Grant access") }
                     is AccountState.Error -> Button(onClick = onGrant) { Text("Try again") }
                     else -> Unit
                 }
@@ -315,11 +444,52 @@ private fun AccountDialog(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Edith won't see its email or calendar.")
                     if (account.provider == Provider.Microsoft) MicrosoftRemoveAccess()
+                    if (account.provider == Provider.ICloud) Text(ICloudAccounts.REVOKE_HINT, style = MaterialTheme.typography.bodyMedium)
                 }
             },
             confirmButton = { TextButton(onClick = { confirmDisconnect = false; onDisconnect() }) { Text("Disconnect") } },
             dismissButton = { TextButton(onClick = { confirmDisconnect = false }) { Text("Cancel") } },
         )
+    }
+}
+
+/**
+ * Settings → Accounts → an account → **Default calendar** (C24, any provider): where a new event goes when the owner
+ * doesn't name a calendar. iCloud's server-side default isn't the iPhone's (that one is a setting on the phone, which
+ * no app can read), so the owner picks it here once.
+ */
+@Composable
+private fun DefaultCalendarChoice(
+    connected: Boolean,
+    loadCalendars: ((List<CalendarInfo>) -> Unit) -> Unit,
+    onSetDefault: (String) -> Unit,
+) {
+    if (!connected) return
+    var calendars by remember { mutableStateOf<List<CalendarInfo>?>(null) }
+    var choosing by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(Unit) { loadCalendars { calendars = it } }
+    val list = calendars ?: return
+    if (list.size < 2) return   // nothing to choose between
+    val current = list.firstOrNull { it.isDefault } ?: list.first()
+    TextButton(onClick = { choosing = !choosing }, modifier = Modifier.testTag(DEFAULT_CALENDAR_TAG)) {
+        Text("Default calendar: ${current.name}")
+    }
+    if (choosing) {
+        Column(Modifier.padding(start = 8.dp)) {
+            for (c in list) {
+                Row(
+                    Modifier.fillMaxWidth().clickable {
+                        onSetDefault(c.id)
+                        calendars = list.map { it.copy(isDefault = it.id == c.id) }
+                        choosing = false
+                    }.padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.material3.RadioButton(selected = c.id == current.id, onClick = null)
+                    Text(c.name, modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+        }
     }
 }
 
@@ -372,7 +542,13 @@ const val ACCOUNTS_MESSAGE_TAG = "accounts_message"
 const val ACCOUNT_ROW_TAG = "account_row_"
 const val ACCOUNT_STATUS_TAG = "account_status"
 const val ACCOUNT_LABEL_TAG = "account_label"
+const val DEFAULT_CALENDAR_TAG = "default_calendar"
 const val ADD_GOOGLE_TAG = "add_google"
 const val ADD_MICROSOFT_TAG = "add_microsoft"
+const val ADD_ICLOUD_TAG = "add_icloud"
+const val ICLOUD_ADDRESS_TAG = "icloud_address"
+const val ICLOUD_PASSWORD_TAG = "icloud_password"
+const val ICLOUD_ADD_TAG = "icloud_add"
+const val ICLOUD_MESSAGE_TAG = "icloud_message"
 const val MICROSOFT_PERSONAL_LINK_TAG = "microsoft_personal_link"
 const val BROWSER_PASTE_TAG = "browser_paste_address"
