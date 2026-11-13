@@ -49,6 +49,8 @@ import com.edith.app.accounts.Accounts
 import com.edith.app.accounts.Provider
 import com.edith.app.di.viewModelFactory
 import com.edith.app.google.GoogleAccounts
+import com.edith.app.microsoft.MicrosoftAccounts
+import androidx.compose.ui.platform.LocalUriHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
@@ -69,11 +71,21 @@ class AccountsViewModel(private val accounts: Accounts, private val appScope: Co
     /** What Add account offers for Google: null when it can be added, else why not. */
     val googleNotSetUp: String? = GoogleAccounts.NOT_SET_UP.takeIf { accounts.google.notSetUp }
 
+    /** What Add account offers for Microsoft (C23): null when it can be added, else why not. */
+    val microsoftNotSetUp: String? = MicrosoftAccounts.NOT_SET_UP.takeIf { accounts.microsoft?.isConfigured != true }
+
+    /** The provider the browser sign-in is for, for the waiting dialog. */
+    val waitingFor: StateFlow<String?> = accounts.browserWaitingFor
+
     /** Whether **Use a browser instead** can be offered (this build has the Desktop client ID). */
     val offerBrowser: Boolean = accounts.google.browserAvailable
 
     fun addGoogle(activity: Activity, useBrowser: Boolean) {
         appScope.launch(Dispatchers.Main.immediate) { accounts.addGoogle(activity, useBrowser) }
+    }
+
+    fun addMicrosoft(activity: Activity) {
+        appScope.launch(Dispatchers.Main.immediate) { accounts.addMicrosoft(activity) }
     }
 
     fun grant(id: String, activity: Activity, show: (PendingIntent) -> Unit) {
@@ -115,6 +127,8 @@ fun AccountsSection(vm: AccountsViewModel) {
         googleNotSetUp = vm.googleNotSetUp,
         offerBrowser = vm.offerBrowser,
         onAddGoogle = { browser -> activity?.let { vm.addGoogle(it, browser) } },
+        microsoftNotSetUp = vm.microsoftNotSetUp,
+        onAddMicrosoft = { activity?.let { vm.addMicrosoft(it) } },
         onGrant = { id -> activity?.let { a -> vm.grant(id, a) { consent.launch(IntentSenderRequest.Builder(it.intentSender).build()) } } },
         onRename = vm::rename,
         onDisconnect = vm::disconnect,
@@ -129,7 +143,9 @@ fun AccountsSection(vm: AccountsViewModel) {
 @Composable
 fun BrowserSignInDialogHost(vm: AccountsViewModel) {
     val waiting by vm.waitingForBrowser.collectAsStateWithLifecycle()
-    if (waiting) BrowserWaitingDialog(provider = Provider.Google, onPaste = vm::paste, onCancel = vm::cancel)
+    val waitingFor by vm.waitingFor.collectAsStateWithLifecycle()
+    val provider = if (waitingFor == "microsoft") Provider.Microsoft else Provider.Google
+    if (waiting) BrowserWaitingDialog(provider = provider, onPaste = vm::paste, onCancel = vm::cancel)
 }
 
 /** The words for an account's state in Settings. */
@@ -152,6 +168,8 @@ fun AccountsContent(
     onGrant: (id: String) -> Unit,
     onRename: (id: String, label: String, onResult: (Accounts.RenameResult) -> Unit) -> Unit,
     onDisconnect: (id: String) -> Unit,
+    microsoftNotSetUp: String? = MicrosoftAccounts.NOT_SET_UP,
+    onAddMicrosoft: () -> Unit = {},
 ) {
     var open by remember { mutableStateOf<String?>(null) }
     var adding by remember { mutableStateOf(false) }
@@ -183,7 +201,6 @@ fun AccountsContent(
         ModalBottomSheet(onDismissRequest = { adding = false }) {
             Column(Modifier.padding(bottom = 16.dp).navigationBarsPadding()) {
                 Text("Add account", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                // Microsoft (C23) and iCloud (C24) appear here once their chunks are done.
                 ListItem(
                     headlineContent = { Text("Google") },
                     supportingContent = { Text(googleNotSetUp ?: "Gmail and Google Calendar") },
@@ -197,6 +214,15 @@ fun AccountsContent(
                         Text("Google, using a browser instead")
                     }
                 }
+                // iCloud (C24) appears here once its chunk is done.
+                ListItem(
+                    headlineContent = { Text("Microsoft") },
+                    supportingContent = { Text(microsoftNotSetUp ?: "Outlook.com, Hotmail and Microsoft 365") },
+                    leadingContent = { ProviderBadge(Provider.Microsoft) },
+                    modifier = Modifier.testTag(ADD_MICROSOFT_TAG).let { m ->
+                        if (microsoftNotSetUp == null) m.clickable { adding = false; onAddMicrosoft() } else m
+                    },
+                )
             }
         }
     }
@@ -285,10 +311,31 @@ private fun AccountDialog(
         AlertDialog(
             onDismissRequest = { confirmDisconnect = false },
             title = { Text("Disconnect ${account.label}?") },
-            text = { Text("Edith won't see its email or calendar.") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Edith won't see its email or calendar.")
+                    if (account.provider == Provider.Microsoft) MicrosoftRemoveAccess()
+                }
+            },
             confirmButton = { TextButton(onClick = { confirmDisconnect = false; onDisconnect() }) { Text("Disconnect") } },
             dismissButton = { TextButton(onClick = { confirmDisconnect = false }) { Text("Cancel") } },
         )
+    }
+}
+
+/**
+ * C23 §1: Microsoft has no way for an app to remove its own access, so Disconnect deletes the token on the phone and
+ * says where the owner can remove Edith at Microsoft.
+ */
+@Composable
+private fun MicrosoftRemoveAccess() {
+    val uri = LocalUriHandler.current
+    Text("To remove Edith at Microsoft too:", style = MaterialTheme.typography.bodyMedium)
+    TextButton(onClick = { runCatching { uri.openUri(MicrosoftAccounts.PERSONAL_PERMISSIONS) } }, modifier = Modifier.testTag(MICROSOFT_PERSONAL_LINK_TAG)) {
+        Text("Personal account: account.live.com/consent/Manage")
+    }
+    TextButton(onClick = { runCatching { uri.openUri(MicrosoftAccounts.WORK_PERMISSIONS) } }) {
+        Text("Work or school: myapplications.microsoft.com")
     }
 }
 
@@ -303,7 +350,7 @@ fun BrowserWaitingDialog(provider: Provider, onPaste: (String) -> Unit, onCancel
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     "Sign in and allow access. You'll come back here automatically. If the browser ends on a page that " +
-                        "won't load, copy its address (it starts with http://127.0.0.1) and paste it here.",
+                        "won't load, copy its address (it starts with ${if (provider == Provider.Microsoft) "http://localhost" else "http://127.0.0.1"}) and paste it here.",
                 )
                 OutlinedTextField(
                     value = address,
@@ -326,4 +373,6 @@ const val ACCOUNT_ROW_TAG = "account_row_"
 const val ACCOUNT_STATUS_TAG = "account_status"
 const val ACCOUNT_LABEL_TAG = "account_label"
 const val ADD_GOOGLE_TAG = "add_google"
+const val ADD_MICROSOFT_TAG = "add_microsoft"
+const val MICROSOFT_PERSONAL_LINK_TAG = "microsoft_personal_link"
 const val BROWSER_PASTE_TAG = "browser_paste_address"

@@ -215,6 +215,11 @@ object MailText {
     internal fun body(part: PartDto?): String {
         val plain = find(part, "text/plain")?.let(::decode)
         val text = plain ?: find(part, "text/html")?.let(::decode)?.let(::htmlToText) ?: ""
+        return clean(text)
+    }
+
+    /** Plain text with the quoted history removed, capped at [MAX_BODY] (Outlook's text bodies too, C23 §3). */
+    fun clean(text: String): String {
         val clean = stripQuoted(text.replace("\r\n", "\n")).trim()
         return if (clean.length <= MAX_BODY) clean else clean.take(MAX_BODY) + "\n[…the rest of the email is cut]"
     }

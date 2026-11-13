@@ -9,6 +9,9 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -20,20 +23,29 @@ import java.security.SecureRandom
 import java.util.Base64
 
 /**
- * Google's OAuth endpoints for a Desktop client (C17b §1, D16): the authorization code with PKCE, a refresh token
- * and revocation. Pure logic over OkHttp, so it runs on the JVM against MockWebServer. Nothing it handles (code,
- * state, verifier, tokens, id_token) is ever logged: only the step and the HTTP status or OAuth `error` code.
+ * A provider's OAuth endpoints for an installed app (C17b §1, D16; any [OAuthProvider] since C23): the authorization
+ * code with PKCE, a refresh token and, where the provider has one, revocation. Pure logic over OkHttp, so it runs on
+ * the JVM against MockWebServer. Nothing it handles (code, state, verifier, tokens, id_token) is ever logged: only the
+ * step and the HTTP status or OAuth `error` code.
  */
 class BrowserOAuth(
     private val http: Lazy<OkHttpClient>,
     private val dispatchers: AppDispatchers,
-    private val clientId: String,
-    private val clientSecret: String = "",
-    private val authBaseUrl: String = AUTH_URL,
-    private val tokenUrl: String = TOKEN_URL,
-    private val revokeUrl: String = REVOKE_URL,
+    val provider: OAuthProvider,
     private val random: SecureRandom = SecureRandom(),
 ) {
+    /** Google's Desktop client (C17b): the constructor C17b's code and tests use. */
+    constructor(
+        http: Lazy<OkHttpClient>,
+        dispatchers: AppDispatchers,
+        clientId: String,
+        clientSecret: String = "",
+        authBaseUrl: String = AUTH_URL,
+        tokenUrl: String = TOKEN_URL,
+        revokeUrl: String = REVOKE_URL,
+        random: SecureRandom = SecureRandom(),
+    ) : this(http, dispatchers, OAuthProvider.google(clientId, clientSecret, authBaseUrl, tokenUrl, revokeUrl), random)
+
     /** A PKCE pair (RFC 7636): the [verifier] stays on the device, the [challenge] goes in the sign-in address. */
     data class Pkce(val verifier: String, val challenge: String)
 
@@ -42,18 +54,20 @@ class BrowserOAuth(
         data class Tokens(
             val accessToken: String,
             val expiresInSeconds: Long,
-            /** Always returned for a code exchange; usually absent for a refresh. */
+            /** Google: always for a code exchange, usually absent for a refresh. Microsoft: a new one every time. */
             val refreshToken: String?,
-            /** The scopes Google actually granted (the owner can untick some on the consent screen); null if not said. */
+            /** The scopes actually granted (the owner can untick some on Google's consent screen); null if not said. */
             val scopes: Set<String>?,
-            /** From the id_token (only after a code exchange). */
+            /** The account's address from the id_token (only after a code exchange). */
             val email: String?,
         ) : TokenResult
         /** `invalid_grant`: the code or refresh token is expired, used or revoked. Sign in again. */
         data object InvalidGrant : TokenResult
-        /** Google doesn't accept this client (wrong ID, or a secret it needs is missing). */
+        /** The provider doesn't accept this client (wrong ID, or a secret it needs is missing). */
         data object InvalidClient : TokenResult
-        /** No answer from Google (no network). */
+        /** Microsoft's AADSTS65001: nobody has approved Edith for this account (a work account's admin must). */
+        data object ConsentRequired : TokenResult
+        /** No answer (no network). */
         data object NoNetwork : TokenResult
         data class Failed(val reason: String) : TokenResult
     }
@@ -63,12 +77,14 @@ class BrowserOAuth(
         data class Code(val code: String) : Redirect
         /** The owner declined (`error=access_denied`). */
         data object Denied : Redirect
+        /** Microsoft: the account's organisation lets only its IT admin approve apps (AADSTS65001, 90094, 90095). */
+        data object AdminApproval : Redirect
         data class Error(val error: String) : Redirect
         /** Not from this sign-in (another or an older attempt, or not a sign-in address at all). Never accepted. */
         data object WrongState : Redirect
     }
 
-    val isConfigured: Boolean get() = clientId.isNotBlank()
+    val isConfigured: Boolean get() = provider.isConfigured
 
     /** A random 64-character verifier and its S256 challenge (base64url without padding). */
     fun pkce(): Pkce {
@@ -79,23 +95,24 @@ class BrowserOAuth(
     /** A random, unguessable `state` for one sign-in. */
     fun newState(): String = randomToken(24)
 
-    /**
-     * Google's sign-in page for [scopes] (plus `openid email`, for the id_token's email). With [loginHint] it signs
-     * that account in again; without one it's a new account (C22 §2): `prompt=select_account consent` shows Google's
-     * account chooser instead of taking the account the browser is signed in to.
-     */
+    /** Google's sign-in page for [scopes] (plus `openid email`, for the id_token's email): C17b's form. */
     fun authUrl(redirect: String, challenge: String, state: String, scopes: Set<GoogleScope>, loginHint: String? = null): String =
-        authBaseUrl.toHttpUrl().newBuilder()
-            .addQueryParameter("client_id", clientId)
+        authUrl(redirect, challenge, state, loginHint, scopeString(scopes))
+
+    /**
+     * The provider's sign-in page. With [loginHint] it signs that account in again; without one it's a new account
+     * (the provider's account chooser).
+     */
+    fun authUrl(redirect: String, challenge: String, state: String, loginHint: String?, scope: String = provider.scope): String =
+        provider.authUrl.toHttpUrl().newBuilder()
+            .addQueryParameter("client_id", provider.clientId)
             .addQueryParameter("redirect_uri", redirect)
             .addQueryParameter("response_type", "code")
-            .addQueryParameter("scope", scopeString(scopes))
+            .addQueryParameter("scope", scope)
             .addQueryParameter("code_challenge", challenge)
             .addQueryParameter("code_challenge_method", "S256")
             .addQueryParameter("state", state)
-            .addQueryParameter("access_type", "offline")
-            .addQueryParameter("prompt", if (loginHint.isNullOrBlank()) "select_account consent" else "consent")
-            .apply { if (!loginHint.isNullOrBlank()) addQueryParameter("login_hint", loginHint) }
+            .apply { provider.authParams(loginHint).forEach { (k, v) -> addQueryParameter(k, v) } }
             .build()
             .toString()
 
@@ -113,16 +130,17 @@ class BrowserOAuth(
         add("refresh_token", refreshToken)
     }
 
-    /** Revokes [token] (and with it every token of the grant). False if Google couldn't be told. */
+    /** Revokes [token] (and with it every token of the grant). False if the provider couldn't be told, or has no way. */
     suspend fun revoke(token: String): Boolean = withContext(dispatchers.io) {
-        val request = Request.Builder().url(revokeUrl).post(FormBody.Builder().add("token", token).build()).build()
+        val url = provider.revokeUrl ?: return@withContext false
+        val request = Request.Builder().url(url).post(FormBody.Builder().add("token", token).build()).build()
         try {
             http.value.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) Log.w(LogTag.Google, "Browser sign-in: revoke answered HTTP ${response.code}")
+                if (!response.isSuccessful) Log.w(tag, "Browser sign-in: revoke answered HTTP ${response.code}")
                 response.isSuccessful
             }
         } catch (e: IOException) {
-            Log.w(LogTag.Google, "Browser sign-in: revoke didn't reach Google (${e::class.simpleName})")
+            Log.w(tag, "Browser sign-in: revoke didn't reach ${provider.displayName} (${e::class.simpleName})")
             false
         }
     }
@@ -137,29 +155,37 @@ class BrowserOAuth(
         val url = withScheme.toHttpUrlOrNull() ?: return Redirect.WrongState
         val state = url.queryParameter("state")
         if (state == null || !MessageDigest.isEqual(state.toByteArray(), expectedState.toByteArray())) return Redirect.WrongState
-        url.queryParameter("error")?.let { return if (it == "access_denied") Redirect.Denied else Redirect.Error(it) }
+        url.queryParameter("error")?.let { error ->
+            if (needsAdmin(url.queryParameter("error_description"))) return Redirect.AdminApproval
+            return if (error == "access_denied") Redirect.Denied else Redirect.Error(error)
+        }
         val code = url.queryParameter("code")
         return if (code.isNullOrBlank()) Redirect.Error("no_code") else Redirect.Code(code)
     }
 
+    private val tag: LogTag get() = if (provider.id == "google") LogTag.Google else LogTag.Accounts
+
     private suspend fun postToken(step: String, fields: FormBody.Builder.() -> Unit): TokenResult = withContext(dispatchers.io) {
         val form = FormBody.Builder().apply {
             fields()
-            add("client_id", clientId)
-            if (clientSecret.isNotBlank()) add("client_secret", clientSecret)
+            add("client_id", provider.clientId)
+            if (provider.scopeOnTokenRequests) add("scope", provider.scope)
+            if (provider.clientSecret.isNotBlank()) add("client_secret", provider.clientSecret)
         }.build()
-        val request = Request.Builder().url(tokenUrl).post(form).build()
+        val request = Request.Builder().url(provider.tokenUrl).post(form).build()
         try {
             http.value.newCall(request).execute().use { response ->
                 val body = response.body.string()
                 if (response.isSuccessful) {
                     parseTokens(body) ?: TokenResult.Failed("unreadable answer").also {
-                        Log.w(LogTag.Google, "Browser sign-in: $step answer couldn't be read (HTTP ${response.code})")
+                        Log.w(tag, "Browser sign-in: $step answer couldn't be read (HTTP ${response.code})")
                     }
                 } else {
                     val error = parseError(body)
-                    Log.w(LogTag.Google, "Browser sign-in: $step refused, HTTP ${response.code}, error ${error?.error ?: "none"}")
+                    val aadsts = error?.description?.let { AADSTS.find(it)?.value }
+                    Log.w(tag, "Browser sign-in: $step refused, HTTP ${response.code}, error ${error?.error ?: "none"}${aadsts?.let { " ($it)" }.orEmpty()}")
                     when {
+                        aadsts == "AADSTS65001" -> TokenResult.ConsentRequired
                         error?.error == "invalid_grant" -> TokenResult.InvalidGrant
                         error?.error == "invalid_client" || error?.error == "unauthorized_client" -> TokenResult.InvalidClient
                         // A Desktop client whose secret Google still wants says so in the description.
@@ -169,7 +195,7 @@ class BrowserOAuth(
                 }
             }
         } catch (e: IOException) {
-            Log.w(LogTag.Google, "Browser sign-in: $step didn't reach Google (${e::class.simpleName})")
+            Log.w(tag, "Browser sign-in: $step didn't reach ${provider.displayName} (${e::class.simpleName})")
             TokenResult.NoNetwork
         }
     }
@@ -181,7 +207,7 @@ class BrowserOAuth(
             expiresInSeconds = dto.expiresIn,
             refreshToken = dto.refreshToken,
             scopes = dto.scope?.split(' ')?.filter { it.isNotBlank() }?.toSet(),
-            email = dto.idToken?.let(::emailFromIdToken),
+            email = dto.idToken?.let { addressFromIdToken(it, provider.addressClaims) },
         )
     } catch (e: SerializationException) {
         null   // its message would quote the body, which holds tokens (L32): not logged
@@ -209,18 +235,21 @@ class BrowserOAuth(
     @Serializable
     private data class ErrorDto(val error: String? = null, @SerialName("error_description") val description: String? = null)
 
-    @Serializable
-    private data class IdTokenPayload(val email: String? = null)
-
     private fun randomToken(bytes: Int): String =
         Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(bytes).also(random::nextBytes))
 
     companion object {
-        const val AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
-        const val TOKEN_URL = "https://oauth2.googleapis.com/token"
-        const val REVOKE_URL = "https://oauth2.googleapis.com/revoke"
+        const val AUTH_URL = OAuthProvider.GOOGLE_AUTH_URL
+        const val TOKEN_URL = OAuthProvider.GOOGLE_TOKEN_URL
+        const val REVOKE_URL = OAuthProvider.GOOGLE_REVOKE_URL
 
         private val json = Json { ignoreUnknownKeys = true }
+        private val AADSTS = Regex("AADSTS\\d+")
+        /** Microsoft's "an admin has to approve this app" codes. */
+        private val ADMIN_CODES = setOf("AADSTS65001", "AADSTS90094", "AADSTS90095")
+
+        internal fun needsAdmin(description: String?): Boolean =
+            description != null && AADSTS.findAll(description).any { it.value in ADMIN_CODES }
 
         /** The S256 challenge for [verifier]: base64url(SHA-256(verifier)) without padding (RFC 7636 §4.2). */
         fun challengeFor(verifier: String): String =
@@ -229,14 +258,18 @@ class BrowserOAuth(
         /** `openid email` plus every scope Edith uses. */
         fun scopeString(scopes: Set<GoogleScope>): String = (listOf("openid", "email") + scopes.map { it.uri }).joinToString(" ")
 
+        /** The email in an id_token's payload (Google's claim). */
+        internal fun emailFromIdToken(idToken: String): String? = addressFromIdToken(idToken, listOf("email"))
+
         /**
-         * The email in an id_token's payload. The signature isn't checked: the token came straight from Google's
-         * token endpoint over TLS, which OpenID Connect Core §3.1.3.7 accepts in place of validating it.
+         * The first non-blank of [claims] in an id_token's payload. The signature isn't checked: the token came straight
+         * from the provider's token endpoint over TLS, which OpenID Connect Core §3.1.3.7 accepts in place of validating it.
          */
-        internal fun emailFromIdToken(idToken: String): String? {
+        internal fun addressFromIdToken(idToken: String, claims: List<String>): String? {
             val payload = idToken.split('.').getOrNull(1) ?: return null
             return try {
-                json.decodeFromString<IdTokenPayload>(String(Base64.getUrlDecoder().decode(payload), Charsets.UTF_8)).email
+                val obj: JsonObject = json.parseToJsonElement(String(Base64.getUrlDecoder().decode(payload), Charsets.UTF_8)).jsonObject
+                claims.firstNotNullOfOrNull { c -> (obj[c] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()?.takeIf { it.isNotEmpty() } }
             } catch (e: IllegalArgumentException) {
                 null
             } catch (e: SerializationException) {

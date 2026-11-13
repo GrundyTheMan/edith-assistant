@@ -11,6 +11,9 @@ import com.edith.app.google.GoogleScope
 import com.edith.app.google.GoogleSignIn
 import com.edith.app.google.browser.BrowserGoogle
 import com.edith.app.google.browser.BrowserOAuth
+import com.edith.app.google.browser.BrowserSignIn
+import com.edith.app.microsoft.MicrosoftAccounts
+import com.edith.app.microsoft.MicrosoftOAuth
 import com.edith.app.core.secrets.SecretStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -65,7 +68,8 @@ class FakePlay {
 
 /**
  * [Accounts] with Google wired as in the app, but Play services faked and the browser path, Calendar and Gmail
- * pointed at [baseUrl] (a MockWebServer: `/token`, `/revoke`, `/calendar/v3`, `/gmail/v1/users/me`).
+ * pointed at [baseUrl] (a MockWebServer: `/token`, `/revoke`, `/calendar/v3`, `/gmail/v1/users/me`). Microsoft (C23) signs in
+ * at `/ms/common/oauth2/v2.0/…` and reads Graph at `/graph/v1.0`.
  */
 class AccountsHarness(
     val baseUrl: String = "http://127.0.0.1:9/",
@@ -74,6 +78,7 @@ class AccountsHarness(
     web: String = "web.apps.googleusercontent.com",
     desktop: String = "desktop.apps.googleusercontent.com",
     var playAvailable: Boolean = true,
+    microsoftClientId: String = "ms-client-id",
     zone: ZoneId = ZoneId.of("America/Detroit"),
     clock: com.edith.app.core.time.Clock = FakeClock(java.time.Instant.parse("2026-11-02T18:00:00Z"), zone),
 ) {
@@ -84,10 +89,16 @@ class AccountsHarness(
     private val dispatchers = testDispatchers().copy(io = Dispatchers.IO)
     private fun url(path: String) = baseUrl.trimEnd('/') + path
 
+    /** The app-wide browser sign-in, shared by Google and Microsoft as in the app. */
+    val signInFlow = BrowserSignIn(
+        secrets, FakeClock(), dispatchers, "com.edith.app.debug://signed-in",
+        openBrowser = { _, u -> synchronized(opened) { opened += u } },
+    )
+
     val browser = BrowserGoogle(
         BrowserOAuth(lazy { OkHttpClient() }, dispatchers, desktop, tokenUrl = url("/token"), revokeUrl = url("/revoke")),
         secrets, FakeClock(), dispatchers, "com.edith.app.debug://signed-in",
-        openBrowser = { _, u -> synchronized(opened) { opened += u } },
+        signInFlow = signInFlow,
     )
 
     val google = GoogleAccounts(
@@ -104,7 +115,19 @@ class AccountsHarness(
         clock = clock,
     )
 
-    val accounts = Accounts(store, google, scope)
+    val microsoft = MicrosoftAccounts(
+        oauth = BrowserOAuth(lazy { OkHttpClient() }, dispatchers, MicrosoftOAuth.provider(microsoftClientId, loginBase = url("/ms"))),
+        signInFlow = signInFlow,
+        secrets = secrets,
+        http = lazy { OkHttpClient() },
+        dispatchers = AppDispatchersForTests.unconfined,
+        clock = clock,
+        zone = { zone },
+        windowsZone = { z -> if (z.id == "America/Detroit") "Eastern Standard Time" else null },
+        graphBaseUrl = url("/graph/v1.0"),
+    )
+
+    val accounts = Accounts(store, google, scope, microsoft)
 }
 
 /** Dispatchers that run everything in place (MockWebServer calls block the test thread, which is fine in JVM tests). */

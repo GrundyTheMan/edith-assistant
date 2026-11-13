@@ -39,6 +39,8 @@ val googleWebClientId: String = localProperties.getProperty("edith.googleWebClie
 // client's secret as not confidential; it's only included if the token endpoint needs it.
 val googleDesktopClientId: String = localProperties.getProperty("edith.googleDesktopClientId").orEmpty().trim()
 val googleDesktopClientSecret: String = localProperties.getProperty("edith.googleDesktopClientSecret").orEmpty().trim()
+// C23 (D18): the Microsoft Entra app registration's client ID. A public client: there's no secret. Empty → "not set up".
+val microsoftClientId: String = localProperties.getProperty("edith.microsoftClientId").orEmpty().trim()
 
 android {
     namespace = "com.edith.app"
@@ -57,6 +59,7 @@ android {
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
         buildConfigField("String", "GOOGLE_DESKTOP_CLIENT_ID", "\"$googleDesktopClientId\"")
         buildConfigField("String", "GOOGLE_DESKTOP_CLIENT_SECRET", "\"$googleDesktopClientSecret\"")
+        buildConfigField("String", "MICROSOFT_CLIENT_ID", "\"$microsoftClientId\"")
     }
 
     // Native libraries compressed in the APK (extracted on install): a much smaller download for ONNX Runtime.

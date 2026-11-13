@@ -16,6 +16,8 @@ import com.edith.app.core.time.Clock
 import com.edith.app.core.time.SystemClock
 import com.edith.app.google.browser.BrowserGoogle
 import com.edith.app.google.browser.BrowserGrant
+import com.edith.app.google.browser.BrowserOAuth
+import com.edith.app.google.browser.BrowserSignIn
 import com.edith.app.google.calendar.CalendarClient
 import com.edith.app.google.gmail.GmailClient
 import kotlinx.coroutines.CancellationException
@@ -54,6 +56,15 @@ class GoogleAccounts(
 
     /** True while Edith waits for the browser (the app-wide "Finish signing in" dialog). */
     val waiting: StateFlow<Boolean> get() = browser.waiting
+
+    /** The app-wide browser sign-in (shared with Microsoft since C23). */
+    val signInFlow: BrowserSignIn get() = browser.signInFlow
+
+    /** Google's browser client, for resuming a pending sign-in. */
+    val browserOAuth: BrowserOAuth get() = browser.googleOAuth
+
+    /** A browser sign-in's answer in Google's words. */
+    fun browserResult(r: BrowserSignIn.Result): GoogleSignIn.Result = browser.result(r)
 
     fun paste(address: String) = browser.paste(address)
     fun cancel() = browser.cancel()

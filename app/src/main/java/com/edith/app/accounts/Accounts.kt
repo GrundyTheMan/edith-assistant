@@ -9,6 +9,9 @@ import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import com.edith.app.google.GoogleAccounts
 import com.edith.app.google.GoogleSignIn
+import com.edith.app.google.browser.BrowserOAuth
+import com.edith.app.microsoft.MicrosoftAccounts
+import com.edith.app.microsoft.MicrosoftOAuth
 import com.edith.app.tools.framework.Integration
 import com.edith.app.tools.framework.IntegrationStatus
 import com.edith.app.tools.framework.Tool
@@ -69,6 +72,8 @@ class Accounts(
     private val store: AccountStore,
     val google: GoogleAccounts,
     private val scope: CoroutineScope,
+    /** C23: Microsoft accounts (null in tests that don't need it). */
+    val microsoft: MicrosoftAccounts? = null,
 ) : Integration, AccountDirectory {
     override val id = ID
 
@@ -120,15 +125,36 @@ class Accounts(
         saved.forEach { a -> scope.launch { connections[a.id]?.start() } }
     }
 
-    /** At launch: a browser sign-in an earlier run left waiting (C17b note 1). */
+    /**
+     * At launch: a browser sign-in an earlier run left waiting (C17b note 1), for whichever provider it was (C23).
+     */
     fun resumePending() {
-        scope.launch { google.resumePending()?.let { (_, result) -> onGoogleSignIn(result) } }
+        scope.launch {
+            val oauthFor: (String) -> BrowserOAuth? = { p ->
+                when (p) {
+                    MicrosoftOAuth.PROVIDER -> microsoft?.oauth
+                    else -> google.browserOAuth.takeIf { p == "google" }
+                }
+            }
+            val r = google.signInFlow.resumePending(oauthFor) ?: return@launch
+            when (r.provider) {
+                MicrosoftOAuth.PROVIDER -> microsoft?.let { onMicrosoftSignIn(it.result(r.result)) }
+                else -> onGoogleSignIn(google.browserResult(r.result))
+            }
+        }
     }
 
     /** Add account → Google. [useBrowser]: **Use a browser instead** (C17b). */
     suspend fun addGoogle(activity: Activity, useBrowser: Boolean = false) {
         _message.value = null
         onGoogleSignIn(google.signInNew(activity, useBrowser))
+    }
+
+    /** Add account → Microsoft (C23). */
+    suspend fun addMicrosoft(activity: Activity) {
+        _message.value = null
+        val m = microsoft ?: return run { _message.value = MicrosoftAccounts.NOT_SET_UP }
+        onMicrosoftSignIn(m.signInNew(activity))
     }
 
     /** Grant access / Sign in again / Try again for one account. */
@@ -170,6 +196,8 @@ class Accounts(
     // --- C17b's browser sign-in, app-wide ------------------------------------------------------------------------
 
     val browserWaiting: StateFlow<Boolean> get() = google.waiting
+    /** The provider being signed in to ("google", "microsoft"), for the waiting dialog. */
+    val browserWaitingFor: StateFlow<String?> get() = google.signInFlow.waitingFor
     fun pasteBrowserAddress(address: String) = google.paste(address)
     fun cancelBrowserSignIn() = google.cancel()
 
@@ -205,7 +233,8 @@ class Accounts(
         val accountOf = { list.value.firstOrNull { it.id == id } ?: account }
         val connection = when (account.provider) {
             Provider.Google -> google.connect(accountOf) { activity -> onGoogleSignIn(google.signInAgain(activity, accountOf())) }
-            Provider.Microsoft, Provider.ICloud -> null   // C23, C24
+            Provider.Microsoft -> microsoft?.connect(accountOf) { activity -> microsoft.signInAgain(activity, accountOf()).let { onMicrosoftSignIn(it) } }
+            Provider.ICloud -> null   // C24
         } ?: return
         connections[id] = connection
         connectionsFlow.value = connections.toMap()
@@ -222,6 +251,19 @@ class Accounts(
             }
             GoogleSignIn.Result.Cancelled -> Unit
             is GoogleSignIn.Result.Failed -> _message.value = r.message
+        }
+    }
+
+    /** A Microsoft sign-in finished: the account it names is added, or signed in again (C23). */
+    private suspend fun onMicrosoftSignIn(r: MicrosoftAccounts.Result) {
+        when (r) {
+            is MicrosoftAccounts.Result.SignedIn -> {
+                val account = upsert(Provider.Microsoft, r.address, null)
+                microsoft?.keep(account.id, r.grant)
+                connections[account.id]?.start()
+            }
+            MicrosoftAccounts.Result.Cancelled -> Unit
+            is MicrosoftAccounts.Result.Failed -> _message.value = r.message
         }
     }
 

@@ -3,7 +3,6 @@ package com.edith.app.google.browser
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
-import androidx.core.net.toUri
 import com.edith.app.accounts.AccountSecrets
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.log.Log
@@ -13,25 +12,12 @@ import com.edith.app.core.time.Clock
 import com.edith.app.google.GoogleAuthorizer
 import com.edith.app.google.GoogleScope
 import com.edith.app.google.GoogleSignIn
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.Json
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import java.io.IOException
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 
 /**
@@ -47,57 +33,42 @@ class BrowserGrant internal constructor(
 )
 
 /**
- * Google sign-in and access through the browser, for devices without Play services (C17b, D16): Google's page in
- * the real browser, the code back on [LoopbackReceiver] (or pasted), and per account (C22) a refresh token kept
- * encrypted in [SecretStore] under `account/<id>/refresh_token`. Access tokens stay in memory. One sign-in at a time
- * for the whole app; nothing secret is logged.
+ * Google sign-in and access through the browser, for devices without Play services (C17b, D16). The sign-in itself
+ * runs in the app-wide [BrowserSignIn] (shared with Microsoft since C23). Per account (C22) a refresh token is kept
+ * encrypted in [SecretStore] under `account/<id>/refresh_token`; access tokens stay in memory. Nothing secret is logged.
  */
 class BrowserGoogle(
     private val oauth: BrowserOAuth,
     private val secrets: SecretStore,
     private val clock: Clock,
-    private val dispatchers: AppDispatchers,
+    dispatchers: AppDispatchers,
     /** `${applicationId}://signed-in`: the loopback page's link back to Edith (§4). */
-    private val backLink: String,
-    /** Opens [url] in the browser; throws [ActivityNotFoundException] when there's none. */
-    private val openBrowser: (Activity, String) -> Unit = ::startBrowser,
+    backLink: String,
+    /** Opens a URL in the browser; throws [ActivityNotFoundException] when there's none. Null: the real browser. */
+    openBrowser: ((Activity, String) -> Unit)? = null,
     /** Opens the loopback listener at a port (0: any). */
-    private val openReceiver: (Int) -> LoopbackReceiver = { LoopbackReceiver.open(dispatchers.io, backLink, it) },
-    private val loopbackTimeout: Duration = 5.minutes,
-    /**
-     * Whether Edith is on screen (null: always, as in JVM tests). Android 17 blocks her network while the browser
-     * is in front, so a code that arrives then is exchanged once she's back (C17b As built).
-     */
-    private val appVisible: StateFlow<Boolean>? = null,
+    openReceiver: (Int) -> LoopbackReceiver = { LoopbackReceiver.open(dispatchers.io, backLink, it) },
+    loopbackTimeout: Duration = 5.minutes,
+    /** Whether Edith is on screen (null: always, as in JVM tests); see [BrowserSignIn]. */
+    appVisible: StateFlow<Boolean>? = null,
+    /** The app-wide sign-in flow, one for every provider. Without one (C17b's tests), Google gets its own. */
+    val signInFlow: BrowserSignIn = BrowserSignIn(
+        secrets, clock, dispatchers, backLink,
+        openBrowser = openBrowser ?: BrowserSignIn.DEFAULT_OPEN_BROWSER,
+        openReceiver = { _, port -> openReceiver(port) },
+        loopbackTimeout = loopbackTimeout,
+        appVisible = appVisible,
+    ),
 ) {
-    private sealed interface Input {
-        data class Address(val address: String) : Input
-        data object Cancel : Input
-    }
-
-    /**
-     * The sign-in in progress, kept in [SecretStore] (`pending_sign_in`) so it survives Edith being killed while the
-     * owner is in the browser (C17b note 1). [accountId] is the account being signed in again, null when adding one.
-     */
-    @Serializable
-    private data class Pending(
-        val verifier: String,
-        val state: String,
-        val redirectUri: String,
-        val startedAtMillis: Long,
-        val provider: String = PROVIDER,
-        val accountId: String? = null,
-    )
-
-    private val _waiting = MutableStateFlow(false)
-    /** True while Edith waits for the browser: the "Finish signing in" dialog shows. */
-    val waiting: StateFlow<Boolean> = _waiting.asStateFlow()
-
-    @Volatile private var inputs: Channel<Input>? = null
-    private val signInLock = Mutex()
     private val authorizers = ConcurrentHashMap<String, BrowserAuthorizer>()
 
     val isConfigured: Boolean get() = oauth.isConfigured
+
+    /** True while Edith waits for the browser (any provider's sign-in: one at a time for the whole app). */
+    val waiting: StateFlow<Boolean> get() = signInFlow.waiting
+
+    /** Google's [BrowserOAuth], for resuming a pending sign-in. */
+    val googleOAuth: BrowserOAuth get() = oauth
 
     suspend fun hasRefreshToken(accountId: String): Boolean = secrets.get(AccountSecrets.refreshToken(accountId)) != null
 
@@ -119,14 +90,10 @@ class BrowserGoogle(
     }
 
     /** The waiting dialog's **Use this address**. */
-    fun paste(address: String) {
-        inputs?.trySend(Input.Address(address))
-    }
+    fun paste(address: String) = signInFlow.paste(address)
 
     /** The waiting dialog's **Cancel**. */
-    fun cancel() {
-        inputs?.trySend(Input.Cancel)
-    }
+    fun cancel() = signInFlow.cancel()
 
     /**
      * Opens Google's sign-in page and waits for the code (loopback or pasted), the owner's cancel, or the timeout.
@@ -135,137 +102,51 @@ class BrowserGoogle(
      */
     suspend fun signIn(activity: Activity, loginHint: String? = null, accountId: String? = null): GoogleSignIn.Result {
         if (!oauth.isConfigured) return GoogleSignIn.Result.Failed(NOT_SET_UP)
-        if (!signInLock.tryLock()) return GoogleSignIn.Result.Cancelled   // already waiting: the dialog is up
-        try {
-            val receiver = try {
-                openReceiver(0)
-            } catch (e: IOException) {
-                Log.w(LogTag.Google, "Browser sign-in: couldn't open the loopback listener (${e::class.simpleName})")
-                return GoogleSignIn.Result.Failed(NO_LISTENER)
-            }
-            val pkce = oauth.pkce()
-            val pending = Pending(pkce.verifier, oauth.newState(), receiver.redirectUri, clock.now().toEpochMilli(), accountId = accountId)
-            savePending(pending)   // survives Edith being killed while the owner is in the browser
-            val url = oauth.authUrl(pending.redirectUri, pkce.challenge, pending.state, GoogleScope.entries.toSet(), loginHint)
-            val channel = beginWaiting()   // before the browser opens, so an early paste or cancel isn't lost
-            try {
-                openBrowser(activity, url)
-            } catch (e: ActivityNotFoundException) {
-                Log.w(LogTag.Google, "Browser sign-in: no browser on this device")
-                endWaiting(channel)
-                receiver.close()
-                clearPending()
-                return GoogleSignIn.Result.Failed(NO_BROWSER)
-            }
-            Log.i(LogTag.Google, "Browser sign-in: waiting for Google (${accountId ?: "a new account"})")
-            return waitFor(pending, receiver, loopbackTimeout, channel)
-        } finally {
-            signInLock.unlock()
-        }
+        return result(signInFlow.signIn(activity, oauth, loginHint, accountId, BrowserOAuth.scopeString(GoogleScope.entries.toSet())))
     }
 
     /**
-     * A sign-in left pending by an earlier run of Edith (killed while the owner was in the browser): waits for it
-     * again, on the same port if it's free, else for a pasted address. Returns the account it was for (null: a new
-     * one) and the result; null when there's none (or it's too old).
+     * A Google sign-in left pending by an earlier run of Edith: waits for it again. Returns the account it was for
+     * (null: a new one) and the result; null when there's none or it's too old. The app itself resumes through
+     * [com.edith.app.accounts.Accounts.resumePending], which knows every provider.
      */
     suspend fun resumePending(): Pair<String?, GoogleSignIn.Result>? {
-        val pending = loadPending() ?: return null
-        val age = (clock.now().toEpochMilli() - pending.startedAtMillis).milliseconds
-        if (age < Duration.ZERO || age >= PENDING_LIFETIME || pending.provider != PROVIDER) {
-            clearPending()
-            return null
-        }
-        if (!signInLock.tryLock()) return null
-        try {
-            val port = pending.redirectUri.toHttpUrlOrNull()?.port
-            val receiver = port?.let { p ->
-                try { openReceiver(p) } catch (e: IOException) { null }   // taken: the paste still works
-            }
-            Log.i(LogTag.Google, "Browser sign-in: resuming a pending sign-in (listening again: ${receiver != null})")
-            return pending.accountId to waitFor(pending, receiver, PENDING_LIFETIME - age, beginWaiting())
-        } finally {
-            signInLock.unlock()
-        }
+        val r = signInFlow.resumePending { if (it == PROVIDER) oauth else null } ?: return null
+        return r.accountId to result(r.result)
     }
 
-    private fun beginWaiting(): Channel<Input> = Channel<Input>(Channel.UNLIMITED).also {
-        inputs = it
-        _waiting.value = true
-    }
-
-    private fun endWaiting(channel: Channel<Input>) {
-        inputs = null
-        channel.close()
-        _waiting.value = false
-    }
-
-    private suspend fun waitFor(pending: Pending, receiver: LoopbackReceiver?, timeout: Duration, channel: Channel<Input>): GoogleSignIn.Result {
-        try {
-            val input = withTimeoutOrNull(timeout) {
-                coroutineScope {
-                    val listening = receiver?.let { r -> launch { r.await(timeout)?.let { channel.send(Input.Address(it)) } } }
-                    try { channel.receive() } finally { listening?.cancel() }
+    /** The shared flow's answer in Google's words. */
+    fun result(r: BrowserSignIn.Result): GoogleSignIn.Result = when (r) {
+        BrowserSignIn.Result.Cancelled -> GoogleSignIn.Result.Cancelled
+        is BrowserSignIn.Result.Failed -> GoogleSignIn.Result.Failed(message(r.why))
+        is BrowserSignIn.Result.Tokens -> {
+            val t = r.tokens
+            val refreshToken = t.refreshToken
+            val email = t.email
+            when {
+                refreshToken == null -> GoogleSignIn.Result.Failed(NO_REFRESH_TOKEN)
+                email == null -> GoogleSignIn.Result.Failed(NO_EMAIL)   // C22: the address decides which account it is
+                else -> {
+                    Log.i(LogTag.Google, "Browser sign-in: signed in")
+                    val grant = BrowserGrant(refreshToken, t.accessToken, clock.now().plusSeconds(t.expiresInSeconds), t.scopes ?: allScopes)
+                    GoogleSignIn.Result.SignedIn(email, null, grant)
                 }
             }
-            return when (input) {
-                null -> {
-                    Log.w(LogTag.Google, "Browser sign-in: timed out")
-                    clearPending()
-                    GoogleSignIn.Result.Failed(TIMED_OUT)
-                }
-                Input.Cancel -> {
-                    clearPending()
-                    GoogleSignIn.Result.Cancelled
-                }
-                is Input.Address -> finish(pending, input.address)
-            }
-        } finally {
-            receiver?.close()
-            endWaiting(channel)
         }
     }
 
-    private suspend fun finish(pending: Pending, address: String): GoogleSignIn.Result {
-        val code = when (val r = oauth.parseRedirect(address, pending.state)) {
-            is BrowserOAuth.Redirect.Code -> r.code
-            BrowserOAuth.Redirect.WrongState -> return failed(WRONG_ADDRESS, "the address had the wrong state")
-            BrowserOAuth.Redirect.Denied -> return failed(DECLINED, "access_denied")
-            is BrowserOAuth.Redirect.Error -> return failed("Google didn't sign you in (${r.error}). Try again.", r.error)
-        }
-        appVisible?.let { visible ->
-            if (!visible.value) {
-                Log.i(LogTag.Google, "Browser sign-in: waiting for Edith to be on screen to finish")
-                withTimeoutOrNull(loopbackTimeout) { visible.first { it } }
-            }
-        }
-        val result = when (val t = oauth.exchange(code, pending.verifier, pending.redirectUri)) {
-            is BrowserOAuth.TokenResult.Tokens -> {
-                val refreshToken = t.refreshToken
-                val email = t.email
-                when {
-                    refreshToken == null -> GoogleSignIn.Result.Failed(NO_REFRESH_TOKEN)
-                    email == null -> GoogleSignIn.Result.Failed(NO_EMAIL)   // C22: the address decides which account it is
-                    else -> {
-                        Log.i(LogTag.Google, "Browser sign-in: signed in")
-                        val grant = BrowserGrant(refreshToken, t.accessToken, clock.now().plusSeconds(t.expiresInSeconds), t.scopes ?: allScopes)
-                        GoogleSignIn.Result.SignedIn(email, null, grant)
-                    }
-                }
-            }
-            BrowserOAuth.TokenResult.InvalidGrant -> GoogleSignIn.Result.Failed(CODE_EXPIRED)
-            BrowserOAuth.TokenResult.InvalidClient -> GoogleSignIn.Result.Failed(BAD_CLIENT)
-            BrowserOAuth.TokenResult.NoNetwork -> GoogleSignIn.Result.Failed(NO_NETWORK)
-            is BrowserOAuth.TokenResult.Failed -> GoogleSignIn.Result.Failed("Google refused the sign-in (${t.reason}). Try again.")
-        }
-        clearPending()
-        return result
-    }
-
-    private suspend fun failed(message: String, why: String): GoogleSignIn.Result {
-        Log.w(LogTag.Google, "Browser sign-in: not signed in ($why)")
-        clearPending()
-        return GoogleSignIn.Result.Failed(message)
+    private fun message(why: BrowserSignIn.Why): String = when (why) {
+        BrowserSignIn.Why.NotSetUp -> NOT_SET_UP
+        BrowserSignIn.Why.NoListener -> NO_LISTENER
+        BrowserSignIn.Why.NoBrowser -> NO_BROWSER
+        BrowserSignIn.Why.Declined, BrowserSignIn.Why.AdminApproval -> DECLINED
+        BrowserSignIn.Why.WrongAddress -> WRONG_ADDRESS
+        BrowserSignIn.Why.TimedOut -> TIMED_OUT
+        is BrowserSignIn.Why.RedirectError -> "Google didn't sign you in (${why.error}). Try again."
+        BrowserSignIn.Why.CodeExpired -> CODE_EXPIRED
+        BrowserSignIn.Why.BadClient -> BAD_CLIENT
+        BrowserSignIn.Why.NoNetwork -> NO_NETWORK
+        is BrowserSignIn.Why.ExchangeFailed -> "Google refused the sign-in (${why.reason}). Try again."
     }
 
     /** One account's access through its refresh token. */
@@ -304,7 +185,7 @@ class BrowserGoogle(
                         GoogleAuthorizer.Result.NeedsConsent(null)
                     }
                 }
-                BrowserOAuth.TokenResult.InvalidGrant -> {
+                BrowserOAuth.TokenResult.InvalidGrant, BrowserOAuth.TokenResult.ConsentRequired -> {
                     // Expired (weekly while the project is in Testing) or revoked: sign in again.
                     Log.i(LogTag.Google, "Browser sign-in: $accountId needs signing in again")
                     secrets.put(key, null)
@@ -331,31 +212,12 @@ class BrowserGoogle(
         }
     }
 
-    private suspend fun savePending(p: Pending) = secrets.put(PENDING_KEY, json.encodeToString(Pending.serializer(), p))
-
-    private suspend fun loadPending(): Pending? {
-        val stored = secrets.get(PENDING_KEY) ?: return null
-        return try {
-            json.decodeFromString(Pending.serializer(), stored)
-        } catch (e: SerializationException) {
-            clearPending()
-            null
-        } catch (e: IllegalArgumentException) {
-            clearPending()
-            null
-        }
-    }
-
-    private suspend fun clearPending() = secrets.put(PENDING_KEY, null)
-
     companion object {
         /** C22 §1: one pending sign-in for every provider, with `provider` and `accountId` in its JSON. */
-        const val PENDING_KEY = "pending_sign_in"
-        private const val PROVIDER = "google"
+        const val PENDING_KEY = BrowserSignIn.PENDING_KEY
+        const val PROVIDER = "google"
         private const val MIN_VALIDITY_SECONDS = 60L
-        private val PENDING_LIFETIME = 10.minutes
         private val allScopes = GoogleScope.entries.map { it.uri }.toSet()
-        private val json = Json { ignoreUnknownKeys = true }
 
         const val NOT_SET_UP = "Browser sign-in isn't set up in this build: the Desktop client ID is missing (docs/google-setup.md)."
         const val NO_LISTENER = "Edith couldn't get ready for Google's answer. Try again."
@@ -368,9 +230,5 @@ class BrowserGoogle(
         const val CODE_EXPIRED = "Google says that sign-in expired or was already used. Sign in again."
         const val NO_REFRESH_TOKEN = "Google didn't let Edith stay signed in. Remove Edith at myaccount.google.com/permissions and sign in again."
         const val NO_EMAIL = "Google didn't say which account signed in. Sign in again."
-
-        private fun startBrowser(activity: Activity, url: String) {
-            activity.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()).addCategory(Intent.CATEGORY_BROWSABLE))
-        }
     }
 }
