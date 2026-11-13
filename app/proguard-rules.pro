@@ -6,3 +6,18 @@
 # build aborts with "JNI DETECTED ERROR … java_class == null" as soon as hands-free scores audio (found on
 # Edith_Release_Test before the first release, 2026-11-11).
 -keep class ai.onnxruntime.** { *; }
+
+# Jakarta Mail / Eclipse Angus Mail (C24 iCloud mail). It finds its protocol classes by name: each Provider (found
+# through META-INF/services) names a Store or Transport class that Session creates with reflection, and the mailcap
+# file names content handlers. Without these rules R8 renames them and every IMAP/SMTP connection fails at once with
+# NoSuchProviderException ("imaps", "smtp"), as seen on Edith_Release_Test on 2026-11-12; the debug build worked.
+-keep class * extends jakarta.mail.Provider { <init>(...); }
+-keep class * extends jakarta.mail.Service { <init>(jakarta.mail.Session, jakarta.mail.URLName); }
+-keep class * implements jakarta.activation.DataContentHandler { <init>(...); }
+-keep class * implements jakarta.activation.spi.** { <init>(...); }
+# Its image/gif and image/jpeg handlers use java.awt, which Android lacks; Edith only reads and writes text mail.
+-dontwarn java.awt.**
+# Its optional SASL login (off unless mail.imap.sasl.enable is set; Edith never sets it) uses javax.security.sasl,
+# which Android lacks.
+-dontwarn javax.security.sasl.**
+-dontwarn javax.security.auth.callback.**

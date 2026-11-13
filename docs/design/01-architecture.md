@@ -25,6 +25,7 @@ Pin exact versions in `gradle/libs.versions.toml` (a Gradle version catalog). Ne
 | Secrets | Android Keystore (AES/GCM) wrapper — `SecretStore` (§9) | — | |
 | Images | Coil 3 for display; Android `ImageDecoder` for downscaling | — | |
 | HTML → text | Jsoup | 1.17 | Web page reading tool (C10) |
+| Mail | Jakarta Mail via Eclipse Angus Mail | — | For iCloud mail (C24) |
 | Google | Credential Manager + Google Identity `AuthorizationClient`; plain REST for Calendar/Gmail via OkHttp | — | No heavy Google API client libraries |
 | Testing | JUnit 4/5, kotlinx-coroutines-test, Turbine, OkHttp MockWebServer, Robolectric (where useful), Compose UI test | — | |
 | DI | **Manual** — one `AppContainer` (§3) | — | Transparent for any AI implementer; no annotation processing |
@@ -73,6 +74,7 @@ com.edith.app
 │   └── browser/                C17b/C23: BrowserSignIn (the one browser sign-in, any provider), OAuthProvider, BrowserOAuth,
 │                               LoopbackReceiver (127.0.0.1, or both loopback addresses for `localhost`), BrowserGoogle
 ├── microsoft/                  C23: MicrosoftAccounts (provider), MicrosoftAccountAuth (per account), GraphClient, Outlook sources
+├── icloud/                     C24: ICloudAccounts (provider, the add-account check), mail/ (IMAP/SMTP, Jakarta Mail), calendar/ (CalDAV, iCalendar)
 └── ui/
     ├── theme/                  EdithTheme (light/dark), colors, typography
     └── navigation/             EdithNavHost, Destinations, bottom bar
@@ -247,7 +249,8 @@ Long work uses injected `AppDispatchers.io/default`.
 - `SecretStore`: AES/GCM key in Android Keystore (`KeyGenParameterSpec`, non-exportable); ciphertext +
   IV stored in DataStore. Used for search API keys, the wake-word key, and per account (C22) `account/<id>/refresh_token`
   (a Google account signed in through the browser, D16; a Microsoft account, C23, whose refresh token changes on every
-  refresh and is saved before it's used) and `account/<id>/password` (iCloud, C24), plus
+  refresh and is saved before it's used) and `account/<id>/password` (iCloud, C24): an app-specific password the owner types into Edith,
+  which reaches all of that Apple Account's mail and calendars, so it's never logged or shown again, plus
   the one pending browser sign-in (`pending_sign_in`). An account's id is random, never its address. A Google account
   on Play services stores no token (`AuthorizationClient` keeps it in Google Play services).
 - Permissions are requested only at the moment of use, with a one-line reason: microphone (record,

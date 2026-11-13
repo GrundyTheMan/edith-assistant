@@ -10,6 +10,7 @@ import com.edith.app.core.log.LogTag
 import com.edith.app.google.GoogleAccounts
 import com.edith.app.google.GoogleSignIn
 import com.edith.app.google.browser.BrowserOAuth
+import com.edith.app.icloud.ICloudAccounts
 import com.edith.app.microsoft.MicrosoftAccounts
 import com.edith.app.microsoft.MicrosoftOAuth
 import com.edith.app.tools.framework.Integration
@@ -74,6 +75,8 @@ class Accounts(
     private val scope: CoroutineScope,
     /** C23: Microsoft accounts (null in tests that don't need it). */
     val microsoft: MicrosoftAccounts? = null,
+    /** C24: iCloud accounts (null in tests that don't need it). */
+    val icloud: ICloudAccounts? = null,
 ) : Integration, AccountDirectory {
     override val id = ID
 
@@ -148,6 +151,26 @@ class Accounts(
     suspend fun addGoogle(activity: Activity, useBrowser: Boolean = false) {
         _message.value = null
         onGoogleSignIn(google.signInNew(activity, useBrowser))
+    }
+
+    /**
+     * Add account → iCloud (C24 §1): checks the address and app-specific password, then adds the account (or signs
+     * it in again with the new password). Returns why not, or a note when only mail works; null when all is well.
+     */
+    suspend fun addICloud(address: String, password: String): String? {
+        _message.value = null
+        val ic = icloud ?: return NOT_SET_UP_ICLOUD
+        val check = ic.check(address, password)
+        if (check is ICloudAccounts.Check.Failed) return check.message
+        check as ICloudAccounts.Check.Ok
+        val account = upsert(Provider.ICloud, address.trim(), null)
+        editLock.withLock {
+            store.update { current -> current.map { if (it.id == account.id) it.copy(login = check.login) else it } }
+            list.value = store.current()
+        }
+        ic.keep(account.id, password)
+        connections[account.id]?.start()
+        return if (check.calendar) null else ICloudAccounts.CALENDAR_UNAVAILABLE
     }
 
     /** Add account → Microsoft (C23). */
@@ -234,7 +257,7 @@ class Accounts(
         val connection = when (account.provider) {
             Provider.Google -> google.connect(accountOf) { activity -> onGoogleSignIn(google.signInAgain(activity, accountOf())) }
             Provider.Microsoft -> microsoft?.connect(accountOf) { activity -> microsoft.signInAgain(activity, accountOf()).let { onMicrosoftSignIn(it) } }
-            Provider.ICloud -> null   // C24
+            Provider.ICloud -> icloud?.connect(accountOf)
         } ?: return
         connections[id] = connection
         connectionsFlow.value = connections.toMap()
@@ -294,6 +317,7 @@ class Accounts(
 
     companion object {
         const val ID = "accounts"
+        const val NOT_SET_UP_ICLOUD = "iCloud isn't available in this build."
         const val UNSUPPORTED = "This version of Edith can't use this kind of account."
 
         /** A label no other account has (ignoring case): the address, or "address (2)" in the odd case it's taken. */

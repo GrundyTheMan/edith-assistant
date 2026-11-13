@@ -52,8 +52,8 @@ design in the same PR, or ask the owner.
 | [C20](chunks/C20-smart-home-architecture.md) | Smart home architecture (**v2, design only**) | 6 Deferred | C08, C17 | Design |
 | [C21](chunks/C21-smart-home-service-notes.md) | Smart home service notes (**v2 research**) | 6 Deferred | — | Research |
 | [C22](chunks/C22-several-accounts.md) | Several accounts: the account model, and several Google accounts (D17) | 7 Accounts | C17, C17b, C18, C19 | Done (iPhone check pending) |
-| [C23](chunks/C23-microsoft-account.md) | Microsoft account: Outlook mail and calendar | 7 | C22 | Design |
-| [C24](chunks/C24-icloud-account.md) | iCloud account: iCloud Mail and Calendar | 7 | C22 | Design |
+| [C23](chunks/C23-microsoft-account.md) | Microsoft account: Outlook mail and calendar | 7 | C22 | Built, live check blocked (Graph 502s) |
+| [C24](chunks/C24-icloud-account.md) | iCloud account: iCloud Mail and Calendar | 7 | C22 | Built and tested; no live check (no iCloud account) |
 
 ### State at handoff (2026-10-29)
 - `master` has the design and the C01 skeleton with its build/deploy tooling (`05-environment.md` §2, §6). Tag
@@ -109,7 +109,12 @@ design in the same PR, or ask the owner.
   (`WhichAccount`): Edith asks, with no card and no request. Each Google account uses Play services (named with
   `setAccount`) or the browser; extra accounts must be test users in the Cloud project (`docs/google-setup.md` §7).
   The existing account was carried over without signing in (`AccountMigration`). `Tool.confirmation` now suspends.
-- **Next: C23 (Microsoft) and C24 (iCloud)**, each a new provider on C22's layer. Ask the owner D18 before C23.
+- **C23 (Microsoft) is built** (branch `c23-microsoft-account`, D18: personal and work): sign-in works live, but
+  Microsoft Graph answered every request with 502/504 for the owner's Hotmail account on 2026-11-12 (even `GET /me`),
+  so its live checks wait. Rerun the debug probe `DebugMicrosoftReceiver` first (C23 As built).
+- **C24 (iCloud) is built and tested** (branch `c24-icloud-account`, on top of C23): IMAP/SMTP with Jakarta Mail (proven
+  on Android 17 and under R8, with keep rules), CalDAV with OkHttp. The owner has no iCloud account, so nothing is
+  verified live yet, including whether iCloud honours `<C:expand>` (C24 As built).
 - The first release, v2.0.0-dev.1, was published on 2026-11-11; v2.0.0-dev.2 (with C17b) on 2026-11-12. Chat with Ollama works from Andarium over the
   home Wi-Fi.
 - C20 and C21 are v2 design and research.
