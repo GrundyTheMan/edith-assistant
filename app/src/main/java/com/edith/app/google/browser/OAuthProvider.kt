@@ -60,6 +60,8 @@ data class OAuthProvider(
             authParams = { hint ->
                 buildList {
                     add("access_type" to "offline")
+                    // C35 §2: a sign-in for To-dos keeps what the account already granted.
+                    add("include_granted_scopes" to "true")
                     add("prompt" to if (hint.isNullOrBlank()) "select_account consent" else "consent")
                     if (!hint.isNullOrBlank()) add("login_hint" to hint)
                 }

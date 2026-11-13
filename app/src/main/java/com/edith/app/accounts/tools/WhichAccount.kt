@@ -7,6 +7,8 @@ import com.edith.app.accounts.AccountState
 import com.edith.app.accounts.sources.AccountErrors
 import com.edith.app.accounts.sources.CalendarInfo
 import com.edith.app.accounts.sources.Reads
+import com.edith.app.accounts.tasks.TaskList
+import com.edith.app.accounts.tasks.TasksAccess
 import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
 import com.edith.app.tools.framework.ParamType
@@ -74,6 +76,73 @@ object WhichAccount {
         return onlyOneOrAsk(all, able, "send email")
     }
 
+    /** Where a new to-do goes (C35 §3): an account and one of its lists, or why Edith must stop (or ask). */
+    sealed interface TaskChoice {
+        data class Use(val entry: AccountEntry, val list: TaskList) : TaskChoice
+        data class Stop(val result: ToolResult) : TaskChoice
+    }
+
+    /**
+     * C22's rule for a new to-do, extended with lists (C35 §3):
+     * 1. `account` named → that account (unknown → "no account called…").
+     * 2. `list` named and only one account has a list of that name → that account.
+     * 3. Only one account can keep to-dos now → that one.
+     * 4. Otherwise: ask the owner, with no card and no request.
+     *
+     * Within the account, no `list` → its first list (Google's default, usually "My Tasks"); an unknown list → the
+     * lists there are, and no request.
+     */
+    suspend fun forTasks(dir: AccountDirectory, accountArg: String?, listArg: String?): TaskChoice {
+        val all = dir.entries().filter { it.capabilities.tasks && it.tasks != null }
+        val able = all.filter { it.state == AccountState.Connected && it.tasksAccess != TasksAccess.NeedsPermission }
+        if (accountArg != null) {
+            val entry = when (val c = named(dir, all, accountArg)) { is Choice.Use -> c.entry; is Choice.Stop -> return TaskChoice.Stop(c.result) }
+            return inAccount(entry, listArg)
+        }
+        if (listArg != null) {
+            val found = able.mapNotNull { e -> (requireNotNull(e.tasks).lists() as? Outcome.Success)?.value?.let { e to it } }
+            val matches = found.mapNotNull { (e, lists) -> matchList(lists, listArg)?.let { e to it } }
+            return when {
+                matches.size == 1 -> TaskChoice.Use(matches[0].first, matches[0].second)
+                matches.isEmpty() -> TaskChoice.Stop(ToolResult.Error(
+                    "There's no list called '$listArg'. The lists are: " +
+                        found.joinToString("; ") { (e, lists) -> (if (found.size > 1) "${e.account.label}: " else "") + lists.joinToString { it.title } } + ".",
+                ))
+                else -> TaskChoice.Stop(ask(matches.map { it.first }).result)
+            }
+        }
+        return when {
+            able.size == 1 -> inAccount(able[0], null)
+            able.isEmpty() -> TaskChoice.Stop(ToolResult.Error(
+                "No account can keep to-dos right now. " + all.joinToString(" ") { e ->
+                    if (e.state == AccountState.Connected) "${e.account.display}: ${AccountErrors.TASKS_NEED_PERMISSION}." else notUsable(e).text
+                }.ifBlank { "Tell the user to add a Google account in Settings → Accounts." },
+            ))
+            else -> TaskChoice.Stop(ask(able).result)
+        }
+    }
+
+    /** The account's list called [listArg] (its first list when null), or why not. */
+    private suspend fun inAccount(entry: AccountEntry, listArg: String?): TaskChoice {
+        val lists = when (val r = requireNotNull(entry.tasks).lists()) {
+            is Outcome.Success -> r.value
+            is Outcome.Failure -> return TaskChoice.Stop(accountError(entry.account, r.error))
+        }
+        if (lists.isEmpty()) return TaskChoice.Stop(ToolResult.Error("${entry.account.display} has no to-do lists."))
+        if (listArg == null) return TaskChoice.Use(entry, lists.first())
+        val list = matchList(lists, listArg)
+            ?: return TaskChoice.Stop(ToolResult.Error("There's no list called '$listArg'. The lists are: ${lists.joinToString { it.title }}."))
+        return TaskChoice.Use(entry, list)
+    }
+
+    /** A list by name: exactly (ignoring case), else the one list whose name contains it (Jarvis's matchLists). */
+    fun matchList(lists: List<TaskList>, name: String): TaskList? {
+        val wanted = name.trim().lowercase()
+        if (wanted.isEmpty()) return null
+        lists.firstOrNull { it.title.lowercase() == wanted }?.let { return it }
+        return lists.filter { it.title.lowercase().contains(wanted) }.singleOrNull()
+    }
+
     /** Rule 1: the account the owner named, if it's exactly one and it can be used now. */
     private fun named(dir: AccountDirectory, all: List<AccountEntry>, text: String): Choice {
         val matches = dir.byName(text).filter { a -> all.any { it.account.id == a.id } }
@@ -94,7 +163,7 @@ object WhichAccount {
     }
 
     /** Rule 4 (L27: the instruction is in the result). */
-    private fun ask(choices: List<AccountEntry>): Choice {
+    private fun ask(choices: List<AccountEntry>): Choice.Stop {
         val names = choices.map { it.account.display }
         val list = if (names.size <= 2) names.joinToString(" or ") else names.dropLast(1).joinToString(", ") + " or " + names.last()
         return Choice.Stop(ToolResult.Ok("Ask the owner which account to use: $list. Then call this tool again with `account`."))

@@ -20,7 +20,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -163,8 +167,43 @@ class CalendarViewModel(
     }
 }
 
+/** The Calendar tab's two views (C35 §5): a switch instead of a fifth tab. */
+enum class CalendarView(val label: String) { Agenda("Agenda"), Todo("To-do") }
+
+/** The Calendar tab: **Agenda | To-do** at the top (C35 §5). The To-do view loads only once it's picked. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CalendarScreen(onOpenSettings: () -> Unit, vm: CalendarViewModel = viewModel(factory = CalendarViewModel.Factory)) {
+fun CalendarScreen(onOpenSettings: () -> Unit) {
+    var view by rememberSaveable { mutableStateOf(CalendarView.Agenda) }
+    Column(Modifier.fillMaxSize()) {
+        CalendarViewSwitch(view) { view = it }
+        Box(Modifier.weight(1f)) {
+            when (view) {
+                CalendarView.Agenda -> AgendaScreen(onOpenSettings)
+                CalendarView.Todo -> TodoScreen(onOpenSettings)
+            }
+        }
+    }
+}
+
+/** The segmented control. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CalendarViewSwitch(view: CalendarView, onChange: (CalendarView) -> Unit) {
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).testTag(VIEW_SWITCH_TAG)) {
+        CalendarView.entries.forEachIndexed { i, v ->
+            SegmentedButton(
+                selected = view == v,
+                onClick = { onChange(v) },
+                shape = SegmentedButtonDefaults.itemShape(i, CalendarView.entries.size),
+                modifier = Modifier.testTag(VIEW_SWITCH_TAG + "-" + v.name),
+            ) { Text(v.label) }
+        }
+    }
+}
+
+@Composable
+fun AgendaScreen(onOpenSettings: () -> Unit, vm: CalendarViewModel = viewModel(factory = CalendarViewModel.Factory)) {
     val state by vm.state.collectAsStateWithLifecycle()
     CalendarContent(state, onOpenSettings, vm::refresh)
 }
@@ -269,3 +308,4 @@ private fun EventDetails(m: MergedEvent, onClose: () -> Unit) {
 }
 
 const val AGENDA_TAG = "calendar-agenda"
+const val VIEW_SWITCH_TAG = "calendar-view"

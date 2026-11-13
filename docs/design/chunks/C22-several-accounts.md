@@ -313,3 +313,7 @@ Where the code differs from the specification above, the code is right.
 - The owner comparing "this week" with Google Calendar for each account.
 - A restart with two accounts connected at once; a real 7-day expiry of one account while another works.
 - The release APK in Andarium on the owner's iPhone (needs the next published build).
+
+**C35 addition (2026-11-13):** `Capabilities` gained `tasks` (Google accounts only; its `text` now reads "calendar, email
+and to-dos"), `AccountEntry`/`AccountConnection` gained `tasks` and `tasksAccess`, and `GoogleScope.Tasks` is outside
+`GoogleScope.CORE`, which is all startup and `check()` ask for.

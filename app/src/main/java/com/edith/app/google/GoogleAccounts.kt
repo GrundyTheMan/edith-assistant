@@ -9,6 +9,10 @@ import com.edith.app.accounts.AccountState
 import com.edith.app.accounts.Capabilities
 import com.edith.app.accounts.sources.CalendarSource
 import com.edith.app.accounts.sources.MailSource
+import com.edith.app.accounts.tasks.TaskSource
+import com.edith.app.accounts.tasks.TasksAccess
+import com.edith.app.google.tasks.GoogleTaskSource
+import com.edith.app.google.tasks.TasksClient
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
@@ -45,6 +49,8 @@ class GoogleAccounts(
     private val gmailBaseUrl: String = GmailClient.BASE_URL,
     /** "Today" for email searches (C19's exact local days). */
     private val clock: Clock = SystemClock,
+    /** C35: Google Tasks' REST base. */
+    private val tasksBaseUrl: String = TasksClient.BASE_URL,
 ) {
     private val playConfigured = webClientId.isNotBlank()
 
@@ -106,6 +112,7 @@ class GoogleAccounts(
             auth = auth,
             calendar = GoogleCalendarSource(accountOf, CalendarClient(http, auth, dispatchers, zone, calendarBaseUrl, id), zone),
             mail = GmailSource(accountOf, GmailClient(http, auth, dispatchers, zone, gmailBaseUrl, id), zone, clock::now),
+            tasks = GoogleTaskSource(accountOf, TasksClient(http, auth, dispatchers, tasksBaseUrl, id)),
             forget = { browser.forget(id) },
             signOutPlay = { if (playServicesAvailable()) play.signOut() },
         )
@@ -150,15 +157,19 @@ class GoogleConnection(
     val auth: GoogleAccountAuth,
     override val calendar: CalendarSource,
     override val mail: MailSource,
+    override val tasks: TaskSource,
     private val forget: suspend () -> Unit,
     private val signOutPlay: suspend () -> Unit,
 ) : AccountConnection {
     override val state: StateFlow<AccountState> get() = auth.state
-    override val capabilities = Capabilities(calendar = true, mail = true)
+    override val capabilities = Capabilities(calendar = true, mail = true, tasks = true)
+    override val tasksAccess: StateFlow<TasksAccess> get() = auth.tasks
 
     override suspend fun start() = auth.check()
 
     override suspend fun grant(activity: Activity, show: (PendingIntent) -> Unit) = auth.grant(activity, show)
+
+    override suspend fun grantTasks(activity: Activity, show: (PendingIntent) -> Unit) = auth.grantTasks(activity, show)
 
     override suspend fun onConsentResult(data: Intent?) = auth.onConsentResult(data)
 

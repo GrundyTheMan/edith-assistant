@@ -68,9 +68,10 @@ com.edith.app
 ├── attachments/                AttachmentIntake, AttachmentStore, Retention, views
 ├── accounts/                   C22: Account, AccountStore, AccountMigration, Accounts (the integration, D17)
 │   ├── sources/                CalendarSource, MailSource, Reads (parallel reads, merging), the shared models
-│   ├── tools/                  The calendar and email tools, WhichAccount (the "which account?" rule)
-│   └── ui/                     The Calendar tab (every account)
-├── google/                     GoogleAccounts (provider), GoogleAccountAuth (per account), Calendar/Gmail clients and sources
+│   ├── tools/                  The calendar, email and to-do tools, WhichAccount (the "which account?" rule)
+│   ├── tasks/                  C35: TaskSource and models, TaskRanking (the suggested order), RankStore (`task-ranks.json`)
+│   └── ui/                     The Calendar tab (every account): Agenda and To-do views
+├── google/                     GoogleAccounts (provider), GoogleAccountAuth (per account), Calendar/Gmail/Tasks clients and sources (`tasks/`: C35)
 │   └── browser/                C17b/C23: BrowserSignIn (the one browser sign-in, any provider), OAuthProvider, BrowserOAuth,
 │                               LoopbackReceiver (127.0.0.1, or both loopback addresses for `localhost`), BrowserGoogle
 ├── microsoft/                  C23: MicrosoftAccounts (provider), MicrosoftAccountAuth (per account), GraphClient, Outlook sources
@@ -261,7 +262,7 @@ Long work uses injected `AppDispatchers.io/default`.
 ## 10. Navigation and screens
 
 Single activity, Navigation Compose. Bottom bar destinations: **Chat** (start), **Calendar** (C18;
-every account's events since C22; "Add an account" until one is connected), **Settings**. Smart home ("Home") is added in v2.
+every account's events since C22, with an **Agenda | To-do** switch since C35 (Google Tasks lists, a tick box that ticks off directly with a 5 s Undo, Show done); "Add an account" until one is connected), **Settings**. Smart home ("Home") is added in v2.
 Settings sections in order: Server & model · Voice · Hands-free · Attachments · Web search · Accounts
 (C22; was Google account) · About (version, crash report, licenses).
 

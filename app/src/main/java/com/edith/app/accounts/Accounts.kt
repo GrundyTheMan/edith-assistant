@@ -7,6 +7,8 @@ import com.edith.app.accounts.sources.CalendarInfo
 import com.edith.app.accounts.sources.CalendarSource
 import com.edith.app.accounts.sources.DefaultCalendarSource
 import com.edith.app.accounts.sources.MailSource
+import com.edith.app.accounts.tasks.TaskSource
+import com.edith.app.accounts.tasks.TasksAccess
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import com.edith.app.google.GoogleAccounts
@@ -41,6 +43,9 @@ data class AccountEntry(
     val capabilities: Capabilities,
     val calendar: CalendarSource?,
     val mail: MailSource?,
+    /** C35: the account's to-dos (Google accounts), and whether Edith may use them now. */
+    val tasks: TaskSource? = null,
+    val tasksAccess: TasksAccess = TasksAccess.Unknown,
 )
 
 /** What the calendar and email tools need from the accounts (a fake in tests). */
@@ -57,10 +62,16 @@ interface AccountConnection {
     val capabilities: Capabilities
     val calendar: CalendarSource?
     val mail: MailSource?
+    /** C35: the account's to-dos; null for providers without them here (Microsoft, iCloud). */
+    val tasks: TaskSource? get() = null
+    /** C35 §2: whether the to-dos may be used, apart from [state]. */
+    val tasksAccess: StateFlow<TasksAccess>? get() = null
     /** At startup and after signing in: checks quietly whether access is still granted. */
     suspend fun start()
     /** Grant access / Sign in again / Try again. [show] shows a consent screen when the provider has one. */
     suspend fun grant(activity: Activity, show: (PendingIntent) -> Unit)
+    /** C35: **To-dos: Grant access**. */
+    suspend fun grantTasks(activity: Activity, show: (PendingIntent) -> Unit) = Unit
     suspend fun onConsentResult(data: Intent?)
     /** Revokes Edith's access at the provider (a failure is only logged) and deletes the account's secrets. */
     suspend fun disconnect()
@@ -116,7 +127,27 @@ class Accounts(
         val c = connections[a.id]
         // The owner's default calendar, when chosen, replaces the provider's (Settings → Accounts).
         val calendar = c?.calendar?.let { src -> a.defaultCalendar?.let { DefaultCalendarSource(src, it) } ?: src }
-        AccountEntry(a, c?.state?.value ?: AccountState.Error(UNSUPPORTED), c?.capabilities ?: Capabilities(false, false), calendar, c?.mail)
+        AccountEntry(
+            a, c?.state?.value ?: AccountState.Error(UNSUPPORTED), c?.capabilities ?: Capabilities(false, false), calendar, c?.mail,
+            c?.tasks, c?.tasksAccess?.value ?: TasksAccess.Unknown,
+        )
+    }
+
+    /**
+     * C35 §2: each account's to-do access by id, for Settings ("To-dos: Grant access") and the To-do view's banner.
+     * Only accounts that have to-dos are in it.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val tasksAccess: StateFlow<Map<String, TasksAccess>> = connectionsFlow.flatMapLatest { m ->
+        val flows = m.mapNotNull { (id, c) -> c.tasksAccess?.map { id to it } }
+        if (flows.isEmpty()) flowOf(emptyMap()) else combine(flows) { it.toMap() }
+    }.stateIn(scope, SharingStarted.Eagerly, emptyMap())
+
+    /** **To-dos: Grant access** for one account (C35 §2). */
+    suspend fun grantTasks(id: String, activity: Activity, show: (PendingIntent) -> Unit) {
+        _message.value = null
+        consentFor = id
+        connections[id]?.grantTasks(activity, show)
     }
 
     /** One account's writable calendars, with the current default marked, for Settings → Accounts. */
@@ -257,7 +288,10 @@ class Accounts(
     private fun accountsLine(all: List<AccountEntry>): String = "Accounts: " + all.joinToString("; ") { e ->
         val who = if (e.account.label.equals(e.account.address, ignoreCase = true)) e.account.address else "${e.account.label} — ${e.account.address}"
         val what = when (val s = e.state) {
-            AccountState.Connected -> e.capabilities.text
+            // C35 §2: say when to-dos need permission, so Edith tells the owner instead of guessing (L6).
+            AccountState.Connected -> if (e.capabilities.tasks && e.tasksAccess == TasksAccess.NeedsPermission) {
+                e.capabilities.copy(tasks = false).text + "; to-dos need permission"
+            } else e.capabilities.text
             AccountState.Checking -> "checking the connection"
             is AccountState.NeedsSignIn -> s.reason.substringBefore(" (")
             is AccountState.Error -> "can't be reached right now"

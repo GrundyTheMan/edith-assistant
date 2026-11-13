@@ -29,6 +29,11 @@ interface Tool {
     val guidance: String? get() = null
     /** The most of a result the model is sent; longer results are cut (C08 §5). A page's text needs more (C10 §2). */
     val maxResultChars: Int get() = ToolTurnRunner.RESULT_MAX_CHARS
+    /**
+     * How long [execute] may take, when it needs longer than the loop's usual limit (C35: ranking to-dos is a model
+     * call of its own). Null: the usual limit.
+     */
+    val timeoutMs: Long? get() = null
     /** Integration this tool belongs to (null = built in). Tools of disconnected integrations aren't offered. */
     val integrationId: String? get() = null
     /**

@@ -64,9 +64,12 @@ sealed interface AccountState {
 }
 
 /** What a provider's accounts can do (C22 §4: "only one connected account can do it"). */
-data class Capabilities(val calendar: Boolean, val mail: Boolean) {
-    /** "calendar and email", for the prompt line. */
-    val text: String get() = listOfNotNull("calendar".takeIf { calendar }, "email".takeIf { mail }).joinToString(" and ")
+data class Capabilities(val calendar: Boolean, val mail: Boolean, val tasks: Boolean = false) {
+    /** "calendar and email", or "calendar, email and to-dos" (C35), for the prompt line. */
+    val text: String get() {
+        val parts = listOfNotNull("calendar".takeIf { calendar }, "email".takeIf { mail }, "to-dos".takeIf { tasks })
+        return if (parts.size <= 2) parts.joinToString(" and ") else parts.dropLast(1).joinToString(", ") + " and " + parts.last()
+    }
 }
 
 /** Secret-store keys for one account (C22 §1): never the address. */

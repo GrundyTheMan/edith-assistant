@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.emptyFlow
  * [OllamaClient] for JVM tests. [models] maps model name → capabilities; set [failure] to make every request
  * fail with that error. Counts calls so tests can check debouncing and retries.
  */
-class FakeOllamaClient(
+open class FakeOllamaClient(
     var models: Map<String, List<String>> = mapOf(
         "gemma4:12b-it-q8_0" to listOf("completion", "vision", "audio", "tools"),
         "qwen3.5:9b-q8_0" to listOf("completion", "tools"),
