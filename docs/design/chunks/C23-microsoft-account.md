@@ -248,6 +248,7 @@ Where the code differs from the specification above, the code is right. D18 = **
   carried over. Add account → Microsoft → Connected; the Outlook calendar and today's unread Hotmail mail came
   through; after a force-stop it reconnected quietly. No crash.
 
+- **Andarium on the owner's iPhone** (published v2.0.0-dev.3, 2026-11-13): the owner reported everything working.
+
 **Not verified yet**
-- Andarium on the owner's iPhone (needs the next published build).
 - A work or school account (admin approval), 90 idle days, a changed password.

@@ -182,7 +182,8 @@ idempotent and safe if the app is killed half-way: write the new keys first, del
 - [ ] After a restart both are still Connected. `scripts/check.sh --device` passes; release APK tested on
       `Edith_Release_Test`, then in Andarium on the owner's iPhone. (`--device` passes and the release APK was tested.
       A restart was checked with one account on `Pixel_9_API_37` and
-      on the release emulator, not with two at once; the iPhone is still to do.)
+      on the release emulator, not with two at once. On 2026-11-13 the owner tested the published v2.0.0-dev.3 in
+      Andarium on their iPhone and reported everything working.)
 
 ## Implementation notes (traps)
 1. **Migration is the riskiest part.** A bug signs the owner out of Google or loses the refresh token. Test the
