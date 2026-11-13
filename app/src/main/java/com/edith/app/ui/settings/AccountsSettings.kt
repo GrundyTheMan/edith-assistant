@@ -47,6 +47,7 @@ import com.edith.app.accounts.Account
 import com.edith.app.accounts.AccountState
 import com.edith.app.accounts.Accounts
 import com.edith.app.accounts.Provider
+import com.edith.app.accounts.sources.CalendarInfo
 import com.edith.app.di.viewModelFactory
 import com.edith.app.google.GoogleAccounts
 import com.edith.app.icloud.ICloudAccounts
@@ -105,6 +106,15 @@ class AccountsViewModel(private val accounts: Accounts, private val appScope: Co
         viewModelScope.launch { accounts.onConsentResult(data) }
     }
 
+    /** The account's writable calendars, the current default marked, for the Default calendar choice. */
+    fun calendarsOf(id: String, done: (List<CalendarInfo>) -> Unit) {
+        viewModelScope.launch { done(accounts.writableCalendars(id)) }
+    }
+
+    fun setDefaultCalendar(id: String, calendarId: String) {
+        viewModelScope.launch { accounts.setDefaultCalendar(id, calendarId) }
+    }
+
     fun rename(id: String, label: String, onResult: (Accounts.RenameResult) -> Unit) {
         viewModelScope.launch { onResult(accounts.rename(id, label)) }
     }
@@ -141,6 +151,8 @@ fun AccountsSection(vm: AccountsViewModel) {
         onAddICloud = vm::addICloud,
         onGrant = { id -> activity?.let { a -> vm.grant(id, a) { consent.launch(IntentSenderRequest.Builder(it.intentSender).build()) } } },
         onRename = vm::rename,
+        loadCalendars = vm::calendarsOf,
+        onSetDefaultCalendar = vm::setDefaultCalendar,
         onDisconnect = vm::disconnect,
     )
 }
@@ -177,6 +189,8 @@ fun AccountsContent(
     onAddGoogle: (useBrowser: Boolean) -> Unit,
     onGrant: (id: String) -> Unit,
     onRename: (id: String, label: String, onResult: (Accounts.RenameResult) -> Unit) -> Unit,
+    loadCalendars: (id: String, done: (List<CalendarInfo>) -> Unit) -> Unit = { _, _ -> },
+    onSetDefaultCalendar: (id: String, calendarId: String) -> Unit = { _, _ -> },
     onDisconnect: (id: String) -> Unit,
     microsoftNotSetUp: String? = MicrosoftAccounts.NOT_SET_UP,
     onAddMicrosoft: () -> Unit = {},
@@ -208,6 +222,8 @@ fun AccountsContent(
                 if (account.provider == Provider.ICloud && state is AccountState.NeedsSignIn) icloudFor = account.address else onGrant(account.id)
             },
             onRename = { label, done -> onRename(account.id, label, done) },
+            loadCalendars = { done -> loadCalendars(account.id, done) },
+            onSetDefaultCalendar = { calendarId -> onSetDefaultCalendar(account.id, calendarId) },
             onDisconnect = { open = null; onDisconnect(account.id) },
             onClose = { open = null },
         )
@@ -374,6 +390,8 @@ private fun AccountDialog(
     state: AccountState,
     onGrant: () -> Unit,
     onRename: (String, (Accounts.RenameResult) -> Unit) -> Unit,
+    loadCalendars: ((List<CalendarInfo>) -> Unit) -> Unit = {},
+    onSetDefaultCalendar: (String) -> Unit = {},
     onDisconnect: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -407,8 +425,9 @@ private fun AccountDialog(
                 } else {
                     OutlinedButton(onClick = { renaming = true }) { Text("Rename") }
                 }
+                DefaultCalendarChoice(state is AccountState.Connected, loadCalendars, onSetDefaultCalendar)
                 when (state) {
-                    is AccountState.NeedsSignIn -> Button(onClick = onGrant) { Text(if (state.viaBrowser) "Sign in again" else "Grant access") }
+                    is AccountState.NeedsSignIn -> Button(onClick = onGrant) { Text(if (state.viaBrowser || account.provider == Provider.ICloud) "Sign in again" else "Grant access") }
                     is AccountState.Error -> Button(onClick = onGrant) { Text("Try again") }
                     else -> Unit
                 }
@@ -431,6 +450,46 @@ private fun AccountDialog(
             confirmButton = { TextButton(onClick = { confirmDisconnect = false; onDisconnect() }) { Text("Disconnect") } },
             dismissButton = { TextButton(onClick = { confirmDisconnect = false }) { Text("Cancel") } },
         )
+    }
+}
+
+/**
+ * Settings → Accounts → an account → **Default calendar** (C24, any provider): where a new event goes when the owner
+ * doesn't name a calendar. iCloud's server-side default isn't the iPhone's (that one is a setting on the phone, which
+ * no app can read), so the owner picks it here once.
+ */
+@Composable
+private fun DefaultCalendarChoice(
+    connected: Boolean,
+    loadCalendars: ((List<CalendarInfo>) -> Unit) -> Unit,
+    onSetDefault: (String) -> Unit,
+) {
+    if (!connected) return
+    var calendars by remember { mutableStateOf<List<CalendarInfo>?>(null) }
+    var choosing by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(Unit) { loadCalendars { calendars = it } }
+    val list = calendars ?: return
+    if (list.size < 2) return   // nothing to choose between
+    val current = list.firstOrNull { it.isDefault } ?: list.first()
+    TextButton(onClick = { choosing = !choosing }, modifier = Modifier.testTag(DEFAULT_CALENDAR_TAG)) {
+        Text("Default calendar: ${current.name}")
+    }
+    if (choosing) {
+        Column(Modifier.padding(start = 8.dp)) {
+            for (c in list) {
+                Row(
+                    Modifier.fillMaxWidth().clickable {
+                        onSetDefault(c.id)
+                        calendars = list.map { it.copy(isDefault = it.id == c.id) }
+                        choosing = false
+                    }.padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.material3.RadioButton(selected = c.id == current.id, onClick = null)
+                    Text(c.name, modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+        }
     }
 }
 
@@ -483,6 +542,7 @@ const val ACCOUNTS_MESSAGE_TAG = "accounts_message"
 const val ACCOUNT_ROW_TAG = "account_row_"
 const val ACCOUNT_STATUS_TAG = "account_status"
 const val ACCOUNT_LABEL_TAG = "account_label"
+const val DEFAULT_CALENDAR_TAG = "default_calendar"
 const val ADD_GOOGLE_TAG = "add_google"
 const val ADD_MICROSOFT_TAG = "add_microsoft"
 const val ADD_ICLOUD_TAG = "add_icloud"

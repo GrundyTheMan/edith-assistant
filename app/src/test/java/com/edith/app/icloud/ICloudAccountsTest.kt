@@ -98,8 +98,22 @@ DTSTART:20261103T220000Z
 DTEND:20261103T230000Z
 END:VEVENT
 END:VCALENDAR
+</c:calendar-data></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>""" +
+                            // A daily series, expanded by the server into instances (C24: iCloud honours <C:expand>).
+                            """<d:response><d:href>/1/calendars/home/workout.ics</d:href><d:propstat><d:prop><d:getetag>"w1"</d:getetag><c:calendar-data>BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:workout
+RECURRENCE-ID:20261103T230000Z
+SUMMARY:Workout
+DTSTART:20261103T230000Z
+DTEND:20261104T000000Z
+END:VEVENT
+END:VCALENDAR
 </c:calendar-data></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>""",
                     )
+                    request.method == "GET" && path == "/1/calendars/home/workout.ics" -> MockResponse.Builder().code(200).addHeader("ETag", "\"w1\"")
+                        .body("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:workout\r\nRRULE:FREQ=DAILY\r\nSUMMARY:Workout\r\nDTSTART:20261101T230000Z\r\nDTEND:20261102T000000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n").build()
+                    request.method == "DELETE" -> MockResponse.Builder().code(204).build()
                     request.method == "PUT" -> MockResponse.Builder().code(201).build()
                     else -> MockResponse.Builder().code(404).build()
                 }
@@ -230,9 +244,10 @@ END:VCALENDAR
         googleAndICloud()
         val t = turn("list_calendar_events", "start" to "2026-11-03T00:00", "end" to "2026-11-04T00:00")
         val lines = t.result.lines().filter { it.contains("{event_id:") }
-        assertEquals(2, lines.size)
+        assertEquals(3, lines.size)
         assertTrue(lines[0], lines[0].contains("Gym") && lines[0].contains("personal"))
         assertTrue(lines[1], lines[1].contains("Piano lesson") && lines[1].contains("icloud"))
+        assertTrue("an occurrence of the daily series: ${lines[2]}", lines[2].contains("Workout") && lines[2].contains("icloud"))
     }
 
     @Test fun `a new event - Edith asks which account, offering both, and declining sends nothing`() {
@@ -252,5 +267,28 @@ END:VCALENDAR
         val put = requests.single { it.method == "PUT" }
         assertTrue(put.url.encodedPath.startsWith("/1/calendars/home/"))
         assertEquals("*", put.headers["If-None-Match"])
+    }
+
+    @Test fun `a repeating iCloud event - no card without whole_series, then the series card and one DELETE`() {
+        googleAndICloud()
+        val listing = turn("list_calendar_events", "start" to "2026-11-03T00:00", "end" to "2026-11-04T00:00")
+        val workout = Regex("""Workout.*\{event_id: (e\d+)\}""").find(listing.result)!!.groupValues[1]
+        requests.clear()
+
+        val ask = turn("delete_calendar_event", "event_id" to workout)
+        assertNull("no card", ask.card)
+        assertTrue(ask.result, ask.result.contains("Ask the owner whether to delete the whole series"))
+        assertTrue("nothing sent", requests.isEmpty())
+
+        val declined = turn("delete_calendar_event", "event_id" to workout, "whole_series" to "true", approve = false)
+        assertEquals("Delete the whole repeating series?", declined.card!!.title)
+        assertTrue(declined.card.details.any { it.first == "Deletes" && it.second.startsWith("Every occurrence") })
+        assertTrue("declined: nothing deleted", requests.none { it.method == "DELETE" })
+
+        val done = turn("delete_calendar_event", "event_id" to workout, "whole_series" to "true")
+        assertEquals("Deleted the whole repeating series \"Workout\" from icloud (owner@icloud.com).", done.result)
+        val delete = requests.single { it.method == "DELETE" }
+        assertEquals("/1/calendars/home/workout.ics", delete.url.encodedPath)
+        assertEquals("\"w1\"", delete.headers["If-Match"])
     }
 }

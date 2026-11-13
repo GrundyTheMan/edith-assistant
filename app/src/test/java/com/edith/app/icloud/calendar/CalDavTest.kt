@@ -53,7 +53,11 @@ class CalDavTest {
                     "/12345/principal/" -> xml(
                         """<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:response><d:href>/12345/principal/</d:href>
                         <d:propstat><d:prop><c:calendar-home-set><d:href>${partition.url("/12345/calendars")}</d:href></c:calendar-home-set>
-                        <c:schedule-default-calendar-URL><d:href>${partition.url("/12345/calendars/work/")}</d:href></c:schedule-default-calendar-URL></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>""",
+                        <c:schedule-inbox-URL><d:href>/12345/inbox/</d:href></c:schedule-inbox-URL></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>""",
+                    )
+                    // RFC 6638 §9.2: the scheduling inbox names the default calendar, as iCloud does.
+                    "/12345/inbox/" -> xml(
+                        """<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:response><d:href>/12345/inbox/</d:href><d:propstat><d:prop><c:schedule-default-calendar-URL><d:href>${partition.url("/12345/calendars/work/")}</d:href></c:schedule-default-calendar-URL></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>""",
                     )
                     else -> MockResponse.Builder().code(404).build()
                 }

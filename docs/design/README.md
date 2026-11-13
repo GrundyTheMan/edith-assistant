@@ -53,7 +53,7 @@ design in the same PR, or ask the owner.
 | [C21](chunks/C21-smart-home-service-notes.md) | Smart home service notes (**v2 research**) | 6 Deferred | — | Done (services checked 2026-11-12) |
 | [C22](chunks/C22-several-accounts.md) | Several accounts: the account model, and several Google accounts (D17) | 7 Accounts | C17, C17b, C18, C19 | Done (iPhone check pending) |
 | [C23](chunks/C23-microsoft-account.md) | Microsoft account: Outlook mail and calendar | 7 | C22 | Done (iPhone check pending) |
-| [C24](chunks/C24-icloud-account.md) | iCloud account: iCloud Mail and Calendar | 7 | C22 | Built and tested; no live check (no iCloud account) |
+| [C24](chunks/C24-icloud-account.md) | iCloud account: iCloud Mail and Calendar | 7 | C22 | Done (iPhone check pending) |
 | [C25](chunks/C25-home-core.md) | Smart home core: device model, tools, Home tab, command log (fake backend) | 8 Smart home (v2) | C08, C14, C22 | Design |
 | [C26](chunks/C26-meross-garage.md) | Meross garage door opener | 8 | C25 | Design |
 | [C27](chunks/C27-ring.md) | Ring doorbell and cameras (snapshots, events) | 8 | C25 | Design |
@@ -120,9 +120,10 @@ design in the same PR, or ask the owner.
   through the browser like C17b (the shared `BrowserSignIn`, a `localhost` redirect on both loopback addresses), with
   a refresh token that changes on every refresh. Setup: `docs/microsoft-setup.md` (`edith.microsoftClientId`). Graph
   calls are cancellable, so a stalled account is cut off at 10 s; Google's calls still block (a follow-up).
-- **C24 (iCloud) is built and tested**: IMAP/SMTP with Jakarta Mail (proven on Android 17 and under R8, with keep
-  rules), CalDAV with OkHttp. The owner has no iCloud account, so nothing is verified live yet, including whether
-  iCloud honours `<C:expand>` (C24 As built).
+- **iCloud is done (C24)**: an app-specific password (`docs/icloud-setup.md`), IMAP/SMTP with Jakarta Mail (keep rules
+  for R8), CalDAV with OkHttp; iCloud expands repeating series itself. Every account has a **Default calendar**
+  choice in Settings → Accounts (iCloud's server default isn't the iPhone's), and a whole repeating iCloud series
+  can be deleted when the owner asks (`whole_series`).
 - The first release, v2.0.0-dev.1, was published on 2026-11-11; v2.0.0-dev.2 (with C17b) on 2026-11-12. Chat with Ollama works from Andarium over the
   home Wi-Fi.
 - **Smart home (v2):** D10 is decided (each service directly from the phone, 2026-11-12) and v2 is split into C25–C31

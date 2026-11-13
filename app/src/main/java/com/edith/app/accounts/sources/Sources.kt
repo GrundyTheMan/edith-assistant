@@ -25,6 +25,11 @@ data class CalendarEvent(
     val description: String? = null,
     val accountId: String = "",
     val iCalUid: String? = null,
+    /**
+     * Part of a repeating series that can only be deleted as a whole (iCloud, C24): one occurrence can't be removed
+     * on its own, so deleting needs the owner to ask for the whole series ([CalendarSource.deleteSeries]).
+     */
+    val inSeries: Boolean = false,
 )
 
 /** A new event, or the changes to one: only the fields that are set are sent. */
@@ -51,6 +56,9 @@ interface CalendarSource {
     suspend fun create(calendarId: String?, draft: EventDraft): Outcome<CalendarEvent>
     suspend fun update(event: CalendarEvent, change: EventChange): Outcome<CalendarEvent>
     suspend fun delete(event: CalendarEvent): Outcome<Unit>
+    /** Deletes every occurrence of [event]'s repeating series (only when the owner asked for the whole series). */
+    suspend fun deleteSeries(event: CalendarEvent): Outcome<Unit> =
+        Outcome.Failure(com.edith.app.core.error.AppError.ToolFailed("calendar", "Deleting a whole repeating series isn't supported for this account."))
 }
 
 /** One email in a search result: who, what, when, and the ids a reply needs. */

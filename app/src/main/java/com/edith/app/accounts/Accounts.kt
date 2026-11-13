@@ -3,7 +3,9 @@ package com.edith.app.accounts
 import android.app.Activity
 import android.app.PendingIntent
 import android.content.Intent
+import com.edith.app.accounts.sources.CalendarInfo
 import com.edith.app.accounts.sources.CalendarSource
+import com.edith.app.accounts.sources.DefaultCalendarSource
 import com.edith.app.accounts.sources.MailSource
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
@@ -112,7 +114,21 @@ class Accounts(
 
     override fun entries(): List<AccountEntry> = list.value.map { a ->
         val c = connections[a.id]
-        AccountEntry(a, c?.state?.value ?: AccountState.Error(UNSUPPORTED), c?.capabilities ?: Capabilities(false, false), c?.calendar, c?.mail)
+        // The owner's default calendar, when chosen, replaces the provider's (Settings → Accounts).
+        val calendar = c?.calendar?.let { src -> a.defaultCalendar?.let { DefaultCalendarSource(src, it) } ?: src }
+        AccountEntry(a, c?.state?.value ?: AccountState.Error(UNSUPPORTED), c?.capabilities ?: Capabilities(false, false), calendar, c?.mail)
+    }
+
+    /** One account's writable calendars, with the current default marked, for Settings → Accounts. */
+    suspend fun writableCalendars(id: String): List<CalendarInfo> =
+        (entries().firstOrNull { it.account.id == id }?.calendar?.calendars() as? com.edith.app.core.error.Outcome.Success)
+            ?.value?.filter { it.canWrite }.orEmpty()
+
+    /** Settings → Accounts → Default calendar: where new events go when no calendar is named (null: the provider's). */
+    suspend fun setDefaultCalendar(id: String, calendarId: String?) = editLock.withLock {
+        store.update { current -> current.map { if (it.id == id) it.copy(defaultCalendar = calendarId) else it } }
+        list.value = store.current()
+        Log.i(LogTag.Accounts, "Accounts: $id default calendar ${if (calendarId == null) "reset" else "chosen"}")
     }
 
     /** One account's live connection (the debug hook checks each Google account's token with it). */

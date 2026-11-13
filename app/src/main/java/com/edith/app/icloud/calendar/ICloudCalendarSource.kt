@@ -84,6 +84,7 @@ class ICloudCalendarSource(
                         description = e.description,
                         accountId = accountOf().id,
                         iCalUid = e.uid,
+                        inSeries = e.recurrenceId != null || e.recurring,
                     )
                 }
             }
@@ -149,6 +150,20 @@ class ICloudCalendarSource(
         }
     }
 
+    /**
+     * Deletes the whole series an occurrence belongs to: its resource holds the series and its exceptions, so one
+     * `DELETE` (with `If-Match`) removes every occurrence. Only when the owner asked for the whole series.
+     */
+    override suspend fun deleteSeries(event: CalendarEvent): Outcome<Unit> {
+        val href = event.id.substringBefore('#').toHttpUrlOrNull() ?: return Outcome.Failure(AppError.ToolFailed("calendar", CHANGED))
+        val current = when (val r = dav().get(href)) { is DavResult.Ok -> r.value; else -> return failure(r) }
+        return when (val r = dav().delete(href, current.etag)) {
+            is DavResult.Ok -> Outcome.Success(Unit)
+            DavResult.Changed -> changedElsewhere()
+            else -> failure(r)
+        }
+    }
+
     private fun defaultOf(h: DavHome): DavCalendar? =
         h.calendars.firstOrNull { it.href == h.defaultHref && it.canWrite } ?: h.calendars.firstOrNull { it.canWrite }
 
@@ -173,7 +188,7 @@ class ICloudCalendarSource(
 
     companion object {
         const val PASSWORD_STOPPED = "The app-specific password stopped working: it was revoked, or your Apple Account password changed. Make a new one."
-        const val ONE_OCCURRENCE = "That's a repeating iCloud event. Edith can't change or delete one occurrence of it, or the whole series, yet; do it in the Calendar app."
+        const val ONE_OCCURRENCE = "That's one occurrence of a repeating iCloud event. Edith can't change or delete one occurrence on its own; she can delete the whole series if the owner asks for that."
         const val CHANGED = "It changed elsewhere; list the events again."
 
         /** A resource's own event keeps its address; an occurrence of a series gets `#` and its RECURRENCE-ID. */

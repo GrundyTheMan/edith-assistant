@@ -19,6 +19,14 @@ class SpecialUseFolderTest {
 
     @After fun tearDown() = server.close()
 
+    /** The LIST answer; the default is a mailbox flagging both, with localised names and a decoy. */
+    private var listLines = listOf(
+        """* LIST (\HasNoChildren) "/" "INBOX"""",
+        """* LIST (\HasNoChildren \Drafts) "/" "Entw&APw-rfe"""",
+        """* LIST (\HasNoChildren \Sent) "/" "Gesendete Objekte"""",
+        """* LIST (\HasNoChildren) "/" "Drafts"""",   // a decoy with the English name
+    )
+
     private fun serve() = thread(isDaemon = true) {
         server.accept().use { s ->
             val input = s.getInputStream().bufferedReader()
@@ -33,10 +41,7 @@ class SpecialUseFolderTest {
                     "CAPABILITY" -> { send("* CAPABILITY IMAP4rev1 SPECIAL-USE AUTH=PLAIN"); send("$tag OK done") }
                     "LOGIN" -> send("$tag OK [CAPABILITY IMAP4rev1 SPECIAL-USE] logged in")
                     "LIST" -> {
-                        send("""* LIST (\HasNoChildren) "/" "INBOX"""")
-                        send("""* LIST (\HasNoChildren \Drafts) "/" "Entw&APw-rfe"""")
-                        send("""* LIST (\HasNoChildren \Sent) "/" "Gesendete Objekte"""")
-                        send("""* LIST (\HasNoChildren) "/" "Drafts"""")   // a decoy with the English name
+                        listLines.forEach(::send)
                         send("$tag OK done")
                     }
                     "LOGOUT" -> { send("* BYE"); send("$tag OK bye"); break }
@@ -53,6 +58,24 @@ class SpecialUseFolderTest {
             assertEquals("Entwürfe", ICloudMailSource.specialFolder(store, "\\Drafts")?.fullName)
             assertEquals("Gesendete Objekte", ICloudMailSource.specialFolder(store, "\\Sent")?.fullName)
             assertNull(ICloudMailSource.specialFolder(store, "\\Junk"))
+        }
+    }
+
+    @Test fun `iCloud flags only Sent and Trash, so Drafts falls back to iCloud's own server name`() {
+        // What iCloud's IMAP server answered on 2026-11-13 (no SPECIAL-USE capability).
+        listLines = listOf(
+            """* LIST (\HasNoChildren) "/" "Archive"""",
+            """* LIST (\HasNoChildren) "/" "Junk"""",
+            """* LIST (\Noinferiors) "/" "INBOX"""",
+            """* LIST (\HasNoChildren \Trash) "/" "Deleted Messages"""",
+            """* LIST (\HasNoChildren \Sent) "/" "Sent Messages"""",
+            """* LIST (\HasNoChildren) "/" "Drafts"""",
+        )
+        serve()
+        Session.getInstance(Properties()).getStore("imap").use { store ->
+            store.connect("127.0.0.1", server.localPort, "owner", "x")
+            assertEquals("Drafts", ICloudMailSource.specialFolder(store, "\\Drafts")?.fullName)
+            assertEquals("by its flag", "Sent Messages", ICloudMailSource.specialFolder(store, "\\Sent")?.fullName)
         }
     }
 }

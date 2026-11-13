@@ -270,10 +270,22 @@ class ICloudMailSource(
             return (a.toLongOrNull() ?: return null) to (b.toLongOrNull() ?: return null)
         }
 
-        /** The first folder carrying [flag] (`\Drafts`, `\Sent`) as a SPECIAL-USE attribute (RFC 6154; trap 3). */
-        fun specialFolder(store: Store, flag: String): Folder? =
-            store.defaultFolder.list("*").firstOrNull { f ->
+        /**
+         * iCloud's own server names, used only when no folder carries the flag. Checked live on 2026-11-13: iCloud has no
+         * SPECIAL-USE capability and flags only `\Sent` ("Sent Messages") and `\Trash` ("Deleted Messages"); "Drafts"
+         * has no flag. These IMAP names are iCloud's fixed English names, not translated by the phone's language.
+         */
+        private val ICLOUD_NAMES = mapOf("\\Drafts" to listOf("Drafts"), "\\Sent" to listOf("Sent Messages"))
+
+        /**
+         * The first folder carrying [flag] (`\Drafts`, `\Sent`) as a SPECIAL-USE attribute (RFC 6154; trap 3); when no
+         * folder carries it, iCloud's own server name for it.
+         */
+        fun specialFolder(store: Store, flag: String): Folder? {
+            val folders = store.defaultFolder.list("*")
+            return folders.firstOrNull { f ->
                 (f as? org.eclipse.angus.mail.imap.IMAPFolder)?.attributes?.any { it.equals(flag, ignoreCase = true) } == true
-            }
+            } ?: ICLOUD_NAMES[flag]?.firstNotNullOfOrNull { name -> folders.firstOrNull { it.fullName == name } }
+        }
     }
 }

@@ -15,6 +15,10 @@ for mail, CalDAV for the calendar). It takes about 5 minutes; nothing is set up 
 `@mac.com`), paste the password, tap **Add**. Edith checks the mail login and the calendar, then saves the password
 encrypted on the phone.
 
+Then tap the account in Settings → Accounts and check **Default calendar**: iCloud's own default can be a different
+calendar from the one your iPhone uses (the iPhone's choice stays on the phone), so pick the one new events should
+go to.
+
 **Type or paste the password into Edith yourself.** Never paste it into a chat, a file or a message: like your
 Apple Account password, it opens all of the account's mail, calendars and contacts.
 

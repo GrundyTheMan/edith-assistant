@@ -73,7 +73,15 @@ class CalDavClient(
             ?: return DavResult.Failed("no current-user-principal")
         val homeDoc = when (val r = propfind(principal, 0, HOME_BODY)) { is DavResult.Ok -> r.value; else -> return r.map() }
         val home = homeDoc.first.firstHref("calendar-home-set")?.let { homeDoc.second.resolve(it) } ?: return DavResult.Failed("no calendar-home-set")
+        // RFC 6638 §9.2: the default calendar is a property of the scheduling inbox, not the principal. A server that
+        // puts it on the principal is accepted too.
         val default = homeDoc.first.firstHref("schedule-default-calendar-URL")?.let { homeDoc.second.resolve(it) }
+            ?: homeDoc.first.firstHref("schedule-inbox-URL")?.let { homeDoc.second.resolve(it) }?.let { inbox ->
+                when (val r = propfind(inbox, 0, INBOX_BODY)) {
+                    is DavResult.Ok -> r.value.first.firstHref("schedule-default-calendar-URL")?.let { r.value.second.resolve(it) }
+                    else -> null   // no default named: the first writable calendar is used
+                }
+            }
         val listDoc = when (val r = propfind(home, 1, CALENDARS_BODY)) { is DavResult.Ok -> r.value; else -> return r.map() }
         val calendars = listDoc.first.responses().mapNotNull { resp ->
             val href = resp.child("href")?.textContent?.trim()?.let { listDoc.second.resolve(it) } ?: return@mapNotNull null
@@ -174,7 +182,8 @@ class CalDavClient(
         private val DAV_TIME = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC)
 
         private const val PRINCIPAL_BODY = """<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:current-user-principal/></d:prop></d:propfind>"""
-        private const val HOME_BODY = """<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><c:calendar-home-set/><c:schedule-default-calendar-URL/></d:prop></d:propfind>"""
+        private const val HOME_BODY = """<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><c:calendar-home-set/><c:schedule-inbox-URL/><c:schedule-default-calendar-URL/></d:prop></d:propfind>"""
+        private const val INBOX_BODY = """<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><c:schedule-default-calendar-URL/></d:prop></d:propfind>"""
         private const val CALENDARS_BODY = """<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:a="http://apple.com/ns/ical/"><d:prop><d:resourcetype/><d:displayname/><a:calendar-color/><c:supported-calendar-component-set/><d:current-user-privilege-set/></d:prop></d:propfind>"""
 
         /** The calendar-query (RFC 4791 §7.8): VEVENTs overlapping [from, to), expanded into instances. */
@@ -208,7 +217,9 @@ class CalDavClient(
 
         /** The first `href` inside the property [local] anywhere in the document's 200 propstats. */
         private fun Element.firstHref(local: String): String? = responses().firstNotNullOfOrNull { r ->
-            r.okProp()?.child(local)?.child("href")?.textContent?.trim()?.takeIf { it.isNotEmpty() }
+            val prop = r.okProp()?.child(local) ?: return@firstNotNullOfOrNull null
+            // The RFC wraps it in <href>; iCloud gives schedule-default-calendar-URL as plain text.
+            (prop.child("href")?.textContent ?: prop.textContent)?.trim()?.takeIf { it.startsWith("/") || it.startsWith("http") }
         }
     }
 }
