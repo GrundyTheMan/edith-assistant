@@ -385,6 +385,95 @@ class MultiAccountToolsTest {
         assertEquals("wt1", Json.parseToJsonElement(post.body!!.utf8()).jsonObject["message"]!!.jsonObject["threadId"]!!.jsonPrimitive.content)
     }
 
+    // --- C23: a Microsoft account next to a Google one ----------------------------------------------------------
+
+    /** "outlook" (Microsoft, Graph at /graph/v1.0) saved from an earlier run, and "personal" (Google) added now. */
+    /** When true, Graph's calendarView doesn't answer for 60 s (C23: it once took 21 s to send a 502). */
+    @Volatile private var outlookStalls = false
+
+    private fun googleAndMicrosoft() = runBlocking {
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                requests += request
+                val path = request.url.encodedPath
+                return when {
+                    path.endsWith("/oauth2/v2.0/token") -> json(com.edith.app.microsoft.MicrosoftAuthTest.tokens(access = "eyJ.outlook", refresh = "M.R3_next"))
+                    path == "/graph/v1.0/me/calendars" -> json("""{"value":[{"id":"AAMkCal","name":"Calendar","isDefaultCalendar":true,"canEdit":true}]}""")
+                    path == "/graph/v1.0/me/calendars/AAMkCal/calendarView" && outlookStalls ->
+                        MockResponse.Builder().headersDelay(60, java.util.concurrent.TimeUnit.SECONDS).code(502).body("{}").build()
+                    path == "/graph/v1.0/me/calendars/AAMkCal/calendarView" -> json(
+                        """{"value":[{"id":"ev1","subject":"Outlook lunch","start":{"dateTime":"2026-11-03T12:00:00.0000000","timeZone":"Eastern Standard Time"},"end":{"dateTime":"2026-11-03T13:00:00.0000000","timeZone":"Eastern Standard Time"}}]}""",
+                    )
+                    path == "/graph/v1.0/me/calendars/AAMkCal/events" && request.method == "POST" -> json(
+                        """{"id":"new1","subject":"Test","start":{"dateTime":"2026-11-03T15:00:00.0000000","timeZone":"Eastern Standard Time"},"end":{"dateTime":"2026-11-03T16:00:00.0000000","timeZone":"Eastern Standard Time"}}""",
+                        201,
+                    )
+                    path.endsWith("/users/me/calendarList") ->
+                        json("""{"items":[{"id":"a@gmail.com","summary":"Personal","primary":true,"selected":true,"accessRole":"owner"}]}""")
+                    path.endsWith("/calendars/a%40gmail.com/events") ->
+                        json("""{"items":[{"id":"g1","summary":"Gym","start":{"dateTime":"2026-11-03T08:00:00-05:00"},"end":{"dateTime":"2026-11-03T09:00:00-05:00"}}]}""")
+                    else -> json("{}", 404)
+                }
+            }
+        }
+        server.start()
+        val outlook = Account("m3", Provider.Microsoft, "owner@outlook.com", "outlook")
+        h = AccountsHarness(baseUrl = server.url("/").toString(), store = com.edith.app.testing.InMemoryAccountStore(listOf(outlook)))
+        h.secrets.put(com.edith.app.accounts.AccountSecrets.refreshToken("m3"), "M.R3")
+        h.accounts.load()
+        h.play.perAccount["a@gmail.com"] = GoogleAuthorizer.Result.Granted("tok-personal")
+        h.signIn.result = GoogleSignIn.Result.SignedIn("a@gmail.com", null)
+        h.accounts.addGoogle(Activity())
+        h.accounts.rename(h.accounts.accounts.value.last().first.id, "personal")
+        kotlinx.coroutines.withTimeout(5_000) { while (h.accounts.accounts.value.any { it.second != AccountState.Connected }) delay(10) }
+        requests.clear()
+    }
+
+    @Test fun `Outlook and Google events are listed together, labelled`() {
+        googleAndMicrosoft()
+        val t = turn("list_calendar_events", "start" to "2026-11-03T00:00", "end" to "2026-11-04T00:00")
+        val lines = t.result.lines().filter { it.contains("{event_id:") }
+        assertEquals(2, lines.size)
+        assertTrue(lines[0], lines[0].contains("Gym") && lines[0].contains("personal"))
+        assertTrue(lines[1], lines[1].contains("Outlook lunch") && lines[1].contains("outlook"))
+        assertTrue("Graph was asked", requests.any { it.url.encodedPath.endsWith("/calendarView") && it.headers["Authorization"] == "Bearer eyJ.outlook" })
+    }
+
+    @Test fun `Outlook not answering times out on its own - Google's events still come back`() {
+        googleAndMicrosoft()
+        outlookStalls = true
+        val started = System.nanoTime()
+        val t = turn("list_calendar_events", "start" to "2026-11-03T00:00", "end" to "2026-11-04T00:00")
+        val seconds = (System.nanoTime() - started) / 1_000_000_000
+        assertTrue("within the tool's 20 s: $seconds s", seconds < 15)
+        assertTrue(t.result, t.result.contains("Gym"))
+        assertTrue(t.result, t.result.contains("Couldn't read outlook (owner@outlook.com): it didn't answer within 10 seconds."))
+    }
+
+    @Test fun `a new event with Google and Microsoft - Edith asks, offering both, and nothing is sent`() {
+        googleAndMicrosoft()
+        val t = turn("create_calendar_event", *add)
+        assertNull(t.card)
+        assertEquals(
+            "Ask the owner which account to use: outlook (owner@outlook.com) or personal (a@gmail.com). Then call this tool again with `account`.",
+            t.result,
+        )
+        assertTrue(requests.isEmpty())
+    }
+
+    @Test fun `named, the Outlook card says so - declining sends nothing, accepting posts to Graph`() {
+        googleAndMicrosoft()
+        val declined = turn("create_calendar_event", *add, "account" to "outlook", approve = false)
+        assertEquals("Account" to "outlook (owner@outlook.com) — Calendar", declined.card!!.details.last())
+        assertTrue(writes.isEmpty())
+
+        val added = turn("create_calendar_event", *add, "account" to "outlook")
+        assertTrue(added.result, added.result.startsWith("Added \"Test\""))
+        val post = writes.single()
+        assertEquals("/graph/v1.0/me/calendars/AAMkCal/events", post.url.encodedPath)
+        assertEquals("Bearer eyJ.outlook", post.headers["Authorization"])
+    }
+
     // --- Gmail's query (C22 §3) -----------------------------------------------------------------------------------
 
     @Test fun `each search field becomes Gmail's syntax, with exact local days`() {

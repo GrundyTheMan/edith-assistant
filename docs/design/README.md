@@ -52,7 +52,7 @@ design in the same PR, or ask the owner.
 | [C20](chunks/C20-smart-home-architecture.md) | Smart home architecture (**v2, design only**) | 6 Deferred | C08, C17 | Done (D10: direct from the phone; v2 split into C25–C31) |
 | [C21](chunks/C21-smart-home-service-notes.md) | Smart home service notes (**v2 research**) | 6 Deferred | — | Done (services checked 2026-11-12) |
 | [C22](chunks/C22-several-accounts.md) | Several accounts: the account model, and several Google accounts (D17) | 7 Accounts | C17, C17b, C18, C19 | Done (iPhone check pending) |
-| [C23](chunks/C23-microsoft-account.md) | Microsoft account: Outlook mail and calendar | 7 | C22 | Design |
+| [C23](chunks/C23-microsoft-account.md) | Microsoft account: Outlook mail and calendar | 7 | C22 | Done (iPhone check pending) |
 | [C24](chunks/C24-icloud-account.md) | iCloud account: iCloud Mail and Calendar | 7 | C22 | Design |
 | [C25](chunks/C25-home-core.md) | Smart home core: device model, tools, Home tab, command log (fake backend) | 8 Smart home (v2) | C08, C14, C22 | Design |
 | [C26](chunks/C26-meross-garage.md) | Meross garage door opener | 8 | C25 | Design |
@@ -116,7 +116,11 @@ design in the same PR, or ask the owner.
   (`WhichAccount`): Edith asks, with no card and no request. Each Google account uses Play services (named with
   `setAccount`) or the browser; extra accounts must be test users in the Cloud project (`docs/google-setup.md` §7).
   The existing account was carried over without signing in (`AccountMigration`). `Tool.confirmation` now suspends.
-- **Next: C23 (Microsoft) and C24 (iCloud)**, each a new provider on C22's layer. Ask the owner D18 before C23.
+- **Microsoft is done (C23, D18: personal and work)**: Outlook mail and calendars through Microsoft Graph, signed in
+  through the browser like C17b (the shared `BrowserSignIn`, a `localhost` redirect on both loopback addresses), with
+  a refresh token that changes on every refresh. Setup: `docs/microsoft-setup.md` (`edith.microsoftClientId`). Graph
+  calls are cancellable, so a stalled account is cut off at 10 s; Google's calls still block (a follow-up).
+- **Next: C24 (iCloud)**, built and tested on its own branch but not verified live (the owner has no iCloud account).
 - The first release, v2.0.0-dev.1, was published on 2026-11-11; v2.0.0-dev.2 (with C17b) on 2026-11-12. Chat with Ollama works from Andarium over the
   home Wi-Fi.
 - **Smart home (v2):** D10 is decided (each service directly from the phone, 2026-11-12) and v2 is split into C25–C31

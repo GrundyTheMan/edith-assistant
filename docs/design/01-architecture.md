@@ -70,6 +70,9 @@ com.edith.app
 │   ├── tools/                  The calendar and email tools, WhichAccount (the "which account?" rule)
 │   └── ui/                     The Calendar tab (every account)
 ├── google/                     GoogleAccounts (provider), GoogleAccountAuth (per account), Calendar/Gmail clients and sources
+│   └── browser/                C17b/C23: BrowserSignIn (the one browser sign-in, any provider), OAuthProvider, BrowserOAuth,
+│                               LoopbackReceiver (127.0.0.1, or both loopback addresses for `localhost`), BrowserGoogle
+├── microsoft/                  C23: MicrosoftAccounts (provider), MicrosoftAccountAuth (per account), GraphClient, Outlook sources
 └── ui/
     ├── theme/                  EdithTheme (light/dark), colors, typography
     └── navigation/             EdithNavHost, Destinations, bottom bar
@@ -239,11 +242,12 @@ Long work uses injected `AppDispatchers.io/default`.
 - `android:allowBackup="false"`; `dataExtractionRules`/`fullBackupContent` exclude everything. (v1 had
   backup on, which could have copied chat history to Google Drive.)
 - Cleartext HTTP is allowed (Ollama on the LAN speaks plain HTTP) via `network_security_config.xml`
-  `base-config cleartextTrafficPermitted="true"`. All other traffic (Open-Meteo, search, Google) is
-  HTTPS. Document the trade-off in the PR that adds it (C03).
+  `base-config cleartextTrafficPermitted="true"`. All other traffic (Open-Meteo, search, Google, Microsoft) is
+  HTTPS; only the sign-in's loopback redirect (`127.0.0.1` or `localhost`, never the network) is plain HTTP. Document the trade-off in the PR that adds it (C03).
 - `SecretStore`: AES/GCM key in Android Keystore (`KeyGenParameterSpec`, non-exportable); ciphertext +
   IV stored in DataStore. Used for search API keys, the wake-word key, and per account (C22) `account/<id>/refresh_token`
-  (a Google account signed in through the browser, D16; Microsoft C23) and `account/<id>/password` (iCloud, C24), plus
+  (a Google account signed in through the browser, D16; a Microsoft account, C23, whose refresh token changes on every
+  refresh and is saved before it's used) and `account/<id>/password` (iCloud, C24), plus
   the one pending browser sign-in (`pending_sign_in`). An account's id is random, never its address. A Google account
   on Play services stores no token (`AuthorizationClient` keeps it in Google Play services).
 - Permissions are requested only at the moment of use, with a one-line reason: microphone (record,

@@ -81,6 +81,8 @@ data class OutgoingMail(
     val body: String,
     val inReplyTo: String? = null,
     val threadId: String? = null,
+    /** The provider's own id of the email being replied to (Outlook's `createReply`, C23 §3). */
+    val replyToId: String? = null,
 )
 
 /**

@@ -21,20 +21,27 @@ import java.util.Collections
 import kotlin.time.Duration
 
 /**
- * Where Google's sign-in page sends the browser back (C17b §1): a one-shot HTTP listener on 127.0.0.1 only, never
- * on the network. The first request carrying `code=` or `error=` is the answer; anything else (a favicon) gets a 404.
- * Request lines are never logged: the code in them is a credential.
+ * Where a provider's sign-in page sends the browser back (C17b §1): a one-shot HTTP listener on the loopback address
+ * only, never on the network. Google's redirect names 127.0.0.1. Microsoft's names `localhost` (C23 §1), which Chrome
+ * may try on `::1` first, so that listener takes both loopback addresses on one port. The first request carrying
+ * `code=` or `error=` is the answer; anything else (a favicon) gets a 404. Request lines are never logged: the code in
+ * them is a credential.
  */
 class LoopbackReceiver private constructor(
-    private val server: ServerSocket,
+    private val servers: List<ServerSocket>,
     private val io: CoroutineDispatcher,
     /** The **Back to Edith** link on the page: `${applicationId}://signed-in`. It only brings Edith forward. */
     private val backLink: String,
+    /** The host in [redirectUri]: `127.0.0.1` (Google) or `localhost` (Microsoft). */
+    private val host: String,
 ) : Closeable {
-    val port: Int get() = server.localPort
+    val port: Int get() = servers.first().localPort
 
     /** The `redirect_uri` for this listener. */
-    val redirectUri: String get() = "http://127.0.0.1:$port"
+    val redirectUri: String get() = "http://$host:$port"
+
+    /** How many loopback addresses it listens on (2 when `::1` is there too). */
+    internal val addressCount: Int get() = servers.size
 
     private val clients: MutableSet<Socket> = Collections.synchronizedSet(mutableSetOf())
 
@@ -48,24 +55,26 @@ class LoopbackReceiver private constructor(
             withTimeoutOrNull(timeout) {
                 coroutineScope {
                     val answer = CompletableDeferred<String>()
-                    launch {
-                        server.soTimeout = ACCEPT_POLL_MS   // so the loop notices cancellation
-                        while (isActive && !answer.isCompleted) {
-                            val socket = try {
-                                server.accept()
-                            } catch (e: SocketTimeoutException) {
-                                continue
-                            } catch (e: IOException) {
-                                break   // closed
+                    for (server in servers) {
+                        launch {
+                            server.soTimeout = ACCEPT_POLL_MS   // so the loop notices cancellation
+                            while (isActive && !answer.isCompleted) {
+                                val socket = try {
+                                    server.accept()
+                                } catch (e: SocketTimeoutException) {
+                                    continue
+                                } catch (e: IOException) {
+                                    break   // closed
+                                }
+                                clients += socket
+                                launch { serve(socket, answer) }
                             }
-                            clients += socket
-                            launch { serve(socket, answer) }
                         }
                     }
                     try {
                         answer.await()
                     } finally {
-                        close()   // unblocks the accept loop and any connection still reading
+                        close()   // unblocks the accept loops and any connection still reading
                     }
                 }
             }
@@ -75,7 +84,7 @@ class LoopbackReceiver private constructor(
     }
 
     override fun close() {
-        runCatching { server.close() }
+        servers.forEach { runCatching { it.close() } }
         synchronized(clients) { clients.forEach { runCatching { it.close() } }; clients.clear() }
     }
 
@@ -90,7 +99,7 @@ class LoopbackReceiver private constructor(
                     val page = page(signedIn = url.queryParameter("code") != null)
                     out.write(response("200 OK", "text/html; charset=utf-8", page))
                     out.flush()
-                    Log.d(LogTag.Google, "Browser sign-in: the redirect arrived")
+                    Log.d(LogTag.Accounts, "Browser sign-in: the redirect arrived")
                     answer.complete("$redirectUri$target")
                 } else {
                     out.write(response("404 Not Found", "text/plain; charset=utf-8", "Not found"))
@@ -138,9 +147,34 @@ class LoopbackReceiver private constructor(
         private const val ACCEPT_POLL_MS = 250
         private const val READ_TIMEOUT_MS = 10_000
         private const val MAX_REQUEST_BYTES = 8 * 1024
+        private const val PORT_TRIES = 5
 
         /** Opens a listener on 127.0.0.1 at [port] (0: the OS picks one). Throws [IOException] if it can't. */
         fun open(io: CoroutineDispatcher, backLink: String, port: Int = 0): LoopbackReceiver =
-            LoopbackReceiver(ServerSocket(port, 8, InetAddress.getByName("127.0.0.1")), io, backLink)
+            LoopbackReceiver(listOf(ServerSocket(port, 8, InetAddress.getByName("127.0.0.1"))), io, backLink, "127.0.0.1")
+
+        /**
+         * Opens a listener for a `http://localhost:<port>` redirect (C23 §1): on 127.0.0.1 and on `::1`, the same port.
+         * With [port] 0 it tries a few ports the OS picks until `::1` can take the same one. Without IPv6 loopback it
+         * listens on 127.0.0.1 alone, which is then all Chrome can reach anyway. Throws [IOException] if 127.0.0.1
+         * can't be opened.
+         */
+        fun openLocalhost(io: CoroutineDispatcher, backLink: String, port: Int = 0): LoopbackReceiver {
+            val v4Address = InetAddress.getByName("127.0.0.1")
+            val v6Address = runCatching { InetAddress.getByName("::1") }.getOrNull()
+            var fallback: ServerSocket? = null
+            for (attempt in 1..(if (port == 0 && v6Address != null) PORT_TRIES else 1)) {
+                val v4 = ServerSocket(port, 8, v4Address)
+                val v6 = v6Address?.let { a -> runCatching { ServerSocket(v4.localPort, 8, a) }.getOrNull() }
+                if (v6 != null) {
+                    fallback?.let { runCatching { it.close() } }
+                    return LoopbackReceiver(listOf(v4, v6), io, backLink, "localhost")
+                }
+                fallback?.let { runCatching { it.close() } }
+                fallback = v4
+            }
+            Log.w(LogTag.Accounts, "Browser sign-in: listening on 127.0.0.1 only (::1 wasn't available)")
+            return LoopbackReceiver(listOf(requireNotNull(fallback)), io, backLink, "localhost")
+        }
     }
 }

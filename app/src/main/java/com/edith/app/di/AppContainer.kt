@@ -74,6 +74,9 @@ import com.edith.app.attachments.Retention
 import com.edith.app.google.CredentialManagerSignIn
 import com.edith.app.google.browser.BrowserGoogle
 import com.edith.app.google.browser.BrowserOAuth
+import com.edith.app.google.browser.BrowserSignIn
+import com.edith.app.microsoft.MicrosoftAccounts
+import com.edith.app.microsoft.MicrosoftOAuth
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
 import com.edith.app.google.PlayServicesAuthorizer
@@ -258,6 +261,27 @@ class AppContainer(val app: Application) {
      * stored by the app; without it (C17b, D16) each account's browser sign-in keeps a refresh token, encrypted in
      * [secretStore].
      */
+    /**
+     * The browser sign-in, one at a time for the whole app (C17b; Google and Microsoft since C23): the pending sign-in
+     * survives Edith being killed, and a code that arrives off screen waits for her (L36).
+     */
+    val browserSignIn: BrowserSignIn by lazy {
+        BrowserSignIn(secretStore, clock, dispatchers, backLink = "${BuildConfig.APPLICATION_ID}://signed-in", appVisible = AppVisibility.visible)
+    }
+
+    /** Microsoft as an account provider (C23, D18): Outlook mail and calendars through Graph. */
+    val microsoftAccounts: MicrosoftAccounts by lazy {
+        MicrosoftAccounts(
+            oauth = BrowserOAuth(okHttpLazy, dispatchers, MicrosoftOAuth.provider(BuildConfig.MICROSOFT_CLIENT_ID)),
+            signInFlow = browserSignIn,
+            secrets = secretStore,
+            http = okHttpLazy,
+            dispatchers = dispatchers,
+            clock = clock,
+            windowsZone = { zone -> android.icu.util.TimeZone.getWindowsID(zone.id) },
+        )
+    }
+
     val googleAccounts: GoogleAccounts by lazy {
         val browser = BrowserGoogle(
             oauth = BrowserOAuth(okHttpLazy, dispatchers, BuildConfig.GOOGLE_DESKTOP_CLIENT_ID, BuildConfig.GOOGLE_DESKTOP_CLIENT_SECRET),
@@ -266,6 +290,7 @@ class AppContainer(val app: Application) {
             dispatchers = dispatchers,
             backLink = "${BuildConfig.APPLICATION_ID}://signed-in",
             appVisible = AppVisibility.visible,
+            signInFlow = browserSignIn,
         )
         GoogleAccounts(
             play = CredentialManagerSignIn(app),
@@ -282,7 +307,7 @@ class AppContainer(val app: Application) {
     }
 
     /** Every email-and-calendar account (C22, D17), saved in the `settings` file under `accounts`. */
-    val accounts: Accounts by lazy { Accounts(DataStoreAccountStore(settingsStore.store), googleAccounts, appScope) }
+    val accounts: Accounts by lazy { Accounts(DataStoreAccountStore(settingsStore.store), googleAccounts, appScope, microsoftAccounts) }
 
     /** Short handles for listed events (`e1`) and found emails (`m1`): one sequence each for the app run (C22 trap 4). */
     val calendarHandles: CalendarHandles by lazy { CalendarHandles() }

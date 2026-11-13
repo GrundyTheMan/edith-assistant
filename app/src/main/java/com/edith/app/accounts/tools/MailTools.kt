@@ -193,7 +193,7 @@ private abstract class WriteEmailTool(protected val dir: AccountDirectory, prote
         val to = args.string("to") ?: original?.let { replyAddress(it.from) } ?: throw ArgumentError("to", "missing to")
         if ('@' !in to) throw ArgumentError("to", "to must be an email address")
         val subject = args.string("subject") ?: original?.subject?.let { if (it.startsWith("Re:", ignoreCase = true)) it else "Re: $it" } ?: ""
-        return Prepared.Ready(entry, OutgoingMail(to, subject, requireNotNull(args.string("body")), original?.messageIdHeader, original?.threadId))
+        return Prepared.Ready(entry, OutgoingMail(to, subject, requireNotNull(args.string("body")), original?.messageIdHeader, original?.threadId, original?.id))
     }
 
     /** The card names the account first, then shows the whole message, never a preview (D5). */
