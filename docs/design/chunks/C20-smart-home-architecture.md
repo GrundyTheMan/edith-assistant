@@ -74,3 +74,22 @@ a lock/garage section with explicit buttons. Edith's chat answers can include a 
 
 ## Acceptance for this chunk (design only)
 - [ ] Owner has reviewed sections 1–5 and decided D10 (record in 06-decisions) before any v2 chunk is written.
+
+## Decided (2026-11-12)
+- **D10 = C, directly from the phone** (06-decisions): no Jarvis bridge, no Home Assistant (the owner won't run it),
+  and the home must work whether or not the PC is on. Each service gets its own `HomeBackend` in Kotlin.
+- **Never by voice alone:** unlocking a door and opening the garage (§5, as recommended). Thermostat changes and
+  closing the garage keep §2's cards and can be confirmed by voice in hands-free.
+- **The owner's devices:** Honeywell/Resideo thermostat, Meross garage door opener, August and Philips locks, and
+  Alexa devices, Ring and Blink (C21).
+- **What option C means:** no Node libraries can be reused. Jarvis's approaches (alexa-remote2, ring-client-api,
+  blinkpy's flow) are references only; each service's sign-in, token refresh (Ring's rotating refresh token, C21)
+  and API is written and maintained in Kotlin. Services without an official API can break at any time, so each
+  backend is its own chunk and fails on its own (one broken service never stops the others).
+
+## Before any v2 chunk is written
+1. Verify each service's current access against official sources (C21's *(verify)* items), plus Meross and the
+   Philips lock, which C21 doesn't cover yet. Record per service: official API or not, sign-in, what's possible
+   (state, control, snapshots, events), terms that forbid it.
+2. From that, split v2 into chunks (likely: the `home/` core with the device model, tools and Home tab; then one
+   chunk per service, most reliable first) and add them to the design README's table.
