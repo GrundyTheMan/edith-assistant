@@ -121,7 +121,9 @@ class AccountsHarness(
         oauth = BrowserOAuth(lazy { OkHttpClient() }, dispatchers, MicrosoftOAuth.provider(microsoftClientId, loginBase = url("/ms"))),
         signInFlow = signInFlow,
         secrets = secrets,
-        http = lazy { OkHttpClient() },
+        // The app reads for up to 180 s (AppContainer), so its 10 s per-account timeout always wins; OkHttp's default
+        // 10 s would race it.
+        http = lazy { OkHttpClient.Builder().readTimeout(180, java.util.concurrent.TimeUnit.SECONDS).build() },
         dispatchers = AppDispatchersForTests.unconfined,
         clock = clock,
         zone = { zone },

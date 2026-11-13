@@ -172,3 +172,82 @@ Verify the wording against the current Entra admin center.
 ## Not in scope
 - Exchange on-premises, or mailboxes shared with the owner (`/users/{id}`).
 - Microsoft To Do, OneDrive, Teams.
+
+## As built (2026-11-13)
+
+Where the code differs from the specification above, the code is right. D18 = **personal and work** (tenant
+`common`), recorded in 06-decisions.
+
+**Files**
+- `google/browser/OAuthProvider.kt` (new): one provider's endpoints, client, scopes, extra sign-in parameters, the
+  id_token claims for the address, and whether the redirect is `localhost`. `BrowserOAuth` takes one (Google keeps its
+  old constructor, so C17b's code and tests are unchanged). Microsoft's `AADSTS65001` → `ConsentRequired`; an admin
+  code in a redirect's `error_description` → `Redirect.AdminApproval`.
+- `google/browser/BrowserSignIn.kt` (new): the browser sign-in itself, taken out of `BrowserGoogle` and shared by every
+  provider: one at a time for the app, the pending sign-in (`pending_sign_in` with `provider`), the paste fallback and
+  the `AppVisibility` hold. `BrowserGoogle` keeps Google's words and its per-account tokens. `Accounts.resumePending`
+  resumes whichever provider's sign-in was pending. The three files stay in `google/browser/` (moving them would only
+  rename).
+- `LoopbackReceiver.openLocalhost`: 127.0.0.1 and `::1` on the same port (it tries a few ports the OS picks until `::1`
+  can take the same one; without IPv6 loopback, 127.0.0.1 alone). Google's listener stays on 127.0.0.1.
+- `microsoft/`: `MicrosoftOAuth` (the provider), `MicrosoftAccountAuth` (one account's access), `GraphClient`,
+  `OutlookCalendarSource`/`OutlookMailSource` (`OutlookSources.kt`), `MicrosoftAccounts` and `MicrosoftConnection`.
+- `debug/DebugMicrosoftReceiver.kt` (debug builds only): a few timed Graph requests per Microsoft account, logging the
+  status, Graph's error code, its `request-id` and the time, never the token or content:
+  `adb shell am broadcast -n com.edith.app.debug/com.edith.app.debug.DebugMicrosoftReceiver`.
+- Settings → Accounts: **Microsoft** in Add account ("Not set up (see docs/microsoft-setup.md)" without
+  `edith.microsoftClientId`); the waiting dialog names the provider and the `localhost` address to paste; Disconnect
+  links to account.live.com/consent/Manage and myapplications.microsoft.com.
+- `OutgoingMail.replyToId` (new): the provider's own id of the email replied to (Outlook's `createReply`).
+
+**Decisions made while building**
+- **Rotating refresh tokens:** every refresh's new token is saved before the access token is used (trap 1); a check
+  right after signing in uses the sign-in's own access token, with no refresh.
+- **Graph time zones:** Graph takes Windows zone names and only some IANA names, so Edith asks for times in the
+  device's zone by its Windows name (Android's ICU) and reads each `dateTime` in the zone its answer names; without a
+  Windows name she asks for UTC and converts. All-day events use their dates only. Writes use the same zone.
+- **Mail search:** words go in `$search` (KQL); unread and dates in `$filter` with `receivedDateTime` first (Graph's
+  rule for `$orderby`). Graph won't combine `$search` with `$filter`/`$orderby`, so with words the conditions are
+  checked on the phone on a 50-message page. Calendar text is matched on the phone (subject and location).
+- **Cancellable Graph calls (a fix found live):** Graph once took 21–30 s to answer a request with 502. The calls were
+  blocking, so C22's 10 s per-account timeout couldn't stop them, and one stalled account made the whole tool time
+  out (20 s), hiding Google's events. Graph calls are now enqueued and cancelled with the coroutine, so a stalled
+  Outlook is cut off at 10 s and named, while the other accounts' results still come back. **Google's clients still
+  block the same way** (a follow-up for C22's code).
+- **429:** waits `Retry-After` once when it's 10 s or less; otherwise a plain "busy" message.
+- **Errors** reuse `AppError.GoogleAuth` for account sign-in problems (the tools show only its detail). An outside
+  agent's duplicate `MicrosoftAccountAuth.kt` with a new `AppError.MicrosoftAuth` was dropped at the owner's request.
+
+**Verified**
+- `scripts/check.sh`: OK (`build-logs/2026-11-13_10-24-45_check.log`), 313 unit tests; lint: no new warnings (the 2
+  `ExifInterface` ones are C15's). The run before it (`build-logs/2026-11-13_10-22-13_check.log`) failed once: the
+  stalled-Outlook test raced OkHttp's default 10 s read timeout in the test harness against the 10 s per-account
+  limit. The app reads for up to 180 s, so the harness's Microsoft client now does too; two forced reruns passed.
+- Unit tests (`MicrosoftAuthTest` 13, `OutlookSourcesTest` 13, `LocalhostLoopbackTest` 3, and in
+  `MultiAccountToolsTest`: Google and Microsoft labelled together, "which account?" offering both, declining sends
+  nothing, a stalled Outlook timing out alone). Google's C17b/C22 tests pass unchanged.
+- **Live on `Pixel_9_API_37` (debug), with the owner's Hotmail account:**
+  - 2026-11-12: Add account → Microsoft → Chrome → sign-in → the code arrived on the loopback while Chrome was in
+    front, Edith waited until she was on screen (L36), **Connected**. Then every Graph request, even `GET /me`, got
+    502/504 `UnknownError` after 21–30 s (Microsoft's side: request-ids logged); the owner paused C23.
+  - 2026-11-13: the probe got HTTP 200 for every request (the first inbox read took 27.6 s, then all under 0.8 s).
+    - "What is on my calendar this week?" → `list_calendar_events` → the Outlook event, labelled with the account.
+    - "Any unread email today in my Hotmail account?" → `search_email` with `account` → today's unread Outlook mail.
+    - "Add a test event called Edith C23 test tomorrow at 3pm" → Edith asked which account, no card → "The Hotmail
+      one" → card "Account: … — Calendar" → Add → **in Outlook** (owner checked). "Delete the Edith C23 test event"
+      → found at 3:00–4:00 PM → card → Delete → **gone from Outlook**.
+    - Reply draft: Edith first claimed she had drafted it **without calling the tool** (nothing was saved; a model
+      slip like L26, with `gemma4:12b`). Asked again, the card (To, "Re: New app(s) connected…", "Thanks") → Save
+      draft → in Outlook's Drafts with **only "Thanks"**, no quoted original (owner checked).
+    - A restart: the account refreshed its token quietly and was Connected again.
+    - Disconnect: the dialog showed both links; the account and its token were removed; Google stayed.
+  - No crash from Edith.
+- `scripts/check.sh --device`: OK (112 tests, `build-logs/2026-11-13_10-26-16_check.log`).
+- **Release APK on `Edith_Release_Test`** (R8, `build-logs/2026-11-13_10-28-04_gradle_app-assembleRelease.log`, not
+  published; 33.95 MB, about 135 KB more than v2.0.0-dev.2): installed over the earlier test build; the Google account
+  carried over. Add account → Microsoft → Connected; the Outlook calendar and today's unread Hotmail mail came
+  through; after a force-stop it reconnected quietly. No crash.
+
+**Not verified yet**
+- Andarium on the owner's iPhone (needs the next published build).
+- A work or school account (admin approval), 90 idle days, a changed password.
