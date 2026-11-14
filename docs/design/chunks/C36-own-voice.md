@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 3 — Voice (added 2026-11-14) |
-| Status | **Built** (PR for C36); the check in Andarium on the owner's iPhone is the owner's, see As built |
+| Status | **Built and released** as v2.0.0-dev.5 (PR 53, versionCode in PR 54); the check in Andarium on the owner's iPhone is the owner's, see As built |
 | Depends on | C13 (`TtsEngine`, `SpeechOutput`), C14 (hands-free reads `speakingMessageId`; ONNX Runtime is already shipped), C17b (`AppVisibility`) |
 | Unblocks | Spoken replies and hands-free answers in Andarium on the owner's iPhone |
 | Size | Large (a native library, a model download, audio playback, Settings) |
@@ -310,10 +310,18 @@ especially that `onDone` means heard (trap 3).
 - **No network for speech:** with the emulator in airplane mode (`ping`: "Network is unreachable") a stored reply was
   generated and played normally. Only `VoiceDownloader` touches the network.
 
+### The release (v2.0.0-dev.5, 2026-11-14)
+- Published from `master` at `8962ef9` (versionCode 5): `dist/Edith-2.0.0-dev.5.apk`, 53,447,865 bytes (51 MB), signed with the
+  release key (certificate SHA-256 `a559fd3a…afc0` as `release.sh` expects); GitHub pre-release `v2.0.0-dev.5`.
+  Build log `build-logs/2026-11-14_11-00-19_release.log` (the dev.5 build; `scripts/release.sh` also ran `fetch-sherpa.sh`).
+- The runbook's checks on `Edith_Release_Test` (x86_64): hands-free on for 20 s, crash log empty; a chat with a tool call
+  (`get_current_time -> ok`, answer shown); browser sign-in reached Google's "Choose an account to continue to Edith" screen
+  (nothing selected); and **that reply, streamed live from Ollama, was spoken sentence by sentence in Edith's own voice
+  with hands-free on, no crash** ("Speech started 1841 ms after the reply's first text, 847 ms after its first sentence
+  was ready", the first sentence including the model load). That settles the "streamed reply" item the first version of
+  this section listed as not verified.
+
 ### Not verified, and why
-- **A streamed reply from Ollama, spoken as it streams:** the owner's 12B model timed out ("Edith took too long to answer",
-  as it had before this change), so I could not stream one. The streaming path is C13's `SpeechOutput`, unchanged; the
-  same sentence-by-sentence pipeline was exercised through Play.
 - **Hands-free "doesn't hear herself" with a real microphone:** not checked (like C14, it still needs a real-mic check;
   the emulator's mic can't say "Hey Edith"). `onDone` is tied to the speaker's play position, which is what hands-free
   needs, and `HandsFree` is unchanged.
