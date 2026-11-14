@@ -252,6 +252,8 @@ Where the code differs from the specification above, the code is right.
 
 **Verified:** `scripts/check.sh` (389 unit tests, 45 of them new) and `scripts/check.sh --device` (117 Compose UI tests on `Pixel_9_API_37`, including `TodoScreenTest`). Live on `Pixel_9_API_37` (debug build, one Google account via Play services): Grant access for to-dos (Google's consent screen, Tasks scope alone) after the calendar kept working; "What's on my to-do list?" matched the To-do view; add for tomorrow (card said Sat Nov 14, Google stored Nov 14); tick off and delete each behind a card; the To-do view's tick box, Show done and Undo; `suggest_task_order` with reasons and no change in Google; `apply_task_order` (card with old and new order, then Google Tasks reordered). On `Edith_Release_Test`: the release APK installed over the previous release without a crash or sign-in, and the account showed the "to-dos need your permission" banner, as designed.
 
-**Not verified yet:** the "ask which account" path with two accounts live (unit-tested only; the emulator has one Google account), the release APK after Grant access, the iPhone check in Andarium (browser accounts: Grant access through Chrome).
+**Two accounts (2026-11-14, `Pixel_9_API_37`, owner.one and owner.two both Google):** the To-do view labelled each list by account; `add_task` with no account named answered "Ask the owner which account to use", showed no card and wrote nothing; the second account's to-dos needed **Grant access** once, after which its list appeared.
+
+**Not verified yet:** the release APK after Grant access, the iPhone check in Andarium (browser accounts: Grant access through Chrome).
 
 **Found while testing:** the To-do view did not show a task Edith had just added until pulled to refresh; it now reloads when opened again (`TodoViewModel.refreshIfShown`).

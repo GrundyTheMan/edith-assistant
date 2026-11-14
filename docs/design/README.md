@@ -64,7 +64,7 @@ design in the same PR, or ask the owner.
 | [C32](chunks/C32-live-view.md) | Live camera view and camera wall (Ring, Blink) | 8 | C27, C29 | Design |
 | [C33](chunks/C33-camera-alerts.md) | Camera alerts: doorbell, person, motion notifications | 8 | C27, C29 | Design |
 | [C34](chunks/C34-printer.md) | 3D printer card (Moonraker) | 8 | C25 | Design |
-| [C35](chunks/C35-google-tasks.md) | To-dos: Google Tasks, as in Jarvis (D20) | 7 Accounts | C22, C08, C03 | Built; live checks pending (see As built) |
+| [C35](chunks/C35-google-tasks.md) | To-dos: Google Tasks, as in Jarvis (D20) | 7 Accounts | C22, C08, C03 | Done (iPhone check pending) |
 
 ### State at handoff (2026-10-29)
 - `master` has the design and the C01 skeleton with its build/deploy tooling (`05-environment.md` §2, §6). Tag
@@ -128,6 +128,11 @@ design in the same PR, or ask the owner.
   for R8), CalDAV with OkHttp; iCloud expands repeating series itself. Every account has a **Default calendar**
   choice in Settings → Accounts (iCloud's server default isn't the iPhone's), and a whole repeating iCloud series
   can be deleted when the owner asks (`whole_series`).
+- **To-dos are done (C35, D20)**: Google Tasks in every Google account, eight tools (`list_tasks` … `apply_task_order`)
+  with cards, and an **Agenda | To-do** switch in the Calendar tab. The scope (`GoogleScope.Tasks`) is asked for only when
+  a Tasks call needs it, so accounts signed in before C35 keep calendar and mail and show **To-dos: Grant access**.
+  Due dates are dates only (`TaskDue`); the suggested order is Jarvis's, from the local model, saved in
+  `filesDir/task-ranks.json`. Setup: enable the Tasks API and add the `tasks` scope (`docs/google-setup.md`).
 - The first release, v2.0.0-dev.1, was published on 2026-11-11; v2.0.0-dev.2 (with C17b) on 2026-11-12. Chat with Ollama works from Andarium over the
   home Wi-Fi.
 - **Smart home (v2):** D10 is decided (each service directly from the phone, 2026-11-12) and v2 is split into C25–C34
