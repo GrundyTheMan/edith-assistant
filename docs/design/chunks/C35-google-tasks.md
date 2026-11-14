@@ -254,6 +254,6 @@ Where the code differs from the specification above, the code is right.
 
 **Two accounts (2026-11-14, `Pixel_9_API_37`, owner.one and owner.two both Google):** the To-do view labelled each list by account; `add_task` with no account named answered "Ask the owner which account to use", showed no card and wrote nothing; the second account's to-dos needed **Grant access** once, after which its list appeared.
 
-**Not verified yet:** the release APK after Grant access, the iPhone check in Andarium (browser accounts: Grant access through Chrome).
+**Release and iPhone (2026-11-14):** the signed v2.0.0-dev.4 release APK updated the previous release on `Edith_Release_Test` without a crash, and after Grant access it listed the tasks. In Andarium on the owner's iPhone (v2.0.0-dev.4, browser sign-in, Grant access through Chrome) the owner reported the to-dos working. Every acceptance criterion is checked.
 
 **Found while testing:** the To-do view did not show a task Edith had just added until pulled to refresh; it now reloads when opened again (`TodoViewModel.refreshIfShown`).
