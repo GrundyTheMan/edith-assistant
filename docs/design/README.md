@@ -65,6 +65,7 @@ design in the same PR, or ask the owner.
 | [C33](chunks/C33-camera-alerts.md) | Camera alerts: doorbell, person, motion notifications | 8 | C27, C29 | Design |
 | [C34](chunks/C34-printer.md) | 3D printer card (Moonraker) | 8 | C25 | Design |
 | [C35](chunks/C35-google-tasks.md) | To-dos: Google Tasks, as in Jarvis (D20) | 7 Accounts | C22, C08, C03 | Done |
+| [C36](chunks/C36-own-voice.md) | Edith's own voice: on-device speech for phones with no voice, such as Andarium (D21) | 3 Voice | C13, C14, C17b | Design |
 
 ### State at handoff (2026-10-29)
 - `master` has the design and the C01 skeleton with its build/deploy tooling (`05-environment.md` §2, §6). Tag
