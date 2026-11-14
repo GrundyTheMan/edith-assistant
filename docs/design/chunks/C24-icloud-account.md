@@ -212,7 +212,12 @@ changes marked **(live)** below.
 - **The SMTP login is the full address; the IMAP login is the mail name first, then the full address** (Apple's
   settings). The one that worked is saved as `Account.login`.
 - **CalDAV credentials** are added by a network interceptor, only for the CalDAV host and `*.icloud.com`, so they
-  follow Apple's redirect to the partition host and go nowhere else. The XML parser refuses DTDs.
+  follow Apple's redirect to the partition host and go nowhere else. **Only over `https`** (2026-11-14 review):
+  the first version checked the host alone, and cleartext is allowed app-wide (01-architecture §9), so an
+  `http://pNN-caldav.icloud.com/…` address named in an answer would have got the password in the clear.
+  `CalDavClient.carriesPassword` now also needs the scheme: `https` for Apple's hosts, and the stand-in server's own
+  scheme in tests (`CalDavPasswordTest`, which fails against the old rule). The mail side was already right (IMAPS,
+  and SMTP with STARTTLS required, both checking the server's identity). The XML parser refuses DTDs.
 - **The default calendar (live):** RFC 6638 names it on the **scheduling inbox** (`schedule-default-calendar-URL`),
   not the principal, and iCloud writes it as plain text rather than in `<href>`; both are handled now. iCloud's
   default for this account is "Birthday calendar" (the account's oldest calendar), not the iPhone's default, which
