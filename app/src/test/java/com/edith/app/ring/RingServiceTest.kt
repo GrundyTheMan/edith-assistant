@@ -211,12 +211,29 @@ class RingServiceTest {
         assertTrue(page.clips.isEmpty() && !page.noPlan)
     }
 
+    @Test fun `a clip's address falls back from one Ring endpoint to the other, then to the one the search listed`() = runBlocking {
+        val s = signedIn()
+        ring.devicesJson = twoCameras
+        ring.clipsJson = """{"video_search":[${clipRowJson("9", 2000, url = "https://clips.example.test/listed.mp4")}]}"""
+        s.backend.clips(0, 5000)
+        assertEquals("share/play first", "https://clips.example.test/shared.mp4", (s.backend.clipUrl("9") as Outcome.Success).value)
+        // The owner's account (2026-11-14): `recording` answered 404, so what plays is what the other endpoint gives.
+        ring.recordingUrl = null
+        assertEquals("https://clips.example.test/shared.mp4", (s.backend.clipUrl("9") as Outcome.Success).value)
+        ring.sharePlayUrl = null; ring.recordingUrl = "https://clips.example.test/video.mp4"
+        assertEquals("then the transcoded one", "https://clips.example.test/video.mp4", (s.backend.clipUrl("9") as Outcome.Success).value)
+        ring.recordingUrl = null
+        assertEquals("then the address the search listed it with", "https://clips.example.test/listed.mp4", (s.backend.clipUrl("9") as Outcome.Success).value)
+        val unknown = s.backend.clipUrl("no-such-clip") as Outcome.Failure
+        assertTrue(unknown.error.userMessage, "404" in unknown.error.userMessage)
+    }
+
     @Test fun `clips failing for every camera is a failure, and the sign-in rules still apply to the clip address`() = runBlocking {
         val s = signedIn()
         ring.devicesJson = twoCameras
         ring.overrides["/clients_api/video_search/history"] = { MockResponse.Builder().code(500).build() }
         assertTrue(s.backend.clips(0, 5000) is Outcome.Failure)
-        assertEquals("https://clips.example.test/video.mp4", (s.backend.clipUrl("9") as Outcome.Success).value)
+        assertEquals("https://clips.example.test/shared.mp4", (s.backend.clipUrl("9") as Outcome.Success).value)
         ring.validRefresh.clear(); ring.validAccess.clear()
         val later = service().also { it.load() }
         assertTrue((later.backend.clipUrl("9") as Outcome.Failure).error.userMessage.contains("signing in again"))
