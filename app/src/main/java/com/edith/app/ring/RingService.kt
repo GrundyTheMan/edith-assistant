@@ -7,6 +7,8 @@ import com.edith.app.core.log.LogTag
 import com.edith.app.core.secrets.SecretStore
 import com.edith.app.core.time.Clock
 import com.edith.app.home.Capability
+import com.edith.app.home.ClipsPage
+import com.edith.app.home.DeviceClip
 import com.edith.app.home.DeviceCommand
 import com.edith.app.home.DeviceEvent
 import com.edith.app.home.DeviceState
@@ -255,6 +257,29 @@ class RingService(
             }
             return authed { t, h -> api.events(t, h, camera, sinceMs) }
         }
+
+        override val hasClips: Boolean get() = true
+
+        override suspend fun clips(sinceMs: Long, untilMs: Long): Outcome<ClipsPage> {
+            val list = when (val l = listCameras()) {
+                is Outcome.Failure -> return l
+                is Outcome.Success -> l.value
+            }
+            val rows = mutableListOf<RingClipRow>(); var firstFailure: Outcome.Failure? = null; var answered = 0
+            for (camera in list) {
+                when (val r = authed { t, h -> api.clips(t, h, camera, sinceMs, untilMs) }) {
+                    is Outcome.Success -> { answered++; rows += r.value }
+                    is Outcome.Failure -> if (firstFailure == null) firstFailure = r
+                }
+            }
+            if (answered == 0 && firstFailure != null) return firstFailure
+            // Whether the account has a plan isn't asked of Ring: it shows in the search (every recent event without one).
+            val noPlan = rows.isNotEmpty() && rows.none { it.hadPlan }
+            val clips = if (noPlan) emptyList() else rows.filter { it.hadPlan }.map { DeviceClip(it.id, ID, it.cameraName, it.at, it.kind, it.seconds) }
+            return Outcome.Success(ClipsPage(clips.sortedByDescending { it.at }, noPlan))
+        }
+
+        override suspend fun clipUrl(clipId: String): Outcome<String> = authed { t, h -> api.clipUrl(t, h, clipId) }
     }
 
     @Serializable

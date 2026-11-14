@@ -188,6 +188,44 @@ class RingApi(
         }
     }
 
+    /**
+     * The clips Ring recorded for [camera] between [sinceMs] and [untilMs] (`video_search/history`). Ring keeps clips
+     * only with a Ring Protect plan; without one the search still lists the events, with `had_subscription` false.
+     */
+    suspend fun clips(accessToken: String, hardwareId: String, camera: RingCamera, sinceMs: Long, untilMs: Long): RingReply<List<RingClipRow>> {
+        val url = "${endpoints.clients}/video_search/history".toHttpUrl().newBuilder()
+            .addQueryParameter("doorbot_id", camera.id).addQueryParameter("date_from", sinceMs.toString())
+            .addQueryParameter("date_to", untilMs.toString()).addQueryParameter("order", "desc")
+            .addQueryParameter("api_version", API_VERSION.toString()).addQueryParameter("includes[]", "pva").build()
+        return get(url.toString(), accessToken, hardwareId, "the clips") { text ->
+            val root = json.parseToJsonElement(text) as? JsonObject ?: throw SerializationException("not an object")
+            root.array("video_search").mapNotNull { clipRow(it, camera) }
+        }
+    }
+
+    /** A signed address to stream clip [dingId] from (`dings/{id}/recording`, the transcoded video). It expires, so it is asked for at play time. */
+    suspend fun clipUrl(accessToken: String, hardwareId: String, dingId: String): RingReply<String> =
+        get("${endpoints.clients}/dings/$dingId/recording?disable_redirect=true", accessToken, hardwareId, "the clip") { text ->
+            (json.parseToJsonElement(text) as? JsonObject)?.text("url")?.takeIf { it.startsWith("https://") } ?: throw SerializationException("no address")
+        }
+
+    internal fun clipRow(e: JsonElement, camera: RingCamera): RingClipRow? {
+        val d = e.obj() ?: return null
+        val id = d["ding_id"].idText() ?: return null
+        val at = (d["created_at"] as? JsonPrimitive)?.let { it.longOrNull ?: it.contentOrNull?.let { s -> runCatching { Instant.parse(s).toEpochMilli() }.getOrNull() } } ?: return null
+        val cv = d["cv_properties"].obj()
+        val person = (cv?.get("person_detected") as? JsonPrimitive)?.booleanOrNull == true || cv?.text("detection_type") == "human"
+        val kind = when {
+            person -> EventKind.Person
+            d.text("kind") == "ding" -> EventKind.Ring
+            d.text("kind") == "motion" -> EventKind.Motion
+            d.text("kind") == "on_demand" -> EventKind.LiveView
+            else -> EventKind.Other
+        }
+        val seconds = (d["duration"] as? JsonPrimitive)?.doubleOrNull?.toInt()
+        return RingClipRow(id, camera.name, at, kind, seconds, hadPlan = (d["had_subscription"] as? JsonPrimitive)?.booleanOrNull != false)
+    }
+
     // ---- parsing (internal: the tests use them) ----
 
     internal fun camera(e: JsonElement, doorbell: Boolean): RingCamera? {
@@ -315,3 +353,6 @@ internal suspend fun Call.await(): Response = suspendCancellableCoroutine { cont
         override fun onResponse(call: Call, response: Response) = cont.resume(response) { _, r, _ -> r.close() }
     })
 }
+
+/** One clip as Ring's video search lists it. [hadPlan]: it was recorded under a Ring Protect plan (false: nothing was kept). */
+data class RingClipRow(val id: String, val cameraName: String, val at: Long, val kind: EventKind, val seconds: Int?, val hadPlan: Boolean)

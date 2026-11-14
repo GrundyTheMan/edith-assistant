@@ -108,6 +108,19 @@ enum class EventKind(val label: String) {
 /** One thing a camera or doorbell reported, [at] ms since 1970. */
 data class DeviceEvent(val at: Long, val kind: EventKind)
 
+/** One recorded clip (C27): [backend] is filled in by [Home]; [id] is the service's own. */
+data class DeviceClip(
+    val id: String,
+    val backend: String,
+    val deviceName: String,
+    val at: Long,
+    val kind: EventKind,
+    val seconds: Int?,
+)
+
+/** A window of clips. [noPlan]: the service has recordings only with a paid plan, and this account has none (Ring Protect). */
+data class ClipsPage(val clips: List<DeviceClip>, val noPlan: Boolean = false)
+
 /**
  * One smart-home service (C20 §1): Alexa, Ring, Resideo, … Each lives in its own chunk (C26–C31) and fails on its own.
  * Every call returns an [Outcome]; a backend never throws for a service's refusal.
@@ -133,4 +146,12 @@ interface HomeBackend : Integration {
     /** What a camera or doorbell reported since [sinceMs] (ms since 1970), newest first. Only devices with [Capability.Events]. */
     suspend fun events(deviceId: String, sinceMs: Long): Outcome<List<DeviceEvent>> =
         Outcome.Failure(AppError.ToolFailed(displayName, "it doesn't report events"))
+    /** Whether this service has recorded clips to browse (Ring): the Home tab shows its Clips chip only then. */
+    val hasClips: Boolean get() = false
+    /** The clips recorded between [sinceMs] and [untilMs] (ms since 1970), newest first, from all this service's cameras. */
+    suspend fun clips(sinceMs: Long, untilMs: Long): Outcome<ClipsPage> =
+        Outcome.Failure(AppError.ToolFailed(displayName, "it has no clips"))
+    /** A fresh address the player can stream clip [clipId] from. Services sign these, and they expire, so it is asked for at play time. */
+    suspend fun clipUrl(clipId: String): Outcome<String> =
+        Outcome.Failure(AppError.ToolFailed(displayName, "it has no clips"))
 }

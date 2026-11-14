@@ -208,6 +208,31 @@ class Home(
         return withTimeoutOrNull(backend.timeoutMs ?: timeoutMs) { backend.events(device.id, sinceMs) } ?: Outcome.Failure(AppError.Timeout)
     }
 
+    /** Whether any connected service has clips to browse. */
+    val hasClips: Boolean get() = backends.value.any { it.hasClips }
+
+    /** What [clips] found: the clips (newest first), whether an account has no plan for them, and a line per service that failed. */
+    data class ClipsResult(val clips: List<DeviceClip>, val noPlan: Boolean, val problems: List<String>)
+
+    /** Clips from every connected service that has them, between [sinceMs] and [untilMs]. One service failing doesn't hide the others. */
+    suspend fun clips(sinceMs: Long, untilMs: Long): ClipsResult {
+        val clips = mutableListOf<DeviceClip>(); val problems = mutableListOf<String>(); var noPlan = false; var answered = 0
+        for (b in backends.value.filter { it.hasClips }) {
+            when (val r = withTimeoutOrNull(b.timeoutMs ?: timeoutMs) { b.clips(sinceMs, untilMs) } ?: Outcome.Failure(AppError.Timeout)) {
+                is Outcome.Success -> { answered++; clips += r.value.clips.map { it.copy(backend = b.id) }; noPlan = noPlan || r.value.noPlan }
+                is Outcome.Failure -> problems += "${b.displayName} didn't answer: ${why(r.error)}."
+            }
+        }
+        return ClipsResult(clips.sortedByDescending { it.at }, noPlan && clips.isEmpty(), problems)
+    }
+
+    /** A fresh address to play [clip] from. */
+    suspend fun clipUrl(clip: DeviceClip): Outcome<String> {
+        val backend = backends.value.firstOrNull { it.id == clip.backend }
+            ?: return Outcome.Failure(AppError.ToolFailed(clip.backend, "that service isn't connected"))
+        return withTimeoutOrNull(backend.timeoutMs ?: timeoutMs) { backend.clipUrl(clip.id) } ?: Outcome.Failure(AppError.Timeout)
+    }
+
     suspend fun setFavorite(device: HomeDevice, on: Boolean) = prefs.setFavorite(device.key, on)
     suspend fun setHidden(key: String, name: String, hidden: Boolean) = prefs.setHidden(key, name, hidden)
     suspend fun setDemo(on: Boolean) = prefs.setDemo(on)

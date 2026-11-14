@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -58,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.edith.app.home.Capability
+import com.edith.app.home.DeviceClip
 import com.edith.app.home.DeviceCommand
 import com.edith.app.home.DeviceType
 import com.edith.app.home.DoorState
@@ -82,6 +84,11 @@ data class HomeTabActions(
     val closePicture: () -> Unit = {},
     val messageShown: () -> Unit = {},
     val openSettings: () -> Unit = {},
+    val openClips: () -> Unit = {},
+    val closeClips: () -> Unit = {},
+    val moreClips: () -> Unit = {},
+    val playClip: (DeviceClip) -> Unit = {},
+    val closePlayer: () -> Unit = {},
 )
 
 @Composable
@@ -93,6 +100,7 @@ fun HomeScreen(onOpenSettings: () -> Unit, vm: HomeViewModel = viewModel(factory
             refresh = vm::refresh, chip = vm::selectChip, toggle = vm::toggle, send = vm::send, step = vm::step,
             favorite = vm::setFavorite, hide = vm::hide, snapshot = vm::snapshot, confirm = vm::confirm, dismiss = vm::dismiss,
             closePicture = vm::closePicture, messageShown = vm::messageShown, openSettings = onOpenSettings,
+            openClips = vm::openClips, closeClips = vm::closeClips, moreClips = vm::loadMoreClips, playClip = vm::play, closePlayer = vm::closePlayer,
         ),
     )
 }
@@ -118,6 +126,9 @@ fun HomeContent(ui: HomeUi, a: HomeTabActions) {
         Column(Modifier.fillMaxSize()) {
             LazyRow(Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag(CHIPS_TAG), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (ui.hasClips) item(key = "clips-chip") {
+                    AssistChip(onClick = a.openClips, label = { Text("Clips") }, modifier = Modifier.padding(end = 8.dp).testTag(CLIPS_CHIP_TAG))
+                }
                 items(HomeChip.entries) { chip ->
                     FilterChip(selected = ui.chip == chip, onClick = { a.chip(chip) }, label = { Text(chip.label) })
                 }
@@ -154,6 +165,7 @@ fun HomeContent(ui: HomeUi, a: HomeTabActions) {
     open?.let { key -> ui.view.devices.firstOrNull { it.key == key } }?.let { d -> Controls(d, ui, a) { open = null } }
     ui.pending?.let { p -> ConfirmDialog(p, a) }
     ui.picture?.let { (name, jpeg) -> PictureDialog(name, jpeg, a.closePicture) }
+    ui.clips?.let { c -> ClipsDialog(c, ui.now, a) }
 }
 
 @Composable
@@ -330,6 +342,8 @@ private fun PictureDialog(name: String, jpeg: ByteArray, onClose: () -> Unit) {
 private val FAN_SPEEDS = listOf("Low" to 33, "Medium" to 66, "High" to 100)
 
 const val CHIPS_TAG = "home-chips"
+const val CLIPS_CHIP_TAG = "home-clips-chip"
+const val CLIPS_LIST_TAG = "home-clips-list"
 const val LIST_TAG = "home-list"
 const val CONFIRM_TAG = "home-confirm"
 
