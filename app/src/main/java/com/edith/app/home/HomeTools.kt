@@ -70,7 +70,7 @@ class HomeDevicesTool(private val home: Home, private val now: () -> Long = Syst
 
     private fun stateForModel(d: HomeDevice, view: HomeView): String {
         if (!d.online) return "not responding"
-        val text = HomeActions.stateText(d).ifEmpty { "no state reported" }
+        val text = HomeActions.stateText(d).ifEmpty { "no state reported" }.let { t -> HomeActions.movedText(d.state, now())?.let { "$t, last $it" } ?: t }
         val at = d.stateAt
         return if (d.backend in view.stale && at != null) "$text (last reported ${HomeActions.age(at, now())}; no answer just now)" else text
     }

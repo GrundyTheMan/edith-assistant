@@ -31,6 +31,7 @@ angusMail = "2.0.5"  # C24: iCloud mail (IMAP/SMTP) through Jakarta Mail
 angusActivation = "2.0.3"
 jakartaMail = "2.1.5"
 greenmail = "2.1.15"  # C24: a fake IMAP/SMTP server, tests only
+pahoMqtt = "1.2.5"  # C26: Meross talks MQTT over TLS to its cloud
 
 [libraries]
 # C24: iCloud mail - Jakarta Mail through Eclipse Angus Mail (01-architecture §1); GreenMail for tests
@@ -38,6 +39,7 @@ angus-mail = { group = "org.eclipse.angus", name = "angus-mail", version.ref = "
 angus-activation = { group = "org.eclipse.angus", name = "angus-activation", version.ref = "angusActivation" }
 jakarta-mail-api = { group = "jakarta.mail", name = "jakarta.mail-api", version.ref = "jakartaMail" }
 greenmail = { group = "com.icegreen", name = "greenmail", version.ref = "greenmail" }
+paho-mqtt = { group = "org.eclipse.paho", name = "org.eclipse.paho.client.mqttv3", version.ref = "pahoMqtt" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }

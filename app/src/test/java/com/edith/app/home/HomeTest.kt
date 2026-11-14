@@ -55,7 +55,7 @@ class HomeTest {
         val v = k.home.refresh()
         assertEquals("it waits only the limit", Home.TIMEOUT_MS, testScheduler.currentTime - started)
         assertEquals(9, v.devices.size)
-        assertEquals(listOf("Ring: it didn't answer within 10 seconds."), v.problems.map { it.line })
+        assertEquals(listOf("Ring: it didn't answer in time."), v.problems.map { it.line })
     }
 
     @Test fun `a backend that stops answering keeps its last-known states, marked stale`() = runTest {

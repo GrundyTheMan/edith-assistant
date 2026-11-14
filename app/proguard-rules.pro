@@ -27,3 +27,8 @@
 -keep class com.k2fsa.sherpa.onnx.** { *; }
 # The callback object given to sherpa-onnx is called from native code by method name and signature.
 -keep class com.edith.app.voice.own.SherpaCallback { *; }
+
+# C26 (Meross): Eclipse Paho finds its TCP and TLS network modules with ServiceLoader (META-INF/services/…NetworkModuleFactory),
+# which R8 can't see: without this a release build has no "ssl" scheme and can't connect. The library is small (240 KB).
+-keep class org.eclipse.paho.client.mqttv3.** { *; }
+-dontwarn org.eclipse.paho.client.mqttv3.**
