@@ -21,3 +21,9 @@
 # which Android lacks.
 -dontwarn javax.security.sasl.**
 -dontwarn javax.security.auth.callback.**
+
+# sherpa-onnx (C36 Edith's own voice): its native library calls back into these Kotlin classes by name (config
+# classes are read field by field from JNI; GeneratedAudio is built from JNI; the TTS callback is invoked by name).
+-keep class com.k2fsa.sherpa.onnx.** { *; }
+# The callback object given to sherpa-onnx is called from native code by method name and signature.
+-keep class com.edith.app.voice.own.SherpaCallback { *; }

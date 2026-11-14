@@ -7,6 +7,7 @@
 | Unblocks | C14 |
 | Size | Medium |
 | Read first | 06-decisions A4 (phone TTS only, no network); 04-lessons L13–L15 |
+| Later | **C36** adds Edith's own voice for phones with none: `TtsEngine` has a second implementation (`SherpaTts`) and `ChoosingTts` picks between them; everything below still holds for both |
 
 ## Goal
 

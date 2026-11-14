@@ -4,6 +4,7 @@
 #   --device   also run the instrumented (Compose UI) tests on the connected emulator/phone
 source "$(dirname "$0")/lib.sh"
 start_log check "$@"
+scripts/fetch-sherpa.sh
 
 step "Build + unit tests + lint"
 gradle clean assembleDebug testDebugUnitTest lintDebug

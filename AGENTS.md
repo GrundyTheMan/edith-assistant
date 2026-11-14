@@ -8,12 +8,13 @@ history (tag `edith-v1`) — don't reuse its code.
 ## Read first
 **[`docs/design/README.md`](docs/design/README.md)** — the complete design, split into chunks (C01–C36) with
 dependencies and status. Read the shared context it lists, then take one chunk whose dependencies are merged.
-C01–C19, C17b and C22–C24 are done (phases 1–5, including Google Calendar and Gmail, Google sign-in through the browser for Andarium on the owner's iPhone, and several Google accounts at once in `accounts/` (D17); hands-free still needs a real-mic check). C23 (Microsoft Outlook mail and calendar, `microsoft/`, D18) is done too. C24 (iCloud, `icloud/`) is done too. C25 (the smart-home core, `home/`, with a Demo home in debug builds) is done too. C35 (to-dos: Google Tasks as in Jarvis, D20; `accounts/tasks/`, `google/tasks/`) is done too. C36 (Edith's own on-device voice, for Andarium, which has no text-to-speech engine; D21) is designed. The table says what's next.
+C01–C19, C17b and C22–C24 are done (phases 1–5, including Google Calendar and Gmail, Google sign-in through the browser for Andarium on the owner's iPhone, and several Google accounts at once in `accounts/` (D17); hands-free still needs a real-mic check). C23 (Microsoft Outlook mail and calendar, `microsoft/`, D18) is done too. C24 (iCloud, `icloud/`) is done too. C25 (the smart-home core, `home/`, with a Demo home in debug builds) is done too. C35 (to-dos: Google Tasks as in Jarvis, D20; `accounts/tasks/`, `google/tasks/`) is done too. C36 (Edith's own on-device voice for phones with no text-to-speech, `voice/own/`, D21) is built; its check in Andarium on the owner's iPhone is the owner's. C36 (Edith's own on-device voice, for Andarium, which has no text-to-speech engine; D21) is designed. The table says what's next.
 
 ## Build, test, run (Git Bash; from PowerShell: `& "C:\Program Files\Git\bin\bash.exe" scripts/check.sh`)
 ```bash
 scripts/check.sh            # clean build + unit tests + lint — same as CI; run before every commit
 scripts/check.sh --device   # also the Compose UI tests on the emulator
+scripts/fetch-sherpa.sh     # the sherpa-onnx library (not in Git); the scripts above run it for you
 scripts/emulator.sh         # start the Pixel_9_API_37 emulator if needed (--cold if the screen is black)
 scripts/run.sh              # build, install and launch the debug app on the emulator; fails on a crash
 ```

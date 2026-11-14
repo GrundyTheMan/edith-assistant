@@ -26,6 +26,7 @@ Pin exact versions in `gradle/libs.versions.toml` (a Gradle version catalog). Ne
 | Images | Coil 3 for display; Android `ImageDecoder` for downscaling | — | |
 | HTML → text | Jsoup | 1.17 | Web page reading tool (C10) |
 | Mail | Jakarta Mail via Eclipse Angus Mail | — | For iCloud mail (C24) |
+| Own voice | sherpa-onnx **1.13.8** (static-link-onnxruntime AAR, fetched by `scripts/fetch-sherpa.sh`) running a Piper voice; Apache Commons Compress 1.28 to unpack it | 1.13.x | C36. Not 2.x: it no longer reads Piper voices (L38) |
 | Google | Credential Manager + Google Identity `AuthorizationClient`; plain REST for Calendar/Gmail via OkHttp | — | No heavy Google API client libraries |
 | Testing | JUnit 4/5, kotlinx-coroutines-test, Turbine, OkHttp MockWebServer, Robolectric (where useful), Compose UI test | — | |
 | DI | **Manual** — one `AppContainer` (§3) | — | Transparent for any AI implementer; no annotation processing |
@@ -63,7 +64,9 @@ com.edith.app
 │   └── context/                Date/time + device location tools
 ├── voice/
 │   ├── capture/                AudioRecorder (WAV), Transcriber(s), DictationController
-│   ├── speech/                 SpeechOutput (TextToSpeech), SentenceChunker
+│   ├── speech/                 SpeechOutput (TextToSpeech), SentenceChunker, AndroidTts, ChoosingTts (C36: which voice)
+│   ├── own/                    C36 (D21): Edith's own voice: SherpaTts (sherpa-onnx, a Piper voice), SpeechSynth, AudioSink,
+│   │                           VoiceDownloader + VoiceArchive (download, check, unpack), OwnVoices (the pinned voice)
 │   └── handsfree/              HandsFreeService (foreground), WakeWordEngine, ConversationLoop
 ├── attachments/                AttachmentIntake, AttachmentStore, Retention, views
 ├── accounts/                   C22: Account, AccountStore, AccountMigration, Accounts (the integration, D17)
@@ -175,6 +178,8 @@ attachments(
 | `model` | String? | null → first installed model with `completion`+`tools`, preferring `gemma4:12b*` | C04 |
 | `speak_replies` | Boolean | `true` | C13 |
 | `speech_rate` | Float | `1.0` | C13 |
+| `speech_voice` | `auto` \| `phone` \| `own` | `auto` (the phone's voice if it has an offline one, else Edith's own) | C36 |
+| `voice_banner_dismissed` | Boolean | `false` (the Chat banner "I can't speak yet") | C36 |
 | `units` | `auto` \| `metric` \| `imperial` | `auto` (from device locale) | C09 |
 | `use_device_location` | Boolean | `false` (asks permission on first "here") | C11 |
 | `search_provider` | String | see `06-decisions.md` D3 | C10 |
@@ -258,6 +263,11 @@ Long work uses injected `AppDispatchers.io/default`.
   dictate, hands-free), location (only when the owner asks about "here"), notifications (Android 13+: the
   "Edith is replying…" notification, asked on the first Send (D13), and the hands-free foreground service).
 - Ollama has no authentication; anyone on the LAN can use it. Don't send secrets to it.
+- **Edith's own voice (C36)** is downloaded once, on the owner's tap, from the sherpa-onnx GitHub release (HTTPS, no
+  secrets involved, no account). Its URL, size and SHA-256 are pinned in `OwnVoices.kt`; the file is checked before
+  anything in it is used and unpacked defensively (no `..`, absolute paths or links; capped entries and size). It only
+  downloads while Edith is on screen (L36). Speech itself never uses the network. The native library
+  (`sherpa-onnx` 1.13.8) comes from `scripts/fetch-sherpa.sh`, checked against a pinned SHA-256.
 
 ## 10. Navigation and screens
 

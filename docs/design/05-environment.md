@@ -32,6 +32,7 @@ in C01. Run them from the repo root: `scripts/run.sh` in Git Bash, or in PowerSh
 | `scripts/check.sh --device` | the above, then the instrumented (Compose UI) tests on the connected emulator |
 | `scripts/emulator.sh [--cold]` | starts `Pixel_9_API_37` if nothing is connected and waits for boot (`--cold` ignores the snapshot) |
 | `scripts/run.sh` | emulator.sh, then build + install the debug app, launch it, fail if it crashed |
+| `scripts/fetch-sherpa.sh` | downloads the sherpa-onnx library (38 MB, not in Git) into `app/libs/` and checks its pinned SHA-256; `check.sh`, `run.sh` and `release.sh` run it first, CI too. The Gradle build stops with a message if the file is missing (C36) |
 | `scripts/release.sh` | signed release APK → `dist/Edith-<versionName>.<versionCode>.apk` (owner's PC only, §6) |
 | `scripts/publish.sh` | uploads that APK as a GitHub Release (**owner's OK required**, §6) |
 | `scripts/create-signing-key.sh` | one-time creation of the release key (already done — don't run again) |

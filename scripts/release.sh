@@ -6,6 +6,7 @@
 # --allow-dirty  build even with uncommitted changes (for testing only; never publish such a build)
 source "$(dirname "$0")/lib.sh"
 start_log release "$@"
+scripts/fetch-sherpa.sh
 
 [ -f "$KEYSTORE_PROPERTIES" ] || die "No signing key ($KEYSTORE_PROPERTIES). Release builds are made on the owner's PC only; see 05-environment.md §6."
 if [ "${1:-}" != "--allow-dirty" ] && [ -n "$(git status --porcelain)" ]; then
