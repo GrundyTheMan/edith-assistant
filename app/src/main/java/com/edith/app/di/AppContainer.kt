@@ -96,6 +96,8 @@ import com.edith.app.home.homeTools
 import com.edith.app.meross.MerossApi
 import com.edith.app.meross.MerossService
 import com.edith.app.meross.PahoMerossBus
+import com.edith.app.ring.RingApi
+import com.edith.app.ring.RingService
 import com.edith.app.microsoft.MicrosoftAccounts
 import com.edith.app.microsoft.MicrosoftOAuth
 import com.google.android.gms.common.ConnectionResult
@@ -387,12 +389,16 @@ class AppContainer(val app: Application) {
     /** Meross garage door openers (C26): the account's sign-in is kept encrypted in [secretStore]. */
     val meross: MerossService by lazy { MerossService(secretStore, MerossApi(okHttpLazy, clock), PahoMerossBus(dispatchers, clock), clock) }
 
+    /** Ring doorbells and cameras (C27): the sign-in is kept encrypted in [secretStore]. */
+    val ring: RingService by lazy { RingService(secretStore, RingApi(okHttpLazy), clock) }
+
     val home: Home by lazy {
         Home(
             DataStoreHomePrefs(settingsStore.store), homeCommandLog, appScope, clock,
             demo = if (BuildConfig.DEBUG) FakeHomeBackend(clock, DemoPicture::jpeg) else null,
         ).also { h ->
-            h.register(meross)   // C26; C27–C31 register theirs here
+            h.register(meross)   // C26
+            h.register(ring)     // C27; C28–C31 register theirs here
         }
     }
 
@@ -454,6 +460,12 @@ class AppContainer(val app: Application) {
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e(LogTag.Home, "Couldn't load the Meross sign-in", e)
+        }
+        try {
+            ring.load()   // C27: picks up the saved Ring sign-in
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.e(LogTag.Home, "Couldn't load the Ring sign-in", e)
         }
     }
 

@@ -1,5 +1,6 @@
 package com.edith.app.home
 
+import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
 import com.edith.app.tools.framework.Integration
 
@@ -99,6 +100,14 @@ sealed interface DeviceCommand {
     data object Close : DeviceCommand
 }
 
+/** What made a camera or doorbell report (C27): Ring's `ding`, motion, a person, or the owner's own live view. */
+enum class EventKind(val label: String) {
+    Ring("Someone rang the doorbell"), Motion("Motion"), Person("A person"), LiveView("Live view"), Other("Activity"),
+}
+
+/** One thing a camera or doorbell reported, [at] ms since 1970. */
+data class DeviceEvent(val at: Long, val kind: EventKind)
+
 /**
  * One smart-home service (C20 §1): Alexa, Ring, Resideo, … Each lives in its own chunk (C26–C31) and fails on its own.
  * Every call returns an [Outcome]; a backend never throws for a service's refusal.
@@ -113,10 +122,15 @@ interface HomeBackend : Integration {
     val isHub: Boolean get() = false
     /** How long a read or command may take; null: [Home]'s 10 s. A service that signs in, connects and asks (Meross) needs more. */
     val timeoutMs: Long? get() = null
+    /** How long a camera picture may take; null: [Home.SNAPSHOT_TIMEOUT_MS]. A battery camera has to wake first (Ring: 30 s). */
+    val snapshotTimeoutMs: Long? get() = null
     suspend fun devices(): Outcome<List<HomeDevice>>
     suspend fun state(deviceId: String): Outcome<DeviceState>
     /** Sends [command]; the answer is what the device reports right after, which clouds often lag. */
     suspend fun command(deviceId: String, command: DeviceCommand): Outcome<DeviceState>
     /** A JPEG from a camera. */
     suspend fun snapshot(deviceId: String): Outcome<ByteArray>
+    /** What a camera or doorbell reported since [sinceMs] (ms since 1970), newest first. Only devices with [Capability.Events]. */
+    suspend fun events(deviceId: String, sinceMs: Long): Outcome<List<DeviceEvent>> =
+        Outcome.Failure(AppError.ToolFailed(displayName, "it doesn't report events"))
 }
