@@ -42,7 +42,7 @@ class FakeMerossCloud {
     val base: String get() = server.url("/").toString().trimEnd('/')
     fun authorization(path: String): String? = requests.firstOrNull { it.url.encodedPath == path }?.headers?.get("Authorization")
 
-    fun loginOk(domain: String = base, mqtt: String = "mqtt.example.test") = """{"apiStatus":0,"data":{"token":"tok-1","key":"key-1","userid":"4242","email":"owner@example.com","domain":"$domain","mqttDomain":"$mqtt"}}"""
+    fun loginOk(domain: String = base, mqtt: String = "mqtt.example.test", token: String = "tok-1") = """{"apiStatus":0,"data":{"token":"$token","key":"key-1","userid":"4242","email":"owner@example.com","domain":"$domain","mqttDomain":"$mqtt"}}"""
     fun status(code: Int, data: String = "{}") = """{"apiStatus":$code,"data":$data}"""
     fun devList(vararg devices: String) = """{"apiStatus":0,"data":[${devices.joinToString(",")}]}"""
     fun device(uuid: String, name: String, type: String = "msg100", online: Int = 1) = """{"uuid":"$uuid","devName":"$name","deviceType":"$type","onlineStatus":$online}"""

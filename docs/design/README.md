@@ -139,8 +139,9 @@ design in the same PR, or ask the owner.
 - **Smart home (v2):** D10 is decided (each service directly from the phone, 2026-11-12) and v2 is split into C25–C34
   (the core first, then Meross, Ring, Resideo, Blink, Alexa, Philips; then live view, alerts and the printer). D19
   (2026-11-13): match Jarvis's home features; Alexa gets Jarvis's full control, which also reaches the August locks
-  (a direct August chunk is still out: Yale/August require a partner key, C21). The core (C25) is built against the
-  Demo home. The owner should apply for a Resideo developer key early (C28).
+  (a direct August chunk is still out: Yale/August require a partner key, C21). The core (C25) is done, built against the
+  Demo home, and the first real service, Meross (C26), is done and live on the owner's account (the shed door opened and
+  closed). The owner should apply for a Resideo developer key early (C28).
 - Judge tool reliability with `gemma4:12b`; `e4b` often skips tools (L26).
 - Owner decisions still open are in `06-decisions.md`. Ask early about the ones your chunk lists; the first ones
   needed are **D8** (C03).

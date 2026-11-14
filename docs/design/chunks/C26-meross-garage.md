@@ -50,8 +50,8 @@ token, key or MQTT payloads.
 - **R8:** Paho finds its TCP and TLS modules through `ServiceLoader`, which R8 removed; `app/proguard-rules.pro` now keeps the library
   (verified: the factories are in `mapping.txt` and the services file is in the release APK).
 - **Tests:** `MerossProtocolTest` (6, vectors worked out with `md5sum`), `MerossApiTest` (8, a pretend Meross that checks every `sign`),
-  `MerossServiceTest` (13), `PahoMerossBusTest` (6, the real Paho client against a scripted MQTT broker), `HomeActionsTest` (+1),
-  `ui/settings/HomeSettingsTest` (2, device). `scripts/check.sh`: 498 unit tests OK (`build-logs/2026-11-14_12-40-46_check.log`); `--device`: 123 OK
+  `MerossServiceTest` (14), `MerossToolsTest` (2), `PahoMerossBusTest` (6, the real Paho client against a scripted MQTT broker), `HomeActionsTest` (+1),
+  `ui/settings/HomeSettingsTest` (2, device). `scripts/check.sh`: 501 unit tests OK (`build-logs/2026-11-14_12-59-16_check.log`); `--device`: 123 OK
   (`build-logs/2026-11-14_12-07-26_check.log`).
 - **Live, with the owner's account, release build (R8) on `Edith_Release_Test`:** sign-in worked (no 2FA asked); the Home tab and chat
   ("Is the garage door open") read "Garage Door" (closed, "moved 17 h ago") and "Shed Door"; the first read once showed the shed door "not
@@ -59,3 +59,17 @@ token, key or MQTT payloads.
   (`Command open … ok`, `Command close … ok`), and the door moved; the saved sign-in survived a reinstall. No crash.
 - **Not tried live:** opening or closing through a chat message (the Demo home covers the card path: C25), "Sign in again" after Meross revokes
   the token, an account with 2FA, and the Garage Door's open/close (only the shed door was moved).
+
+## Decisions and follow-ups (2026-11-14, after the merge)
+- **Compared with this design:** every Specification point is built, except "LAN control at home" (marked optional-later) and the sign-in's 2FA
+  path, which is only unit-tested (the owner's account didn't ask for a code). "Library check first… ask the owner if it needs keep rules beyond the
+  usual": it did, and the broad rule `-keep class org.eclipse.paho.client.mqttv3.** { *; }` was added without asking first (about 240 KB kept);
+  the owner can have it narrowed to the two network-module factories if the size ever matters.
+- **Added after the live run:** signing in again returns the token it replaces to Meross (an account that holds too many tokens can be disabled),
+  and `MerossToolsTest` covers the whole path (tool → card → Home → Meross → command log) without a network.
+- **Owner's quick live checks still open** (nothing else blocks C26): ask Edith in chat to close or open the shed door (the Home tab was used so
+  far); Settings → Home → Disconnect, then sign in again (returns the token, then a fresh one); move the Garage Door itself once; and try it in
+  Andarium on the iPhone, which needs the next published build.
+- **Known limits:** a door that reports no `lmTime` (the shed door) shows no "moved"; a door takes 15–30 s to travel, so its tile shows Opening or
+  Closing and is checked again at 3, 10 and 30 s (C25 §6); only garage openers (`msg*`) are listed: other Meross devices (plugs, lights) are not,
+  and could become a later chunk if wanted.

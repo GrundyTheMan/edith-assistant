@@ -178,4 +178,18 @@ class MerossServiceTest {
         assertFalse("twice is enough: then it's not responding", (backend.devices() as Outcome.Success).value.single().online)
         assertEquals(2, bus.seen.size)
     }
+
+    @Test fun `signing in again returns the token it replaces, so the account doesn't pile up tokens`() = runTest {
+        signedIn()
+        cloud.answers["/v1/Auth/signIn"] = { cloud.loginOk(token = "tok-2") }
+        cloud.answers["/v1/Profile/logout"] = { cloud.status(0) }
+        assertEquals(SignInResult.Done, service.signIn(sign))
+        assertEquals("the old token went back", "Basic tok-1", cloud.authorization("/v1/Profile/logout"))
+        assertTrue("tok-2" in secrets.get(MerossService.SECRET_KEY)!! && "tok-1" !in secrets.get(MerossService.SECRET_KEY)!!)
+        // The same token again (nothing replaced) sends nothing back.
+        cloud.requests.clear()
+        cloud.answers["/v1/Auth/signIn"] = { cloud.loginOk(token = "tok-2") }
+        assertEquals(SignInResult.Done, service.signIn(sign))
+        assertTrue(cloud.requests.none { it.url.encodedPath == "/v1/Profile/logout" })
+    }
 }

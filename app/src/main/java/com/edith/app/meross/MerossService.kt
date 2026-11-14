@@ -87,8 +87,11 @@ class MerossService(
         val install = creds?.installId ?: UUID.randomUUID().toString().uppercase()
         return when (val r = api.login(email, password, code, install)) {
             is MerossLogin.Ok -> {
+                val old = creds
                 secrets.put(SECRET_KEY, json.encodeToString(Saved.serializer(), Saved.of(r.creds)))
                 creds = r.creds
+                // Meross limits how many tokens an account may hold: the one this replaces goes back (a dead one does no harm).
+                if (old != null && old.token != r.creds.token) api.logout(old)
                 _state.value = ServiceState.Connected
                 _connected.value = IntegrationStatus.Connected
                 Log.i(LogTag.Home, "Meross signed in")
