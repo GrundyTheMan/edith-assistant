@@ -49,7 +49,7 @@ class SettingsRepositoryTest {
             serverUrl = "http://192.168.4.82:11434", model = "gemma4:12b-it-q8_0", speakReplies = false,
             speechRate = 1.5f, units = Units.Imperial, searchProvider = "ollama",
             keepRecentAttachments = 0, handsFreeEnabled = true, wakeWordSensitivity = 0.8f, followUpSeconds = 12,
-            currentConversationId = 7L,
+            currentConversationId = 7L, speechVoice = SpeechVoice.Own, voiceBannerDismissed = true,
         )
         repository(file).update { changed }
         restart()

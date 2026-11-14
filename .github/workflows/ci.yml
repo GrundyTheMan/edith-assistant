@@ -29,6 +29,15 @@ jobs:
       # Caches Gradle and validates the wrapper's checksum.
       - uses: gradle/actions/setup-gradle@v6
 
+      # C36: the sherpa-onnx library isn't in Git. The cache key holds the script, which pins the version.
+      - uses: actions/cache@v6
+        with:
+          path: app/libs
+          key: sherpa-${{ hashFiles('scripts/fetch-sherpa.sh') }}
+
+      - name: Fetch the sherpa-onnx library
+        run: scripts/fetch-sherpa.sh
+
       - name: Build, unit tests, lint
         run: scripts/check.sh
 

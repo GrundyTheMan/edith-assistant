@@ -1,6 +1,11 @@
 package com.edith.app.ui.navigation
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
@@ -25,6 +30,10 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.edith.app.chat.ui.ChatScreen
 import com.edith.app.home.ui.HomeScreen
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.edith.app.ui.components.VoiceBanner
+import com.edith.app.ui.components.VoiceBannerViewModel
 import com.edith.app.ui.settings.SettingsScreen
 
 private val Destination.icon: ImageVector
@@ -71,7 +80,14 @@ fun EdithNavHost(banner: @Composable () -> Unit = {}) {
             startDestination = Destination.start.route,
             modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
         ) {
-            composable(Destination.Chat.route) { ChatScreen() }
+            composable(Destination.Chat.route) {
+                ChatWithVoiceBanner(onOpenSettings = {
+                    navController.navigate(Destination.Settings.route) {
+                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                    }
+                })
+            }
             composable(Destination.Calendar.route) {
                 CalendarScreen(onOpenSettings = {
                     navController.navigate(Destination.Settings.route) {
@@ -90,5 +106,16 @@ fun EdithNavHost(banner: @Composable () -> Unit = {}) {
             }
             composable(Destination.Settings.route) { SettingsScreen() }
         }
+    }
+}
+
+/** The Chat tab, with the "I can't speak yet" banner above it when nothing can speak (C36 §5). */
+@Composable
+private fun ChatWithVoiceBanner(onOpenSettings: () -> Unit, banner: VoiceBannerViewModel = viewModel(factory = VoiceBannerViewModel.Factory)) {
+    val showBanner by banner.visible.collectAsStateWithLifecycle()
+    Column {
+        if (showBanner) VoiceBanner(onOpenSettings = onOpenSettings, onDismiss = banner::dismiss, modifier = Modifier.statusBarsPadding())
+        // The banner sits under the status bar, so the chat's own top bar must not add that space again.
+        Box(if (showBanner) Modifier.weight(1f).consumeWindowInsets(WindowInsets.statusBars) else Modifier.weight(1f)) { ChatScreen() }
     }
 }

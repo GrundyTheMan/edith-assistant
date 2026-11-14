@@ -24,3 +24,6 @@ keystore.properties
 
 # JVM heap dumps (written when Gradle runs out of memory) — large, never commit
 *.hprof
+
+# C36: the sherpa-onnx library (35+ MB), fetched by scripts/fetch-sherpa.sh
+/app/libs/

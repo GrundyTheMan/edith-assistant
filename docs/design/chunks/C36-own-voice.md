@@ -3,6 +3,7 @@
 | | |
 |---|---|
 | Phase | 3 — Voice (added 2026-11-14) |
+| Status | **Built** (PR for C36); the check in Andarium on the owner's iPhone is the owner's, see As built |
 | Depends on | C13 (`TtsEngine`, `SpeechOutput`), C14 (hands-free reads `speakingMessageId`; ONNX Runtime is already shipped), C17b (`AppVisibility`) |
 | Unblocks | Spoken replies and hands-free answers in Andarium on the owner's iPhone |
 | Size | Large (a native library, a model download, audio playback, Settings) |
@@ -192,22 +193,24 @@ especially that `onDone` means heard (trap 3).
 - **Not testable in JVM:** the real voice under R8, covered by the spike and the acceptance list.
 
 ## Acceptance criteria
-- [ ] The owner has chosen the voice by ear, from samples. The choice and the licences are recorded in As built.
-- [ ] **Spike** done first: a release build on `Edith_Release_Test` speaks a sentence **and** the wake word still
+- [x] The owner has chosen the voice by ear, from samples. The choice and the licences are recorded in As built.
+- [x] **Spike** done first: a release build on `Edith_Release_Test` speaks a sentence **and** the wake word still
       loads with hands-free on. Cite the build log.
-- [ ] `Pixel_9_API_37`: choose Edith's own voice → Download (progress) → Test voice → a streamed reply is spoken
+- [~] `Pixel_9_API_37`: choose Edith's own voice → Download (progress) → Test voice → a streamed reply is spoken
       sentence by sentence → Stop is immediate → the speed slider changes the pace → a hands-free answer is
       spoken and she doesn't hear herself.
-- [ ] `auto` with no phone voice (with the owner's OK, disable Google's engine on the emulator with
+- [x] `auto` with no phone voice (with the owner's OK, disable Google's engine on the emulator with
       `pm disable-user`, then turn it back on afterwards) → Settings offers the download, and after it she speaks.
-- [ ] **No network for speech:** no requests while she speaks (logcat or `netstats`). Only the download uses the
+- [x] **No network for speech:** no requests while she speaks (logcat or `netstats`). Only the download uses the
       network.
-- [ ] **Speed:** from a sentence completing to the first sound is at most 1.5 s on the emulator (C13's budget). In
+- [~] **Speed:** from a sentence completing to the first sound is at most 1.5 s on the emulator (C13's budget). In
       Andarium on the iPhone, measure the real-time factor. If a 15-word sentence takes longer to generate than to
       play, use the "low" voice or a bigger buffer, and write down which.
-- [ ] `scripts/check.sh --device` passes. The release APK is tested on `Edith_Release_Test`, and then in Andarium on
+- [~] `scripts/check.sh --device` passes. The release APK is tested on `Edith_Release_Test`, and then in Andarium on
       the iPhone: download, replies spoken, hands-free answers spoken, no crash, and Edith isn't killed while
       speaking.
+
+([x] done · [~] done except what As built says is not verified · [ ] the owner's)
 
 ## Implementation notes (traps)
 1. **Prove the library first (§2).** The riskiest parts are the clash with the wake word's ONNX Runtime, and R8 with
@@ -228,3 +231,95 @@ especially that `onDone` means heard (trap 3).
 - Speech from the PC or from Ollama (not possible on Windows, L13).
 - Kokoro (too slow on phones).
 - Making hands-free *listening* work in Andarium (a separate topic, as C17b says).
+
+## As built
+
+### The voice, the library, the licences
+- **Voice (the owner's choice by ear, 2026-11-14):** `en_US-libritts_r-medium`, **speaker 0** (sample 4 of 8; sample 8 was
+  the same voice as the 23 MB int8 build, and the owner chose the full one). 22,050 Hz, a download of **82,038,311 bytes**
+  (82 MB), SHA-256 `10dc268f…1b1c` (it is also the digest GitHub shows for the release asset), **97 MB on the phone**
+  (model 78.5 MB + `espeak-ng-data`). Pinned in `voice/own/OwnVoices.kt`. libritts_r has 904 speakers; Edith uses one.
+- **Library:** sherpa-onnx **1.13.8**, `sherpa-onnx-static-link-onnxruntime-1.13.8.aar` (38,691,998 bytes, SHA-256
+  `b22c3fc1…5471`, from the GitHub release `v1.13.8`). **Not 2.x:** 2.0 removed the espeak-ng phonemizer that Piper voices
+  need (L38). ONNX Runtime is linked in statically, so the AAR adds no `libonnxruntime.so` for arm64-v8a and x86_64 and
+  can't clash with `onnxruntime-android` 1.31.0. The release APK went from 33 MB to **51 MB**.
+- **Licences** (recorded as the chunk asks; none of this is a problem while Edith stays on the owner's own devices):
+  sherpa-onnx **Apache-2.0**; ONNX Runtime **MIT**; Apache Commons Compress **Apache-2.0**; the voice: its model card
+  says the dataset is **LibriTTS-R (openslr.org/141), CC BY 4.0**, which needs attribution to the dataset's authors if
+  Edith is ever given to anyone; `espeak-ng-data` comes from **espeak-ng, GPL-3.0**. I checked the first three and the
+  model card; I did not read the voice's upstream Piper licence text beyond the model card. **Ask the owner before Edith
+  goes to anyone beyond their own devices.**
+
+### The spike (done first, on `Edith_Release_Test`, release build, R8 on)
+- Wake word (ONNX Runtime 1.31.0 through Java) and the voice (static ONNX Runtime inside `libsherpa-onnx-jni.so`) ran in
+  one process: both loaded, the wake word scored before and after speech, no crash. Voice load 463 ms. Log:
+  `build-logs/2026-11-14_09-23-56_gradle_assembleRelease.log` (the passing spike APK).
+- It found two things that would have broken the release build (L38): the 32-bit and x86 libraries inside the AAR (one is a
+  second `libonnxruntime.so`) stop the native-library merge, so `packaging` excludes them; and sherpa's native code calls
+  the audio callback by name, which R8 renamed (`NoSuchMethodError … invoke([F)Ljava/lang/Integer;`, SIGABRT), so the
+  callback is the named class `SherpaCallback` with a keep rule.
+
+### What was built
+- `voice/own/`: `SherpaTts` (the `TtsEngine`: a generator thread and a player thread; at most 3 sentences generated ahead;
+  `onStart` once the first 4,096-sample slice reaches the speaker; `onDone` only when the speaker's play position has
+  reached the end of the sentence; `stop()` bumps an epoch, drops the queues and flushes the speaker, and audio of an
+  older epoch can't reach a new one), `SpeechSynth`/`SherpaSynth`, `AudioSink`/`AudioTrackSink`, `SpeechFocus`
+  (focus exactly as `AndroidTts`), `VoiceDownloader`, `VoiceArchive`, `OwnVoices`, `SherpaCallback`.
+- `voice/speech/ChoosingTts.kt`: `chooseVoice` (the pure rule), `ChoosingTts`, the problem texts. `SpeechOutput` now takes
+  `ChoosingTts`; `AndroidTts` and `SpeechOutput` are unchanged otherwise.
+- Settings: `speech_voice` (`SpeechVoice`: auto / phone / own) and `voice_banner_dismissed`. Settings → Voice: the three
+  options, Edith's own voice's state with Download / Cancel / Delete / Try again, "Your phone has no voice. Edith can use
+  her own." with Download beside it, Test voice. Chat: the dismissible "I can't speak yet" banner above the chat.
+- `scripts/fetch-sherpa.sh` (pinned version and SHA-256; `check.sh`, `run.sh`, `release.sh` and CI run it; CI caches
+  `app/libs`), a Gradle message when the file is missing, `app/libs/` git-ignored.
+- **Unload:** the model is loaded on the first sentence (about 0.4–0.5 s) and unloaded after 2 minutes without speech unless
+  hands-free is on (`SherpaTts.unloadIfIdle`, checked every 5 s from the player thread).
+
+### Differences from the design
+- **No `SpeechNormalizer`.** I can't listen. The owner heard sample 4, which reads "53°F", "40%", "3:00 PM" and "Fri Nov 14",
+  and chose it; if any of those sounds wrong in use, the normaliser is a small change (C36 §1).
+- **A phone voice that needs the network** is treated as the phone's voice exactly as before (`AndroidTts.preferOfflineVoice`
+  only prefers an offline one); I did not make it count as unavailable, because the chunk says "as now".
+- **Cancel** in the download throws away the partial file (Try again after a failure keeps it and resumes).
+- **Retries:** a dropped connection is retried 3 times (2 s apart), each with `Range`, before it shows "I couldn't reach the
+  download"; the file stays, so Try again resumes.
+- The speed argument is sherpa's `speed`: larger is faster (checked below).
+
+### Verified
+- `scripts/check.sh`: passes, 461 unit tests (44 of them new) and lint clean (`build-logs/2026-11-14_09-43-11_check.log`). New: ChoosingTts (the rule for all 12 combinations, switching, problem texts), SherpaTts with
+  fake voice, speaker, focus and clock (order, done = played, queue limit of 3, stop mid-sentence, errors, lazy load,
+  unload and not while hands-free, focus), VoiceDownloader against MockWebServer (normal, cut connection resumed with
+  `Range`, bad hash, `..`, absolute path, drive letter, link, missing file, two models, too many entries or bytes, not
+  enough space, 404, off screen and back, Cancel, a half-unpacked folder left by a kill), the settings round trip.
+- `scripts/check.sh --device`: OK, 121 Compose UI tests on `Pixel_9_API_37` (`build-logs/2026-11-14_10-02-00_check.log`), including the new `VoiceSettingsTest` cases.
+- `Pixel_9_API_37` (debug): Settings → Voice → Download (progress shown, 97 MB on disk, hash checked, unpacked) → chose
+  Edith's own voice → Test voice spoke → Play on a stored message spoke sentence by sentence (3 sentences generated ahead,
+  one `AudioTrack` with the assistant/speech attributes in `dumpsys audio`) → **Stop** abandoned audio focus within about
+  half a second → the **speed** slider changed the length of the same line from 1.46 s (0.6×) to 0.93 s (1.0–1.1×) to 0.62 s
+  (1.6×), so larger is faster. Real-time factor on the emulator about 0.04–0.06 (93 characters generated in 275 ms for 5.4 s
+  of audio); first sound **135 ms** after a sentence is queued with the model loaded, **about 0.5 s** with the load
+  (budget 1.5 s). Model load 0.37–0.51 s; native memory +96 MB.
+- **`auto` with no phone voice:** with Google's text-to-speech disabled (`pm disable-user`, then enabled again and checked):
+  Test voice greyed out; Chat showed "I can't speak yet. Get my voice in Settings → Voice." (inset correct under the
+  status bar); Settings showed "Your phone has no voice. Edith can use her own." with Download; after the download Test
+  voice spoke in `auto`. Speed was set back to 1.0 and the voice left downloaded.
+- **Release build on `Edith_Release_Test`** (`dist/Edith-2.0.0-dev.4.apk`, built with `scripts/release.sh --allow-dirty`,
+  `build-logs/2026-11-14_09-53-41_release.log`): download, Test voice, hands-free **on** (wake word loaded, "Listening for
+  Hey Edith") and a stored reply played aloud, no crash (`logcat -b crash` empty). With hands-free on and the voice
+  loaded the app's total PSS was about 300 MB (native heap about 230 MB).
+- **No network for speech:** with the emulator in airplane mode (`ping`: "Network is unreachable") a stored reply was
+  generated and played normally. Only `VoiceDownloader` touches the network.
+
+### Not verified, and why
+- **A streamed reply from Ollama, spoken as it streams:** the owner's 12B model timed out ("Edith took too long to answer",
+  as it had before this change), so I could not stream one. The streaming path is C13's `SpeechOutput`, unchanged; the
+  same sentence-by-sentence pipeline was exercised through Play.
+- **Hands-free "doesn't hear herself" with a real microphone:** not checked (like C14, it still needs a real-mic check;
+  the emulator's mic can't say "Hey Edith"). `onDone` is tied to the speaker's play position, which is what hands-free
+  needs, and `HandsFree` is unchanged.
+- **Andarium on the iPhone** (the owner's check, needs a release published first): download, replies spoken, hands-free
+  answers spoken, no crash, Edith not killed while speaking, and the **real-time factor** (does a 15-word sentence take
+  longer to generate than to play?). Measure it from the log line "Own voice: N chars generated in X ms, Y ms of audio". If
+  it is too slow or Android kills Edith there, the fallbacks are the "low" voice (`en_US-amy-low`, sample 7), the int8
+  build of this voice (23 MB, sample 8), or unloading sooner. The memory to compare: +96 MB native for the model.
+- `Edith_Release_Test` ran the x86_64 library; the arm64-v8a library is in the APK but has not run on arm64 here.

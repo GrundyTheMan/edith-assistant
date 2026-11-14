@@ -42,6 +42,12 @@ val googleDesktopClientSecret: String = localProperties.getProperty("edith.googl
 // C23 (D18): the Microsoft Entra app registration's client ID. A public client: there's no secret. Empty → "not set up".
 val microsoftClientId: String = localProperties.getProperty("edith.microsoftClientId").orEmpty().trim()
 
+// C36 (D21): sherpa-onnx is 38 MB, so it isn't in Git; scripts/fetch-sherpa.sh downloads it and checks its SHA-256.
+val sherpaAar = file("libs/sherpa-onnx-static-link-onnxruntime-1.13.8.aar")
+if (!sherpaAar.exists()) {
+    throw GradleException("The sherpa-onnx library is missing (${sherpaAar.name} in app/libs/). Run scripts/fetch-sherpa.sh (Git Bash), then build again.")
+}
+
 android {
     namespace = "com.edith.app"
     compileSdk = 37
@@ -64,7 +70,12 @@ android {
 
     // Native libraries compressed in the APK (extracted on install): a much smaller download for ONNX Runtime.
     packaging {
-        jniLibs { useLegacyPackaging = true }
+        jniLibs {
+            useLegacyPackaging = true
+            // C36: sherpa-onnx's AAR also carries 32-bit and x86 libraries (one is a second libonnxruntime.so that clashes
+            // with ONNX Runtime's own); only the 64-bit ones are kept, as abiFilters says.
+            excludes += listOf("lib/x86/**", "lib/armeabi-v7a/**")
+        }
         // C24: the Jakarta Mail jars each carry these; only their licence texts. Their META-INF service and provider
         // files (javamail.providers, mailcap, services/) are kept: the library finds its classes through them.
         resources { excludes += listOf("META-INF/LICENSE.md", "META-INF/NOTICE.md") }
@@ -152,6 +163,9 @@ dependencies {
     // C10: reading web pages and DuckDuckGo results
     implementation(libs.jsoup)
     implementation(libs.onnxruntime.android)   // C14: openWakeWord models (D4)
+    // C36 (D21): sherpa-onnx runs the Piper voice. Not in Git; scripts/fetch-sherpa.sh puts it in app/libs/.
+    implementation(files(sherpaAar))
+    implementation(libs.commons.compress)   // C36: unpacks the voice (.tar.bz2)
     implementation(libs.coil.compose)   // C15: attachment thumbnails
     // C17: Google sign-in (Credential Manager) and access to Calendar/Gmail (AuthorizationClient)
     implementation(libs.androidx.credentials)

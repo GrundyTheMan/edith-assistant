@@ -55,13 +55,24 @@ import com.edith.app.tools.web.WebSearch
 import com.edith.app.tools.web.WebSearchSetup
 import com.edith.app.tools.weather.OpenMeteoClient
 import com.edith.app.tools.weather.WeatherTool
+import com.edith.app.voice.own.AndroidSpeechFocus
+import com.edith.app.voice.own.AudioTrackSink
+import com.edith.app.voice.own.OwnVoiceState
+import com.edith.app.voice.own.OwnVoices
+import com.edith.app.voice.own.SherpaSynth
+import com.edith.app.voice.own.SherpaTts
+import com.edith.app.voice.own.VoiceDownloader
 import com.edith.app.voice.speech.AndroidTts
+import com.edith.app.voice.speech.ChoosingTts
 import com.edith.app.voice.speech.SpeechController
 import com.edith.app.voice.speech.SpeechOutput
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import com.edith.app.attachments.AttachmentIntake
@@ -110,6 +121,7 @@ import com.edith.app.voice.handsfree.OpenWakeWord
 import com.edith.app.voice.handsfree.WakeWordModel
 import java.io.File
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Builds and holds the app's long-lived objects. Later chunks add fields here. Created once, by [com.edith.app.EdithApp]. */
 class AppContainer(val app: Application) {
@@ -196,8 +208,42 @@ class AppContainer(val app: Application) {
         CurrentConversation(chatRepository, settingsRepository, chatEngine)
     }
 
-    /** Edith's voice (C13): the phone's text-to-speech, started once for the app. */
-    val speechOutput: SpeechOutput by lazy { SpeechOutput(AndroidTts(app), settingsRepository, appScope) }
+    /** Where Edith's own voice is downloaded to (C36): app-private, not backed up. */
+    private val voicesDir: File get() = File(app.filesDir, "voices")
+
+    /** Downloads, checks and unpacks Edith's own voice, only while she is on screen (C36 §3). */
+    val voiceDownloader: VoiceDownloader by lazy {
+        VoiceDownloader(OwnVoices.default, voicesDir, http = { okHttp }, visible = AppVisibility.visible, scope = appScope, io = dispatchers.io)
+    }
+
+    /** Edith's own voice (C36): sherpa-onnx running a Piper voice, loaded when she first speaks with it. */
+    val ownTts: SherpaTts by lazy {
+        val handsFreeOn = AtomicBoolean(false)
+        val tts = SherpaTts(
+            loadSynth = { SherpaSynth.load(voiceDownloader.dir, OwnVoices.default.speakerId) },
+            sink = AudioTrackSink(),
+            focus = AndroidSpeechFocus(app.getSystemService(AudioManager::class.java)),
+            keepLoaded = { handsFreeOn.get() },   // hands-free keeps listening, so keep the voice ready to answer
+        )
+        appScope.launch { settingsRepository.settings.collect { handsFreeOn.set(it.handsFreeEnabled) } }
+        // A new download, or Delete: drop the old model and any "wouldn't start" problem.
+        appScope.launch { voiceDownloader.state.map { it is OwnVoiceState.Ready }.distinctUntilChanged().drop(1).collect { tts.reset() } }
+        tts
+    }
+
+    /** The voice Edith speaks with: the phone's or her own, by the `speech_voice` setting (C36 §4). */
+    val choosingTts: ChoosingTts by lazy {
+        ChoosingTts(
+            phone = AndroidTts(app),
+            own = ownTts,
+            setting = settingsRepository.settings.map { it.speechVoice }.distinctUntilChanged(),
+            ownReady = voiceDownloader.state.map { it is OwnVoiceState.Ready },
+            scope = appScope,
+        )
+    }
+
+    /** Edith's voice (C13): reads replies as they stream in, with the voice [choosingTts] picks. */
+    val speechOutput: SpeechOutput by lazy { SpeechOutput(choosingTts, settingsRepository, appScope) }
 
     /** The chat's Play/Stop buttons (C07 §5). */
     val speechController: SpeechController get() = speechOutput

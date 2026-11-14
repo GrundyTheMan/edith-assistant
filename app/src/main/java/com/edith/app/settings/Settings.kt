@@ -32,9 +32,20 @@ data class Settings(
     val wakeWordSensitivity: Float = 0.5f,
     val followUpSeconds: Int = 8,
     val currentConversationId: Long? = null,   // C06b: the chat the app reopens on
+    val speechVoice: SpeechVoice = SpeechVoice.Auto,   // C36: which voice speaks
+    val voiceBannerDismissed: Boolean = false,         // C36: the Chat banner "I can't speak yet" was dismissed
 ) {
     companion object {
         const val DEFAULT_SERVER_URL = "http://10.0.2.2:11434"
+    }
+}
+
+/** Which voice speaks (C36, `speech_voice`): `auto` (the phone's if it has one, else Edith's own), `phone` or `own`. */
+enum class SpeechVoice(val stored: String) {
+    Auto("auto"), Phone("phone"), Own("own");
+
+    companion object {
+        fun fromStored(value: String?): SpeechVoice = entries.firstOrNull { it.stored == value } ?: Auto
     }
 }
 
@@ -66,6 +77,8 @@ internal object SettingsKeys {
     val WAKE_WORD_SENSITIVITY = floatPreferencesKey("wake_word_sensitivity")
     val FOLLOW_UP_SECONDS = intPreferencesKey("follow_up_seconds")
     val CURRENT_CONVERSATION_ID = longPreferencesKey("current_conversation_id")
+    val SPEECH_VOICE = stringPreferencesKey("speech_voice")
+    val VOICE_BANNER_DISMISSED = booleanPreferencesKey("voice_banner_dismissed")
 }
 
 /**
@@ -105,6 +118,8 @@ internal fun Preferences.toSettings(): Settings {
         wakeWordSensitivity = this[SettingsKeys.WAKE_WORD_SENSITIVITY] ?: d.wakeWordSensitivity,
         followUpSeconds = this[SettingsKeys.FOLLOW_UP_SECONDS] ?: d.followUpSeconds,
         currentConversationId = this[SettingsKeys.CURRENT_CONVERSATION_ID],
+        speechVoice = SpeechVoice.fromStored(this[SettingsKeys.SPEECH_VOICE]),
+        voiceBannerDismissed = this[SettingsKeys.VOICE_BANNER_DISMISSED] ?: d.voiceBannerDismissed,
     )
 }
 
@@ -119,6 +134,8 @@ internal fun MutablePreferences.write(s: Settings) {
     this[SettingsKeys.HANDS_FREE_ENABLED] = s.handsFreeEnabled
     this[SettingsKeys.WAKE_WORD_SENSITIVITY] = s.wakeWordSensitivity
     this[SettingsKeys.FOLLOW_UP_SECONDS] = s.followUpSeconds
+    this[SettingsKeys.SPEECH_VOICE] = s.speechVoice.stored
+    this[SettingsKeys.VOICE_BANNER_DISMISSED] = s.voiceBannerDismissed
     if (s.currentConversationId == null) remove(SettingsKeys.CURRENT_CONVERSATION_ID) else this[SettingsKeys.CURRENT_CONVERSATION_ID] = s.currentConversationId
 }
 

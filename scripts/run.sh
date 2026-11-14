@@ -6,6 +6,7 @@
 # a release APK (different signing keys): Android requires an uninstall first. See 05-environment.md §6.
 source "$(dirname "$0")/lib.sh"
 start_log run "$@"
+scripts/fetch-sherpa.sh
 
 scripts/emulator.sh
 
