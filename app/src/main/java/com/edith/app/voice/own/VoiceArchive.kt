@@ -5,6 +5,8 @@ import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 import java.io.BufferedInputStream
 import java.io.File
+import java.io.FilterInputStream
+import java.io.InputStream
 import java.io.IOException
 
 /** The archive isn't a voice Edith can use, or tries something a voice never would. */
@@ -23,7 +25,14 @@ object VoiceArchive {
     const val MAX_ENTRIES = 5_000
     const val MAX_TOTAL_BYTES = 300L * 1024 * 1024
 
-    fun extract(archive: File, into: File, maxEntries: Int = MAX_ENTRIES, maxBytes: Long = MAX_TOTAL_BYTES) {
+    /** [onProgress] gets 0..100, the share of the archive read so far (decompressing is the slow part), when it changes. */
+    fun extract(
+        archive: File,
+        into: File,
+        maxEntries: Int = MAX_ENTRIES,
+        maxBytes: Long = MAX_TOTAL_BYTES,
+        onProgress: (Int) -> Unit = {},
+    ) {
         into.deleteRecursively()
         into.mkdirs()
         val root = into.canonicalFile
@@ -32,7 +41,7 @@ object VoiceArchive {
         var model = false
         var tokens = false
         var espeakFiles = 0
-        archive.inputStream().buffered().use { raw ->
+        archive.inputStream().let { CountingInput(it, archive.length(), onProgress) }.buffered().use { raw ->
             TarArchiveInputStream(BZip2CompressorInputStream(BufferedInputStream(raw))).use { tar ->
                 while (true) {
                     val entry: TarArchiveEntry = tar.nextEntry ?: break
@@ -62,6 +71,26 @@ object VoiceArchive {
             }
         }
         if (!model || !tokens || espeakFiles == 0) throw BadVoiceArchive("The voice is missing files")
+    }
+
+    /** Counts what is read from the archive file and reports the percentage when it changes. */
+    private class CountingInput(input: InputStream, private val total: Long, private val onProgress: (Int) -> Unit) : FilterInputStream(input) {
+        private var count = 0L
+        private var lastPercent = -1
+
+        private fun add(n: Long) {
+            if (n <= 0 || total <= 0) return
+            count += n
+            val percent = (count * 100 / total).toInt().coerceIn(0, 100)
+            if (percent != lastPercent) {
+                lastPercent = percent
+                onProgress(percent)
+            }
+        }
+
+        override fun read(): Int = super.read().also { if (it >= 0) add(1) }
+        override fun read(b: ByteArray, off: Int, len: Int): Int = super.read(b, off, len).also { add(it.toLong()) }
+        override fun skip(n: Long): Long = super.skip(n).also { add(it) }
     }
 
     /** The entry's path split into names, or an exception if it could leave the folder. */

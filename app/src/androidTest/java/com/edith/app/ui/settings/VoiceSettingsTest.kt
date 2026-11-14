@@ -96,8 +96,11 @@ class VoiceSettingsTest {
         state = state.copy(own = OwnVoiceState.Downloading(43, waitingForScreen = true))
         compose.onNodeWithText("Waiting for Edith to be on screen (43%)").assertExists()
 
-        state = state.copy(own = OwnVoiceState.Verifying)
-        compose.onNodeWithText("Checking the download…").assertExists()
+        state = state.copy(own = OwnVoiceState.Verifying(60))
+        compose.onNodeWithText("Checking the download 60%").assertExists()
+
+        state = state.copy(own = OwnVoiceState.Unpacking(37))
+        compose.onNodeWithText("Unpacking 37% (can take a few minutes)").assertExists()
 
         state = state.copy(own = OwnVoiceState.Ready(98_000_000))
         compose.onNodeWithText("Ready, 98 MB").assertExists()

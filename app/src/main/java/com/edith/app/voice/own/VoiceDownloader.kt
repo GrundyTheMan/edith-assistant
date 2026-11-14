@@ -29,8 +29,10 @@ sealed interface OwnVoiceState {
     data object NotDownloaded : OwnVoiceState
     /** [waitingForScreen]: paused until Edith is on screen again (Android blocks the network in the background, L36). */
     data class Downloading(val percent: Int, val waitingForScreen: Boolean = false) : OwnVoiceState
-    data object Verifying : OwnVoiceState
-    data object Unpacking : OwnVoiceState
+    /** Checking the download's SHA-256; [percent] of the file read. */
+    data class Verifying(val percent: Int = 0) : OwnVoiceState
+    /** Unpacking it (decompressing is the slow part, minutes on a slow phone); [percent] of the file read. */
+    data class Unpacking(val percent: Int = 0) : OwnVoiceState
     data class Ready(val sizeBytes: Long) : OwnVoiceState
     data class Failed(val message: String) : OwnVoiceState
 }
@@ -145,18 +147,21 @@ class VoiceDownloader(
                 }
             }
         }
-        _state.value = OwnVoiceState.Verifying
-        val actual = withContext(io) { sha256(part) }
+        _state.value = OwnVoiceState.Verifying()
+        val verifyStartedAt = System.nanoTime()
+        val actual = withContext(io) { sha256(part) { percent -> _state.value = OwnVoiceState.Verifying(percent) } }
+        Log.i(LogTag.Voice, "Voice checked in ${(System.nanoTime() - verifyStartedAt) / 1_000_000} ms")
         if (actual != voice.sha256) {
             part.delete()
             Log.w(LogTag.Voice, "Voice download didn't match its SHA-256")
             _state.value = OwnVoiceState.Failed(MISMATCH)
             return
         }
-        _state.value = OwnVoiceState.Unpacking
+        _state.value = OwnVoiceState.Unpacking()
+        val unpackStartedAt = System.nanoTime()
         try {
             withContext(io) {
-                VoiceArchive.extract(part, tmp)
+                VoiceArchive.extract(part, tmp) { percent -> _state.value = OwnVoiceState.Unpacking(percent) }
                 dir.deleteRecursively()
                 if (!tmp.renameTo(dir)) throw IOException("Couldn't move the voice into place")
             }
@@ -168,6 +173,7 @@ class VoiceDownloader(
             return
         }
         part.delete()
+        Log.i(LogTag.Voice, "Voice unpacked in ${(System.nanoTime() - unpackStartedAt) / 1_000_000} ms")
         _state.value = OwnVoiceState.Ready(directorySize(dir))
     }
 
@@ -265,14 +271,23 @@ class VoiceDownloader(
 
         fun directorySize(dir: File): Long = dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
-        fun sha256(file: File): String {
+        fun sha256(file: File, onProgress: (Int) -> Unit = {}): String {
             val digest = MessageDigest.getInstance("SHA-256")
+            val total = file.length()
+            var read = 0L
+            var lastPercent = -1
             file.inputStream().use { input ->
                 val buffer = ByteArray(64 * 1024)
                 while (true) {
                     val n = input.read(buffer)
                     if (n < 0) break
                     digest.update(buffer, 0, n)
+                    read += n
+                    val percent = if (total > 0) (read * 100 / total).toInt().coerceIn(0, 100) else 0
+                    if (percent != lastPercent) {
+                        lastPercent = percent
+                        onProgress(percent)
+                    }
                 }
             }
             return digest.digest().joinToString("") { "%02x".format(it) }
