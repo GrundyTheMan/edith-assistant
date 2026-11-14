@@ -63,3 +63,27 @@ Unofficial; never log tokens or images; snapshots of a sleeping battery camera c
   (acceptance, first three items): sign in with the 2FA code, "Show me the front door camera", "Did anyone ring today?", the Home tab,
   and a restart that stays signed in. Unconfirmed guesses: that the Ring app lists Edith under Control Center (used in the disconnect
   hint), and the `events` endpoint's page size (50).
+
+## As built — part 2 of 2 (Clips)
+- **Done:** a **Clips** chip on the Home tab (shown only while a connected service has clips: `HomeBackend.hasClips`) opens a full-screen
+  list, newest first: camera, what made it record (Ring, Motion, A person, Live view) and its length, with "Today 3:42 PM". Tapping a
+  clip plays it in the app with **Media3 ExoPlayer 1.11.1** (`media3-exoplayer` and `media3-ui`; the owner approved adding it,
+  2026-11-14). Older clips load as the list is scrolled.
+- **Code:** `HomeBackend.clips(sinceMs, untilMs)` / `clipUrl(clipId)` / `hasClips`, `Home.clips` (all services' clips together, one
+  failing doesn't hide the others) and `Home.clipUrl`, `ClipsUi` and the clip functions of `HomeViewModel`, `home/ui/ClipsScreen.kt`;
+  Ring: `RingApi.clips` (`video_search/history`, per camera) and `RingApi.clipUrl` (`dings/{id}/recording?disable_redirect=true`).
+- **Paging:** the list loads **3-day windows**, going back up to **60 days**; a quiet window loads the next older one (up to 4 per scroll)
+  so the list isn't empty while older clips exist. No numbered pages: Ring's search takes a date range.
+- **The video address is asked for at play time**, not kept from the list: Ring's addresses are signed and expire (Jarvis re-asks after a
+  403). Only an `https` address is played. The player is released when the dialog closes, so a clip never plays on behind it.
+- **No plan:** Ring keeps recordings only with Ring Protect. The search still lists events, with `had_subscription` false: if every
+  recent event has it false, Edith says so in words ("Ring keeps recordings only with a Ring Protect plan, and this account doesn't have one")
+  and stops looking further back; a plan that began recently shows only what it recorded. It is never shown as an error.
+- **Left out on purpose:** thumbnails in the list (Ring's thumbnail addresses need their own signed fetch; Coil is in the app if the
+  owner wants them later) and downloading or sharing a clip.
+- **Tests:** `RingApiTest` (+2), `RingServiceTest` (+5), `ClipsTest` (5: aggregation, a failing or hanging service, no-plan, the clip
+  address, the words). `scripts/check.sh` OK; `:app:minifyReleaseWithR8` builds with Media3 in the app.
+- **Not verified:** playback itself. Nothing here has played a real Ring clip, and the Compose list and player were not run on the emulator
+  or in a release build. **Per the project rule, a release build must be checked on `Edith_Release_Test` before publishing** (R8 broke ONNX
+  Runtime once; it accepts Media3, but only playing a clip proves the keep rules). Andarium on the iPhone may lack a video decoder or
+  behave differently: the player then shows "This phone couldn't play the clip (…)" and logs the code.

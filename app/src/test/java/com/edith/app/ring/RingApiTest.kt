@@ -104,4 +104,28 @@ class RingApiTest {
         assertEquals("/clients_api/locations/loc-1/devices/5/events", ring.requests.last().url.encodedPath)
         assertNull(ring.api().event(kotlinx.serialization.json.JsonPrimitive("x")))
     }
+
+    @Test fun `clips - the search asks for one camera and a window, newest first, and says whether a plan kept them`() = runBlocking {
+        ring.validAccess += "tok"
+        ring.clipsJson = """{"video_search":[${clipRowJson("9", 3000, "ding")},${clipRowJson("8", 2000, person = true, seconds = 31)},${clipRowJson("7", 1000, hadPlan = false)}]}"""
+        val camera = RingCamera("5", "Front Door", true, "loc-1", false, null, true)
+        val rows = (ring.api().clips("tok", "hw", camera, 500, 4000) as RingReply.Ok).value
+        assertEquals(listOf("9", "8", "7"), rows.map { it.id })
+        assertEquals(listOf(EventKind.Ring, EventKind.Person, EventKind.Motion), rows.map { it.kind })
+        assertEquals(listOf(true, true, false), rows.map { it.hadPlan })
+        assertEquals(listOf(null, 31, 24), rows.map { it.seconds }.let { listOf(null, it[1], it[2]) })
+        val sent = ring.requests.last().url
+        assertEquals(listOf("5", "500", "4000", "desc"), listOf("doorbot_id", "date_from", "date_to", "order").map { sent.queryParameter(it) })
+    }
+
+    @Test fun `a clip's address is asked for at play time, and only an https one is accepted`() = runBlocking {
+        ring.validAccess += "tok"
+        assertEquals("https://clips.example.test/video.mp4", (ring.api().clipUrl("tok", "hw", "9") as RingReply.Ok).value)
+        assertEquals("/clients_api/dings/9/recording", ring.requests.last().url.encodedPath)
+        assertEquals("true", ring.requests.last().url.queryParameter("disable_redirect"))
+        ring.recordingUrl = "http://clips.example.test/plain.mp4"
+        assertTrue("never a cleartext address", ring.api().clipUrl("tok", "hw", "9") is RingReply.Failed)
+        ring.recordingUrl = null
+        assertTrue("Ring hasn't saved it yet", ring.api().clipUrl("tok", "hw", "9") is RingReply.Failed)
+    }
 }

@@ -30,6 +30,10 @@ class FakeRing {
     @Volatile var wantCode: String? = null
     @Volatile var devicesJson = """{"doorbots":[],"stickup_cams":[],"authorized_doorbots":[],"chimes":[],"other":[]}"""
     @Volatile var eventsJson = """{"events":[]}"""
+    /** What `video_search/history` answers. */
+    @Volatile var clipsJson = """{"video_search":[]}"""
+    /** The address `dings/{id}/recording` gives; null: Ring has nothing yet (404). */
+    @Volatile var recordingUrl: String? = "https://clips.example.test/video.mp4"
     @Volatile var snapshotBytes: ByteArray? = byteArrayOf(1, 2, 3)
     @Volatile var snapshotCode = 200
     /** path → answer, for anything the tests want to override (e.g. `/clients_api/session`). */
@@ -50,6 +54,8 @@ class FakeRing {
                     path == "/clients_api/session" -> { sessionStarted++; json("{}") }
                     path == "/clients_api/ring_devices" -> json(devicesJson)
                     path.endsWith("/events") -> json(eventsJson)
+                    path == "/clients_api/video_search/history" -> json(clipsJson)
+                    path.startsWith("/clients_api/dings/") -> recordingUrl?.let { json("""{"url":"$it"}""") } ?: MockResponse.Builder().code(404).body("{}").build()
                     path.startsWith("/snapshots/next/") -> snapshot()
                     else -> MockResponse.Builder().code(404).build()
                 }
@@ -120,3 +126,8 @@ class FakeRing {
         fun clock() = FakeClock()
     }
 }
+
+/** One row of Ring's video search. [hadPlan] false: an event Ring did not keep (no Ring Protect). */
+fun clipRowJson(id: String, createdAt: Long, kind: String = "motion", person: Boolean = false, hadPlan: Boolean = true, seconds: Int = 24) =
+    """{"ding_id":"$id","created_at":$createdAt,"kind":"$kind","had_subscription":$hadPlan,"duration":$seconds,""" +
+        """"cv_properties":{"person_detected":${if (person) "true" else "null"},"detection_type":null}}"""

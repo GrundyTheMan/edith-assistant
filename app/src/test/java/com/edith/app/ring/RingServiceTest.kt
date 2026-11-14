@@ -173,4 +173,52 @@ class RingServiceTest {
         val e = (s.backend.events("1", since) as Outcome.Success).value
         assertEquals(listOf(EventKind.Motion, EventKind.Ring), e.map { it.kind })
     }
+
+    @Test fun `clips from every camera come back newest first with their camera's name`() = runBlocking {
+        val s = signedIn()
+        ring.devicesJson = twoCameras
+        ring.clipsJson = """{"video_search":[${clipRowJson("2", 2000)},${clipRowJson("1", 1000, "ding")}]}"""
+        val page = (s.backend.clips(0, 5000) as Outcome.Success).value
+        // Both cameras answer with the same pretend rows: the clip ids repeat per camera, newest first.
+        assertEquals(listOf(2000L, 2000L, 1000L, 1000L), page.clips.map { it.at })
+        assertEquals(setOf("Front Door", "Driveway"), page.clips.map { it.deviceName }.toSet())
+        assertFalse(page.noPlan)
+        assertTrue(s.backend.hasClips)
+    }
+
+    @Test fun `an account with no Ring Protect plan gets Ring's no-plan answer, not an empty list and not an error`() = runBlocking {
+        val s = signedIn()
+        ring.devicesJson = twoCameras
+        ring.clipsJson = """{"video_search":[${clipRowJson("2", 2000, hadPlan = false)},${clipRowJson("1", 1000, hadPlan = false)}]}"""
+        val page = (s.backend.clips(0, 5000) as Outcome.Success).value
+        assertTrue(page.noPlan)
+        assertTrue(page.clips.isEmpty())
+    }
+
+    @Test fun `a plan that began recently keeps only the clips it recorded`() = runBlocking {
+        val s = signedIn()
+        ring.devicesJson = twoCameras
+        ring.clipsJson = """{"video_search":[${clipRowJson("2", 2000)},${clipRowJson("1", 1000, hadPlan = false)}]}"""
+        val page = (s.backend.clips(0, 5000) as Outcome.Success).value
+        assertFalse(page.noPlan)
+        assertEquals(2, page.clips.size)
+    }
+
+    @Test fun `a window with nothing in it is simply empty`() = runBlocking {
+        val s = signedIn()
+        ring.devicesJson = twoCameras
+        val page = (s.backend.clips(0, 5000) as Outcome.Success).value
+        assertTrue(page.clips.isEmpty() && !page.noPlan)
+    }
+
+    @Test fun `clips failing for every camera is a failure, and the sign-in rules still apply to the clip address`() = runBlocking {
+        val s = signedIn()
+        ring.devicesJson = twoCameras
+        ring.overrides["/clients_api/video_search/history"] = { MockResponse.Builder().code(500).build() }
+        assertTrue(s.backend.clips(0, 5000) is Outcome.Failure)
+        assertEquals("https://clips.example.test/video.mp4", (s.backend.clipUrl("9") as Outcome.Success).value)
+        ring.validRefresh.clear(); ring.validAccess.clear()
+        val later = service().also { it.load() }
+        assertTrue((later.backend.clipUrl("9") as Outcome.Failure).error.userMessage.contains("signing in again"))
+    }
 }

@@ -56,7 +56,7 @@ design in the same PR, or ask the owner.
 | [C24](chunks/C24-icloud-account.md) | iCloud account: iCloud Mail and Calendar | 7 | C22 | Done |
 | [C25](chunks/C25-home-core.md) | Smart home core: device model, tools, Home tab (Jarvis's chips, favourites, hiding), command log (fake backend) | 8 Smart home (v2) | C08, C14, C22 | Done |
 | [C26](chunks/C26-meross-garage.md) | Meross garage door opener | 8 | C25 | Done |
-| [C27](chunks/C27-ring.md) | Ring doorbell and cameras (snapshots, events, clips) | 8 | C25 | Part 1 built (sign-in, devices, snapshots, events; the owner's live Ring check is open). Part 2: Clips |
+| [C27](chunks/C27-ring.md) | Ring doorbell and cameras (snapshots, events, clips) | 8 | C25 | Built: sign-in, devices, snapshots, events and Clips (the owner's live Ring check, and a clip played in a release build, are open) |
 | [C28](chunks/C28-resideo-thermostat.md) | Honeywell/Resideo thermostat (official API; needs a developer key) | 8 | C25, C23 | Design |
 | [C29](chunks/C29-blink.md) | Blink cameras (fragile; clips) | 8 | C25 | Design |
 | [C30](chunks/C30-alexa.md) | Alexa devices: Jarvis's full control, thermostats and locks too (fragile, D19) | 8 | C25 | Design |
