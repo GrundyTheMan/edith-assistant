@@ -100,14 +100,14 @@ class HomeViewModel(private val home: Home, private val clock: Clock) : ViewMode
         val clips: ClipsUi? = null,
     )
 
-    val state: StateFlow<HomeUi> = combine(home.view, home.choices, home.status, local, home.backends) { view, choices, status, l, backends ->
+    val state: StateFlow<HomeUi> = combine(home.view, home.choices, home.status, local, home.hasClips) { view, choices, status, l, hasClips ->
         val saved = choices.chip?.let { name -> HomeChip.entries.firstOrNull { it.name == name } }
         HomeUi(
             connected = status == IntegrationStatus.Connected, view = view,
             chip = l.chip ?: saved ?: HomeChip.All,   // never switches by itself (starring one mustn't jump to Favorites)
             favorites = choices.favorites, now = l.now, stepping = l.stepping, pending = l.pending,
             picture = l.picture, fetching = l.fetching, message = l.message,
-            hasClips = backends.any { it.hasClips }, clips = l.clips,
+            hasClips = hasClips, clips = l.clips,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUi())
 

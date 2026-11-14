@@ -36,8 +36,11 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.ui.PlayerView
 import com.edith.app.home.DeviceClip
 import java.time.Instant
@@ -127,17 +130,41 @@ private fun ClipPlayerDialog(clip: DeviceClip, ui: ClipsUi, onClose: () -> Unit)
     )
 }
 
+/**
+ * Decoders with software ones first. Some phones' hardware video decoders start and then fail on a stream
+ * (`ERROR_CODE_DECODING_FAILED`); the player then tries once more with these (found on the emulator, whose
+ * `c2.goldfish.h264.decoder` failed on a plain H.264 file).
+ */
+@androidx.annotation.OptIn(UnstableApi::class)
+private fun softwareFirst() = MediaCodecSelector { mimeType, secure, tunneling ->
+    MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, secure, tunneling).sortedBy { if (it.softwareOnly) 0 else 1 }
+}
+
+private val DECODER_ERRORS = setOf(
+    PlaybackException.ERROR_CODE_DECODING_FAILED, PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+    PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED, PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
+)
+
 @Composable
+@androidx.annotation.OptIn(UnstableApi::class)
 private fun ClipPlayer(url: String) {
     val context = LocalContext.current
-    var failure = remember(url) { androidx.compose.runtime.mutableStateOf<String?>(null) }
-    val player = remember(url) {
-        ExoPlayer.Builder(context).build().apply {
+    val failure = remember(url) { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    // Set after a decoder error: the player is built again, once, with software decoders first.
+    val software = remember(url) { androidx.compose.runtime.mutableStateOf(false) }
+    val player = remember(url, software.value) {
+        val factory = DefaultRenderersFactory(context).apply { if (software.value) setMediaCodecSelector(softwareFirst()) }
+        ExoPlayer.Builder(context, factory).build().apply {
             setMediaItem(MediaItem.fromUri(url))
             addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
-                    com.edith.app.core.log.Log.w(com.edith.app.core.log.LogTag.Home, "A clip couldn't be played (${error.errorCodeName})")
-                    failure.value = "This phone couldn't play the clip (${error.errorCodeName})."
+                    if (!software.value && error.errorCode in DECODER_ERRORS) {
+                        com.edith.app.core.log.Log.w(com.edith.app.core.log.LogTag.Home, "A clip's decoder failed (${error.errorCodeName}); trying a software decoder")
+                        software.value = true
+                    } else {
+                        com.edith.app.core.log.Log.w(com.edith.app.core.log.LogTag.Home, "A clip couldn't be played (${error.errorCodeName})")
+                        failure.value = "This phone couldn't play the clip (${error.errorCodeName})."
+                    }
                 }
             })
             prepare()
@@ -148,6 +175,7 @@ private fun ClipPlayer(url: String) {
     failure.value?.let { Text(it); return }
     AndroidView(
         factory = { c -> PlayerView(c).apply { this.player = player; layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT) } },
+        update = { it.player = player },
         modifier = Modifier.fillMaxWidth().height(220.dp),
     )
 }
