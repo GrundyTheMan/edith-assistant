@@ -26,6 +26,7 @@ Pin exact versions in `gradle/libs.versions.toml` (a Gradle version catalog). Ne
 | Images | Coil 3 for display; Android `ImageDecoder` for downscaling | — | |
 | HTML → text | Jsoup | 1.17 | Web page reading tool (C10) |
 | Mail | Jakarta Mail via Eclipse Angus Mail | — | For iCloud mail (C24) |
+| MQTT | Eclipse Paho Java client (mqttv3 1.2.5) | — | For Meross (C26): short-lived TLS sessions; R8 keep rule (ServiceLoader modules) |
 | Own voice | sherpa-onnx **1.13.8** (static-link-onnxruntime AAR, fetched by `scripts/fetch-sherpa.sh`) running a Piper voice; Apache Commons Compress 1.28 to unpack it | 1.13.x | C36. Not 2.x: it no longer reads Piper voices (L38) |
 | Google | Credential Manager + Google Identity `AuthorizationClient`; plain REST for Calendar/Gmail via OkHttp | — | No heavy Google API client libraries |
 | Testing | JUnit 4/5, kotlinx-coroutines-test, Turbine, OkHttp MockWebServer, Robolectric (where useful), Compose UI test | — | |
@@ -79,6 +80,7 @@ com.edith.app
 │                               LoopbackReceiver (127.0.0.1, or both loopback addresses for `localhost`), BrowserGoogle
 ├── microsoft/                  C23: MicrosoftAccounts (provider), MicrosoftAccountAuth (per account), GraphClient, Outlook sources
 ├── icloud/                     C24: ICloudAccounts (provider, the add-account check), mail/ (IMAP/SMTP, Jakarta Mail), calendar/ (CalDAV, iCalendar)
+├── meross/                     C26: MerossService (HomeService + backend), MerossApi (HTTP), PahoMerossBus (MQTT), MerossProtocol (signing, topics)
 └── ui/
     ├── theme/                  EdithTheme (light/dark), colors, typography
     └── navigation/             EdithNavHost, Destinations, bottom bar

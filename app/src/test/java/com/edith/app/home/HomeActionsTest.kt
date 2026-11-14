@@ -66,4 +66,12 @@ class HomeActionsTest {
         assertEquals("3 min ago", HomeActions.age(0, 3 * 60_000 + 5_000))
         assertEquals("just now", HomeActions.age(0, 30_000))
     }
+
+    @Test fun `when a door last moved`() {
+        val now = 1_800_000_000_000L
+        assertEquals("moved 3 h ago", HomeActions.movedText(DeviceState(door = DoorState.Open, changedAt = now - 3 * 3_600_000L - 5_000), now))
+        assertEquals("moved 5 min ago", HomeActions.movedText(DeviceState(changedAt = now - 5 * 60_000L), now))
+        assertEquals("unknown or silly times say nothing", listOf(null, null, null),
+            listOf(HomeActions.movedText(null, now), HomeActions.movedText(DeviceState(), now), HomeActions.movedText(DeviceState(changedAt = now + 3_600_000L), now)))
+    }
 }

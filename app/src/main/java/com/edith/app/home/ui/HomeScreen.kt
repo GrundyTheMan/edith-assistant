@@ -225,7 +225,7 @@ private fun SecureTile(d: HomeDevice, ui: HomeUi, a: HomeTabActions) {
             Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
                 Text(d.name + (d.room?.let { " · $it" } ?: ""), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(stateLine(d, ui), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stateLine(d, ui) + (HomeActions.movedText(d.state, ui.now.takeIf { it > 0 } ?: System.currentTimeMillis())?.let { " · $it" } ?: ""), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (d.type == DeviceType.Lock) {
                 val locked = d.state?.lock == LockState.Locked

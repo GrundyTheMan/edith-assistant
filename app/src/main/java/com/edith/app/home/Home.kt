@@ -18,6 +18,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -70,6 +71,10 @@ class Home(
     override val id: String = ID
 
     private val registered = MutableStateFlow<List<HomeBackend>>(emptyList())
+    private val registeredServices = MutableStateFlow<List<HomeService>>(emptyList())
+
+    /** Every service the owner can sign in to, connected or not (Settings → Home). The Demo home isn't one. */
+    val services: StateFlow<List<HomeService>> = registeredServices.asStateFlow()
 
     /** The owner's choices; [HomeChoices] defaults until the first read. */
     val choices: StateFlow<HomeChoices> = prefs.choices.stateIn(scope, SharingStarted.Eagerly, HomeChoices())
@@ -107,6 +112,12 @@ class Home(
     private val readLock = Mutex()
     private val rechecks = ConcurrentHashMap<String, Job>()
 
+    /** A real service (C26–C31): its backend is read while it is signed in, and Settings lists it. */
+    fun register(service: HomeService) {
+        registeredServices.value = registeredServices.value.filterNot { it.backend.id == service.backend.id } + service
+        register(service.backend)
+    }
+
     fun register(backend: HomeBackend) {
         registered.value = registered.value.filterNot { it.id == backend.id } + backend
     }
@@ -119,7 +130,7 @@ class Home(
         val targets = connected()
         val answers = coroutineScope {
             targets.map { b ->
-                async { b to (withTimeoutOrNull(timeoutMs) { b.devices() } ?: Outcome.Failure(AppError.Timeout)) }
+                async { b to (withTimeoutOrNull(b.timeoutMs ?: timeoutMs) { b.devices() } ?: Outcome.Failure(AppError.Timeout)) }
             }.awaitAll()
         }
         val now = clock.now().toEpochMilli()
@@ -159,7 +170,7 @@ class Home(
     suspend fun command(device: HomeDevice, command: DeviceCommand, source: CommandSource): Outcome<DeviceState> {
         val backend = backends.value.firstOrNull { it.id == device.backend }
         val outcome = if (backend == null) Outcome.Failure(AppError.ToolFailed(device.backend, "that service isn't connected"))
-        else withTimeoutOrNull(timeoutMs) { backend.command(device.id, command) } ?: Outcome.Failure(AppError.Timeout)
+        else withTimeoutOrNull(backend.timeoutMs ?: timeoutMs) { backend.command(device.id, command) } ?: Outcome.Failure(AppError.Timeout)
         val now = clock.now().toEpochMilli()
         val (action, value) = HomeActions.logParts(command)
         val result = when (outcome) {
@@ -201,7 +212,7 @@ class Home(
         rechecks[device.key] = scope.launch {
             for (at in recheckAfterMs(device)) {
                 delay((sentAt + at - clock.now().toEpochMilli()).coerceAtLeast(0))
-                val state = withTimeoutOrNull(timeoutMs) { backend.state(device.id) }
+                val state = withTimeoutOrNull(backend.timeoutMs ?: timeoutMs) { backend.state(device.id) }
                 if (state is Outcome.Success) {
                     val current = known[device.key] ?: device
                     update(current.copy(state = state.value, stateAt = clock.now().toEpochMilli(), online = true))
@@ -259,7 +270,7 @@ class Home(
             if (HomeActions.slow(device)) listOf(3_000L, 10_000L, 30_000L) else listOf(3_000L)
 
         fun why(e: AppError): String = when (e) {
-            AppError.Timeout -> "it didn't answer within ${TIMEOUT_MS / 1000} seconds"
+            AppError.Timeout -> "it didn't answer in time"
             is AppError.ToolFailed -> e.detail
             else -> e.userMessage
         }

@@ -58,6 +58,8 @@ data class DeviceState(
     val lock: LockState? = null,
     val door: DoorState? = null,
     val battery: Int? = null,
+    /** When it last changed or moved (ms since 1970), if the device says: a garage door's "last moved". */
+    val changedAt: Long? = null,
 )
 
 data class HomeDevice(
@@ -109,6 +111,8 @@ interface HomeBackend : Integration {
      * direct backend answers.
      */
     val isHub: Boolean get() = false
+    /** How long a read or command may take; null: [Home]'s 10 s. A service that signs in, connects and asks (Meross) needs more. */
+    val timeoutMs: Long? get() = null
     suspend fun devices(): Outcome<List<HomeDevice>>
     suspend fun state(deviceId: String): Outcome<DeviceState>
     /** Sends [command]; the answer is what the device reports right after, which clouds often lag. */

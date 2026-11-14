@@ -93,6 +93,9 @@ import com.edith.app.home.FakeHomeBackend
 import com.edith.app.home.Home
 import com.edith.app.home.RoomCommandLog
 import com.edith.app.home.homeTools
+import com.edith.app.meross.MerossApi
+import com.edith.app.meross.MerossService
+import com.edith.app.meross.PahoMerossBus
 import com.edith.app.microsoft.MicrosoftAccounts
 import com.edith.app.microsoft.MicrosoftOAuth
 import com.google.android.gms.common.ConnectionResult
@@ -381,11 +384,16 @@ class AppContainer(val app: Application) {
     /** Every command sent to a device (C25 §8), kept in Room. */
     val homeCommandLog: RoomCommandLog by lazy { RoomCommandLog(database.homeCommandDao()) }
 
+    /** Meross garage door openers (C26): the account's sign-in is kept encrypted in [secretStore]. */
+    val meross: MerossService by lazy { MerossService(secretStore, MerossApi(okHttpLazy, clock), PahoMerossBus(dispatchers, clock), clock) }
+
     val home: Home by lazy {
         Home(
             DataStoreHomePrefs(settingsStore.store), homeCommandLog, appScope, clock,
             demo = if (BuildConfig.DEBUG) FakeHomeBackend(clock, DemoPicture::jpeg) else null,
-        )
+        ).also { h ->
+            h.register(meross)   // C26; C27–C31 register theirs here
+        }
     }
 
     /** Short handles for listed events (`e1`) and found emails (`m1`): one sequence each for the app run (C22 trap 4). */
@@ -440,6 +448,12 @@ class AppContainer(val app: Application) {
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e(LogTag.Accounts, "Couldn't load the accounts", e)
+        }
+        try {
+            meross.load()   // C26: picks up the saved Meross sign-in
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.e(LogTag.Home, "Couldn't load the Meross sign-in", e)
         }
     }
 

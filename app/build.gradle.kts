@@ -154,6 +154,7 @@ dependencies {
     implementation(libs.jakarta.mail.api)
     implementation(libs.angus.mail)
     implementation(libs.angus.activation)
+    implementation(libs.paho.mqtt)   // C26: Meross (MQTT over TLS)
 
     // C05: Room (KSP — never kapt, lessons L1)
     implementation(libs.room.runtime)

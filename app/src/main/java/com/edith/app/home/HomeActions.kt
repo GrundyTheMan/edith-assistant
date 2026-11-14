@@ -195,6 +195,9 @@ object HomeActions {
     }
 
     /** "just now", "3 min ago", "2 h ago" (Jarvis's `ageOf`). */
+    /** "moved 3 h ago": when the device says it last changed (a garage door's `changedAt`), or null. */
+    fun movedText(state: DeviceState?, now: Long): String? = state?.changedAt?.takeIf { it > 0 && it <= now + 60_000 }?.let { "moved ${age(it, now)}" }
+
     fun age(at: Long, now: Long): String {
         val min = (now - at) / 60_000
         return when {
