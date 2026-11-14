@@ -62,7 +62,8 @@ image generation; server-side text-to-speech (see §4.2); sending email automati
   leave the app building, tested and runnable.
 
 ### 4.2 Voice
-- **Edith's spoken voice is the phone's built-in TextToSpeech, with no network calls.** v1 tried
+- **Edith's spoken voice is the phone's built-in TextToSpeech, with no network calls.** Where the phone has no
+  voice (Andarium on the owner's iPhone), she uses her own on-device voice instead (D21, C36). v1 tried
   Ollama's TTS model (`phonon`: Apple-Silicon/MLX only — impossible on Windows) and an Orpheus voice
   server on the PC (worked, but crackled on the emulator); the owner chose the phone voice and had all
   traces of the server removed. Do not reintroduce server-side speech unless the owner asks.
