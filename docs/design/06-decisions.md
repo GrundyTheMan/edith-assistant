@@ -12,12 +12,12 @@ answer here in the same PR.
 |---|---|---|---|
 | A1 | Rebuild Edith from scratch as a native Android app (Kotlin, Compose) | 2026-10-29 | v1 abandoned after tool-calling problems; no v1 code reused |
 | A2 | Reuse the `GrundyTheMan/edith` repo; fresh start on `master`; v1 only in history (tag `edith-v1`) | 2026-10-29 | C01 |
-| A3 | v1 scope and order: chat → tools → voice + hands-free → attachments → Google Calendar/Gmail; smart home deferred to v2 | 2026-10-29 | 00-product §3 |
-| A4 | Spoken voice = phone TextToSpeech, no network | 2026-10-26 | Ollama TTS impossible on Windows; Orpheus server crackled and was removed |
+| A3 | v1 scope and order: chat → tools → voice + hands-free → attachments → Google Calendar/Gmail; smart home deferred to v2 (**smart home was later brought in: see A8**; accounts and to-dos were added as phase 7) | 2026-10-29 | 00-product §3 |
+| A4 | Spoken voice = phone TextToSpeech, no network (**extended by D21:** where the phone has no voice, Edith's own on-device voice; speech still never uses the network) | 2026-10-26 | Ollama TTS impossible on Windows; Orpheus server crackled and was removed |
 | A5 | Keep Edith's personality text unchanged (conciseness added) | 2026-10-25 | 00-product §5 |
 | A6 | Attachments: photos + audio in; Edith's written files + resends out; **recent ones kept locally, setting default 10** | 2026-10-29 | Replaces v1's "live only". See O1 |
 | A7 | Real Google Calendar and Gmail in v1 | 2026-10-29 | C17–C19 |
-| A8 | Smart home (Alexa, Ring, Blink, thermostats, garage door openers, locks, etc.) is **out of v1**; design the extension point now | 2026-10-29 | C20–C21 |
+| A8 | Smart home (Alexa, Ring, Blink, thermostats, garage door openers, locks, etc.) was **out of v1**; design the extension point now. **Superseded by D10 and D19:** it is built directly from the phone as phase 8 (C25 onward), with the on-screen-tap rule for unlocking and opening. 00-product §3 says so | 2026-10-29 | C20–C21, C25 |
 | A9 | Hands-free mode in v1 | 2026-10-29 | C14 |
 | A10 | Deliver as one PR per chunk; each chunk implementable by a different AI model | 2026-10-29 | 02-standards |
 | A11 | Manual DI (`AppContainer`), OkHttp + kotlinx.serialization, no Retrofit/Gson/Hilt | 2026-10-29 | 01-architecture §1 — design choice, owner may override |
