@@ -48,6 +48,7 @@ import com.edith.app.accounts.AccountState
 import com.edith.app.accounts.Accounts
 import com.edith.app.accounts.Provider
 import com.edith.app.accounts.sources.CalendarInfo
+import com.edith.app.accounts.tasks.TasksAccess
 import com.edith.app.di.viewModelFactory
 import com.edith.app.google.GoogleAccounts
 import com.edith.app.icloud.ICloudAccounts
@@ -102,6 +103,14 @@ class AccountsViewModel(private val accounts: Accounts, private val appScope: Co
         appScope.launch(Dispatchers.Main.immediate) { accounts.grant(id, activity, show) }
     }
 
+    /** C35 §2: the accounts whose to-dos need permission. */
+    val tasksAccess: StateFlow<Map<String, TasksAccess>> = accounts.tasksAccess
+
+    /** **To-dos: Grant access** (C35 §2). */
+    fun grantTasks(id: String, activity: Activity, show: (PendingIntent) -> Unit) {
+        appScope.launch(Dispatchers.Main.immediate) { accounts.grantTasks(id, activity, show) }
+    }
+
     fun onConsentResult(data: android.content.Intent?) {
         viewModelScope.launch { accounts.onConsentResult(data) }
     }
@@ -136,6 +145,7 @@ class AccountsViewModel(private val accounts: Accounts, private val appScope: Co
 fun AccountsSection(vm: AccountsViewModel) {
     val list by vm.list.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
+    val tasksAccess by vm.tasksAccess.collectAsStateWithLifecycle()
     val activity = LocalActivity.current
     val consent = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
         vm.onConsentResult(result.data)
@@ -150,6 +160,8 @@ fun AccountsSection(vm: AccountsViewModel) {
         onAddMicrosoft = { activity?.let { vm.addMicrosoft(it) } },
         onAddICloud = vm::addICloud,
         onGrant = { id -> activity?.let { a -> vm.grant(id, a) { consent.launch(IntentSenderRequest.Builder(it.intentSender).build()) } } },
+        tasksNeedPermission = tasksAccess.filterValues { it == TasksAccess.NeedsPermission }.keys,
+        onGrantTasks = { id -> activity?.let { a -> vm.grantTasks(id, a) { consent.launch(IntentSenderRequest.Builder(it.intentSender).build()) } } },
         onRename = vm::rename,
         loadCalendars = vm::calendarsOf,
         onSetDefaultCalendar = vm::setDefaultCalendar,
@@ -195,6 +207,9 @@ fun AccountsContent(
     microsoftNotSetUp: String? = MicrosoftAccounts.NOT_SET_UP,
     onAddMicrosoft: () -> Unit = {},
     onAddICloud: (address: String, password: String, done: (ICloudAnswer) -> Unit) -> Unit = { _, _, _ -> },
+    /** C35 §2: accounts whose to-dos need permission, each with **To-dos: Grant access** under it. */
+    tasksNeedPermission: Set<String> = emptySet(),
+    onGrantTasks: (id: String) -> Unit = {},
 ) {
     var open by remember { mutableStateOf<String?>(null) }
     var adding by remember { mutableStateOf(false) }
@@ -209,6 +224,11 @@ fun AccountsContent(
         if (accounts.isEmpty()) Text("No accounts yet.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag(ACCOUNTS_EMPTY_TAG))
         for ((account, state) in accounts) {
             AccountRow(account, state) { open = account.id }
+            if (account.id in tasksNeedPermission && state == AccountState.Connected) {
+                TextButton(onClick = { onGrantTasks(account.id) }, modifier = Modifier.padding(start = 40.dp).testTag(TASKS_GRANT_TAG + account.id)) {
+                    Text("To-dos: Grant access")
+                }
+            }
         }
         message?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag(ACCOUNTS_MESSAGE_TAG)) }
         Button(onClick = { adding = true }) { Text("Add account") }
@@ -540,6 +560,7 @@ fun BrowserWaitingDialog(provider: Provider, onPaste: (String) -> Unit, onCancel
 const val ACCOUNTS_EMPTY_TAG = "accounts_empty"
 const val ACCOUNTS_MESSAGE_TAG = "accounts_message"
 const val ACCOUNT_ROW_TAG = "account_row_"
+const val TASKS_GRANT_TAG = "account_tasks_grant_"
 const val ACCOUNT_STATUS_TAG = "account_status"
 const val ACCOUNT_LABEL_TAG = "account_label"
 const val DEFAULT_CALENDAR_TAG = "default_calendar"

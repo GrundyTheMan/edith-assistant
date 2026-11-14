@@ -95,6 +95,10 @@ import com.edith.app.accounts.tools.CalendarHandles
 import com.edith.app.accounts.tools.MailHandles
 import com.edith.app.accounts.tools.calendarTools
 import com.edith.app.accounts.tools.mailTools
+import com.edith.app.accounts.tools.TaskHandles
+import com.edith.app.accounts.tools.taskTools
+import com.edith.app.accounts.tasks.RankStore
+import com.edith.app.accounts.tasks.TaskRanker
 import com.edith.app.voice.capture.AudioRecorder
 import com.edith.app.voice.capture.LiveSpeech
 import com.edith.app.voice.capture.OllamaTranscriber
@@ -135,6 +139,8 @@ class AppContainer(val app: Application) {
                 // C18/C22: calendars across every account; C19/C22: email (send only after the owner confirms: D5)
                 *calendarTools(accounts, calendarHandles).toTypedArray(),
                 *mailTools(accounts, mailHandles).toTypedArray(),
+                // C35: to-dos (Google Tasks), every change on a card (D11, D20)
+                *taskTools(accounts, taskHandles, taskRanker, clock) { settingsRepository.current() }.toTypedArray(),
                 // C25: the smart home (D10, D19)
                 *homeTools(home).toTypedArray(),
             ),
@@ -339,6 +345,9 @@ class AppContainer(val app: Application) {
     /** Short handles for listed events (`e1`) and found emails (`m1`): one sequence each for the app run (C22 trap 4). */
     val calendarHandles: CalendarHandles by lazy { CalendarHandles() }
     val mailHandles: MailHandles by lazy { MailHandles() }
+    /** C35: to-do handles (`t1`…) and the suggested order, saved in `filesDir/task-ranks.json`. */
+    val taskHandles: TaskHandles by lazy { TaskHandles() }
+    val taskRanker: TaskRanker by lazy { TaskRanker(ollama, RankStore(java.io.File(app.filesDir, RankStore.FILE_NAME)), clock) }
 
     /** Keeps the newest N attachments each way (C16, O1). */
     val retention: Retention by lazy { Retention(database.attachmentDao(), attachmentStore, settingsRepository, clock, dispatchers) }

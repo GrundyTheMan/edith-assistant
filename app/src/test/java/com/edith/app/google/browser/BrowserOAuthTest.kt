@@ -64,6 +64,7 @@ class BrowserOAuthTest {
         assertEquals("S256", url.queryParameter("code_challenge_method"))
         assertEquals("the-state", url.queryParameter("state"))
         assertEquals("offline", url.queryParameter("access_type"))
+        assertEquals("C35: a sign-in for To-dos keeps the other grants", "true", url.queryParameter("include_granted_scopes"))
         assertEquals("consent", url.queryParameter("prompt"))
         assertEquals("owner@gmail.com", url.queryParameter("login_hint"))
         val scopes = url.queryParameter("scope")!!.split(' ').toSet()

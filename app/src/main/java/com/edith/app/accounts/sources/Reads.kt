@@ -98,4 +98,9 @@ object CalendarMerge {
 object AccountErrors {
     /** Google refused access twice, or wants approval: the owner must act in Settings → Accounts. */
     const val NEEDS_PERMISSION = "Edith needs your permission again. Open Settings → Accounts and tap the account."
+    /**
+     * C35 §2: the account hasn't given Edith its to-dos (signed in before C35, or Tasks unticked). Calendar and email
+     * still work; the fix is **To-dos: Grant access**.
+     */
+    const val TASKS_NEED_PERMISSION = "its to-dos need your permission — tell the user to tap To-dos: Grant access in Settings → Accounts (or in the Calendar tab's To-do view)"
 }

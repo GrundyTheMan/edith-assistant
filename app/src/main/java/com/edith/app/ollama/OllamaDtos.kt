@@ -28,9 +28,15 @@ object OllamaDtos {
     val options: OllamaOptions = OllamaOptions(),
     val tools: List<OllamaTool>? = null,
     @SerialName("keep_alive") val keepAlive: String? = null,
+    /** C35: a JSON schema the reply must follow (structured outputs); only for one-off, non-streaming calls. */
+    val format: JsonElement? = null,
 )
 
-@Serializable data class OllamaOptions(@SerialName("num_ctx") val numCtx: Int = OllamaDtos.CONTEXT_LENGTH)
+@Serializable data class OllamaOptions(
+    @SerialName("num_ctx") val numCtx: Int = OllamaDtos.CONTEXT_LENGTH,
+    /** Null: the model's own default. C35's ranking uses 0, as Jarvis does. */
+    val temperature: Double? = null,
+)
 
 @Serializable data class OllamaMessage(
     val role: String,

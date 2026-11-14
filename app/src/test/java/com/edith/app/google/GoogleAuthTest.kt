@@ -70,7 +70,7 @@ class GoogleAuthTest {
         assertEquals("owner@gmail.com", account.address)
         assertEquals("the label starts as the address", "owner@gmail.com", account.label)
         assertEquals(Account.SIGN_IN_PLAY, account.signIn)
-        assertEquals("every scope asked for at once, for that account", listOf("owner@gmail.com" to GoogleScope.entries.toSet()), h.play.asked)
+        assertEquals("calendar's and email's scopes at once, for that account; not Tasks (C35 trap 2)", listOf("owner@gmail.com" to GoogleScope.CORE), h.play.asked)
     }
 
     @Test fun `needs consent, then granted, connects`() = runBlocking {
@@ -207,7 +207,7 @@ class GoogleAuthTest {
         accounts.addGoogle(Activity())
         accounts.rename(only().first.id, "personal")
         assertEquals(listOf("list_calendar_events", "search_email"), withTools.available(model).map { it.spec.name })
-        assertTrue(prompt(withTools), prompt(withTools).contains("Accounts: personal — owner@gmail.com (Google: calendar and email)."))
+        assertTrue(prompt(withTools), prompt(withTools).contains("Accounts: personal — owner@gmail.com (Google: calendar, email and to-dos)."))
 
         h.signIn.result = GoogleSignIn.Result.SignedIn("sam@contoso.com", null)
         h.play.answers += GoogleAuthorizer.Result.NeedsConsent(null)
@@ -216,7 +216,7 @@ class GoogleAuthTest {
         assertEquals("still offered: one account works", 2, withTools.available(model).size)
         assertTrue(
             prompt(withTools),
-            prompt(withTools).contains("Accounts: personal — owner@gmail.com (Google: calendar and email); work — sam@contoso.com (Google: needs your permission)."),
+            prompt(withTools).contains("Accounts: personal — owner@gmail.com (Google: calendar, email and to-dos); work — sam@contoso.com (Google: needs your permission)."),
         )
 
         accounts.disconnect(accounts.accounts.value.first().first.id)

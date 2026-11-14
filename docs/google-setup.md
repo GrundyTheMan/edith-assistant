@@ -20,10 +20,11 @@ see and I'll help.
 1. Open <https://console.cloud.google.com/> and sign in with the Google account Edith should use.
 2. Project picker (top bar) → **New project** → name **Edith** → **Create**. Make sure it's selected afterwards.
 
-## 2. Turn on the two APIs
+## 2. Turn on the APIs
 1. **APIs & Services → Library**.
 2. Search **Google Calendar API** → **Enable**.
 3. Back to the Library, search **Gmail API** → **Enable**.
+4. Back to the Library, search **Google Tasks API** → **Enable** (C35, to-dos). Without it Edith says "The Google Tasks API isn't turned on in your Google Cloud project"; wait a minute after enabling.
 
 ## 3. Consent screen (Google Auth Platform)
 Menu → **APIs & Services → OAuth consent screen** (it may open **Google Auth Platform**). If it asks you to
@@ -39,6 +40,7 @@ Then, in Google Auth Platform:
    - `.../auth/calendar.calendarlist.readonly` (C18: which calendars you have checked)
    - `.../auth/gmail.readonly`
    - `.../auth/gmail.compose`
+   - `.../auth/tasks` (C35: to-dos; a sensitive scope, not a restricted one, so Testing mode is fine)
    - `openid` and `.../auth/userinfo.email`
 
    → **Update** → **Save**. Google marks the Gmail ones as restricted; that's fine for a Testing app used only by you.

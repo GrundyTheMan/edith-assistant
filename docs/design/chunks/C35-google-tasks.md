@@ -216,3 +216,42 @@ and the task as listed (for the card's "before").
 - Reminders/notifications for due tasks, recurring tasks (the Tasks API doesn't expose repeat rules), and
   scheduled re-ranking (Jarvis's scheduler; Edith has none).
 - Due times of day (the Tasks API doesn't keep them).
+
+## As built (2026-11-13, code and unit tests; live checks pending)
+
+Where the code differs from the specification above, the code is right.
+
+**Files**
+- `accounts/tasks/Tasks.kt`: `TaskSource`, `TaskItem`, `TaskList`, `TaskPatch`, `TasksAccess` (Unknown / Granted /
+  NeedsPermission), `TaskOrder` (sort by `position`, `siblingsOf`).
+- `accounts/tasks/TaskRanking.kt`: Jarvis's prompt, schema, parsing, key, `movesFor`, `RAISED_BY` (pure); `RankStore`
+  (`filesDir/task-ranks.json`, 50 newest, atomic); `TaskRanker` (the model call: `format` schema, temperature 0).
+- `accounts/tools/TaskTools.kt`: the eight tools, `TaskHandles` (`t1`…), `TaskFormat`; `WhichAccount.forTasks`.
+- `accounts/ui/TodoScreen.kt` and `CalendarScreen.kt` (`CalendarScreen` is now the **Agenda | To-do** switch; the old
+  screen is `AgendaScreen`).
+- `google/tasks/`: `TasksClient`, `TaskDue` (`fromGoogle`/`toGoogle`), `GoogleTaskSource`.
+- `google/GoogleAccountAuth.kt`: `tasks` state, `tasksAuthorized`, `grantTasks`; `GoogleScope.Tasks` and `CORE`.
+
+**Decisions made while building**
+- **Tasks access is separate from the account's state.** Startup and `check()` ask only for `GoogleScope.CORE`, so an
+  account signed in before C35 stays Connected and its Tasks access is Unknown until a Tasks call (or the To-do view)
+  finds out. Browser path: the refresh response's `scope` lacks `tasks` → NeedsPermission without a Tasks request. A 403
+  `insufficientPermissions` does the same. A 403 `accessNotConfigured`/`SERVICE_DISABLED` is the setup message instead.
+- **To-dos: Grant access.** Play services: Google's consent screen for the Tasks scope alone. Browser: Sign in again
+  (all scopes; the auth URL now carries `include_granted_scopes=true`). When calendar/mail need consent anyway on the
+  Play path, one consent screen covers every scope, Tasks included.
+- **Ollama client**: `ChatCall` gained `format` and `temperature`; `OllamaOptions.temperature`.
+- **`Tool.timeoutMs`** (new, optional): `suggest_task_order` may run 180 s instead of the loop's 20 s, as it makes a
+  model call per list.
+- **`ToolArgs.day`**: also takes weekday names ("friday" on a Friday is today; "next friday" is a week on) and, for a
+  date-time, takes the date as written (the model's `…T00:00:00Z` is that day, not the evening before).
+- **`apply_task_order`** needs the list's name; with the same list name in two accounts it asks which. The card makes
+  (or reuses) the ranking; `execute` uses only the saved one and moves nothing if the list changed since the card.
+- To-do view: the model is never called there; ticking uses `TaskSource.complete` directly; Undo is a 5 s snackbar.
+- Rankings are saved under `account id|list id|model`.
+
+**Verified:** `scripts/check.sh` (389 unit tests, 45 of them new) and `scripts/check.sh --device` (117 Compose UI tests on `Pixel_9_API_37`, including `TodoScreenTest`). Live on `Pixel_9_API_37` (debug build, one Google account via Play services): Grant access for to-dos (Google's consent screen, Tasks scope alone) after the calendar kept working; "What's on my to-do list?" matched the To-do view; add for tomorrow (card said Sat Nov 14, Google stored Nov 14); tick off and delete each behind a card; the To-do view's tick box, Show done and Undo; `suggest_task_order` with reasons and no change in Google; `apply_task_order` (card with old and new order, then Google Tasks reordered). On `Edith_Release_Test`: the release APK installed over the previous release without a crash or sign-in, and the account showed the "to-dos need your permission" banner, as designed.
+
+**Not verified yet:** the "ask which account" path with two accounts live (unit-tested only; the emulator has one Google account), the release APK after Grant access, the iPhone check in Andarium (browser accounts: Grant access through Chrome).
+
+**Found while testing:** the To-do view did not show a task Edith had just added until pulled to refresh; it now reloads when opened again (`TodoViewModel.refreshIfShown`).

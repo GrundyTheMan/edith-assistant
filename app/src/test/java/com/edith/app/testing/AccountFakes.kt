@@ -54,11 +54,13 @@ class FakePlay {
     val asked = mutableListOf<Pair<String, Set<GoogleScope>>>()
     val cleared = mutableListOf<String>()
     val revoked = mutableListOf<String>()
+    /** C35: an answer that depends on the scopes asked for (e.g. no Tasks yet); null falls through to the others. */
+    var byScopes: (email: String, Set<GoogleScope>) -> GoogleAuthorizer.Result? = { _, _ -> null }
 
     fun authorizer(email: String): GoogleAuthorizer = object : GoogleAuthorizer {
         override suspend fun authorize(scopes: Set<GoogleScope>): GoogleAuthorizer.Result {
             asked += email to scopes
-            return answers.removeFirstOrNull() ?: perAccount[email] ?: default
+            return answers.removeFirstOrNull() ?: byScopes(email, scopes) ?: perAccount[email] ?: default
         }
         override fun fromConsent(data: Intent?) = consent
         override suspend fun clearToken(token: String) { cleared += token }
@@ -115,6 +117,7 @@ class AccountsHarness(
         calendarBaseUrl = url("/calendar/v3"),
         gmailBaseUrl = url("/gmail/v1/users/me"),
         clock = clock,
+        tasksBaseUrl = url("/tasks/v1"),
     )
 
     val microsoft = MicrosoftAccounts(

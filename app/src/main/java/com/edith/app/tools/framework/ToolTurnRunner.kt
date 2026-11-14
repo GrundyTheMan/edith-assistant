@@ -138,7 +138,7 @@ class ToolTurnRunner(
                 }
             }
             emit(TurnEvent.Status(tool.statusLabelFor(args)))
-            withTimeout(toolTimeoutMs) { tool.execute(args, ctx) }
+            withTimeout(tool.timeoutMs?.coerceAtLeast(toolTimeoutMs) ?: toolTimeoutMs) { tool.execute(args, ctx) }
         } catch (e: ArgumentError) {
             ToolResult.Error("Error: ${e.message} for $name.")
         } catch (e: TimeoutCancellationException) {

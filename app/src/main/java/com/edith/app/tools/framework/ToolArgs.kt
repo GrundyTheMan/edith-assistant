@@ -1,5 +1,6 @@
 package com.edith.app.tools.framework
 
+import com.edith.app.core.time.Clock
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -23,6 +24,10 @@ class ToolArgs(val raw: JsonObject, private val spec: ToolSpec) {
 
     fun string(name: String): String? =
         element(name)?.let { (it as? JsonPrimitive)?.content ?: it.toString() }?.trim()?.takeIf { it.isNotEmpty() } ?: missing(name)
+
+    /** Like [string], but a value given as empty comes back as "" (C35: an empty `due` or `notes` clears it). */
+    fun stringOrEmpty(name: String): String? =
+        element(name)?.let { (it as? JsonPrimitive)?.content ?: it.toString() }?.trim()
 
     fun int(name: String): Int? = element(name)?.let { e ->
         val number = e.primitive(name).content.trim().toDoubleOrNull()
@@ -63,6 +68,17 @@ class ToolArgs(val raw: JsonObject, private val spec: ToolSpec) {
         }
     }
 
+    /**
+     * A day, never a time of day (C35: Google Tasks' due dates). Accepts `today`, `tomorrow`, `yesterday`, a weekday
+     * name (the next one, today included; "next friday" skips today), `YYYY-MM-DD`, or an ISO date-time, of which the
+     * date as written is taken (the model's `…T00:00:00Z` for "Friday" means Friday, not Thursday evening in
+     * Michigan, L29). Relative words count from [clock]'s today. Anything else is an [ArgumentError].
+     */
+    fun day(name: String, clock: Clock): LocalDate? = string(name)?.let { raw ->
+        parseDay(raw, clock.now().atZone(clock.zone()).toLocalDate())
+            ?: throw ArgumentError(name, "$name must be a day like 2026-11-14, or today, tomorrow or a weekday")
+    }
+
     private fun element(name: String): JsonElement? {
         raw[name]?.takeIf { it !is JsonNull }?.let { return it }
         val accepted = (listOf(name) + spec.parameters.firstOrNull { it.name == name }?.aliases.orEmpty()).map(::normalize)
@@ -75,7 +91,39 @@ class ToolArgs(val raw: JsonObject, private val spec: ToolSpec) {
     private fun JsonElement.primitive(name: String): JsonPrimitive =
         this as? JsonPrimitive ?: throw ArgumentError(name, "$name must be a single value")
 
-    private companion object {
-        fun normalize(key: String) = key.lowercase().replace("_", "").replace("-", "")
+    companion object {
+        private fun normalize(key: String) = key.lowercase().replace("_", "").replace("-", "")
+
+        private val DATE_PREFIX = Regex("^(\\d{4}-\\d{2}-\\d{2})(T.*)?$")
+
+        /** [day]'s rules on a text, with [today] given; null when it isn't a day. */
+        fun parseDay(raw: String, today: LocalDate): LocalDate? {
+            val text = raw.trim().lowercase().replace(Regex("\\s+"), " ")
+            when (text) {
+                "today" -> return today
+                "tomorrow" -> return today.plusDays(1)
+                "yesterday" -> return today.minusDays(1)
+            }
+            val next = text.startsWith("next ")
+            val word = text.removePrefix("next ").removePrefix("this ")
+            java.time.DayOfWeek.entries.firstOrNull { it.name.lowercase() == word || it.name.lowercase().take(3) == word }?.let { dow ->
+                var ahead = (dow.value - today.dayOfWeek.value + 7) % 7
+                if (ahead == 0 && next) ahead = 7
+                return today.plusDays(ahead.toLong())
+            }
+            val m = DATE_PREFIX.find(raw.trim()) ?: return null
+            m.groupValues[2].takeIf { it.isNotEmpty() }?.let { rest ->
+                // A date-time: it must still be one, but only its date as written counts.
+                val dt = m.groupValues[1] + rest
+                val ok = runCatching { OffsetDateTime.parse(dt) }.isSuccess || runCatching { LocalDateTime.parse(dt) }.isSuccess ||
+                    runCatching { ZonedDateTime.parse(dt) }.isSuccess
+                if (!ok) return null
+            }
+            return try {
+                LocalDate.parse(m.groupValues[1])
+            } catch (_: DateTimeParseException) {
+                null
+            }
+        }
     }
 }

@@ -44,7 +44,14 @@ interface OllamaClient {
     suspend fun version(baseUrl: String): Outcome<String>
 }
 
-data class ChatCall(val model: String, val messages: List<OllamaMessage>, val tools: List<OllamaTool>? = null)
+data class ChatCall(
+    val model: String,
+    val messages: List<OllamaMessage>,
+    val tools: List<OllamaTool>? = null,
+    /** C35: a JSON schema for the reply (Ollama's `format`), e.g. the to-do ranking's. */
+    val format: kotlinx.serialization.json.JsonElement? = null,
+    val temperature: Double? = null,
+)
 
 sealed interface ChatEvent {
     data class Delta(val text: String) : ChatEvent
@@ -151,9 +158,10 @@ class OkHttpOllamaClient(
             messages = call.messages,
             stream = stream,
             think = ThinkPolicy.forModel(call.model),
-            options = OllamaOptions(numCtx = OllamaDtos.CONTEXT_LENGTH),
+            options = OllamaOptions(numCtx = OllamaDtos.CONTEXT_LENGTH, temperature = call.temperature),
             tools = call.tools?.takeIf { it.isNotEmpty() },
             keepAlive = keepAlive,
+            format = call.format,
         )
         val payload = json.encodeToString(OllamaChatRequest.serializer(), body)
         return Request.Builder().url(url(baseUrl, "api/chat")).post(payload.toRequestBody(JSON_TYPE)).build()
