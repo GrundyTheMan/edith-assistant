@@ -221,8 +221,8 @@ private fun OwnVoiceRow(state: VoiceUiState, actions: VoiceActions) {
                 Text(text, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 TextButton(onClick = actions.onCancelDownload, modifier = Modifier.testTag(CANCEL_TAG)) { Text("Cancel") }
             }
-            OwnVoiceState.Verifying -> Text("Checking the download…", style = MaterialTheme.typography.bodyMedium)
-            OwnVoiceState.Unpacking -> Text("Unpacking…", style = MaterialTheme.typography.bodyMedium)
+            is OwnVoiceState.Verifying -> Text("Checking the download ${own.percent}%", style = MaterialTheme.typography.bodyMedium)
+            is OwnVoiceState.Unpacking -> Text("Unpacking ${own.percent}% (can take a few minutes)", style = MaterialTheme.typography.bodyMedium)
             is OwnVoiceState.Ready -> {
                 Text("Ready, ${(own.sizeBytes + 500_000) / 1_000_000} MB", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 TextButton(onClick = actions.onDeleteVoice, modifier = Modifier.testTag(DELETE_TAG)) { Text("Delete") }

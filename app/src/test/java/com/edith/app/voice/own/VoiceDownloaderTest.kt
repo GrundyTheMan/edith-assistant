@@ -7,6 +7,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import mockwebserver3.Dispatcher
@@ -170,6 +171,37 @@ class VoiceDownloaderTest {
         assertTrue(downloader(voiceFor(bytes)).state.value is OwnVoiceState.Ready)
     }
 
+    @Test fun `checking and unpacking report their progress, rising to 100 and finishing`() {
+        val bytes = archive(goodItems() + file("vits-piper-test/espeak-ng-data/big", "x".repeat(40_000)))
+        serve(bytes)
+        val d = downloader(voiceFor(bytes))
+        val seen = CopyOnWriteArrayList<OwnVoiceState>()
+        val collector = scope.launch(Dispatchers.Unconfined) { d.state.collect { seen += it } }
+        d.start()
+        d.awaitState { it is OwnVoiceState.Ready }
+        runBlocking { delay(100) }
+        collector.cancel()
+
+        val verifying = seen.filterIsInstance<OwnVoiceState.Verifying>().map { it.percent }
+        val unpacking = seen.filterIsInstance<OwnVoiceState.Unpacking>().map { it.percent }
+        assertTrue("checking started at 0 and reached 100: $verifying", verifying.first() == 0 && verifying.last() == 100)
+        assertTrue("unpacking started at 0 and reached 100: $unpacking", unpacking.first() == 0 && unpacking.last() == 100)
+        assertEquals("never goes backwards", verifying.sorted(), verifying)
+        assertEquals("never goes backwards", unpacking.sorted(), unpacking)
+        assertTrue("in order: checking, then unpacking, then ready", seen.indexOfFirst { it is OwnVoiceState.Verifying } < seen.indexOfFirst { it is OwnVoiceState.Unpacking })
+    }
+
+    @Test fun `the hash check reports its progress on a big file, rising to 100`() {
+        val big = temp.newFile("big.bin").apply { writeBytes(ByteArray(2_000_000) { (it % 251).toByte() }) }
+        val seen = mutableListOf<Int>()
+        val hash = VoiceDownloader.sha256(big) { seen += it }
+        assertEquals(sha256(big.readBytes()), hash)
+        assertEquals(100, seen.last())
+        assertTrue("many steps, not just the end: ${seen.size}", seen.size > 20)
+        assertEquals(seen.sorted(), seen)
+        assertEquals("each value once", seen.distinct(), seen)
+    }
+
     @Test fun `delete removes the voice`() {
         val bytes = archive()
         serve(bytes)
@@ -289,6 +321,16 @@ class VoiceDownloaderTest {
         expectBad(goodItems() + file("vits-piper-test/another.onnx", "second"), "two models")
 
     // --- Limits (on the extractor, with small caps) --------------------------------------------------------------
+
+    @Test fun `extraction reports the share of the archive read, ending at 100`() {
+        val f = temp.newFile("p.tar.bz2").apply { writeBytes(archive(goodItems() + file("vits-piper-test/espeak-ng-data/big", "y".repeat(40_000)))) }
+        val seen = mutableListOf<Int>()
+        VoiceArchive.extract(f, File(temp.root, "op"), onProgress = { seen += it })
+        assertTrue(seen.isNotEmpty())
+        assertEquals(100, seen.last())
+        assertEquals(seen.sorted(), seen)
+        assertEquals("each value once", seen.distinct(), seen)
+    }
 
     @Test fun `too many entries or too many bytes are refused`() {
         val f = temp.newFile("v.tar.bz2").apply { writeBytes(archive()) }
