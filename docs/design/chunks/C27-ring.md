@@ -32,3 +32,34 @@ again; one Ring failure not stopping other backends.
 
 ## Traps
 Unofficial; never log tokens or images; snapshots of a sleeping battery camera can be old or slow; say so.
+
+## As built — part 1 of 2 (core; Clips follow in a second PR, agreed with the owner 2026-11-14)
+- **Done in part 1:** sign-in with the 2FA code, the rotating refresh token, devices (doorbells and cameras, with battery and
+  online state), snapshots (`camera_snapshot`, C25's tool), event history (`recent_events`, new), and Settings → Home (the generic
+  service row and sign-in dialog from C26). **Not yet:** the Clips chip and playback (part 2; the owner approved adding Media3
+  ExoPlayer for it).
+- **Code:** `ring/RingApi` (OkHttp, stateless), `ring/RingService` (a `HomeService` plus the `HomeBackend`); generic additions in `home/`:
+  `HomeBackend.events` and `EventKind`/`DeviceEvent`, `HomeBackend.snapshotTimeoutMs` (Ring: 35 s; a battery camera must wake),
+  `Home.events`, and the `recent_events` tool (`RecentEventsTool`: `device?`, `hours?` 1–72, default 24).
+- **Protocol:** read from `ring-client-api` **v14.3.0** (Jarvis's `node_modules`) on 2026-11-14. `POST oauth.ring.com/oauth/token`
+  (`client_id=ring_official_android`, password grant, 2FA code in the `2fa-code` header, HTTP 412 = a code is wanted, 400
+  "Verification Code…" = wrong code; then the `refresh_token` grant), `POST clients_api/session` (this phone's hardware id; Ring wants one
+  before it answers the rest), `GET clients_api/ring_devices`, `GET app-snaps.ring.com/snapshots/next/{id}?after-ms=…&extras=force`
+  (JPEG), `GET clients_api/locations/{loc}/devices/{id}/events`. Headers `Authorization: Bearer …`, `hardware_id`, `User-Agent: android:com.ringapp`.
+- **Rotating token (C23 trap 1):** the new refresh token is saved (`SecretStore` `home/ring`: the token and the phone's hardware id, nothing
+  else) *before* the access token it came with is used, and refreshes never overlap (a lock): several calls at once would otherwise
+  spend the same old token and lose the sign-in. Tests: `RingServiceTest` (saved-before-use, six parallel calls → one refresh).
+  A refresh Ring refuses (400/401) is "Sign in again"; an unreachable Ring is not (the owner stays signed in).
+- **Found by a test:** a 2FA sign-in makes two or three requests before anything is saved; each must send the **same** hardware id
+  (Ring ties the code to it), so one is held in memory until the sign-in completes.
+- **Snapshots:** always a *forced new* picture (as Jarvis), so it is new or fails; Edith says why when it can't: camera offline,
+  "Record Motion"/motion detection off (Ring then gives no pictures), or no picture within 35 s (battery cameras can't take one while
+  streaming). Pictures and tokens are never logged.
+- **Events:** the last 50 per camera, filtered to the asked hours, newest first; `ding` = Ring, `motion` (a person when
+  `cv_properties` say so), `on_demand` = a live view; other kinds are left out of the answer.
+- **Tests:** `RingApiTest` (8), `RingServiceTest` (13), `RingToolsTest` (5), against a pretend Ring that rotates refresh tokens like Ring
+  does (`RingTestKit`). `scripts/check.sh`: OK (`build-logs/` newest `*_check.log`).
+- **Not verified against the real Ring:** everything above is from the library's source and the pretend Ring. The owner's live check
+  (acceptance, first three items): sign in with the 2FA code, "Show me the front door camera", "Did anyone ring today?", the Home tab,
+  and a restart that stays signed in. Unconfirmed guesses: that the Ring app lists Edith under Control Center (used in the disconnect
+  hint), and the `events` endpoint's page size (50).

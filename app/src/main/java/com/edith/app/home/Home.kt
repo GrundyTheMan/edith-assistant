@@ -198,7 +198,14 @@ class Home(
     suspend fun snapshot(device: HomeDevice): Outcome<ByteArray> {
         val backend = backends.value.firstOrNull { it.id == device.backend }
             ?: return Outcome.Failure(AppError.ToolFailed(device.backend, "that service isn't connected"))
-        return withTimeoutOrNull(SNAPSHOT_TIMEOUT_MS) { backend.snapshot(device.id) } ?: Outcome.Failure(AppError.Timeout)
+        return withTimeoutOrNull(backend.snapshotTimeoutMs ?: SNAPSHOT_TIMEOUT_MS) { backend.snapshot(device.id) } ?: Outcome.Failure(AppError.Timeout)
+    }
+
+    /** What a camera or doorbell reported since [sinceMs], newest first. */
+    suspend fun events(device: HomeDevice, sinceMs: Long): Outcome<List<DeviceEvent>> {
+        val backend = backends.value.firstOrNull { it.id == device.backend }
+            ?: return Outcome.Failure(AppError.ToolFailed(device.backend, "that service isn't connected"))
+        return withTimeoutOrNull(backend.timeoutMs ?: timeoutMs) { backend.events(device.id, sinceMs) } ?: Outcome.Failure(AppError.Timeout)
     }
 
     suspend fun setFavorite(device: HomeDevice, on: Boolean) = prefs.setFavorite(device.key, on)
