@@ -60,6 +60,8 @@ class RingService(
     @Volatile private var pendingHardwareId: String? = null
     /** The cameras last listed, for events (they need the location id) and picture checks. */
     @Volatile private var cameras: List<RingCamera> = emptyList()
+    /** The addresses the clip search listed clips with, by clip id: a last resort when Ring gives no fresh one. */
+    private val listedUrls = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     override val backend: HomeBackend = Backend()
 
@@ -119,7 +121,7 @@ class RingService(
     override suspend fun disconnect() {
         refreshLock.withLock {
             secrets.put(SECRET_KEY, null)
-            saved = null; access = null; sessionReady = false; cameras = emptyList()
+            saved = null; access = null; sessionReady = false; cameras = emptyList(); listedUrls.clear()
         }
         _state.value = ServiceState.NotConnected
         _connected.value = IntegrationStatus.NotConnected
@@ -275,11 +277,29 @@ class RingService(
             if (answered == 0 && firstFailure != null) return firstFailure
             // Whether the account has a plan isn't asked of Ring: it shows in the search (every recent event without one).
             val noPlan = rows.isNotEmpty() && rows.none { it.hadPlan }
+            rows.forEach { r -> r.url?.let { listedUrls[r.id] = it } }
             val clips = if (noPlan) emptyList() else rows.filter { it.hadPlan }.map { DeviceClip(it.id, ID, it.cameraName, it.at, it.kind, it.seconds) }
             return Outcome.Success(ClipsPage(clips.sortedByDescending { it.at }, noPlan))
         }
 
-        override suspend fun clipUrl(clipId: String): Outcome<String> = authed { t, h -> api.clipUrl(t, h, clipId) }
+        /**
+         * A fresh address for a clip: `share/play`, then `recording` (Ring answers 404 to the one it doesn't have; the
+         * owner's account answered 404 to `recording` on 2026-11-14), then the address the search listed it with.
+         */
+        override suspend fun clipUrl(clipId: String): Outcome<String> {
+            var failure: Outcome.Failure? = null
+            for (transcoded in listOf(false, true)) {
+                when (val r = authed { t, h -> api.clipUrl(t, h, clipId, transcoded) }) {
+                    is Outcome.Success -> return r
+                    is Outcome.Failure -> {
+                        if (_state.value == ServiceState.NeedsSignIn) return r
+                        if (failure == null) failure = r
+                    }
+                }
+            }
+            listedUrls[clipId]?.let { return Outcome.Success(it) }
+            return failure ?: Outcome.Failure(AppError.ToolFailed("Ring", "Ring has no address for that clip"))
+        }
     }
 
     @Serializable

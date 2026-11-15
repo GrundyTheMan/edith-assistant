@@ -22,9 +22,10 @@ class ClipsTest {
         var page: Outcome<ClipsPage>,
         var urls: Outcome<String> = Outcome.Success("https://example.test/$id.mp4"),
         var hang: Boolean = false,
+        connected: Boolean = true,
     ) : HomeBackend {
         override val displayName = id.replaceFirstChar { it.uppercase() }
-        override val status = MutableStateFlow(com.edith.app.tools.framework.IntegrationStatus.Connected)
+        override val status = MutableStateFlow(if (connected) com.edith.app.tools.framework.IntegrationStatus.Connected else com.edith.app.tools.framework.IntegrationStatus.NotConnected)
         override val hasClips = true
         val asked = mutableListOf<Pair<Long, Long>>()
         override suspend fun devices(): Outcome<List<HomeDevice>> = Outcome.Success(emptyList())
@@ -45,7 +46,7 @@ class ClipsTest {
         assertEquals(listOf("c", "b", "a"), r.clips.map { it.id })
         assertEquals(listOf("ring", "blink", "ring"), r.clips.map { it.backend })
         assertEquals(listOf(0L to 1000L), ring.asked)
-        assertTrue(k.home.hasClips)
+        assertTrue(k.home.hasClips.value)
     }
 
     @Test fun `one service failing or hanging doesn't hide the other's clips, and is said`() = runTest {
@@ -75,9 +76,22 @@ class ClipsTest {
         assertTrue(k.home.clipUrl(clip("a", 1).copy(backend = "gone")) is Outcome.Failure)
     }
 
+    @Test fun `a service that isn't signed in is neither asked for clips nor makes the Clips chip show`() = runTest {
+        val out = WithClips("ring", Outcome.Failure(AppError.ToolFailed("Ring", "it isn't signed in")), connected = false)
+        val k = HomeKit(this, backgroundScope, out, demoOn = false)
+        testScheduler.runCurrent()
+        assertFalse(k.home.hasClips.value)
+        val r = k.home.clips(0, 1000)
+        assertTrue("no failure line for a service that was never signed in", r.problems.isEmpty() && r.clips.isEmpty())
+        assertTrue("it wasn't asked", out.asked.isEmpty())
+        out.status.value = com.edith.app.tools.framework.IntegrationStatus.Connected
+        testScheduler.runCurrent()
+        assertTrue("the chip shows once it is signed in", k.home.hasClips.value)
+    }
+
     @Test fun `a service without clips doesn't show the chip, and its default answers plainly`() = runTest {
         val k = HomeKit(this, backgroundScope)   // the Demo home only
-        assertFalse(k.home.hasClips)
+        assertFalse(k.home.hasClips.value)
         assertTrue(k.fake.clips(0, 1) is Outcome.Failure)
     }
 

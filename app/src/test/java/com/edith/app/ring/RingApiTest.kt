@@ -118,14 +118,16 @@ class RingApiTest {
         assertEquals(listOf("5", "500", "4000", "desc"), listOf("doorbot_id", "date_from", "date_to", "order").map { sent.queryParameter(it) })
     }
 
-    @Test fun `a clip's address is asked for at play time, and only an https one is accepted`() = runBlocking {
+    @Test fun `a clip's address is asked for at play time from the endpoint asked for, and only an https one is accepted`() = runBlocking {
         ring.validAccess += "tok"
-        assertEquals("https://clips.example.test/video.mp4", (ring.api().clipUrl("tok", "hw", "9") as RingReply.Ok).value)
-        assertEquals("/clients_api/dings/9/recording", ring.requests.last().url.encodedPath)
+        assertEquals("https://clips.example.test/shared.mp4", (ring.api().clipUrl("tok", "hw", "9", transcoded = false) as RingReply.Ok).value)
+        assertEquals("/clients_api/dings/9/share/play", ring.requests.last().url.encodedPath)
         assertEquals("true", ring.requests.last().url.queryParameter("disable_redirect"))
-        ring.recordingUrl = "http://clips.example.test/plain.mp4"
-        assertTrue("never a cleartext address", ring.api().clipUrl("tok", "hw", "9") is RingReply.Failed)
-        ring.recordingUrl = null
-        assertTrue("Ring hasn't saved it yet", ring.api().clipUrl("tok", "hw", "9") is RingReply.Failed)
+        assertEquals("https://clips.example.test/video.mp4", (ring.api().clipUrl("tok", "hw", "9", transcoded = true) as RingReply.Ok).value)
+        assertEquals("/clients_api/dings/9/recording", ring.requests.last().url.encodedPath)
+        ring.sharePlayUrl = "http://clips.example.test/plain.mp4"
+        assertTrue("never a cleartext address", ring.api().clipUrl("tok", "hw", "9", false) is RingReply.Failed)
+        ring.sharePlayUrl = null
+        assertTrue("Ring hasn't saved it yet", ring.api().clipUrl("tok", "hw", "9", false) is RingReply.Failed)
     }
 }

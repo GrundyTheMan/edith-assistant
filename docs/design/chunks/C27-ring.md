@@ -87,3 +87,20 @@ Unofficial; never log tokens or images; snapshots of a sleeping battery camera c
   or in a release build. **Per the project rule, a release build must be checked on `Edith_Release_Test` before publishing** (R8 broke ONNX
   Runtime once; it accepts Media3, but only playing a clip proves the keep rules). Andarium on the iPhone may lack a video decoder or
   behave differently: the player then shows "This phone couldn't play the clip (…)" and logs the code.
+
+## Found on the owner's phone (2026-11-14, v2.0.0-dev.6 in Andarium): playing a clip
+- **The Clips list worked** on the real Ring account (sign-in, the search, the rows with their camera, trigger, length and time). **Playing a clip
+  failed**: "Ring answered HTTP 404 for the clip." The address was asked of `dings/{id}/recording` only; Ring answered 404 to that one for this account.
+- **Change:** the address is now asked of `dings/{id}/share/play` first (the video as recorded; `ring-client-api`'s default), then `…/recording` (the
+  transcoded one), and last the signed address the search itself listed the clip with (`lq_url`, which Jarvis plays from before asking for a new one).
+  Tests: `RingApiTest` (both endpoints), `RingServiceTest` (the fallback order, including the phone's case of `recording` answering 404).
+- **Still unverified:** that `share/play` or the listed address plays on this account, and whether the iPhone's Andarium can then decode the video
+  (the player says "This phone couldn't play the clip" with an error code if not). The pretend Ring can't show either.
+- **Seen on the emulator (2026-11-14), with made-up clips served from the PC:** the Clips chip, the list (a second window of older clips loaded), the
+  Media3 player and the "clip can't be played" message all work. Two findings, both changed:
+  - **A decoder that fails once it is running.** The emulator's `c2.goldfish.h264.decoder` failed on a plain H.264 file
+    (`ERROR_CODE_DECODING_FAILED`). The player now rebuilds itself **once** with software decoders first (`c2.android.*`), which played the clip. Whether
+    the iPhone's Andarium needs this is unknown; if it still fails, the dialog names the error code.
+  - **A service that isn't signed in was asked for clips** (a "Ring didn't answer: it isn't signed in" line under the list, and the Clips chip showing for
+    a signed-out Ring). Clips are now asked only of connected services, and the chip shows only while one is connected (`Home.hasClips` is a flow;
+    `ClipsTest`).

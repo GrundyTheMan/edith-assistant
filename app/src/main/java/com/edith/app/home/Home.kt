@@ -208,8 +208,13 @@ class Home(
         return withTimeoutOrNull(backend.timeoutMs ?: timeoutMs) { backend.events(device.id, sinceMs) } ?: Outcome.Failure(AppError.Timeout)
     }
 
-    /** Whether any connected service has clips to browse. */
-    val hasClips: Boolean get() = backends.value.any { it.hasClips }
+    /** Whether any service that is signed in has clips to browse: the Clips chip shows only then. */
+    val hasClips: StateFlow<Boolean> = backends
+        .flatMapLatest { list ->
+            val withClips = list.filter { it.hasClips }
+            if (withClips.isEmpty()) flowOf(false) else combine(withClips.map { it.status }) { all -> IntegrationStatus.Connected in all }
+        }
+        .stateIn(scope, SharingStarted.Eagerly, false)
 
     /** What [clips] found: the clips (newest first), whether an account has no plan for them, and a line per service that failed. */
     data class ClipsResult(val clips: List<DeviceClip>, val noPlan: Boolean, val problems: List<String>)
@@ -217,7 +222,7 @@ class Home(
     /** Clips from every connected service that has them, between [sinceMs] and [untilMs]. One service failing doesn't hide the others. */
     suspend fun clips(sinceMs: Long, untilMs: Long): ClipsResult {
         val clips = mutableListOf<DeviceClip>(); val problems = mutableListOf<String>(); var noPlan = false; var answered = 0
-        for (b in backends.value.filter { it.hasClips }) {
+        for (b in connected().filter { it.hasClips }) {
             when (val r = withTimeoutOrNull(b.timeoutMs ?: timeoutMs) { b.clips(sinceMs, untilMs) } ?: Outcome.Failure(AppError.Timeout)) {
                 is Outcome.Success -> { answered++; clips += r.value.clips.map { it.copy(backend = b.id) }; noPlan = noPlan || r.value.noPlan }
                 is Outcome.Failure -> problems += "${b.displayName} didn't answer: ${why(r.error)}."

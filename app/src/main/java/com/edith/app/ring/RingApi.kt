@@ -202,10 +202,12 @@ class RingApi(
             root.array("video_search").mapNotNull { clipRow(it, camera) }
         }
     }
-
-    /** A signed address to stream clip [dingId] from (`dings/{id}/recording`, the transcoded video). It expires, so it is asked for at play time. */
-    suspend fun clipUrl(accessToken: String, hardwareId: String, dingId: String): RingReply<String> =
-        get("${endpoints.clients}/dings/$dingId/recording?disable_redirect=true", accessToken, hardwareId, "the clip") { text ->
+    /**
+     * A signed address to stream clip [dingId] from, asked for at play time because it expires: `dings/{id}/share/play` (the video as
+     * recorded, `ring-client-api`'s default) or, with [transcoded], `dings/{id}/recording`. Ring answers 404 to one when it has only the other.
+     */
+    suspend fun clipUrl(accessToken: String, hardwareId: String, dingId: String, transcoded: Boolean): RingReply<String> =
+        get("${endpoints.clients}/dings/$dingId/${if (transcoded) "recording" else "share/play"}?disable_redirect=true", accessToken, hardwareId, "the clip") { text ->
             (json.parseToJsonElement(text) as? JsonObject)?.text("url")?.takeIf { it.startsWith("https://") } ?: throw SerializationException("no address")
         }
 
@@ -223,7 +225,9 @@ class RingApi(
             else -> EventKind.Other
         }
         val seconds = (d["duration"] as? JsonPrimitive)?.doubleOrNull?.toInt()
-        return RingClipRow(id, camera.name, at, kind, seconds, hadPlan = (d["had_subscription"] as? JsonPrimitive)?.booleanOrNull != false)
+        // The search lists addresses of its own (signed, they expire): kept as a last resort for playing.
+        val url = listOf("lq_url", "hq_url", "untranscoded_url").firstNotNullOfOrNull { d.text(it)?.takeIf { u -> u.startsWith("https://") } }
+        return RingClipRow(id, camera.name, at, kind, seconds, hadPlan = (d["had_subscription"] as? JsonPrimitive)?.booleanOrNull != false, url = url)
     }
 
     // ---- parsing (internal: the tests use them) ----
@@ -355,4 +359,4 @@ internal suspend fun Call.await(): Response = suspendCancellableCoroutine { cont
 }
 
 /** One clip as Ring's video search lists it. [hadPlan]: it was recorded under a Ring Protect plan (false: nothing was kept). */
-data class RingClipRow(val id: String, val cameraName: String, val at: Long, val kind: EventKind, val seconds: Int?, val hadPlan: Boolean)
+data class RingClipRow(val id: String, val cameraName: String, val at: Long, val kind: EventKind, val seconds: Int?, val hadPlan: Boolean, val url: String? = null)
