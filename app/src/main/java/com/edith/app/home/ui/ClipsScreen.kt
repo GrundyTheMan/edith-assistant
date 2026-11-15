@@ -174,7 +174,16 @@ private fun ClipPlayer(url: String) {
     DisposableEffect(player) { onDispose { player.release() } }   // never left playing behind a closed dialog
     failure.value?.let { Text(it); return }
     AndroidView(
-        factory = { c -> PlayerView(c).apply { this.player = player; layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT) } },
+        factory = { c ->
+            PlayerView(c).apply {
+                this.player = player
+                layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                // Play/pause and the seek bar stay on screen; by default they appear only after a tap and fade after 5 s.
+                controllerShowTimeoutMs = 0
+                controllerHideOnTouch = false
+                showController()
+            }
+        },
         update = { it.player = player },
         modifier = Modifier.fillMaxWidth().height(220.dp),
     )
