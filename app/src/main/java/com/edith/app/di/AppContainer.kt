@@ -93,6 +93,8 @@ import com.edith.app.home.FakeHomeBackend
 import com.edith.app.home.Home
 import com.edith.app.home.RoomCommandLog
 import com.edith.app.home.homeTools
+import com.edith.app.alexa.AlexaApi
+import com.edith.app.alexa.AlexaService
 import com.edith.app.meross.MerossApi
 import com.edith.app.meross.MerossService
 import com.edith.app.meross.PahoMerossBus
@@ -392,13 +394,17 @@ class AppContainer(val app: Application) {
     /** Ring doorbells and cameras (C27): the sign-in is kept encrypted in [secretStore]. */
     val ring: RingService by lazy { RingService(secretStore, RingApi(okHttpLazy), clock) }
 
+    /** Alexa devices (C30): the sign-in is kept encrypted in [secretStore]. */
+    val alexa: AlexaService by lazy { AlexaService(secretStore, AlexaApi(okHttpLazy), clock) }
+
     val home: Home by lazy {
         Home(
             DataStoreHomePrefs(settingsStore.store), homeCommandLog, appScope, clock,
             demo = if (BuildConfig.DEBUG) FakeHomeBackend(clock, DemoPicture::jpeg) else null,
         ).also { h ->
             h.register(meross)   // C26
-            h.register(ring)     // C27; C28–C31 register theirs here
+            h.register(ring)     // C27
+            h.register(alexa)    // C30; C28, C29, C31 register theirs here
         }
     }
 
@@ -466,6 +472,12 @@ class AppContainer(val app: Application) {
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e(LogTag.Home, "Couldn't load the Ring sign-in", e)
+        }
+        try {
+            alexa.load()   // C30: picks up the saved Alexa sign-in
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.e(LogTag.Home, "Couldn't load the Alexa sign-in", e)
         }
     }
 

@@ -55,7 +55,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /** One service in Settings → Home: its name, where it stands, and how it signs in (C25 §7, C26–C31). */
-data class HomeServiceRow(val id: String, val name: String, val state: ServiceState, val form: SignInForm?, val removeHint: String? = null)
+data class HomeServiceRow(val id: String, val name: String, val state: ServiceState, val form: SignInForm?, val removeHint: String? = null, val pageSite: String? = null)
 
 data class HomeSettingsUi(
     val services: List<HomeServiceRow> = emptyList(),
@@ -73,7 +73,7 @@ class HomeSettingsViewModel(private val home: Home, log: kotlinx.coroutines.flow
     private val services = home.services.flatMapLatest { list ->
         if (list.isEmpty()) flowOf(emptyList())
         else combine(list.map { it.state }) { states ->
-            list.mapIndexed { i, s -> HomeServiceRow(s.backend.id, s.backend.displayName, states[i], s.form, s.removeHint) }
+            list.mapIndexed { i, s -> HomeServiceRow(s.backend.id, s.backend.displayName, states[i], s.form, s.removeHint, s.pageSignIn?.siteName) }
         }
     }
 
@@ -103,6 +103,19 @@ class HomeSettingsViewModel(private val home: Home, log: kotlinx.coroutines.flow
         }
     }
 
+    /** Starts a sign-in on the service's own page (Alexa); null when the service has none. */
+    fun beginPage(serviceId: String): com.edith.app.home.PageSignInStart? =
+        home.services.value.firstOrNull { it.backend.id == serviceId }?.pageSignIn?.begin()
+
+    /** Finishes it with the address the page ended on and the web view's cookies (empty from a browser). */
+    fun finishPage(serviceId: String, address: String, cookies: String, done: (SignInResult) -> Unit) {
+        viewModelScope.launch {
+            val page = home.services.value.firstOrNull { it.backend.id == serviceId }?.pageSignIn
+            done(page?.finish(address, cookies) ?: SignInResult.Failed("That service isn't available."))
+            home.refresh()
+        }
+    }
+
     fun disconnect(serviceId: String) {
         viewModelScope.launch {
             home.services.value.firstOrNull { it.backend.id == serviceId }?.disconnect()
@@ -118,7 +131,7 @@ class HomeSettingsViewModel(private val home: Home, log: kotlinx.coroutines.flow
 @Composable
 fun HomeSection(vm: HomeSettingsViewModel = viewModel(factory = HomeSettingsViewModel.Factory)) {
     val ui by vm.state.collectAsStateWithLifecycle()
-    HomeSettingsContent(ui, vm::setDemo, vm::show, vm::signIn, vm::disconnect)
+    HomeSettingsContent(ui, vm::setDemo, vm::show, vm::signIn, vm::disconnect, vm::beginPage, vm::finishPage)
 }
 
 @Composable
@@ -128,6 +141,8 @@ fun HomeSettingsContent(
     onShow: (String, String) -> Unit,
     onSignIn: (serviceId: String, values: Map<String, String>, done: (SignInResult) -> Unit) -> Unit = { _, _, _ -> },
     onDisconnect: (serviceId: String) -> Unit = {},
+    onBeginPage: (serviceId: String) -> com.edith.app.home.PageSignInStart? = { null },
+    onFinishPage: (serviceId: String, address: String, cookies: String, done: (SignInResult) -> Unit) -> Unit = { _, _, _, _ -> },
 ) {
     var showLog by remember { mutableStateOf(false) }
     var signingIn by remember { mutableStateOf<HomeServiceRow?>(null) }
@@ -155,9 +170,9 @@ fun HomeSettingsContent(
                 }
                 when (s.state) {
                     ServiceState.Connected -> TextButton(onClick = { disconnecting = s }, modifier = Modifier.testTag(DISCONNECT_TAG + s.id)) { Text("Disconnect") }
-                    ServiceState.NotConnected -> if (s.form != null) Button(onClick = { signingIn = s }, modifier = Modifier.testTag(SIGN_IN_TAG + s.id)) { Text("Sign in") }
+                    ServiceState.NotConnected -> if (s.form != null || s.pageSite != null) Button(onClick = { signingIn = s }, modifier = Modifier.testTag(SIGN_IN_TAG + s.id)) { Text("Sign in") }
                     ServiceState.NeedsSignIn -> Row {
-                        if (s.form != null) Button(onClick = { signingIn = s }, modifier = Modifier.testTag(SIGN_IN_TAG + s.id)) { Text("Sign in again") }
+                        if (s.form != null || s.pageSite != null) Button(onClick = { signingIn = s }, modifier = Modifier.testTag(SIGN_IN_TAG + s.id)) { Text("Sign in again") }
                         TextButton(onClick = { disconnecting = s }) { Text("Disconnect") }
                     }
                 }
@@ -185,7 +200,11 @@ fun HomeSettingsContent(
         TextButton(onClick = { showLog = true }) { Text("Command log (${ui.log.size})") }
     }
     if (showLog) CommandLogDialog(ui.log) { showLog = false }
-    signingIn?.let { s -> s.form?.let { form -> SignInDialog(form, { values, done -> onSignIn(s.id, values, done) }) { signingIn = null } } }
+    signingIn?.let { s ->
+        val form = s.form
+        if (form != null) SignInDialog(form, { values, done -> onSignIn(s.id, values, done) }) { signingIn = null }
+        else PageSignInDialog(s.name, s.pageSite.orEmpty(), { onBeginPage(s.id) }, { address, cookies, done -> onFinishPage(s.id, address, cookies, done) }) { signingIn = null }
+    }
     disconnecting?.let { s ->
         AlertDialog(
             onDismissRequest = { disconnecting = null },
