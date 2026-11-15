@@ -42,6 +42,32 @@ interface HomeService {
     suspend fun signIn(values: Map<String, String>): SignInResult
     /** Signs out at the service where it can, and forgets everything saved. */
     suspend fun disconnect()
+    /** For a service that signs in on its own web page instead of a form (Alexa). Null for the others. */
+    val pageSignIn: PageSignIn? get() = null
     /** Where the owner can also remove Edith at the service, or null. */
     val removeHint: String? get() = null
+}
+
+/**
+ * The page a service signs in on, for a service with no form of its own (Alexa: Amazon's own page, C30). Edith opens
+ * [url] in an in-app web view, which sets [cookies] first and watches for [isFinish]; or the owner uses the browser and
+ * pastes the address it ends on. The password goes to the service's page, never through Edith's code.
+ */
+data class PageSignInStart(
+    val url: String,
+    /** The site whose cookies the web view hands back, e.g. `https://www.amazon.com`. */
+    val cookieSite: String,
+    /** Cookies the page expects before it loads, name to value. */
+    val cookies: Map<String, String>,
+    /** Whether an address is where the sign-in ends. */
+    val isFinish: (String) -> Boolean,
+)
+
+interface PageSignIn {
+    /** Whose page it is, as the owner knows it: "Amazon". */
+    val siteName: String
+    /** Starts a sign-in: a new one each time. */
+    fun begin(): PageSignInStart
+    /** Finishes with the address the page ended on and the web view's cookies for [PageSignInStart.cookieSite] (empty from a browser). */
+    suspend fun finish(address: String, cookies: String): SignInResult
 }

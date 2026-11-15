@@ -1,0 +1,437 @@
+package com.edith.app.alexa
+
+import com.edith.app.core.log.Log
+import com.edith.app.core.log.LogTag
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.put
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.FormBody
+import okhttp3.Headers
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import java.io.IOException
+import java.net.URLDecoder
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.util.Base64
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+
+/** Where an Amazon site's three services live. Tests point all three at one pretend Amazon. */
+data class AlexaEndpoints(val api: String, val www: String, val alexa: String) {
+    companion object {
+        fun of(site: String) = AlexaEndpoints("https://api.$site", "https://www.$site", "https://alexa.$site")
+    }
+}
+
+/** What the owner's sign-in page needs to start and Edith needs to finish: the page, and the secrets that match it. */
+data class AlexaSignInStart(
+    val site: AmazonSite,
+    /** Amazon's sign-in page, as the Alexa app opens it. */
+    val url: String,
+    val deviceId: String,
+    /** PKCE: the page was given the hash of this, and registration must show the original. */
+    val verifier: String,
+    /** The two cookies the Alexa app's sign-in carries; made up here, as `alexa-cookie2` does. */
+    val frc: String,
+    val mapMd: String,
+)
+
+/** What the tokens Amazon hands back to a registered "device" look like once Edith keeps them. */
+data class AlexaRegistration(val refreshToken: String, val deviceSerial: String)
+
+/** Alexa's cookies for one Amazon site, and the csrf token its API wants with them. */
+data class AlexaSession(val cookie: String, val csrf: String)
+
+sealed interface AlexaReply<out T> {
+    data class Ok<T>(val value: T) : AlexaReply<T>
+    /** Amazon no longer accepts what was sent: the refresh token (sign in again), or the cookie (get new ones). */
+    data object Rejected : AlexaReply<Nothing>
+    data class Failed(val why: String) : AlexaReply<Nothing>
+}
+
+/**
+ * Amazon's side of Alexa (C30), as `alexa-cookie2` 5.0.6 and `alexa-remote2` 8.1.1 (the libraries Jarvis uses) do it,
+ * read on 2026-11-14: the sign-in page, registering Edith as an Alexa app "device" to get a refresh token, trading
+ * that token for the cookies and csrf token Alexa's own web API takes, then the smart-home device list, states and
+ * (part 2) commands. Unofficial: Amazon can change any of it. Tokens, cookies, passwords and response bodies are
+ * never logged.
+ */
+class AlexaApi(
+    private val http: Lazy<OkHttpClient>,
+    private val endpointsFor: (AmazonSite) -> AlexaEndpoints = { AlexaEndpoints.of(it.site) },
+    private val random: SecureRandom = SecureRandom(),
+) {
+    private val json = Json { ignoreUnknownKeys = true }
+
+    // ---- Sign-in ----
+
+    /** A new sign-in: Amazon's page for the Alexa app's "device authorization", with a fresh device id and PKCE pair. */
+    fun start(site: AmazonSite): AlexaSignInStart {
+        val deviceId = hex(hex(randomBytes(16)).uppercase().toByteArray()) + DEVICE_TYPE_SUFFIX
+        val verifier = base64Url(randomBytes(32))
+        val challenge = base64Url(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()))
+        val handle = site.site.substringAfterLast('.').let { if (it == "com") "" else "_$it" }
+        val host = "www.${site.site}"
+        val url = "https://$host/ap/signin" +
+            "?openid.return_to=https%3A%2F%2F$host%2Fap%2Fmaplanding" +
+            "&openid.assoc_handle=amzn_dp_project_dee_ios$handle" +
+            "&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select" +
+            "&pageId=amzn_dp_project_dee_ios$handle&accountStatusPolicy=P1" +
+            "&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select" +
+            "&openid.mode=checkid_setup" +
+            "&openid.ns.oa2=http%3A%2F%2F$host%2Fap%2Fext%2Foauth%2F2" +
+            "&openid.oa2.client_id=device%3A$deviceId" +
+            "&openid.ns.pape=http%3A%2F%2Fspecs.openid.net%2Fextensions%2Fpape%2F1.0" +
+            "&openid.oa2.response_type=code&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0" +
+            "&openid.pape.max_auth_age=0&openid.oa2.scope=device_auth_access" +
+            "&openid.oa2.code_challenge_method=S256&openid.oa2.code_challenge=$challenge" +
+            "&language=${site.language}"
+        val frc = Base64.getEncoder().encodeToString(randomBytes(313))
+        val mapMd = Base64.getEncoder().encodeToString(
+            """{"device_user_dictionary":[],"device_registration_data":{"software_version":"1"},"app_identifier":{"app_version":"$APP_VERSION","bundle_id":"com.amazon.echo"}}""".toByteArray(),
+        )
+        return AlexaSignInStart(site, url, deviceId, verifier, frc, mapMd)
+    }
+
+    /** The authorization code in the address the sign-in ended on (`…/ap/maplanding?openid.oa2.authorization_code=…`), or null. */
+    fun authorizationCode(address: String): String? {
+        val text = address.trim()
+        if ("/ap/maplanding?" !in text) return null
+        val parsed = text.toHttpUrlOrNull()?.queryParameter(CODE_PARAM)
+        if (parsed != null) return parsed.takeIf { it.isNotEmpty() }
+        return Regex("[?&]" + Regex.escape(CODE_PARAM) + "=([^&#\\s]+)").find(text)?.groupValues?.get(1)
+            ?.let { runCatching { URLDecoder.decode(it, "UTF-8") }.getOrNull() }?.takeIf { it.isNotEmpty() }
+    }
+
+    /** Whether [address] is where the sign-in ends. */
+    fun isFinish(address: String): Boolean = authorizationCode(address) != null
+
+    /**
+     * Registers Edith as an Alexa app "device" with the authorization code the sign-in gave: Amazon answers with the
+     * refresh token (the only long-lived thing kept) and a few cookies, which aren't kept. [cookies] are what a WebView
+     * holds for the site after signing in; empty when the browser did the signing in.
+     */
+    suspend fun register(start: AlexaSignInStart, code: String, cookies: String): AlexaReply<AlexaRegistration> {
+        val e = endpointsFor(start.site)
+        val serial = hex(randomBytes(16))
+        val jar = CookieJar().apply { add(cookies); put("frc", start.frc); put("map-md", start.mapMd) }
+        val body = buildJsonObject {
+            put("requested_extensions", buildJsonArray { add(JsonPrimitive("device_info")); add(JsonPrimitive("customer_info")) })
+            put("cookies", buildJsonObject {
+                put("website_cookies", buildJsonArray { jar.entries().forEach { (n, v) -> add(buildJsonObject { put("Value", v); put("Name", n) }) } })
+                put("domain", ".${start.site.site}")
+            })
+            put("registration_data", buildJsonObject {
+                put("domain", "Device"); put("app_version", APP_VERSION); put("device_type", DEVICE_TYPE)
+                put("device_name", "%FIRST_NAME%'s%DUPE_STRATEGY_1ST%$APP_NAME")
+                put("os_version", "18.3.1"); put("device_serial", serial); put("device_model", "iPhone")
+                put("app_name", APP_NAME); put("software_version", "1")
+            })
+            put("auth_data", buildJsonObject {
+                put("client_id", start.deviceId); put("authorization_code", code)
+                put("code_verifier", start.verifier); put("code_algorithm", "SHA-256"); put("client_domain", "DeviceLegacy")
+            })
+            put("user_context_map", buildJsonObject { put("frc", start.frc) })
+            put("requested_token_type", buildJsonArray { add(JsonPrimitive("bearer")); add(JsonPrimitive("mac_dms")); add(JsonPrimitive("website_cookies")) })
+        }
+        val request = Request.Builder().url("${e.api}/auth/register")
+            .headers(appHeaders(start.site, "api.${start.site.site}")).header("Cookie", jar.header())
+            .header("Content-Type", "application/json").post(body.toString().toRequestBody(JSON)).build()
+        return when (val r = send(request)) {
+            is Raw.Failed -> AlexaReply.Failed(r.why)
+            is Raw.Done -> {
+                val token = parse(r.body).obj("response").obj("success").obj("tokens").obj("bearer").str("refresh_token")
+                if (r.code in 200..299 && token != null) AlexaReply.Ok(AlexaRegistration(token, serial))
+                else if (r.code in 400..499) AlexaReply.Rejected.also { Log.w(LogTag.Home, "Alexa registration refused: HTTP ${r.code}") }
+                else AlexaReply.Failed("Amazon answered HTTP ${r.code} when Edith registered")
+            }
+        }
+    }
+
+    // ---- Cookies for Alexa's web API ----
+
+    /**
+     * Alexa's cookies and csrf token for [site], from the refresh token: Amazon's token exchange gives the cookies,
+     * and a page on `alexa.<site>` gives the csrf token. [AlexaReply.Rejected]: the refresh token is no good any more.
+     */
+    suspend fun session(site: AmazonSite, refreshToken: String): AlexaReply<AlexaSession> {
+        val e = endpointsFor(site)
+        val form = FormBody.Builder()
+            .add("di.os.name", "iOS").add("app_version", APP_VERSION).add("domain", ".${site.site}")
+            .add("source_token", refreshToken).add("requested_token_type", "auth_cookies").add("source_token_type", "refresh_token")
+            .add("di.hw.version", "iPhone").add("di.sdk.version", "6.12.4").add("app_name", APP_NAME).add("di.os.version", "16.6").build()
+        val request = Request.Builder().url("${e.www}/ap/exchangetoken/cookies")
+            .headers(appHeaders(site, "api.${site.site}")).header("Accept", "*/*").post(form).build()
+        val jar = CookieJar()
+        val exchange = send(request, jar)
+        val cookies = when (exchange) {
+            is Raw.Failed -> return AlexaReply.Failed(exchange.why)
+            is Raw.Done -> {
+                if (exchange.code in 400..499) return AlexaReply.Rejected
+                val list = parse(exchange.body).obj("response").obj("tokens").obj("cookies").arr(".${site.site}")
+                if (exchange.code !in 200..299 || list == null) return AlexaReply.Failed("Amazon gave no cookies (HTTP ${exchange.code})")
+                list.forEach { c -> val o = c as? JsonObject; val n = o?.str("Name"); val v = o?.str("Value"); if (n != null && v != null) jar.put(n, v) }
+                jar
+            }
+        }
+        // The csrf token comes as a cookie from one of a few pages on the Alexa host.
+        for (path in CSRF_PATHS) {
+            val page = Request.Builder().url("${e.alexa}$path").header("User-Agent", WEB_AGENT)
+                .header("Referer", "${e.alexa}/spa/index.html").header("Origin", e.alexa).header("Accept", "*/*")
+                .header("Cookie", cookies.header()).get().build()
+            val r = send(page, cookies)
+            if (r is Raw.Failed) return AlexaReply.Failed(r.why)
+            val csrf = cookies["csrf"]
+            if (csrf != null) return AlexaReply.Ok(AlexaSession(cookies.header(), csrf))
+        }
+        return AlexaReply.Failed("Alexa gave no csrf token")
+    }
+
+    // ---- Smart home ----
+
+    /** The smart-home endpoints on the account (Alexa's device service). */
+    suspend fun endpoints(site: AmazonSite, session: AlexaSession): AlexaReply<JsonElement> {
+        val body = buildJsonObject { put("query", ENDPOINTS_QUERY) }
+        return when (val r = alexaCall(site, session, "/nexus/v1/graphql", "POST", body.toString(), timeoutS = 40)) {
+            is AlexaReply.Ok -> {
+                val items = parse(r.value).obj("data").obj("endpoints").arr("items")
+                if (items != null) AlexaReply.Ok(items) else AlexaReply.Failed("Alexa's device list wasn't what Edith expected")
+            }
+            AlexaReply.Rejected -> AlexaReply.Rejected
+            is AlexaReply.Failed -> r
+        }
+    }
+
+    /** The state of the devices named in [stateRequests] ([AlexaParse.stateRequests]). */
+    suspend fun states(site: AmazonSite, session: AlexaSession, stateRequests: JsonArray, timeoutS: Long): AlexaReply<JsonElement> {
+        val body = buildJsonObject { put("stateRequests", stateRequests) }
+        return when (val r = alexaCall(site, session, "/api/phoenix/state", "POST", body.toString(), timeoutS)) {
+            is AlexaReply.Ok -> AlexaReply.Ok(parse(r.value))
+            AlexaReply.Rejected -> AlexaReply.Rejected
+            is AlexaReply.Failed -> r
+        }
+    }
+
+    private suspend fun alexaCall(site: AmazonSite, session: AlexaSession, path: String, method: String, body: String?, timeoutS: Long): AlexaReply<String> {
+        val e = endpointsFor(site)
+        val builder = Request.Builder().url("${e.alexa}$path")
+            .header("User-Agent", "$OFFICIAL_AGENT Edith").header("Accept", "application/json; charset=utf-8")
+            .header("Accept-Language", site.language.replace('_', '-')).header("Referer", "${e.alexa}/spa/index.html")
+            .header("Origin", e.alexa).header("csrf", session.csrf).header("Cookie", session.cookie)
+        val request = builder.method(method, body?.toRequestBody("application/json; charset=utf-8".toMediaType())).build()
+        return when (val r = send(request, null, timeoutS)) {
+            is Raw.Failed -> AlexaReply.Failed(r.why)
+            is Raw.Done -> when {
+                // Expired cookies: Amazon answers 401/403, or sends the caller to its sign-in page.
+                r.code == 401 || r.code == 403 || r.signedOut -> AlexaReply.Rejected
+                r.code in 200..299 -> AlexaReply.Ok(r.body)
+                else -> AlexaReply.Failed("Amazon answered HTTP ${r.code}")
+            }
+        }
+    }
+
+    // ---- HTTP ----
+
+    private sealed interface Raw {
+        data class Done(val code: Int, val body: String, val signedOut: Boolean) : Raw
+        data class Failed(val why: String) : Raw
+    }
+
+    /** One request, following redirects by hand so the cookies set along the way are kept in [jar]. */
+    private suspend fun send(first: Request, jar: CookieJar? = null, timeoutS: Long = CALL_S): Raw {
+        var request = first
+        return try {
+            val client = http.value.newBuilder().followRedirects(false).callTimeout(timeoutS, TimeUnit.SECONDS).build()
+            repeat(MAX_REDIRECTS + 1) {
+                client.newCall(request).await().use { r ->
+                    jar?.add(r.headers.values("Set-Cookie"))
+                    val location = r.header("Location")
+                    if (r.isRedirect && location != null) {
+                        val next = r.request.url.resolve(location) ?: return Raw.Failed("Amazon sent Edith somewhere it didn't expect")
+                        // A redirect to Amazon's sign-in page means the cookies are no good.
+                        if ("/ap/signin" in next.encodedPath) return Raw.Done(401, "", signedOut = true)
+                        if (next.scheme != "https") return Raw.Failed("Amazon sent Edith to a page that isn't secure")
+                        request = r.request.newBuilder().url(next).get().apply { jar?.let { header("Cookie", it.header()) } }.build()
+                    } else {
+                        return Raw.Done(r.code, r.body?.string().orEmpty(), signedOut = false)
+                    }
+                }
+            }
+            Raw.Failed("Amazon redirected Edith too many times")
+        } catch (e: IOException) {
+            Raw.Failed("Amazon can't be reached right now")
+        }
+    }
+
+    private fun appHeaders(site: AmazonSite, identityDomain: String) = Headers.Builder()
+        .add("User-Agent", APP_AGENT).add("Accept-Language", site.language.replace('_', '-')).add("Accept-Charset", "utf-8")
+        .add("Accept", "application/json").add("x-amzn-identity-auth-domain", identityDomain).build()
+
+    private fun parse(text: String): JsonObject = try { json.parseToJsonElement(text) as? JsonObject ?: JsonObject(emptyMap()) } catch (e: SerializationException) { JsonObject(emptyMap()) }
+    private fun JsonObject.obj(key: String): JsonObject = this[key] as? JsonObject ?: JsonObject(emptyMap())
+    private fun JsonObject.arr(key: String): JsonArray? = this[key] as? JsonArray
+    private fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
+
+    private fun randomBytes(n: Int) = ByteArray(n).also { random.nextBytes(it) }
+    private fun hex(bytes: ByteArray) = bytes.joinToString("") { "%02x".format(it) }
+    private fun base64Url(bytes: ByteArray) = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+
+    companion object {
+        const val CODE_PARAM = "openid.oa2.authorization_code"
+        const val APP_NAME = "Edith"
+        private const val APP_VERSION = "2.2.651540.0"
+        /** The Alexa app for iPhone's device type: what Amazon expects of a registered "device" (as `alexa-cookie2`). */
+        private const val DEVICE_TYPE = "A2IVLV5VM2W81"
+        /** `#A2IVLV5VM2W81` in hex, which ends every device id. */
+        private const val DEVICE_TYPE_SUFFIX = "23413249564c5635564d32573831"
+        private const val APP_AGENT = "AmazonWebView/Amazon Alexa/2.2.651540.0/iOS/18.3.1/iPhone"
+        private const val OFFICIAL_AGENT = "AppleWebKit PitanguiBridge/2.2.595606.0-[HARDWARE=iPhone14_7][SOFTWARE=17.4.1][DEVICE=iPhone]"
+        private const val WEB_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36"
+        private val CSRF_PATHS = listOf("/api/language", "/spa/index.html", "/api/devices-v2/device?cached=false", "/templates/oobe/d-device-pick.handlebars", "/api/strings")
+        private const val CALL_S = 20L
+        private const val MAX_REDIRECTS = 5
+        private val JSON = "application/json".toMediaType()
+
+        /** Alexa's device list, as `alexa-remote2` asks for it (the whole query, as proven). */
+        val ENDPOINTS_QUERY = """query Endpoints {
+  endpoints {
+    items {
+      endpointId
+      id
+      friendlyName
+      displayCategories {
+        primary {
+          value
+        }
+      }
+      legacyIdentifiers {
+          dmsIdentifier {
+              deviceType {
+                  type
+                  value {
+                      text
+                  }
+              }
+              deviceSerialNumber {
+                  type
+                  value {
+                      text
+                  }
+              }
+          }
+      }
+      legacyAppliance {
+        applianceId
+        applianceTypes
+        endpointTypeId
+        friendlyName
+        friendlyDescription
+        manufacturerName
+        connectedVia
+        modelName
+        entityId
+        actions
+        mergedApplianceIds
+        capabilities
+        applianceNetworkState
+        version
+        isEnabled
+        customerDefinedDeviceType
+        customerPreference
+        alexaDeviceIdentifierList
+        aliases
+        driverIdentity
+        additionalApplianceDetails
+        isConsentRequired
+        applianceKey
+        appliancePairs
+        deduplicatedPairs
+        entityPairs
+        deduplicatedAliasesByEntityId
+        relations
+      }
+      serialNumber {
+        value {
+          text
+        }
+      }
+      enablement
+      model {
+        value {
+          text
+        }
+      }
+      manufacturer {
+        value {
+          text
+        }
+      }
+      features {
+        name
+        operations {
+          name
+        }
+      }
+    }
+  }
+}
+"""
+    }
+}
+
+/** The cookies of one conversation with Amazon: names and values, in the order they were first set. */
+internal class CookieJar {
+    private val values = LinkedHashMap<String, String>()
+
+    operator fun get(name: String): String? = values[name]
+    fun put(name: String, value: String) { values[name] = value }
+    fun entries(): List<Pair<String, String>> = values.entries.map { it.key to it.value }
+
+    /** A `Cookie:` header's text (`a=1; b=2`). */
+    fun add(header: String) {
+        for (part in header.split(';')) {
+            val i = part.indexOf('=')
+            if (i > 0) values[part.substring(0, i).trim()] = part.substring(i + 1).trim()
+        }
+    }
+
+    /** `Set-Cookie` header lines: only each one's `name=value`. */
+    fun add(setCookies: List<String>) {
+        for (line in setCookies) {
+            val first = line.substringBefore(';')
+            val i = first.indexOf('=')
+            if (i <= 0) continue
+            val value = first.substring(i + 1).trim()
+            if (value == "\"\"") continue
+            values[first.substring(0, i).trim()] = value
+        }
+    }
+
+    fun header(): String = values.entries.joinToString("; ") { "${it.key}=${it.value}" }
+}
+
+
+/** Runs the call without blocking a thread; cancelling the coroutine cancels the HTTP call. */
+private suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
+    cont.invokeOnCancellation { cancel() }
+    enqueue(object : Callback {
+        override fun onFailure(call: Call, e: IOException) = cont.resumeWithException(e)
+        override fun onResponse(call: Call, response: Response) = cont.resume(response) { _, r, _ -> r.close() }
+    })
+}
