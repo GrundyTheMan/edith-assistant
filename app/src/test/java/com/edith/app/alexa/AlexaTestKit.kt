@@ -50,6 +50,12 @@ class FakeAmazon {
     @Volatile var states: Map<String, List<JsonObject>> = emptyMap()
     @Volatile var stateErrors: Map<String, String> = emptyMap()
     @Volatile var stateDelayMs = 0L
+    /** The control requests the app sent (`PUT /api/phoenix/state`), each as `{entityId, entityType, parameters}`. */
+    val controls: MutableList<JsonObject> = Collections.synchronizedList(mutableListOf())
+    /** What the pretend Amazon answers a control request with (a 200, as the real one does even for a refusal). */
+    @Volatile var controlResponse = """{"controlResponses":[{"code":"SUCCESS"}],"errors":[]}"""
+    /** Runs after a control request is recorded, e.g. to change [states] the way the device would. */
+    @Volatile var onControl: (JsonObject) -> Unit = {}
     /** path → answer, for anything the tests want to override. */
     val overrides = Collections.synchronizedMap(mutableMapOf<String, (RecordedRequest) -> MockResponse>())
 
@@ -64,7 +70,7 @@ class FakeAmazon {
                     "/ap/exchangetoken/cookies" -> exchange(request)
                     "/api/language", "/spa/index.html" -> language(request)
                     "/nexus/v1/graphql" -> signedIn(request) { json(buildJsonObject { put("data", buildJsonObject { put("endpoints", buildJsonObject { put("items", endpointItems) }) }) }.toString()) }
-                    "/api/phoenix/state" -> signedIn(request) { stateAnswer(request) }
+                    "/api/phoenix/state" -> signedIn(request) { if (request.method == "PUT") controlAnswer(request) else stateAnswer(request) }
                     else -> MockResponse.Builder().code(404).build()
                 }
             }
@@ -105,6 +111,13 @@ class FakeAmazon {
         val gen = Regex("at-main=AT(\\d+)").find(cookie)?.groupValues?.get(1)?.toIntOrNull()
         if (gen == null || gen !in validGenerations || gen != cookieGeneration || r.headers["csrf"].isNullOrEmpty()) return MockResponse.Builder().code(401).body("{}").build()
         return answer()
+    }
+
+    private fun controlAnswer(r: RecordedRequest): MockResponse {
+        val sent = Json.parseToJsonElement(r.body?.utf8().orEmpty()).jsonObject["controlRequests"]!!.jsonArray.first().jsonObject
+        controls += sent
+        onControl(sent)
+        return json(controlResponse)
     }
 
     private fun stateAnswer(r: RecordedRequest): MockResponse {

@@ -35,7 +35,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Alexa devices (C30, D10, D19): everything linked to the owner's Amazon account, through the unofficial connection the
- * Alexa app uses. **Part 1 (this): sign-in, the device list and each device's state, read-only**; commands are part 2.
+ * Alexa app uses. **Part 1: sign-in, the device list and each device's state. Part 2: commands**, checked against Amazon's answer.
  *
  * Signing in happens on Amazon's own page ([PageSignIn]): the password goes to Amazon, never through Edith's code. What
  * Amazon hands back is a refresh token, kept encrypted ([SecretStore] `home/alexa`) with the Amazon site and nothing
@@ -202,10 +202,10 @@ class AlexaService(
             }.awaitAll()
         }
         if (batches.isNotEmpty() && failed.get() == batches.size) Log.w(LogTag.Home, "Alexa gave no device states: ${problem.get()}")
-        return list.map { d -> device(d, readings[d.entityId], now) }
+        return list.map { d -> device(d, readings[d.entityId], now, scale) }
     }
 
-    private fun device(d: AlexaDevice, reading: AlexaReading?, now: Long): HomeDevice {
+    private fun device(d: AlexaDevice, reading: AlexaReading?, now: Long, scale: TempScale): HomeDevice {
         var shown = reading
         var at: Long? = if (reading != null && !reading.noAnswer) now else null
         if (reading != null && !reading.noAnswer && (reading.state != null || reading.unreachable)) lastKnown[d.entityId] = reading to now
@@ -213,8 +213,7 @@ class AlexaService(
         if (reading?.noAnswer == true) lastKnown[d.entityId]?.let { (last, lastAt) -> shown = last; at = lastAt }
         return HomeDevice(
             id = d.entityId, name = d.name, room = null, type = typeOf(d.type),
-            // Part 2 adds what each device can be told to do; part 1 only shows it.
-            capabilities = emptySet(),
+            capabilities = AlexaParse.capabilitiesOf(d, scale),
             backend = ID, online = shown?.unreachable != true, state = shown?.state, stateAt = at,
         )
     }
@@ -239,8 +238,22 @@ class AlexaService(
             return h.state?.let { Outcome.Success(it) } ?: failed(if (h.online) "it reported no state" else "it isn't responding")
         }
 
-        override suspend fun command(deviceId: String, command: DeviceCommand): Outcome<DeviceState> =
-            failed("Edith can show Alexa devices but can't control them yet")
+        override suspend fun command(deviceId: String, command: DeviceCommand): Outcome<DeviceState> {
+            val list = when (val l = deviceList(fresh = false)) { is Outcome.Failure -> return l; is Outcome.Success -> l.value }
+            val d = list.firstOrNull { it.entityId == deviceId } ?: return failed("that device is no longer on the Alexa account")
+            val scale = (AmazonSite.of(saved?.site.orEmpty()) ?: AmazonSite.DEFAULT).scale
+            val parameters = AlexaParse.controlParameters(command, d, scale) ?: return failed("${d.name} can't do that through Alexa")
+            val answer = when (val r = authed<JsonElement> { site, s -> api.control(site, s, d.entityId, parameters, CONTROL_DEADLINE_MS / 1000) }) {
+                is Outcome.Failure -> return r
+                is Outcome.Success -> r.value
+            }
+            // Amazon answers 200 to a refusal: only its answer says whether the device did it.
+            AlexaParse.controlProblem(answer)?.let { return failed("${d.name}: $it") }
+            Log.i(LogTag.Home, "Alexa command sent (${d.type})")
+            // What the device reports right after; clouds often lag, and Home asks again (C25 §6).
+            val now = lookup(listOf(d)).first()
+            return Outcome.Success(now.state ?: lastKnown[d.entityId]?.first?.state ?: DeviceState())
+        }
 
         override suspend fun snapshot(deviceId: String): Outcome<ByteArray> = failed("Alexa can't take camera pictures for Edith")
     }
@@ -260,6 +273,8 @@ class AlexaService(
         /** How long a batch may take before the lookup goes on without it (Jarvis: 10 s cut off answers 20 s got). */
         const val STATE_DEADLINE_MS = 20_000L
         const val LIST_CACHE_MS = 5 * 60_000L
+        /** How long a command may take to be answered. */
+        const val CONTROL_DEADLINE_MS = 20_000L
 
         /** Alexa's category code as Edith's device type. */
         fun typeOf(code: String): DeviceType = when (code) {

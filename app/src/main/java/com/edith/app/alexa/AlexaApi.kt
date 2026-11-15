@@ -228,6 +228,23 @@ class AlexaApi(
         }
     }
 
+    /**
+     * Sends one control request ([AlexaParse.controlParameters]) to the device with [entityId]. Amazon answers 200 even
+     * when it refuses, so the caller reads [AlexaParse.controlProblem] on the answer.
+     */
+    suspend fun control(site: AmazonSite, session: AlexaSession, entityId: String, parameters: JsonObject, timeoutS: Long): AlexaReply<JsonElement> {
+        val body = buildJsonObject {
+            put("controlRequests", JsonArray(listOf(buildJsonObject {
+                put("entityId", entityId); put("entityType", "APPLIANCE"); put("parameters", parameters)
+            })))
+        }
+        return when (val r = alexaCall(site, session, "/api/phoenix/state", "PUT", body.toString(), timeoutS)) {
+            is AlexaReply.Ok -> AlexaReply.Ok(parse(r.value))
+            AlexaReply.Rejected -> AlexaReply.Rejected
+            is AlexaReply.Failed -> r
+        }
+    }
+
     private suspend fun alexaCall(site: AmazonSite, session: AlexaSession, path: String, method: String, body: String?, timeoutS: Long): AlexaReply<String> {
         val e = endpointsFor(site)
         val builder = Request.Builder().url("${e.alexa}$path")
