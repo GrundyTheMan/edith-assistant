@@ -100,6 +100,9 @@ import com.edith.app.meross.MerossService
 import com.edith.app.meross.PahoMerossBus
 import com.edith.app.printer.MoonrakerApi
 import com.edith.app.printer.PrinterService
+import com.edith.app.blink.BlinkApi
+import com.edith.app.blink.BlinkEndpoints
+import com.edith.app.blink.BlinkService
 import com.edith.app.ring.RingApi
 import com.edith.app.ring.RingService
 import com.edith.app.microsoft.MicrosoftAccounts
@@ -396,6 +399,22 @@ class AppContainer(val app: Application) {
     /** Ring doorbells and cameras (C27): the sign-in is kept encrypted in [secretStore]. */
     val ring: RingService by lazy { RingService(secretStore, RingApi(okHttpLazy), clock) }
 
+    /** Blink cameras (C29): the sign-in is kept encrypted in [secretStore]. */
+    val blink: BlinkService by lazy { BlinkService(secretStore, BlinkApi(okHttpLazy, blinkEndpoints()), clock) }
+
+    /**
+     * Debug builds only: a pretend Blink on the PC for trying the sign-in, snapshots and clips on the emulator without an
+     * account. It is used only when the debug app's private `files/blink-test-server.txt` holds its address
+     * (`adb shell run-as com.edith.app.debug`); release builds never look.
+     */
+    private fun blinkEndpoints(): BlinkEndpoints {
+        if (!BuildConfig.DEBUG) return BlinkEndpoints()
+        val base = runCatching { File(app.filesDir, "blink-test-server.txt").readText().trim().trimEnd('/') }.getOrNull()?.takeIf { it.startsWith("http") }
+            ?: return BlinkEndpoints()
+        Log.w(LogTag.Home, "Blink is using a test server instead of Blink's own (debug build)")
+        return BlinkEndpoints(oauth = base, tierInfo = "$base/rest/api/v1/users/tier_info", rest = { "$base/rest" })
+    }
+
     /** Alexa devices (C30): the sign-in is kept encrypted in [secretStore]. */
     val alexa: AlexaService by lazy { AlexaService(secretStore, AlexaApi(okHttpLazy), clock) }
 
@@ -410,7 +429,8 @@ class AppContainer(val app: Application) {
             h.register(meross)   // C26
             h.register(ring)     // C27
             h.register(alexa)    // C30
-            h.register(printer)  // C34; C28, C29, C31 register theirs here
+            h.register(blink)    // C29
+            h.register(printer)  // C34; C28, C31 register theirs here
         }
     }
 
@@ -478,6 +498,12 @@ class AppContainer(val app: Application) {
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e(LogTag.Home, "Couldn't load the Ring sign-in", e)
+        }
+        try {
+            blink.load()   // C29: picks up the saved Blink sign-in
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.e(LogTag.Home, "Couldn't load the Blink sign-in", e)
         }
         try {
             alexa.load()   // C30: picks up the saved Alexa sign-in

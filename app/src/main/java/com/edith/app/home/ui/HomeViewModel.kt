@@ -84,6 +84,8 @@ data class ClipsUi(
     /** The clip being played and the address it streams from, once Ring gave one. */
     val playing: DeviceClip? = null,
     val playUrl: String? = null,
+    /** Headers the player sends with [playUrl] (Blink's sign-in). */
+    val playHeaders: Map<String, String> = emptyMap(),
     val playError: String? = null,
 )
 
@@ -265,11 +267,11 @@ class HomeViewModel(private val home: Home, private val clock: Clock) : ViewMode
         val ui = local.value.clips ?: return
         local.value = local.value.copy(clips = ui.copy(playing = clip, playUrl = null, playError = null))
         viewModelScope.launch {
-            val r = home.clipUrl(clip)
+            val r = home.clipSource(clip)
             val current = local.value.clips ?: return@launch
             if (current.playing != clip) return@launch   // another clip, or closed
             local.value = local.value.copy(clips = when (r) {
-                is Outcome.Success -> current.copy(playUrl = r.value)
+                is Outcome.Success -> current.copy(playUrl = r.value.url, playHeaders = r.value.headers)
                 is Outcome.Failure -> current.copy(playError = "The clip can't be played: ${Home.why(r.error)}.")
             })
         }
@@ -277,7 +279,7 @@ class HomeViewModel(private val home: Home, private val clock: Clock) : ViewMode
 
     fun closePlayer() {
         val ui = local.value.clips ?: return
-        local.value = local.value.copy(clips = ui.copy(playing = null, playUrl = null, playError = null))
+        local.value = local.value.copy(clips = ui.copy(playing = null, playUrl = null, playHeaders = emptyMap(), playError = null))
     }
 
     companion object {

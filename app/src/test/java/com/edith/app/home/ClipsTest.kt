@@ -76,6 +76,20 @@ class ClipsTest {
         assertTrue(k.home.clipUrl(clip("a", 1).copy(backend = "gone")) is Outcome.Failure)
     }
 
+    @Test fun `a service that only gives an address (Ring) plays with no extra headers, and one that needs a header (Blink) has it passed on`() = runTest {
+        val ring = WithClips("ring", Outcome.Success(ClipsPage(emptyList())))
+        val blink = object : HomeBackend by WithClips("blink", Outcome.Success(ClipsPage(emptyList()))) {
+            override suspend fun clipSource(clipId: String): Outcome<ClipSource> =
+                Outcome.Success(ClipSource("https://example.test/blink.mp4", mapOf("Authorization" to "Bearer t")))
+        }
+        val k = HomeKit(this, backgroundScope, ring, blink, demoOn = false)
+        val plain = (k.home.clipSource(clip("a", 1).copy(backend = "ring")) as Outcome.Success).value
+        assertEquals(ClipSource("https://example.test/ring.mp4", emptyMap()), plain)
+        val signed = (k.home.clipSource(clip("b", 1).copy(backend = "blink")) as Outcome.Success).value
+        assertEquals(mapOf("Authorization" to "Bearer t"), signed.headers)
+        assertTrue(k.home.clipSource(clip("a", 1).copy(backend = "gone")) is Outcome.Failure)
+    }
+
     @Test fun `a service that isn't signed in is neither asked for clips nor makes the Clips chip show`() = runTest {
         val out = WithClips("ring", Outcome.Failure(AppError.ToolFailed("Ring", "it isn't signed in")), connected = false)
         val k = HomeKit(this, backgroundScope, out, demoOn = false)
