@@ -59,6 +59,7 @@ fun PageSignInDialog(
     finish: (address: String, cookies: String, done: (SignInResult) -> Unit) -> Unit,
     onClose: () -> Unit,
 ) {
+    val context = LocalContext.current
     var start by remember { mutableStateOf<PageSignInStart?>(null) }
     var step by remember { mutableStateOf(Step.Choose) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -88,7 +89,11 @@ fun PageSignInDialog(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { message = null; start = begin(); if (start != null) step = Step.Web }, enabled = !working, modifier = Modifier.testTag(PAGE_SIGN_IN_TAG)) { Text("Sign in here") }
+                TextButton(onClick = {
+                    message = null
+                    if (!webViewUsable(context)) message = "This phone has no web view Edith can use. Use \"Use my browser\" instead."
+                    else { start = begin(); if (start != null) step = Step.Web }
+                }, enabled = !working, modifier = Modifier.testTag(PAGE_SIGN_IN_TAG)) { Text("Sign in here") }
             },
             dismissButton = {
                 Row {
@@ -104,19 +109,36 @@ fun PageSignInDialog(
 
 private enum class Step { Choose, Web, OpenBrowser }
 
+/** Whether a web view can be made at all: a phone with no web view package (or an odd one) throws when it is asked for one. */
+private fun webViewUsable(context: android.content.Context): Boolean = try {
+    WebView(context).destroy()
+    true
+} catch (e: Throwable) {
+    Log.w(LogTag.Home, "No usable web view: ${e.javaClass.name}")
+    false
+}
+
 /** Amazon's page in the app. Cookies the page expects are set first; the page ending is caught as it is reached. */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 private fun PageWebView(name: String, start: PageSignInStart, onFinished: (address: String, cookies: String) -> Unit, onClose: () -> Unit) {
     var finished by remember { mutableStateOf(false) }
-    val cookies = remember { CookieManager.getInstance() }
+    // A web view on some phones (Andarium's) may lack parts of what Android's has: nothing here may throw, or the whole app goes down.
+    val cookies = remember { runCatching { CookieManager.getInstance() }.getOrNull() }
     val webView = remember { arrayOfNulls<WebView>(1) }
     DisposableEffect(Unit) {
         onDispose {
-            // Nothing of the sign-in stays in the web view: not the page, not the cookies.
-            webView[0]?.destroy()
-            cookies.removeAllCookies(null)
-            cookies.flush()
+            // Nothing of the sign-in stays in the web view: not the page, not the cookies. Taken down in the safe order: stop it, take it
+            // off the screen, then destroy it.
+            runCatching {
+                webView[0]?.let { w ->
+                    w.stopLoading()
+                    w.webViewClient = WebViewClient()
+                    (w.parent as? ViewGroup)?.removeView(w)
+                    w.destroy()
+                }
+            }.onFailure { Log.w(LogTag.Home, "Taking the sign-in web view down failed: ${it.javaClass.name}") }
+            runCatching { cookies?.removeAllCookies(null); cookies?.flush() }
         }
     }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -135,20 +157,23 @@ private fun PageWebView(name: String, start: PageSignInStart, onFinished: (addre
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
                             // A browser's name, not a web view's: sign-in pages treat the two differently.
-                            settings.userAgentString = settings.userAgentString.replace("; wv", "").replace("Version/4.0 ", "")
-                            cookies.removeAllCookies(null)
-                            cookies.setAcceptCookie(true)
-                            val domain = Uri.parse(start.cookieSite).host.orEmpty().removePrefix("www.")
-                            start.cookies.forEach { (n, v) -> cookies.setCookie(start.cookieSite, "$n=$v; Domain=.$domain; Path=/; Secure") }
-                            cookies.flush()
+                            runCatching { settings.userAgentString = settings.userAgentString.replace("; wv", "").replace("Version/4.0 ", "") }
+                            runCatching {
+                                cookies?.removeAllCookies(null)
+                                cookies?.setAcceptCookie(true)
+                                val domain = Uri.parse(start.cookieSite).host.orEmpty().removePrefix("www.")
+                                start.cookies.forEach { (n, v) -> cookies?.setCookie(start.cookieSite, "$n=$v; Domain=.$domain; Path=/; Secure") }
+                                cookies?.flush()
+                            }.onFailure { Log.w(LogTag.Home, "Setting the sign-in cookies failed: ${it.javaClass.name}") }
                             fun reached(url: String): Boolean {
                                 if (finished || !start.isFinish(url)) return false
                                 finished = true
                                 // The page that ends the sign-in is never shown: only its address is wanted.
-                                stopLoading()
-                                val held = cookies.getCookie(start.cookieSite).orEmpty()
+                                val held = runCatching { stopLoading(); cookies?.getCookie(start.cookieSite).orEmpty() }
+                                    .onFailure { Log.w(LogTag.Home, "Reading the sign-in cookies failed: ${it.javaClass.name}") }.getOrDefault("")
                                 Log.i(LogTag.Home, "$name's sign-in page ended")
-                                onFinished(url, held)
+                                // Finish after this web view callback has returned: finishing takes the dialog, and this web view, down.
+                                post { onFinished(url, held) }
                                 return true
                             }
                             webViewClient = object : WebViewClient() {

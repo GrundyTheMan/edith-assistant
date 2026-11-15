@@ -9,6 +9,7 @@ import com.edith.app.tools.framework.Integration
 import com.edith.app.tools.framework.IntegrationStatus
 import com.edith.app.tools.framework.Tool
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -27,6 +28,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 
@@ -67,6 +69,8 @@ class Home(
     private val timeoutMs: Long = TIMEOUT_MS,
     /** When to check a device again after a command, from the command's time. */
     private val recheckAfterMs: (HomeDevice) -> List<Long> = ::recheckTimes,
+    /** Where service calls run: off the main thread, which Android won't let read the network (tests with virtual time pass an empty context). */
+    private val ioContext: kotlin.coroutines.CoroutineContext = Dispatchers.IO,
 ) : Integration {
     override val id: String = ID
 
@@ -122,6 +126,24 @@ class Home(
         registered.value = registered.value.filterNot { it.id == backend.id } + backend
     }
 
+    /**
+     * A backend answers with an [Outcome] and never throws, but a bug or a surprising answer from a service (Amazon's, Ring's) must not take
+     * the whole app down: it becomes that service's failure, said in words. Only the exception's type and place are logged, never its text
+     * (it can hold tokens or cookies). Found on the owner's phone: a sign-in for Alexa crashed Edith.
+     *
+     * It also runs the call off the main thread. A service reads its HTTP answers in whatever thread called it; the Home tab and
+     * Settings call from the main thread, where Android refuses network reads (`NetworkOnMainThreadException`). Small answers are
+     * already in memory by then, which is why Ring and Meross got away with it; Amazon's registration answer is not.
+     */
+    private suspend fun <T> safely(b: HomeBackend, block: suspend () -> Outcome<T>): Outcome<T> = try {
+        withContext(ioContext) { block() }
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(LogTag.Home, "${b.id} failed unexpectedly: ${e.javaClass.name} at ${e.stackTrace.firstOrNull()}")
+        Outcome.Failure(AppError.ToolFailed(b.displayName, "it hit an unexpected problem (${e.javaClass.simpleName})"))
+    }
+
     private fun connected(): List<HomeBackend> = backends.value.filter { it.status.value == IntegrationStatus.Connected }
 
     /** Reads every connected backend now and returns the home as the owner sees it. */
@@ -130,7 +152,7 @@ class Home(
         val targets = connected()
         val answers = coroutineScope {
             targets.map { b ->
-                async { b to (withTimeoutOrNull(b.timeoutMs ?: timeoutMs) { b.devices() } ?: Outcome.Failure(AppError.Timeout)) }
+                async { b to (withTimeoutOrNull(b.timeoutMs ?: timeoutMs) { safely(b) { b.devices() } } ?: Outcome.Failure(AppError.Timeout)) }
             }.awaitAll()
         }
         val now = clock.now().toEpochMilli()
@@ -170,7 +192,7 @@ class Home(
     suspend fun command(device: HomeDevice, command: DeviceCommand, source: CommandSource): Outcome<DeviceState> {
         val backend = backends.value.firstOrNull { it.id == device.backend }
         val outcome = if (backend == null) Outcome.Failure(AppError.ToolFailed(device.backend, "that service isn't connected"))
-        else withTimeoutOrNull(backend.timeoutMs ?: timeoutMs) { backend.command(device.id, command) } ?: Outcome.Failure(AppError.Timeout)
+        else withTimeoutOrNull(backend.timeoutMs ?: timeoutMs) { safely(backend) { backend.command(device.id, command) } } ?: Outcome.Failure(AppError.Timeout)
         val now = clock.now().toEpochMilli()
         val (action, value) = HomeActions.logParts(command)
         val result = when (outcome) {
@@ -198,14 +220,14 @@ class Home(
     suspend fun snapshot(device: HomeDevice): Outcome<ByteArray> {
         val backend = backends.value.firstOrNull { it.id == device.backend }
             ?: return Outcome.Failure(AppError.ToolFailed(device.backend, "that service isn't connected"))
-        return withTimeoutOrNull(backend.snapshotTimeoutMs ?: SNAPSHOT_TIMEOUT_MS) { backend.snapshot(device.id) } ?: Outcome.Failure(AppError.Timeout)
+        return withTimeoutOrNull(backend.snapshotTimeoutMs ?: SNAPSHOT_TIMEOUT_MS) { safely(backend) { backend.snapshot(device.id) } } ?: Outcome.Failure(AppError.Timeout)
     }
 
     /** What a camera or doorbell reported since [sinceMs], newest first. */
     suspend fun events(device: HomeDevice, sinceMs: Long): Outcome<List<DeviceEvent>> {
         val backend = backends.value.firstOrNull { it.id == device.backend }
             ?: return Outcome.Failure(AppError.ToolFailed(device.backend, "that service isn't connected"))
-        return withTimeoutOrNull(backend.timeoutMs ?: timeoutMs) { backend.events(device.id, sinceMs) } ?: Outcome.Failure(AppError.Timeout)
+        return withTimeoutOrNull(backend.timeoutMs ?: timeoutMs) { safely(backend) { backend.events(device.id, sinceMs) } } ?: Outcome.Failure(AppError.Timeout)
     }
 
     /** Whether any service that is signed in has clips to browse: the Clips chip shows only then. */
@@ -223,7 +245,7 @@ class Home(
     suspend fun clips(sinceMs: Long, untilMs: Long): ClipsResult {
         val clips = mutableListOf<DeviceClip>(); val problems = mutableListOf<String>(); var noPlan = false; var answered = 0
         for (b in connected().filter { it.hasClips }) {
-            when (val r = withTimeoutOrNull(b.timeoutMs ?: timeoutMs) { b.clips(sinceMs, untilMs) } ?: Outcome.Failure(AppError.Timeout)) {
+            when (val r = withTimeoutOrNull(b.timeoutMs ?: timeoutMs) { safely(b) { b.clips(sinceMs, untilMs) } } ?: Outcome.Failure(AppError.Timeout)) {
                 is Outcome.Success -> { answered++; clips += r.value.clips.map { it.copy(backend = b.id) }; noPlan = noPlan || r.value.noPlan }
                 is Outcome.Failure -> problems += "${b.displayName} didn't answer: ${why(r.error)}."
             }
@@ -235,7 +257,7 @@ class Home(
     suspend fun clipUrl(clip: DeviceClip): Outcome<String> {
         val backend = backends.value.firstOrNull { it.id == clip.backend }
             ?: return Outcome.Failure(AppError.ToolFailed(clip.backend, "that service isn't connected"))
-        return withTimeoutOrNull(backend.timeoutMs ?: timeoutMs) { backend.clipUrl(clip.id) } ?: Outcome.Failure(AppError.Timeout)
+        return withTimeoutOrNull(backend.timeoutMs ?: timeoutMs) { safely(backend) { backend.clipUrl(clip.id) } } ?: Outcome.Failure(AppError.Timeout)
     }
 
     suspend fun setFavorite(device: HomeDevice, on: Boolean) = prefs.setFavorite(device.key, on)
@@ -249,7 +271,7 @@ class Home(
         rechecks[device.key] = scope.launch {
             for (at in recheckAfterMs(device)) {
                 delay((sentAt + at - clock.now().toEpochMilli()).coerceAtLeast(0))
-                val state = withTimeoutOrNull(backend.timeoutMs ?: timeoutMs) { backend.state(device.id) }
+                val state = withTimeoutOrNull(backend.timeoutMs ?: timeoutMs) { safely(backend) { backend.state(device.id) } }
                 if (state is Outcome.Success) {
                     val current = known[device.key] ?: device
                     update(current.copy(state = state.value, stateAt = clock.now().toEpochMilli(), online = true))

@@ -41,6 +41,7 @@ import com.edith.app.di.viewModelFactory
 import com.edith.app.home.CommandSource
 import com.edith.app.home.Home
 import com.edith.app.home.LoggedCommand
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -49,6 +50,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -98,9 +100,22 @@ class HomeSettingsViewModel(private val home: Home, log: kotlinx.coroutines.flow
     fun signIn(serviceId: String, values: Map<String, String>, done: (SignInResult) -> Unit) {
         viewModelScope.launch {
             val service = home.services.value.firstOrNull { it.backend.id == serviceId }
-            done(service?.signIn(values) ?: SignInResult.Failed("That service isn't available."))
+            done(guarded { service?.signIn(values) ?: SignInResult.Failed("That service isn't available.") })
             home.refresh()   // the Home tab and Edith see the new devices at once
         }
+    }
+
+    /**
+     * Runs a service's sign-in off the main thread, where Android refuses network reads (`NetworkOnMainThreadException` took the whole app
+     * down on the owner's phone), and turns any surprise into a message instead of a crash. Only the exception's type is logged.
+     */
+    private suspend fun guarded(block: suspend () -> SignInResult): SignInResult = try {
+        withContext(Dispatchers.IO) { block() }
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        com.edith.app.core.log.Log.w(com.edith.app.core.log.LogTag.Home, "A sign-in failed unexpectedly: ${e.javaClass.name} at ${e.stackTrace.firstOrNull()}")
+        SignInResult.Failed("Edith hit an unexpected problem signing in (${e.javaClass.simpleName}).")
     }
 
     /** Starts a sign-in on the service's own page (Alexa); null when the service has none. */
@@ -111,7 +126,7 @@ class HomeSettingsViewModel(private val home: Home, log: kotlinx.coroutines.flow
     fun finishPage(serviceId: String, address: String, cookies: String, done: (SignInResult) -> Unit) {
         viewModelScope.launch {
             val page = home.services.value.firstOrNull { it.backend.id == serviceId }?.pageSignIn
-            done(page?.finish(address, cookies) ?: SignInResult.Failed("That service isn't available."))
+            done(guarded { page?.finish(address, cookies) ?: SignInResult.Failed("That service isn't available.") })
             home.refresh()
         }
     }

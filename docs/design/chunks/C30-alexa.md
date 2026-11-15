@@ -107,9 +107,12 @@ Parsing the device list and state from made-up answers; commands; an expired ses
   camera, a garage, a device that has gone); the three kinds of 200-with-a-refusal; an unreachable Amazon not signing the owner out; expired cookies
   retried once; a dead token; a Celsius account; the C25 approval rules and `HomeActions.parse` on Alexa devices. `scripts/check.sh` OK. The Compose UI
   tests (`--device`) were not run.
-- **Not verified, and why it matters:** nothing has been sent to the real Amazon (see part 1's list, which still holds). Specifically unknown:
-  whether `brightness` really is a fraction for every brand (it is Jarvis's, which the owner's lights work with, but another brand may differ); whether
-  Amazon asks for more than the cookies for a lock command (August's may want a PIN or confirmation: Jarvis only locks and unlocks); and how long a
-  device takes to report its new state (the answer after a command is often the old one).
+- **Verified live on the owner's account (2026-11-15):** signing in on real Amazon (in the in-app web view on the emulator; by pasting the address on the owner's
+  iPhone in Andarium); the device list; **lock and unlock** on the August lock through Alexa (no PIN needed); on/off for lights and plugs; **dimmer brightness**
+  (so `brightness` as a fraction is right for the owner's lights), **light colour**, the **thermostat**, and **fan speed** (on Andarium). **Not yet verified:** white
+  tones, and the same commands asked by chat. The state read right after a command is still often the old one; Home asks again.
+- **Found live: the sign-in crashed the app on Andarium** (`NetworkOnMainThreadException`; lesson L39). Alexa's registration answer was read on the main thread. Fixed
+  in `Home` (every service call runs on a background thread), in Settings' sign-ins, and by dropping cookies a header can't carry; any exception while finishing a
+  sign-in is now a message. Debug builds fail on main-thread network use. Tests: `AlexaSignInRobustnessTest`, `HomeGuardTest`.
 - **Acceptance (the owner's):** sign in, "Turn on the living room lamp", "Which lights are on?", "Set the thermostat to 70", "Lock the front door" (the
   August lock through Alexa), the Home tab.

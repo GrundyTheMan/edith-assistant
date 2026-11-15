@@ -418,11 +418,19 @@ internal class CookieJar {
 
     operator fun get(name: String): String? = values[name]
     fun put(name: String, value: String) { values[name] = value }
-    fun entries(): List<Pair<String, String>> = values.entries.map { it.key to it.value }
+    /**
+     * The cookies a request can carry. A header holds only printable ASCII: a cookie with anything else in its name or value
+     * (an unusual web view's, or one Amazon sets with a stray character) is left out, because OkHttp refuses the whole request
+     * with an exception otherwise (it crashed the sign-in on the owner's phone).
+     */
+    fun entries(): List<Pair<String, String>> = values.entries.filter { sendable(it.key) && it.key.isNotEmpty() && sendable(it.value) }.map { it.key to it.value }
+
+    private fun sendable(text: String) = text.all { it.code in 0x20..0x7e }
 
     /** A `Cookie:` header's text (`a=1; b=2`). */
     fun add(header: String) {
-        for (part in header.split(';')) {
+        // Cookies are separated by ";", and by line breaks in some web views.
+        for (part in header.split(';', '\n', '\r')) {
             val i = part.indexOf('=')
             if (i > 0) values[part.substring(0, i).trim()] = part.substring(i + 1).trim()
         }
@@ -440,7 +448,7 @@ internal class CookieJar {
         }
     }
 
-    fun header(): String = values.entries.joinToString("; ") { "${it.key}=${it.value}" }
+    fun header(): String = entries().joinToString("; ") { "${it.first}=${it.second}" }
 }
 
 

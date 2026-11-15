@@ -96,7 +96,17 @@ class AlexaService(
         val start = pending ?: return SignInResult.Failed("Start the sign-in again: that one has expired.")
         val code = api.authorizationCode(address)
             ?: return SignInResult.Failed("That address isn't where Amazon's sign-in ends. It should start with https://www.amazon.com/ap/maplanding and contain openid.oa2.authorization_code.")
-        return when (val r = api.register(start, code, cookies)) {
+        // Whatever the web view handed back or Amazon answered, finishing ends in a message: an exception here took the whole app
+        // down on the owner's phone (Andarium). Only the exception's type and place are logged, never its text (it can hold cookies).
+        val registered = try {
+            api.register(start, code, cookies)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(LogTag.Home, "Alexa's registration failed unexpectedly: ${e.javaClass.name} at ${e.stackTrace.firstOrNull()}")
+            return SignInResult.Failed("Edith hit an unexpected problem finishing the sign-in (${e.javaClass.simpleName}). Try \"Use my browser\" instead.")
+        }
+        return when (val r = registered) {
             is AlexaReply.Ok -> {
                 sessionLock.withLock {
                     val keep = Saved(r.value.refreshToken, start.site.site, r.value.deviceSerial, clock.now().toEpochMilli())
