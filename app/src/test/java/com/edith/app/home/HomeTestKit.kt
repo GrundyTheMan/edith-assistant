@@ -25,7 +25,8 @@ class HomeKit(val test: TestScope, scope: CoroutineScope, vararg others: HomeBac
     val fake = FakeHomeBackend(clock, picture = { byteArrayOf(1, 2, 3) })
     val prefs = MemoryHomePrefs(HomeChoices(demo = demoOn))
     val log = MemoryCommandLog()
-    val home = Home(prefs, log, scope, clock, demo = fake)
+    // Virtual time: no switch of thread, so delays and timeouts in these tests stay on the test clock.
+    val home = Home(prefs, log, scope, clock, demo = fake, ioContext = kotlin.coroutines.EmptyCoroutineContext)
 
     init {
         others.forEach { home.register(it) }
