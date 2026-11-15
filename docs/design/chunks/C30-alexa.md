@@ -109,8 +109,8 @@ Parsing the device list and state from made-up answers; commands; an expired ses
   tests (`--device`) were not run.
 - **Verified live on the owner's account (2026-11-15):** signing in on real Amazon (in the in-app web view on the emulator; by pasting the address on the owner's
   iPhone in Andarium); the device list; **lock and unlock** on the August lock through Alexa (no PIN needed); on/off for lights and plugs; **dimmer brightness**
-  (so `brightness` as a fraction is right for the owner's lights), **light colour**, the **thermostat**, and **fan speed** (on Andarium). **Not yet verified:** white
-  tones, and the same commands asked by chat. The state read right after a command is still often the old one; Home asks again.
+  (so `brightness` as a fraction is right for the owner's lights), **light colour**, the **thermostat**, and **fan speed** (on Andarium). Per the owner (2026-11-15, dev.9): the
+  remaining commands, white tones and the same commands asked by chat, were tried on Andarium and work, and the in-app sign-in no longer crashes. The state read right after a command is still often the old one; Home asks again.
 - **Found live: the sign-in crashed the app on Andarium** (`NetworkOnMainThreadException`; lesson L39). Alexa's registration answer was read on the main thread. Fixed
   in `Home` (every service call runs on a background thread), in Settings' sign-ins, and by dropping cookies a header can't carry; any exception while finishing a
   sign-in is now a message. Debug builds fail on main-thread network use. Tests: `AlexaSignInRobustnessTest`, `HomeGuardTest`.
