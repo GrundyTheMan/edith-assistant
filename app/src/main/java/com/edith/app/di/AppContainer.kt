@@ -98,6 +98,8 @@ import com.edith.app.alexa.AlexaService
 import com.edith.app.meross.MerossApi
 import com.edith.app.meross.MerossService
 import com.edith.app.meross.PahoMerossBus
+import com.edith.app.printer.MoonrakerApi
+import com.edith.app.printer.PrinterService
 import com.edith.app.ring.RingApi
 import com.edith.app.ring.RingService
 import com.edith.app.microsoft.MicrosoftAccounts
@@ -397,6 +399,9 @@ class AppContainer(val app: Application) {
     /** Alexa devices (C30): the sign-in is kept encrypted in [secretStore]. */
     val alexa: AlexaService by lazy { AlexaService(secretStore, AlexaApi(okHttpLazy), clock) }
 
+    /** A 3D printer's Moonraker on the home Wi-Fi (C34): its address and API key are kept encrypted in [secretStore]. */
+    val printer: PrinterService by lazy { PrinterService(secretStore, MoonrakerApi(okHttpLazy), clock) }
+
     val home: Home by lazy {
         Home(
             DataStoreHomePrefs(settingsStore.store), homeCommandLog, appScope, clock,
@@ -404,7 +409,8 @@ class AppContainer(val app: Application) {
         ).also { h ->
             h.register(meross)   // C26
             h.register(ring)     // C27
-            h.register(alexa)    // C30; C28, C29, C31 register theirs here
+            h.register(alexa)    // C30
+            h.register(printer)  // C34; C28, C29, C31 register theirs here
         }
     }
 
@@ -478,6 +484,12 @@ class AppContainer(val app: Application) {
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e(LogTag.Home, "Couldn't load the Alexa sign-in", e)
+        }
+        try {
+            printer.load()   // C34: picks up the saved printer
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.e(LogTag.Home, "Couldn't load the printer setup", e)
         }
     }
 
