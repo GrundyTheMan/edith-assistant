@@ -39,7 +39,9 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.ui.PlayerView
 import com.edith.app.home.DeviceClip
@@ -123,7 +125,7 @@ private fun ClipPlayerDialog(clip: DeviceClip, ui: ClipsUi, onClose: () -> Unit)
             when {
                 ui.playError != null -> Text(ui.playError)
                 ui.playUrl == null -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                else -> ClipPlayer(ui.playUrl)
+                else -> ClipPlayer(ui.playUrl, ui.playHeaders)
             }
         },
         confirmButton = { TextButton(onClick = onClose) { Text("Close") } },
@@ -147,14 +149,14 @@ private val DECODER_ERRORS = setOf(
 
 @Composable
 @androidx.annotation.OptIn(UnstableApi::class)
-private fun ClipPlayer(url: String) {
+private fun ClipPlayer(url: String, headers: Map<String, String>) {
     val context = LocalContext.current
     val failure = remember(url) { androidx.compose.runtime.mutableStateOf<String?>(null) }
     // Set after a decoder error: the player is built again, once, with software decoders first.
     val software = remember(url) { androidx.compose.runtime.mutableStateOf(false) }
     val player = remember(url, software.value) {
         val factory = DefaultRenderersFactory(context).apply { if (software.value) setMediaCodecSelector(softwareFirst()) }
-        ExoPlayer.Builder(context, factory).build().apply {
+        ExoPlayer.Builder(context, factory).setMediaSourceFactory(DefaultMediaSourceFactory(DefaultHttpDataSource.Factory().setDefaultRequestProperties(headers))).build().apply {
             setMediaItem(MediaItem.fromUri(url))
             addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {

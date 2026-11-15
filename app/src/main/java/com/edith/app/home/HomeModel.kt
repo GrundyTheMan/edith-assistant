@@ -150,6 +150,9 @@ data class DeviceClip(
     val seconds: Int?,
 )
 
+/** Where a clip plays from: an address, and headers the player must send with it (Blink's clips need its sign-in; Ring's addresses are signed). */
+data class ClipSource(val url: String, val headers: Map<String, String> = emptyMap())
+
 /** A window of clips. [noPlan]: the service has recordings only with a paid plan, and this account has none (Ring Protect). */
 data class ClipsPage(val clips: List<DeviceClip>, val noPlan: Boolean = false)
 
@@ -186,4 +189,9 @@ interface HomeBackend : Integration {
     /** A fresh address the player can stream clip [clipId] from. Services sign these, and they expire, so it is asked for at play time. */
     suspend fun clipUrl(clipId: String): Outcome<String> =
         Outcome.Failure(AppError.ToolFailed(displayName, "it has no clips"))
+    /** [clipUrl] plus the headers the player must send; a service whose addresses are signed in themselves (Ring) needs no more. */
+    suspend fun clipSource(clipId: String): Outcome<ClipSource> = when (val r = clipUrl(clipId)) {
+        is Outcome.Success -> Outcome.Success(ClipSource(r.value))
+        is Outcome.Failure -> r
+    }
 }

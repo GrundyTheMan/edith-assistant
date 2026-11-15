@@ -260,6 +260,13 @@ class Home(
         return withTimeoutOrNull(backend.timeoutMs ?: timeoutMs) { safely(backend) { backend.clipUrl(clip.id) } } ?: Outcome.Failure(AppError.Timeout)
     }
 
+    /** Where to play [clip] from: a fresh address and any headers it needs. */
+    suspend fun clipSource(clip: DeviceClip): Outcome<ClipSource> {
+        val backend = backends.value.firstOrNull { it.id == clip.backend }
+            ?: return Outcome.Failure(AppError.ToolFailed(clip.backend, "that service isn't connected"))
+        return withTimeoutOrNull(backend.timeoutMs ?: timeoutMs) { safely(backend) { backend.clipSource(clip.id) } } ?: Outcome.Failure(AppError.Timeout)
+    }
+
     suspend fun setFavorite(device: HomeDevice, on: Boolean) = prefs.setFavorite(device.key, on)
     suspend fun setHidden(key: String, name: String, hidden: Boolean) = prefs.setHidden(key, name, hidden)
     suspend fun setDemo(on: Boolean) = prefs.setDemo(on)
