@@ -36,6 +36,7 @@ enum class HomeChip(val label: String, val types: Set<DeviceType>?) {
     Climate("Climate", setOf(DeviceType.Thermostat, DeviceType.TemperatureSensor)),
     Locks("Locks and doors", setOf(DeviceType.Lock, DeviceType.GarageDoor)),
     Cameras("Cameras", setOf(DeviceType.Camera, DeviceType.Doorbell)),
+    Printer("Printer", setOf(DeviceType.Printer)),
     All("All", null);
 
     fun includes(d: HomeDevice, favorites: Set<String>): Boolean = when (this) {

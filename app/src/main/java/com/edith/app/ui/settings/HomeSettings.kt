@@ -283,7 +283,7 @@ private fun SignInDialog(form: SignInForm, onSignIn: (Map<String, String>, (Sign
                         }
                     }
                 },
-                enabled = !working && fields.filter { !it.onlyWhenAsked }.all { !values[it.key].isNullOrBlank() },
+                enabled = !working && fields.filter { !it.onlyWhenAsked && !it.optional }.all { !values[it.key].isNullOrBlank() },
                 modifier = Modifier.testTag(SUBMIT_TAG),
             ) { Text("Sign in") }
         },

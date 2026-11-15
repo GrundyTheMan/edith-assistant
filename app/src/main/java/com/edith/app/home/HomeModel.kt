@@ -11,7 +11,7 @@ import com.edith.app.tools.framework.Integration
 enum class DeviceType(val label: String) {
     Light("Light"), Switch("Switch"), Plug("Plug"), Fan("Fan"), Thermostat("Thermostat"),
     TemperatureSensor("Temperature sensor"), Lock("Lock"), GarageDoor("Garage door"), Camera("Camera"),
-    Doorbell("Doorbell"), SecurityPanel("Security panel"), Sensor("Sensor"), Speaker("Speaker"), Other("Device"),
+    Doorbell("Doorbell"), SecurityPanel("Security panel"), Sensor("Sensor"), Speaker("Speaker"), Printer("3D printer"), Other("Device"),
 }
 
 enum class TempUnit(val symbol: String) { Fahrenheit("°F"), Celsius("°C") }
@@ -34,6 +34,8 @@ sealed interface Capability {
     data object OpenClose : Capability
     data object Snapshot : Capability
     data object Events : Capability
+    /** A 3D printer's job: pause, resume and cancel (C34). */
+    data object PrintControl : Capability
 
     companion object {
         val DEFAULT_COLORS = listOf("red", "orange", "yellow", "green", "blue", "purple", "pink", "white")
@@ -61,7 +63,33 @@ data class DeviceState(
     val battery: Int? = null,
     /** When it last changed or moved (ms since 1970), if the device says: a garage door's "last moved". */
     val changedAt: Long? = null,
+    /** A 3D printer's job (C34). */
+    val print: PrintJob? = null,
+    /** A printer's heaters, nozzle first (C34). */
+    val heaters: List<Heat> = emptyList(),
 )
+
+
+/** Where a 3D printer's job stands, as Klipper's `print_stats.state` reports it (C34). */
+enum class PrintState(val label: String) {
+    Idle("Idle"), Printing("Printing"), Paused("Paused"), Complete("Complete"), Cancelled("Cancelled"), Error("Error"),
+}
+
+/** One 3D printer job (C34). [progress] is 0 to 1; [timeLeftSeconds] is null when it can't be estimated yet. */
+data class PrintJob(
+    val state: PrintState,
+    /** For people: "Benchy", "Chimney and Platforms (plate 1)". */
+    val title: String? = null,
+    val progress: Double = 0.0,
+    val timeLeftSeconds: Long? = null,
+    val layer: Int? = null,
+    val layers: Int? = null,
+    /** Klipper's message: an error, or why the printer isn't ready. */
+    val message: String? = null,
+)
+
+/** A heater's reading: [target] is 0 when it is off. */
+data class Heat(val label: String, val temperature: Double, val target: Double)
 
 data class HomeDevice(
     /** The backend's own id; unique within [backend]. */
@@ -98,6 +126,10 @@ sealed interface DeviceCommand {
     data object Unlock : DeviceCommand
     data object Open : DeviceCommand
     data object Close : DeviceCommand
+    /** A print (C34): pause it, carry on, or stop it for good. */
+    data object Pause : DeviceCommand
+    data object Resume : DeviceCommand
+    data object CancelPrint : DeviceCommand
 }
 
 /** What made a camera or doorbell report (C27): Ring's `ding`, motion, a person, or the owner's own live view. */

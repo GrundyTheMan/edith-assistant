@@ -38,6 +38,8 @@ class FakeHomeBackend(
         device("back-lock", "Back door", "Kitchen", DeviceType.Lock, setOf(Capability.LockUnlock), DeviceState(lock = LockState.Locked, battery = 15)),
         device("garage", "Garage door", "Garage", DeviceType.GarageDoor, setOf(Capability.OpenClose), DeviceState(door = DoorState.Closed)),
         device("doorbell", "Doorbell", "Entry", DeviceType.Doorbell, setOf(Capability.Snapshot, Capability.Events), DeviceState(battery = 90)),
+        device("printer", "3D printer", null, DeviceType.Printer, setOf(Capability.PrintControl, Capability.Snapshot),
+            DeviceState(print = PrintJob(PrintState.Printing, "Benchy", 0.42, 3_900, 126, 300), heaters = listOf(Heat("Nozzle", 215.0, 220.0), Heat("Bed", 60.0, 60.0)))),
     )
 
     /** Changes the "cloud" hasn't reported yet: (device id, when it shows, the new state). */
@@ -84,6 +86,9 @@ class FakeHomeBackend(
             DeviceCommand.Unlock -> s.copy(lock = LockState.Unlocked)
             DeviceCommand.Open -> s.copy(door = DoorState.Open)
             DeviceCommand.Close -> s.copy(door = DoorState.Closed)
+            DeviceCommand.Pause -> s.copy(print = s.print?.copy(state = PrintState.Paused))
+            DeviceCommand.Resume -> s.copy(print = s.print?.copy(state = PrintState.Printing))
+            DeviceCommand.CancelPrint -> s.copy(print = s.print?.copy(state = PrintState.Cancelled, timeLeftSeconds = null))
         }
         if (HomeActions.slow(d) && lagMs > 0) {
             pending.removeAll { it.first == deviceId }
@@ -121,7 +126,7 @@ class FakeHomeBackend(
 
     private fun now() = clock.now().toEpochMilli()
 
-    private fun device(id: String, name: String, room: String, type: DeviceType, caps: Set<Capability>, state: DeviceState) =
+    private fun device(id: String, name: String, room: String?, type: DeviceType, caps: Set<Capability>, state: DeviceState) =
         HomeDevice(id, name, room, type, caps, this.id, online = true, state = state, stateAt = null)
 
     companion object {

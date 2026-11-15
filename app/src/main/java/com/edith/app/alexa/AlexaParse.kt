@@ -264,7 +264,7 @@ object AlexaParse {
         is DeviceCommand.SetWhite -> "setColorTemperature"
         DeviceCommand.Lock, DeviceCommand.Unlock -> "lockAction"
         // Jarvis can't open or close a garage door through Alexa, and neither can Edith.
-        DeviceCommand.Open, DeviceCommand.Close -> null
+        DeviceCommand.Open, DeviceCommand.Close, DeviceCommand.Pause, DeviceCommand.Resume, DeviceCommand.CancelPrint -> null
     }
 
     /** What the state properties a device reports say it can be told, for a device whose list of control actions is empty. */
@@ -331,7 +331,7 @@ object AlexaParse {
                 is DeviceCommand.SetWhite -> { put("action", "setColorTemperature"); put("colorTemperatureName", name(command.name)) }
                 DeviceCommand.Lock -> { put("action", "lockAction"); put("targetLockState.value", "LOCKED") }
                 DeviceCommand.Unlock -> { put("action", "lockAction"); put("targetLockState.value", "UNLOCKED") }
-                DeviceCommand.Open, DeviceCommand.Close -> return null
+                DeviceCommand.Open, DeviceCommand.Close, DeviceCommand.Pause, DeviceCommand.Resume, DeviceCommand.CancelPrint -> return null
             }
         }
     }

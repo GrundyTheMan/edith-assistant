@@ -29,6 +29,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
@@ -66,6 +67,7 @@ import com.edith.app.home.DoorState
 import com.edith.app.home.HomeActions
 import com.edith.app.home.HomeDevice
 import com.edith.app.home.HomeProblem
+import com.edith.app.home.PrintState
 import com.edith.app.home.LockState
 import com.edith.app.home.HomeControlTool
 
@@ -148,12 +150,18 @@ fun HomeContent(ui: HomeUi, a: HomeTabActions) {
                         )
                     }
                     // Locks and doors first, in their own section with explicit buttons (C25 §5).
+                    // A 3D printer has a card of its own (C34).
+                    val printers = shown.filter { it.type == DeviceType.Printer }
+                    if (printers.isNotEmpty()) {
+                        item(key = "h-printer") { Heading("3D printer") }
+                        items(printers, key = { it.key }) { d -> PrinterTile(d, ui, a) }
+                    }
                     val secure = shown.filter { it.type == DeviceType.Lock || it.type == DeviceType.GarageDoor }
                     if (secure.isNotEmpty()) {
                         item(key = "h-secure") { Heading("Locks and doors") }
                         items(secure, key = { it.key }) { d -> SecureTile(d, ui, a) }
                     }
-                    for ((room, list) in (shown - secure.toSet()).groupBy { it.room ?: "Other" }.toSortedMap()) {
+                    for ((room, list) in (shown - secure.toSet() - printers.toSet()).groupBy { it.room ?: "Other" }.toSortedMap()) {
                         item(key = "h-$room") { Heading(room) }
                         items(list, key = { it.key }) { d -> DeviceTile(d, ui, a, onOpen = { open = d.key }) }
                     }
@@ -187,7 +195,7 @@ private fun ProblemBanner(p: HomeProblem, onOpenSettings: () -> Unit) {
 
 /** "On, 40% · 3 min ago", or "Not responding". */
 private fun stateLine(d: HomeDevice, ui: HomeUi): String {
-    if (!d.online) return "Not responding"
+    if (!d.online) return if (d.type == DeviceType.Printer) "Not reachable. It works on your home Wi-Fi." else "Not responding"
     val text = HomeActions.stateText(d).ifEmpty { "—" }
     val at = d.stateAt ?: return text
     return if (ui.now > 0) "$text · ${HomeActions.age(at, ui.now)}" else text
@@ -225,6 +233,37 @@ private fun DeviceTile(d: HomeDevice, ui: HomeUi, a: HomeTabActions, onOpen: () 
                     modifier = Modifier.semantics { contentDescription = "${d.name} on or off" })
             }
             Star(d, ui, a)
+        }
+    }
+}
+
+/** A 3D printer (C34): its job, a progress bar while it prints, and pause / resume / cancel; Cancel asks first, like the tools do. */
+@Composable
+private fun PrinterTile(d: HomeDevice, ui: HomeUi, a: HomeTabActions) {
+    val job = d.state?.print
+    val printing = d.online && job?.state == PrintState.Printing
+    val paused = d.online && job?.state == PrintState.Paused
+    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+        Column(Modifier.padding(start = 12.dp, top = 10.dp, bottom = 4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(d.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(stateLine(d, ui), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Star(d, ui, a)
+            }
+            if (printing || paused) {
+                LinearProgressIndicator(progress = { (job?.progress ?: 0.0).toFloat() }, modifier = Modifier.fillMaxWidth().padding(end = 12.dp, top = 6.dp))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (printing) TextButton(onClick = { a.send(d, DeviceCommand.Pause) }) { Text("Pause") }
+                if (paused) TextButton(onClick = { a.send(d, DeviceCommand.Resume) }) { Text("Resume") }
+                if (printing || paused) TextButton(onClick = { a.send(d, DeviceCommand.CancelPrint) }) { Text("Cancel print") }
+                if (d.has(Capability.Snapshot) && d.online) {
+                    if (d.key in ui.fetching) CircularProgressIndicator(Modifier.size(24.dp).padding(end = 4.dp))
+                    else TextButton(onClick = { a.snapshot(d) }) { Text("Camera") }
+                }
+            }
         }
     }
 }

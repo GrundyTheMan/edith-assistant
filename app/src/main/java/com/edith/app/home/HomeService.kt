@@ -17,6 +17,8 @@ data class SignInField(
     val secret: Boolean = false,
     val email: Boolean = false,
     val onlyWhenAsked: Boolean = false,
+    /** The owner may leave it empty (a printer's API key). */
+    val optional: Boolean = false,
 )
 
 /** What the owner types to sign in to a service: the words and the boxes (the dialog is the same for every service). */

@@ -14,6 +14,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** C25 §2, §6, §8: the registry, merging, last-known states, the command log and the re-checks. */
+/** How many devices the Demo home has: C25's nine, and C34's 3D printer. */
+private const val DEMO_DEVICES = 10
+
 class HomeTest {
     /** A second backend, as a real service would be: a hub (Alexa) or a direct one. */
     private class Other(
@@ -36,7 +39,7 @@ class HomeTest {
     @Test fun `the Demo home is read with every device and its state`() = runTest {
         val k = HomeKit(this, backgroundScope)
         val v = k.home.refresh()
-        assertEquals(9, v.devices.size)
+        assertEquals(DEMO_DEVICES, v.devices.size)
         assertTrue(v.problems.isEmpty())
         assertEquals("Off, 100%".substringBefore(','), HomeActions.stateText(v.devices.first { it.name == "Porch light" }))
         assertTrue("states are stamped with the read's time", v.devices.all { it.stateAt == SchedulerClock.START })
@@ -54,7 +57,7 @@ class HomeTest {
         val started = testScheduler.currentTime
         val v = k.home.refresh()
         assertEquals("it waits only the limit", Home.TIMEOUT_MS, testScheduler.currentTime - started)
-        assertEquals(9, v.devices.size)
+        assertEquals(DEMO_DEVICES, v.devices.size)
         assertEquals(listOf("Ring: it didn't answer in time."), v.problems.map { it.line })
     }
 
@@ -64,7 +67,7 @@ class HomeTest {
         advanceTimeBy(120_000)
         k.fake.failWith = AppError.Timeout
         val v = k.home.refresh()
-        assertEquals(9, v.devices.size)
+        assertEquals(DEMO_DEVICES, v.devices.size)
         assertEquals(setOf(FakeHomeBackend.ID), v.stale)
         assertEquals("the age is the old read's", SchedulerClock.START, v.devices.first().stateAt)
         assertEquals(1, v.problems.size)
@@ -76,7 +79,7 @@ class HomeTest {
         var v = k.home.refresh()
         assertEquals(listOf("demo"), v.devices.filter { it.name == "Front door" }.map { it.backend })
         assertEquals("Alexa's own devices stay", 1, v.devices.count { it.name == "Hall lamp" })
-        assertEquals(10, v.devices.size)
+        assertEquals(DEMO_DEVICES + 1, v.devices.size)
 
         k.fake.failWith = AppError.Timeout   // the direct service stops answering: Alexa's copy is used instead
         v = k.home.refresh()
