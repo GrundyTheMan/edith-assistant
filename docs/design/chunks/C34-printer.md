@@ -53,6 +53,7 @@ Uploading or starting prints, macros, SSH (Jarvis has these on the PC).
   print, the cancel card, the tools, no banner away from home). `scripts/check.sh` OK.
 - **Verified on the emulator, against a pretend Moonraker on the PC** (debug builds fail on main-thread network use): connect (no key), the card, Pause, Resume, the Cancel card (backing out sends
   nothing; confirming sends `cancel`), the camera picture, "How's the print going?" by chat, and the printer going away (the card says so, no banner). No crash, no main-thread network use.
-- **Not verified, and why it matters:** nothing has been tried against the owner's real printer. The parsing is Jarvis's, tested on made-up captures in the shapes Moonraker sends, not on the
+- **Verified on the owner's real printer (2026-11-15, dev.9, on Andarium):** the owner reports it behaves. Until then it had only been tried against the pretend Moonraker. The risks listed next were the open points; none has been reported as a problem.
+- **Was not verified before that, and why it mattered:** nothing had been tried against the owner's real printer. The parsing is Jarvis's, tested on made-up captures in the shapes Moonraker sends, not on the
   printer's own answers. Things a real Klipper/ZMOD printer may do differently: the progress and time estimate (M73), 3mf file names, the heaters it reports, whether the camera's snapshot
   address works, and an API key (never tried against a printer that wants one). Acceptance below is the owner's.
