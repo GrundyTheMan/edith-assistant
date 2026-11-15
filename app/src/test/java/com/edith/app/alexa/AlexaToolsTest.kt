@@ -67,6 +67,8 @@ class AlexaToolsTest {
         return Home(MemoryHomePrefs(), MemoryCommandLog(), scope, clock).also { h ->
             h.register(service)
             others.forEach { h.register(it) }
+            // Home publishes its backends and status asynchronously: wait until every one is in, or a slow machine asks too early.
+            withTimeout(3_000) { h.backends.first { it.size == 1 + others.size } }
             withTimeout(3_000) { h.status.first { it == IntegrationStatus.Connected } }
         }
     }
