@@ -23,7 +23,7 @@ import org.junit.Test
 import java.time.Duration
 import java.time.Instant
 
-/** C30 part 1: sign-in on Amazon's page, the device list and states, expired cookies, a dead token, last-known states. */
+/** C30 part 1 (commands are in AlexaCommandsTest): sign-in on Amazon's page, the device list and states, expired cookies, a dead token, last-known states. */
 class AlexaServiceTest {
     private val amazon = FakeAmazon()
     private val secrets = InMemorySecretStore()
@@ -118,7 +118,8 @@ class AlexaServiceTest {
         assertTrue("devices are reported through Alexa", list.all { it.backend == "alexa" })
         assertTrue(s.backend.isHub)
         assertTrue("no pictures from Alexa", s.backend.snapshot("e4") is Outcome.Failure)
-        assertEquals("read-only for now: nothing is offered to do", emptySet<Any>(), list.flatMap { it.capabilities }.toSet())
+        assertEquals("a lamp that reports power and brightness can be told both", setOf(com.edith.app.home.Capability.OnOff, com.edith.app.home.Capability.Brightness), lamp.capabilities)
+        assertTrue("a camera is only listed", list.first { it.type == DeviceType.Camera }.capabilities.isEmpty())
     }
 
     @Test fun `the cookies are fetched once for many calls at once`() = runBlocking {
@@ -192,9 +193,9 @@ class AlexaServiceTest {
         assertTrue(list.all { it.state == null })
     }
 
-    @Test fun `commands are not offered yet, and a command that arrives anyway is refused`() = runBlocking {
+    @Test fun `a command the device can't take is refused`() = runBlocking {
         val s = signedIn()
-        assertTrue(s.backend.command("e1", com.edith.app.home.DeviceCommand.TurnOn) is Outcome.Failure)
+        assertTrue("a camera takes no commands", s.backend.command("e4", com.edith.app.home.DeviceCommand.TurnOn) is Outcome.Failure)
     }
 
     @Test fun `category codes map to Edith's device types`() {

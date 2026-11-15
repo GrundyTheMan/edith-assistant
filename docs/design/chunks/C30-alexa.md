@@ -77,3 +77,39 @@ Parsing the device list and state from made-up answers; commands; an expired ses
   - **The in-app way may be treated differently by Amazon** (a WebView, not a browser), and whether Andarium has a WebView is unknown.
   - The disconnect hint's path to Edith in the Alexa app is from memory. Amazon may also ask for a code by text or email: the library notes only
     app-based two-step verification works through its relay; whether it matters in a WebView is unknown.
+
+## As built — part 2 of 2 (commands)
+- **Done in part 2:** every Alexa device can be told what its Alexa listing says it can do, from Chat ("Turn on the living room lamp"), the Home tab's
+  switches, sliders and thermostat steppers, and the unlock/lock rules of C25. Nothing in `home/` or the Home UI changed: they already work from
+  a device's capabilities, so part 2 is `alexa/` only (`AlexaParse`, `AlexaApi`, `AlexaService`) and `AlexaCommandsTest`.
+- **Capabilities** (`AlexaParse.capabilitiesOf`) come from the control actions Alexa lists for a device (Jarvis's `NEEDS`): `turnOn`/`turnOff` → on/off,
+  `setBrightness`, `setPercentage` (fans), `setColor`, `setColorTemperature` (white tones), `setTargetTemperature` / `setThermostatMode` (a
+  thermostat, in °F on `amazon.com`, with the modes the device lists, or Alexa's own five — heat, cool, auto, eco, off — when it lists none),
+  `lockAction` (or the older `setLockState`). **A device that lists no actions** (Jarvis tries every action on such a device) is offered what the
+  properties it reports imply (reports power → on/off, and so on). **Garage doors, cameras, alarm panels and Echo speakers offer nothing:** Jarvis
+  can't control them through Alexa either, so they stay listed and read-only (the garage is Meross's, C26).
+- **The request** is `PUT <alexa>/api/phoenix/state` with `{controlRequests: [{entityId, entityType: "APPLIANCE", parameters}]}`, as `alexa-remote2`'s
+  `executeSmarthomeDeviceAction`, and the parameters are Jarvis's `controlParameters`: `{action: "turnOn"}`, `{action: "setBrightness", brightness: 0.4}` (a
+  **fraction**, 40% is 0.4; the same for `percentage`), `{action: "setTargetTemperature", "targetTemperature.value": 72, "targetTemperature.scale":
+  "FAHRENHEIT"}`, `{action: "setThermostatMode", "thermostatMode.value": "COOL"}`, `{action: "setColor", colorName: "red"}`, `{action:
+  "setColorTemperature", colorTemperatureName: "warm_white"}`, `{action: "lockAction", "targetLockState.value": "LOCKED" | "UNLOCKED"}`.
+- **Amazon's answer is checked** (`AlexaParse.controlProblem`, Jarvis's `controlProblem`): Amazon answers **200 even when it refuses**, so an `errors` entry
+  (`ENDPOINT_UNREACHABLE` → "Alexa couldn't reach the device.", anything else → "Alexa refused: CODE (message).") or a `controlResponses` code other than
+  `SUCCESS` is a failed command, said in words ("Living room lamp: Alexa refused: …"). An expired cookie is fetched again once, as for reads
+  (and the refused try never reached the device); a refresh token Amazon refuses is "Sign in again".
+- **What comes back** is the device's state read right after the command (one more state call), or the last one known if that read fails. Alexa's cloud
+  often lags, and `Home` asks again by C25 §6 (thermostats and locks longer), so the Home tab and the command log catch up.
+- **The rules are C25's, unchanged:** unlock is a screen-only card (never by voice alone); lock is not asked; a setpoint more than 5 °F from now, and any
+  mode change, is a card. The tests check these on devices built from Alexa's answers.
+- **Not in Jarvis's list, so not done:** open/close (garage), routines, speakers, and rooms.
+- **Tests:** `AlexaCommandsTest` (21): what each kind of device offers; each request's exact parameters (brightness fraction, °F scale, upper-case mode, colour and
+  white names, lock targets); the state returned after a command (changed, and still lagging); commands refused without asking Amazon (a
+  camera, a garage, a device that has gone); the three kinds of 200-with-a-refusal; an unreachable Amazon not signing the owner out; expired cookies
+  retried once; a dead token; a Celsius account; the C25 approval rules and `HomeActions.parse` on Alexa devices. `scripts/check.sh` OK. The Compose UI
+  tests (`--device`) were not run.
+- **Not verified, and why it matters:** nothing has been sent to the real Amazon (see part 1's list, which still holds). Specifically unknown:
+  whether `brightness` really is a fraction for every brand (it is Jarvis's, which the owner's lights work with, but another brand may differ); whether
+  Amazon asks for more than the cookies for a lock command (August's may want a PIN or confirmation: Jarvis only locks and unlocks); and how long a
+  device takes to report its new state (the answer after a command is often the old one).
+- **Acceptance (the owner's):** sign in, "Turn on the living room lamp", "Which lights are on?", "Set the thermostat to 70", "Lock the front door" (the
+  August lock through Alexa), the Home tab.

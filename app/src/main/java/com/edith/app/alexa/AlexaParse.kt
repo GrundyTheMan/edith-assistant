@@ -1,14 +1,19 @@
 package com.edith.app.alexa
 
+import com.edith.app.home.Capability
+import com.edith.app.home.DeviceCommand
 import com.edith.app.home.DeviceState
 import com.edith.app.home.DoorState
 import com.edith.app.home.LockState
+import com.edith.app.home.TempUnit
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 
@@ -244,6 +249,109 @@ object AlexaParse {
      * what times out, blanking the devices batched with them.
      */
     fun shouldAskState(d: AlexaDevice): Boolean = d.type != "ALEXA_VOICE_ENABLED" && d.type != "CAMERA" && d.properties.isNotEmpty()
+
+    // ---- Commands (part 2) ----
+
+    /** The control action Alexa lists for each command (Jarvis's `NEEDS`); a device must support it. */
+    private fun needed(command: DeviceCommand): String? = when (command) {
+        DeviceCommand.TurnOn -> "turnOn"
+        DeviceCommand.TurnOff -> "turnOff"
+        is DeviceCommand.SetBrightness -> "setBrightness"
+        is DeviceCommand.SetPercentage -> "setPercentage"
+        is DeviceCommand.SetTemperature -> "setTargetTemperature"
+        is DeviceCommand.SetMode -> "setThermostatMode"
+        is DeviceCommand.SetColor -> "setColor"
+        is DeviceCommand.SetWhite -> "setColorTemperature"
+        DeviceCommand.Lock, DeviceCommand.Unlock -> "lockAction"
+        // Jarvis can't open or close a garage door through Alexa, and neither can Edith.
+        DeviceCommand.Open, DeviceCommand.Close -> null
+    }
+
+    /** What the state properties a device reports say it can be told, for a device whose list of control actions is empty. */
+    private val ACTIONS_BY_NAMESPACE = mapOf(
+        "Alexa.PowerController" to listOf("turnOn", "turnOff"),
+        "Alexa.BrightnessController" to listOf("setBrightness"),
+        "Alexa.PercentageController" to listOf("setPercentage"),
+        "Alexa.ColorController" to listOf("setColor"),
+        "Alexa.ColorTemperatureController" to listOf("setColorTemperature"),
+        "Alexa.ThermostatController" to listOf("setTargetTemperature", "setThermostatMode"),
+        "Alexa.LockController" to listOf("lockAction"),
+    )
+
+    /** Kinds Edith lists but never controls through Alexa: Jarvis can't either (garage doors, cameras, alarm panels). */
+    private val NOT_CONTROLLED = setOf("GARAGE_DOOR", "CAMERA", "SECURITY_PANEL", "ALEXA_VOICE_ENABLED")
+
+    /** The control actions [d] supports: the ones Alexa lists, else (when it lists none) what its state properties imply. */
+    private fun supportedActions(d: AlexaDevice): Set<String> {
+        if (d.type in NOT_CONTROLLED) return emptySet()
+        val listed = d.actions.map { if (it == "setLockState") "lockAction" else it }.toSet()
+        if (listed.isNotEmpty()) return listed
+        return d.properties.flatMap { ACTIONS_BY_NAMESPACE[it.namespace].orEmpty() }.toSet()
+    }
+
+    /** The thermostat modes Alexa takes when a device lists none (Jarvis's `THERMOSTAT_MODES`). */
+    private val DEFAULT_MODES = listOf("heat", "cool", "auto", "eco", "off")
+
+    /** What [d] can be told to do, as Edith's capabilities; temperatures are in [scale]'s unit. */
+    fun capabilitiesOf(d: AlexaDevice, scale: TempScale): Set<Capability> {
+        val actions = supportedActions(d)
+        return buildSet {
+            if ("turnOn" in actions || "turnOff" in actions) add(Capability.OnOff)
+            if ("setBrightness" in actions) add(Capability.Brightness)
+            if ("setPercentage" in actions) add(Capability.Percentage)
+            if ("setColor" in actions) add(Capability.Color())
+            if ("setColorTemperature" in actions) add(Capability.WhiteTone())
+            if ("setTargetTemperature" in actions || "setThermostatMode" in actions) {
+                val modes = if ("setThermostatMode" in actions) d.modes.ifEmpty { DEFAULT_MODES } else emptyList()
+                add(Capability.Thermostat(modes, if (scale == TempScale.Fahrenheit) TempUnit.Fahrenheit else TempUnit.Celsius))
+            }
+            if ("lockAction" in actions) add(Capability.LockUnlock)
+        }
+    }
+
+    /**
+     * The parameters Alexa's control request takes for [command] (as the ioBroker Alexa adapter sends them, and
+     * Jarvis's `controlParameters`), or null when [d] can't be sent it. Brightness and speed go as fractions: 50% is 0.5.
+     */
+    fun controlParameters(command: DeviceCommand, d: AlexaDevice, scale: TempScale): JsonObject? {
+        val action = needed(command) ?: return null
+        if (action !in supportedActions(d)) return null
+        fun name(s: String) = s.trim().lowercase().replace(Regex("""\s+"""), "_")
+        return buildJsonObject {
+            when (command) {
+                DeviceCommand.TurnOn -> put("action", "turnOn")
+                DeviceCommand.TurnOff -> put("action", "turnOff")
+                is DeviceCommand.SetBrightness -> { put("action", "setBrightness"); put("brightness", command.percent / 100.0) }
+                is DeviceCommand.SetPercentage -> { put("action", "setPercentage"); put("percentage", command.percent / 100.0) }
+                is DeviceCommand.SetTemperature -> {
+                    put("action", "setTargetTemperature"); put("targetTemperature.value", command.value); put("targetTemperature.scale", scale.alexa)
+                }
+                is DeviceCommand.SetMode -> { put("action", "setThermostatMode"); put("thermostatMode.value", command.mode.trim().uppercase()) }
+                is DeviceCommand.SetColor -> { put("action", "setColor"); put("colorName", name(command.name)) }
+                is DeviceCommand.SetWhite -> { put("action", "setColorTemperature"); put("colorTemperatureName", name(command.name)) }
+                DeviceCommand.Lock -> { put("action", "lockAction"); put("targetLockState.value", "LOCKED") }
+                DeviceCommand.Unlock -> { put("action", "lockAction"); put("targetLockState.value", "UNLOCKED") }
+                DeviceCommand.Open, DeviceCommand.Close -> return null
+            }
+        }
+    }
+
+    /**
+     * Why Alexa's answer to a control request says it didn't work, in words, or null when it did (Jarvis's `controlProblem`):
+     * `{controlResponses: [{code}], errors: [{code, message}]}`. Amazon answers 200 for a refusal, so this is the only way to know.
+     */
+    fun controlProblem(body: JsonElement?): String? {
+        val b = body.obj()
+        val errors = b["errors"].array().map { it.obj() }
+        if (errors.isNotEmpty()) {
+            val code = errors[0]["code"].text() ?: "ERROR"
+            if (code == "ENDPOINT_UNREACHABLE") return "Alexa couldn't reach the device."
+            val message = errors[0]["message"].text()
+            return "Alexa refused: $code${message?.let { " ($it)" }.orEmpty()}."
+        }
+        val failed = b["controlResponses"].array().map { it.obj() }.firstOrNull { r -> r["code"].text()?.let { it != "SUCCESS" } == true }
+        return failed?.let { "Alexa answered ${it["code"].text()}." }
+    }
 
     /** Batches of at most [size], each from one maker where it can be, so a slow brand holds up only its own devices. */
     fun stateBatches(devices: List<AlexaDevice>, size: Int): List<List<AlexaDevice>> {
