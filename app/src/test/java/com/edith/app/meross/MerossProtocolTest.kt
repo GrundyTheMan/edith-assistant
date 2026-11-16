@@ -60,4 +60,18 @@ class MerossProtocolTest {
         assertEquals("https://iotx-us.meross.com", MerossProtocol.apiBase("iotx-us.meross.com"))
         assertEquals("http://localhost:1", MerossProtocol.apiBase("http://localhost:1/"))
     }
+
+    @Test fun `only https addresses under meross dot com are trusted`() {
+        assertTrue(MerossProtocol.isTrustedDomain("iotx-eu.meross.com"))
+        assertTrue(MerossProtocol.isTrustedDomain("https://iotx-us.meross.com/"))
+        assertTrue(MerossProtocol.isTrustedDomain("mqtt-us.meross.com:443"))
+        assertTrue(MerossProtocol.isTrustedDomain("IOTX-AP.MEROSS.COM"))
+        assertFalse("plain http never", MerossProtocol.isTrustedDomain("http://iotx-us.meross.com"))
+        assertFalse(MerossProtocol.isTrustedDomain("evil.example.com"))
+        assertFalse("a lookalike", MerossProtocol.isTrustedDomain("iotx-us.meross.com.evil.example"))
+        assertFalse("a lookalike", MerossProtocol.isTrustedDomain("notmeross.com"))
+        assertFalse("user info", MerossProtocol.isTrustedDomain("https://iotx-us.meross.com@evil.example"))
+        assertFalse("a path", MerossProtocol.isTrustedDomain("iotx-us.meross.com/redirect"))
+        assertFalse(MerossProtocol.isTrustedDomain(""))
+    }
 }

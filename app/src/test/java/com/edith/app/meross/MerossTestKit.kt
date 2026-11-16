@@ -47,7 +47,10 @@ class FakeMerossCloud {
     fun devList(vararg devices: String) = """{"apiStatus":0,"data":[${devices.joinToString(",")}]}"""
     fun device(uuid: String, name: String, type: String = "msg100", online: Int = 1) = """{"uuid":"$uuid","devName":"$name","deviceType":"$type","onlineStatus":$online}"""
 
-    fun api(clock: FakeClock = FakeClock()) = MerossApi(lazy { OkHttpClient() }, clock, base)
+    /** Trusts every address: this pretend Meross is a local http server. [MerossApiTest] covers what the real rule refuses. */
+    fun api(clock: FakeClock = FakeClock()) = MerossApi(lazy { OkHttpClient() }, clock, base, trusted = { true })
+    /** The same, with the real rule for which addresses Meross may name. */
+    fun strictApi(clock: FakeClock = FakeClock()) = MerossApi(lazy { OkHttpClient() }, clock, base)
     fun shutdown() = server.close()
 }
 

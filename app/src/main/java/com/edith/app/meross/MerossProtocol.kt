@@ -96,6 +96,18 @@ object MerossProtocol {
         return bare.substringBefore(':') to (port ?: defaultPort)
     }
 
+    /**
+     * Whether [domain], as Meross's sign-in names it, is a Meross address Edith may send an account's credentials to:
+     * a host under `meross.com` (an optional `https://` and `:port`), never plain `http://` and never another site.
+     * Cleartext is allowed app-wide for Ollama on the LAN (01-architecture §9), so this is checked here.
+     */
+    fun isTrustedDomain(domain: String): Boolean {
+        val bare = domain.removePrefix("https://").trimEnd('/')
+        return TRUSTED_DOMAIN.matches(bare)
+    }
+
+    private val TRUSTED_DOMAIN = Regex("""(?:[A-Za-z0-9-]+\.)+meross\.com(?::\d{1,5})?""", RegexOption.IGNORE_CASE)
+
     /** An API address with a scheme: a redirect gives a bare host name. */
     fun apiBase(domain: String): String = if (domain.startsWith("http://") || domain.startsWith("https://")) domain.trimEnd('/') else "https://${domain.trimEnd('/')}"
 

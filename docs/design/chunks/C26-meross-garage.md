@@ -61,6 +61,19 @@ token, key or MQTT payloads.
   the token, an account with 2FA, and the Garage Door's open/close (only the shed door was moved).
 
 ## Decisions and follow-ups (2026-11-14, after the merge)
+- **Review change (2026-11-14):** the sign-in followed a region redirect to whatever address Meross's answer named, `http://` included, and
+  cleartext is allowed app-wide, so a spoofed answer could have had the email and the md5 of the password sent in the clear to another
+  host. Now the redirect, and the API and MQTT addresses in a sign-in, must be `https` under `meross.com` (`MerossProtocol.isTrustedDomain`);
+  otherwise sign-in stops, sends nothing there and hands any token back to Meross. The pretend Meross in the tests is trusted explicitly
+  (`FakeMerossCloud.api()`), and `strictApi()` covers the refusals.
+  - **Landed 2026-11-16** as its own small change (it had been waiting inside the open review PR #59). C37's HTTPS-only
+    client now also refuses `http://` by itself, so what this check adds is the **wrong host over `https`**: a redirect
+    to some other site would otherwise still have received the email and the md5 of the password.
+  - **The only two places a server answer names a host** are the sign-in's `domain` and `mqttDomain` and the region
+    redirect; both are checked, and the device list, logout and MQTT then use the stored, checked values.
+  - **Not covered:** a sign-in saved *before* this check isn't re-validated when it's loaded from storage. It could only
+    be wrong if an earlier spoofed answer had been accepted, and re-checking would need the service tests (which save
+    local `http://` addresses) reworked, so it was left.
 - **Compared with this design:** every Specification point is built, except "LAN control at home" (marked optional-later) and the sign-in's 2FA
   path, which is only unit-tested (the owner's account didn't ask for a code). "Library check first… ask the owner if it needs keep rules beyond the
   usual": it did, and the broad rule `-keep class org.eclipse.paho.client.mqttv3.** { *; }` was added without asking first (about 240 KB kept);
