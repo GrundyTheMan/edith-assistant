@@ -41,6 +41,22 @@ class MerossApiTest {
         assertEquals(2, cloud.requests.size)
     }
 
+    @Test fun `a redirect to an address outside Meross is refused, and nothing is sent there`() = runTest {
+        val elsewhere = FakeMerossCloud()
+        try {
+            cloud.answers["/v1/Auth/signIn"] = { cloud.status(1030, """{"domain":"${elsewhere.base}"}""") }   // plain http, not Meross
+            assertEquals(MerossLogin.Failed(MerossApi.UNTRUSTED), cloud.strictApi().login("a@b.c", "pw", null, "I"))
+            assertTrue("the password went nowhere else", elsewhere.requests.isEmpty())
+        } finally { elsewhere.shutdown() }
+    }
+
+    @Test fun `a sign-in that names an address outside Meross is refused, and the token is given back`() = runTest {
+        cloud.answers["/v1/Auth/signIn"] = { cloud.loginOk(domain = "http://evil.example.test", mqtt = "mqtt-us.meross.com") }
+        cloud.answers["/v1/Profile/logout"] = { cloud.status(0) }
+        assertEquals(MerossLogin.Failed(MerossApi.UNTRUSTED), cloud.strictApi().login("a@b.c", "pw", null, "I"))
+        assertEquals("the token goes back to Meross, not to the address it named", "Basic tok-1", cloud.authorization("/v1/Profile/logout"))
+    }
+
     @Test fun `2FA - a code is asked for, then sent with the next sign-in`() = runTest {
         cloud.answers["/v1/Auth/signIn"] = { cloud.status(1033) }
         assertEquals(MerossLogin.NeedsCode, cloud.api().login("a@b.c", "pw", null, "I"))

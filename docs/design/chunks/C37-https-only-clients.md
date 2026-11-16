@@ -18,7 +18,12 @@ Both happened because **cleartext HTTP is allowed app-wide** (`network_security_
 one OkHttp client** (`AppContainer.okHttpLazy`). Cleartext is there for exactly one reason: Ollama lives at a LAN IP
 the owner types, and `domain-config` can't match IP ranges. 01-architecture §9 says "all other traffic is HTTPS", but
 nothing enforced it. Each service had to remember, and two forgot. Each was fixed on its own (Meross: `isTrustedDomain`,
-PR #59; iCloud: `carriesPassword`). That doesn't stop the next service, such as the ones C27–C34 add.
+see C26; iCloud: `carriesPassword`, #60). That doesn't stop the next service, such as the ones C27–C34 add.
+
+> **Correction (2026-11-16):** when C37 merged, the Meross check was **not** on `master`: it was only in the open review
+> PR #59, and this chunk's text and PR #79 said it had landed. It landed on its own afterwards (C26's "Review change").
+> Until then `master`'s Meross sign-in still followed a server-named address to any `https` host; C37 had closed only
+> the `http://` half.
 
 ## Goal
 

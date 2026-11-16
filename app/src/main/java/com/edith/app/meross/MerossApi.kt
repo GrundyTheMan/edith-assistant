@@ -45,6 +45,8 @@ class MerossApi(
     private val clock: Clock,
     private val baseUrl: String = BASE_URL,
     private val random: SecureRandom = SecureRandom(),
+    /** Which addresses Meross may send Edith to (a region redirect, the API and MQTT hosts); tests answer from a local server. */
+    private val trusted: (String) -> Boolean = MerossProtocol::isTrustedDomain,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -76,11 +78,24 @@ class MerossApi(
                 val token = data?.text("token"); val key = data?.text("key"); val userId = data?.text("userid")
                 if (token == null || key == null || userId == null) return MerossLogin.Failed("Meross's answer wasn't what Edith expected")
                 val domain = data.text("domain") ?: base
-                MerossLogin.Ok(MerossCreds(token, key, userId, data.text("email") ?: email, domain, data.text("mqttDomain") ?: domain, installId))
+                val mqttDomain = data.text("mqttDomain") ?: domain
+                val creds = MerossCreds(token, key, userId, data.text("email") ?: email, domain, mqttDomain, installId)
+                if (!trusted(domain) || !trusted(mqttDomain)) {
+                    // The token is only ever sent to Meross: hand it back and keep nothing.
+                    Log.w(LogTag.Home, "Meross sign-in named an address outside meross.com")
+                    logout(creds.copy(domain = base))   // handles its own failures (it only logs them)
+                    return MerossLogin.Failed(UNTRUSTED)
+                }
+                MerossLogin.Ok(creds)
             }
             MerossProtocol.Status.REDIRECT_REGION -> {
                 val domain = data?.text("domain")
+                // The password goes to the address a response names, so it must be a Meross one (https, under meross.com).
                 if (redirected || domain == null) MerossLogin.Failed("Meross sent Edith to another region twice")
+                else if (!trusted(domain)) {
+                    Log.w(LogTag.Home, "Meross sign-in was sent to an address outside meross.com")
+                    MerossLogin.Failed(UNTRUSTED)
+                }
                 else login(domain, email, password, mfaCode, installId, redirected = true)
             }
             MerossProtocol.Status.MFA_REQUIRED -> MerossLogin.NeedsCode
@@ -150,6 +165,7 @@ class MerossApi(
 
     companion object {
         const val BASE_URL = "https://iotx-us.meross.com"
+        const val UNTRUSTED = "Meross named an address that isn't Meross's, so Edith stopped and sent nothing there"
         private const val APP_VERSION = "2.0"
         private const val APP_TYPE = "MerossIOT"
         private const val CALL_TIMEOUT_S = 6L
