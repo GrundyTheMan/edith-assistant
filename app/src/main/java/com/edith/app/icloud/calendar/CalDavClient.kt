@@ -44,8 +44,9 @@ sealed interface DavResult<out T> {
 /**
  * iCloud's calendars over CalDAV (RFC 4791, 6638) with OkHttp and HTTP Basic (the address and the app-specific password,
  * over TLS only). The credentials are added by a network interceptor, so they follow Apple's redirect to the account's
- * partition host (`pNN-caldav.icloud.com`), and only to [baseUrl]'s host or an `icloud.com` host. Nothing it sends or
- * receives is logged.
+ * partition host (`pNN-caldav.icloud.com`), and only where [carriesPassword] says: [baseUrl]'s own host over its own
+ * scheme, or an `icloud.com` host over `https`. An address Apple's answers name with `http://` never gets the password,
+ * although cleartext is allowed app-wide (01-architecture §9). Nothing it sends or receives is logged.
  */
 class CalDavClient(
     http: Lazy<OkHttpClient>,
@@ -59,8 +60,7 @@ class CalDavClient(
     private val client: OkHttpClient by lazy {
         http.value.newBuilder()
             .addNetworkInterceptor { chain ->
-                val host = chain.request().url.host
-                val trusted = host == base.host || host == "icloud.com" || host.endsWith(".icloud.com")
+                val trusted = carriesPassword(chain.request().url, base)
                 chain.proceed(if (trusted) chain.request().newBuilder().header("Authorization", auth).build() else chain.request())
             }
             .build()
@@ -177,6 +177,20 @@ class CalDavClient(
 
     companion object {
         const val BASE_URL = "https://caldav.icloud.com/"
+
+        /**
+         * Whether the app-specific password may be sent to [url]. [base] is where the client was pointed: in the app
+         * `https://caldav.icloud.com/`, so its host is only trusted over `https`; a stand-in server's plain `http` in
+         * tests is trusted over `http`. Apple's partition hosts (`pNN-caldav.icloud.com`) need `https`. The dot in
+         * `.icloud.com` keeps `evilicloud.com` out; the user-info trick (`https://caldav.icloud.com@evil.example`)
+         * can't pass, because [HttpUrl.host] is `evil.example`.
+         */
+        internal fun carriesPassword(url: HttpUrl, base: HttpUrl): Boolean {
+            val ownOrigin = url.host == base.host && url.scheme == base.scheme
+            val apple = url.isHttps && (url.host == "icloud.com" || url.host.endsWith(".icloud.com"))
+            return ownOrigin || apple
+        }
+
         private val XML = "application/xml; charset=utf-8".toMediaType()
         private val ICS = "text/calendar; charset=utf-8".toMediaType()
         private val DAV_TIME = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC)

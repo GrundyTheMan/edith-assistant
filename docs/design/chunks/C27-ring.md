@@ -32,3 +32,75 @@ again; one Ring failure not stopping other backends.
 
 ## Traps
 Unofficial; never log tokens or images; snapshots of a sleeping battery camera can be old or slow; say so.
+
+## As built — part 1 of 2 (core; Clips follow in a second PR, agreed with the owner 2026-11-14)
+- **Done in part 1:** sign-in with the 2FA code, the rotating refresh token, devices (doorbells and cameras, with battery and
+  online state), snapshots (`camera_snapshot`, C25's tool), event history (`recent_events`, new), and Settings → Home (the generic
+  service row and sign-in dialog from C26). **Not yet:** the Clips chip and playback (part 2; the owner approved adding Media3
+  ExoPlayer for it).
+- **Code:** `ring/RingApi` (OkHttp, stateless), `ring/RingService` (a `HomeService` plus the `HomeBackend`); generic additions in `home/`:
+  `HomeBackend.events` and `EventKind`/`DeviceEvent`, `HomeBackend.snapshotTimeoutMs` (Ring: 35 s; a battery camera must wake),
+  `Home.events`, and the `recent_events` tool (`RecentEventsTool`: `device?`, `hours?` 1–72, default 24).
+- **Protocol:** read from `ring-client-api` **v14.3.0** (Jarvis's `node_modules`) on 2026-11-14. `POST oauth.ring.com/oauth/token`
+  (`client_id=ring_official_android`, password grant, 2FA code in the `2fa-code` header, HTTP 412 = a code is wanted, 400
+  "Verification Code…" = wrong code; then the `refresh_token` grant), `POST clients_api/session` (this phone's hardware id; Ring wants one
+  before it answers the rest), `GET clients_api/ring_devices`, `GET app-snaps.ring.com/snapshots/next/{id}?after-ms=…&extras=force`
+  (JPEG), `GET clients_api/locations/{loc}/devices/{id}/events`. Headers `Authorization: Bearer …`, `hardware_id`, `User-Agent: android:com.ringapp`.
+- **Rotating token (C23 trap 1):** the new refresh token is saved (`SecretStore` `home/ring`: the token and the phone's hardware id, nothing
+  else) *before* the access token it came with is used, and refreshes never overlap (a lock): several calls at once would otherwise
+  spend the same old token and lose the sign-in. Tests: `RingServiceTest` (saved-before-use, six parallel calls → one refresh).
+  A refresh Ring refuses (400/401) is "Sign in again"; an unreachable Ring is not (the owner stays signed in).
+- **Found by a test:** a 2FA sign-in makes two or three requests before anything is saved; each must send the **same** hardware id
+  (Ring ties the code to it), so one is held in memory until the sign-in completes.
+- **Snapshots:** always a *forced new* picture (as Jarvis), so it is new or fails; Edith says why when it can't: camera offline,
+  "Record Motion"/motion detection off (Ring then gives no pictures), or no picture within 35 s (battery cameras can't take one while
+  streaming). Pictures and tokens are never logged.
+- **Events:** the last 50 per camera, filtered to the asked hours, newest first; `ding` = Ring, `motion` (a person when
+  `cv_properties` say so), `on_demand` = a live view; other kinds are left out of the answer.
+- **Tests:** `RingApiTest` (8), `RingServiceTest` (13), `RingToolsTest` (5), against a pretend Ring that rotates refresh tokens like Ring
+  does (`RingTestKit`). `scripts/check.sh`: OK (`build-logs/` newest `*_check.log`).
+- **Not verified against the real Ring:** everything above is from the library's source and the pretend Ring. The owner's live check
+  (acceptance, first three items): sign in with the 2FA code, "Show me the front door camera", "Did anyone ring today?", the Home tab,
+  and a restart that stays signed in. Unconfirmed guesses: that the Ring app lists Edith under Control Center (used in the disconnect
+  hint), and the `events` endpoint's page size (50).
+
+## As built — part 2 of 2 (Clips)
+- **Done:** a **Clips** chip on the Home tab (shown only while a connected service has clips: `HomeBackend.hasClips`) opens a full-screen
+  list, newest first: camera, what made it record (Ring, Motion, A person, Live view) and its length, with "Today 3:42 PM". Tapping a
+  clip plays it in the app with **Media3 ExoPlayer 1.11.1** (`media3-exoplayer` and `media3-ui`; the owner approved adding it,
+  2026-11-14). Older clips load as the list is scrolled.
+- **Code:** `HomeBackend.clips(sinceMs, untilMs)` / `clipUrl(clipId)` / `hasClips`, `Home.clips` (all services' clips together, one
+  failing doesn't hide the others) and `Home.clipUrl`, `ClipsUi` and the clip functions of `HomeViewModel`, `home/ui/ClipsScreen.kt`;
+  Ring: `RingApi.clips` (`video_search/history`, per camera) and `RingApi.clipUrl` (`dings/{id}/recording?disable_redirect=true`).
+- **Paging:** the list loads **3-day windows**, going back up to **60 days**; a quiet window loads the next older one (up to 4 per scroll)
+  so the list isn't empty while older clips exist. No numbered pages: Ring's search takes a date range.
+- **The video address is asked for at play time**, not kept from the list: Ring's addresses are signed and expire (Jarvis re-asks after a
+  403). Only an `https` address is played. The player is released when the dialog closes, so a clip never plays on behind it.
+- **No plan:** Ring keeps recordings only with Ring Protect. The search still lists events, with `had_subscription` false: if every
+  recent event has it false, Edith says so in words ("Ring keeps recordings only with a Ring Protect plan, and this account doesn't have one")
+  and stops looking further back; a plan that began recently shows only what it recorded. It is never shown as an error.
+- **Left out on purpose:** thumbnails in the list (Ring's thumbnail addresses need their own signed fetch; Coil is in the app if the
+  owner wants them later) and downloading or sharing a clip.
+- **Tests:** `RingApiTest` (+2), `RingServiceTest` (+5), `ClipsTest` (5: aggregation, a failing or hanging service, no-plan, the clip
+  address, the words). `scripts/check.sh` OK; `:app:minifyReleaseWithR8` builds with Media3 in the app.
+- **Not verified:** playback itself. Nothing here has played a real Ring clip, and the Compose list and player were not run on the emulator
+  or in a release build. **Per the project rule, a release build must be checked on `Edith_Release_Test` before publishing** (R8 broke ONNX
+  Runtime once; it accepts Media3, but only playing a clip proves the keep rules). Andarium on the iPhone may lack a video decoder or
+  behave differently: the player then shows "This phone couldn't play the clip (…)" and logs the code.
+
+## Found on the owner's phone (2026-11-14, v2.0.0-dev.6 in Andarium): playing a clip
+- **The Clips list worked** on the real Ring account (sign-in, the search, the rows with their camera, trigger, length and time). **Playing a clip
+  failed**: "Ring answered HTTP 404 for the clip." The address was asked of `dings/{id}/recording` only; Ring answered 404 to that one for this account.
+- **Change:** the address is now asked of `dings/{id}/share/play` first (the video as recorded; `ring-client-api`'s default), then `…/recording` (the
+  transcoded one), and last the signed address the search itself listed the clip with (`lq_url`, which Jarvis plays from before asking for a new one).
+  Tests: `RingApiTest` (both endpoints), `RingServiceTest` (the fallback order, including the phone's case of `recording` answering 404).
+- **Still unverified:** that `share/play` or the listed address plays on this account, and whether the iPhone's Andarium can then decode the video
+  (the player says "This phone couldn't play the clip" with an error code if not). The pretend Ring can't show either.
+- **Seen on the emulator (2026-11-14), with made-up clips served from the PC:** the Clips chip, the list (a second window of older clips loaded), the
+  Media3 player and the "clip can't be played" message all work. Two findings, both changed:
+  - **A decoder that fails once it is running.** The emulator's `c2.goldfish.h264.decoder` failed on a plain H.264 file
+    (`ERROR_CODE_DECODING_FAILED`). The player now rebuilds itself **once** with software decoders first (`c2.android.*`), which played the clip. Whether
+    the iPhone's Andarium needs this is unknown; if it still fails, the dialog names the error code.
+  - **A service that isn't signed in was asked for clips** (a "Ring didn't answer: it isn't signed in" line under the list, and the Clips chip showing for
+    a signed-out Ring). Clips are now asked only of connected services, and the chip shows only while one is connected (`Home.hasClips` is a flow;
+    `ClipsTest`).

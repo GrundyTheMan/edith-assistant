@@ -168,6 +168,8 @@ dependencies {
     implementation(files(sherpaAar))
     implementation(libs.commons.compress)   // C36: unpacks the voice (.tar.bz2)
     implementation(libs.coil.compose)   // C15: attachment thumbnails
+    implementation(libs.media3.exoplayer)   // C27: plays Ring clips in the app (the owner approved adding Media3, 2026-11-14)
+    implementation(libs.media3.ui)
     // C17: Google sign-in (Credential Manager) and access to Calendar/Gmail (AuthorizationClient)
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services.auth)

@@ -56,14 +56,14 @@ design in the same PR, or ask the owner.
 | [C24](chunks/C24-icloud-account.md) | iCloud account: iCloud Mail and Calendar | 7 | C22 | Done |
 | [C25](chunks/C25-home-core.md) | Smart home core: device model, tools, Home tab (Jarvis's chips, favourites, hiding), command log (fake backend) | 8 Smart home (v2) | C08, C14, C22 | Done |
 | [C26](chunks/C26-meross-garage.md) | Meross garage door opener | 8 | C25 | Done |
-| [C27](chunks/C27-ring.md) | Ring doorbell and cameras (snapshots, events, clips) | 8 | C25 | Design |
+| [C27](chunks/C27-ring.md) | Ring doorbell and cameras (snapshots, events, clips) | 8 | C25 | Built: sign-in, devices, snapshots, events and Clips (the owner's live Ring check, and a clip played in a release build, are open) |
 | [C28](chunks/C28-resideo-thermostat.md) | Honeywell/Resideo thermostat (official API; needs a developer key) | 8 | C25, C23 | Design |
-| [C29](chunks/C29-blink.md) | Blink cameras (fragile; clips) | 8 | C25 | Design |
-| [C30](chunks/C30-alexa.md) | Alexa devices: Jarvis's full control, thermostats and locks too (fragile, D19) | 8 | C25 | Design |
+| [C29](chunks/C29-blink.md) | Blink cameras (fragile; clips) | 8 | C25 | Built (the owner's check against real Blink is open) |
+| [C30](chunks/C30-alexa.md) | Alexa devices: Jarvis's full control, thermostats and locks too (fragile, D19) | 8 | C25 | Built: sign-in, devices, states (part 1, merged) and commands (part 2). The owner's first sign-in and live commands are open |
 | [C31](chunks/C31-philips-lock.md) | Philips smart lock (fragile; unlock needs the owner's OK) | 8 | C25 | Design |
 | [C32](chunks/C32-live-view.md) | Live camera view and camera wall (Ring, Blink) | 8 | C27, C29 | Design |
 | [C33](chunks/C33-camera-alerts.md) | Camera alerts: doorbell, person, motion notifications | 8 | C27, C29 | Design |
-| [C34](chunks/C34-printer.md) | 3D printer card (Moonraker) | 8 | C25 | Design |
+| [C34](chunks/C34-printer.md) | 3D printer card (Moonraker) | 8 | C25 | Built (the owner's check against the real printer is open) |
 | [C35](chunks/C35-google-tasks.md) | To-dos: Google Tasks, as in Jarvis (D20) | 7 Accounts | C22, C08, C03 | Done |
 | [C36](chunks/C36-own-voice.md) | Edith's own voice: on-device speech for phones with no voice, such as Andarium (D21) | 3 Voice | C13, C14, C17b | Built (the Andarium check on the iPhone is the owner's) |
 | [C37](chunks/C37-https-only-clients.md) | HTTPS-only by construction: a `secure` HTTP client for everything that carries credentials, `plain` only for Ollama and public pages | Hardening | C03 and every service using the shared client | Built (the device and release-APK checks are pending) |

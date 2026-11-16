@@ -13,13 +13,16 @@ Edith is a native Android app (Kotlin, Jetpack Compose). There is no cloud backe
 
 She can:
 - **Chat** — warm, witty, concise conversation with a fixed personality (§5).
-- **Use tools** — look up the weather, search the web, read web pages; later read/write the owner's
-  Google Calendar and read Gmail, draft replies and send email (each change and every email only after the
-  owner confirms the card, D5/D11). Tools are called by the model through Ollama's
-  tool-calling protocol and executed by the app on the phone.
+- **Use tools** — look up the weather, search the web, read web pages; read and change the owner's
+  calendar, email and to-dos across **several accounts** (Google, Microsoft, iCloud; D17, D18, D20), including
+  drafting replies and sending email; and **control the smart home from the phone** (D10, D19: a Home tab and the
+  Meross garage door opener are built, the other services are designed, C27–C34). Every change, every email and
+  every garage or lock command waits for the owner's tap on a card (D5, D11), and unlocking a door or opening the
+  garage can be approved **only on the screen, never by voice** (D10). Tools are called by the model through
+  Ollama's tool-calling protocol and executed by the app on the phone.
 - **Listen and speak** — voice memos (record → transcribe → send), live dictation, spoken replies
-  using the phone's own text-to-speech, and a **hands-free mode** (wake word → talk → she answers
-  aloud → you can reply without tapping).
+  using the phone's own text-to-speech (or, where the phone has none, Edith's own on-device voice, D21), and a
+  **hands-free mode** (wake word → talk → she answers aloud → you can reply without tapping).
 - **Handle attachments** — the owner can attach photos and audio files; Edith can see/hear them
   (with a capable model) and can attach files she writes (lists, notes, tables, code) to her replies
   and send the owner's attachments back. Recent attachments are kept on the phone (§4.3).
@@ -47,10 +50,13 @@ Fowlerville?").
 | 3 | Voice: voice memos + dictation, spoken replies, hands-free mode | C12–C14 |
 | 4 | Attachments: photos/audio in, Edith's files out, recent ones kept locally (setting, default 10) | C15–C16 |
 | 5 | Real Google Calendar and Gmail | C17–C19 |
-| 6 | **Deferred (v2):** smart home — Alexa, Ring, Blink, thermostats, garage door, locks, etc. Design only | C20–C21 |
+| 6 | Smart-home **design**: how each service connects (decided in D10: directly from the phone, no bridge) | C20–C21 |
+| 7 | **Accounts and the iPhone:** several Google accounts, Microsoft (Outlook) and iCloud (mail and calendar), to-dos (Google Tasks), Google sign-in through the browser for phones with no Play services (Andarium), Edith's own voice | C17b, C22–C24, C35, C36 |
+| 8 | **Smart home.** Decision A8 first deferred it to v2; D10 and D19 brought it in. A Home tab and tools with Jarvis's features, then each service: the Meross garage door opener is built (C26), and Ring, Resideo, Blink, Alexa, the Philips lock, camera views and alerts, and the 3D printer are designed | C25–C34 |
 
-**Non-goals for v1:** smart-home control (designed, not built); multiple users; a cloud backend; iOS;
-image generation; server-side text-to-speech (see §4.2); sending email automatically.
+**Non-goals for v1:** multiple *users* (several accounts of the one owner are in scope, phase 7); a cloud backend;
+a native iOS app (the owner's iPhone runs Edith inside Andarium); image generation; server-side text-to-speech
+(see §4.2); sending email, unlocking a door or opening the garage without the owner's tap on the screen.
 
 ## 4. Owner decisions (binding)
 
@@ -99,7 +105,7 @@ image generation; server-side text-to-speech (see §4.2); sending email automati
   standard of proof expected.)
 
 ### 4.7 Look and feel the owner approved (v1, keep the spirit)
-- Bottom navigation bar (Chat, Calendar, Settings; smart home later).
+- Bottom navigation bar (Chat, Calendar, Home, Settings).
 - User bubbles **purple (primary) on the right**, Edith's **grey (surfaceVariant) on the left**, with a
   squared corner on the speaker's side, max ~78% of screen width.
 - One compact input row: attach, record, text field with dictation mic, send.
@@ -142,3 +148,10 @@ The owner can, on a real phone and on the emulator:
 6. Ask "what's on my calendar tomorrow?" and "add lunch with Sam Friday at noon" (confirmed before saving),
    and "any emails from the school this week?" against their real Google account.
 7. See clear messages, never crashes, when the PC, Ollama, the network or Google is unavailable.
+8. Connect more than one account (Google, Microsoft, iCloud): "what's on my calendar" covers all of them with each
+   item labelled by account, and a new event or email asks which account (D17). Ask for to-dos and get the
+   Google Tasks lists (D20).
+9. On the iPhone, in Andarium: sign in to Google through the browser (D16), and hear Edith speak in her own
+   voice (D21).
+10. Ask "is the garage door open?", then "close the garage" (on a card); "open the garage" and unlocking need a tap
+    on the screen, never a voice (D10).

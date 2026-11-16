@@ -21,7 +21,7 @@ enum class Approval {
 object HomeActions {
     val NAMES = listOf(
         "turn_on", "turn_off", "set_brightness", "set_percentage", "set_color", "set_white",
-        "set_temperature", "set_thermostat_mode", "lock", "unlock", "open", "close",
+        "set_temperature", "set_thermostat_mode", "lock", "unlock", "open", "close", "pause", "resume", "cancel",
     )
 
     /** The command [action] with [value] means for [device], or why it can't be done, in words for the model. */
@@ -73,6 +73,9 @@ object HomeActions {
             "unlock" -> DeviceCommand.Unlock
             "open" -> DeviceCommand.Open
             "close" -> DeviceCommand.Close
+            "pause" -> DeviceCommand.Pause
+            "resume" -> DeviceCommand.Resume
+            "cancel" -> DeviceCommand.CancelPrint
             else -> fail("Unknown action \"$action\". Use one of: ${NAMES.joinToString()}")
         }
         if (!can(device, command)) fail("${device.name} can't ${label(command)}. It can: ${actionsFor(device).joinToString()}")
@@ -88,6 +91,7 @@ object HomeActions {
         is DeviceCommand.SetTemperature, is DeviceCommand.SetMode -> device.capability<Capability.Thermostat>() != null
         DeviceCommand.Lock, DeviceCommand.Unlock -> device.has(Capability.LockUnlock)
         DeviceCommand.Open, DeviceCommand.Close -> device.has(Capability.OpenClose)
+        DeviceCommand.Pause, DeviceCommand.Resume, DeviceCommand.CancelPrint -> device.has(Capability.PrintControl)
     }
 
     /** The action names [device] supports, for "It can: …". */
@@ -100,12 +104,14 @@ object HomeActions {
         if (device.capability<Capability.Thermostat>() != null) addAll(listOf("set_temperature", "set_thermostat_mode"))
         if (device.has(Capability.LockUnlock)) addAll(listOf("lock", "unlock"))
         if (device.has(Capability.OpenClose)) addAll(listOf("open", "close"))
+        if (device.has(Capability.PrintControl)) addAll(listOf("pause", "resume", "cancel"))
     }.ifEmpty { listOf("nothing: it only reports its state") }
 
     /** C20 §2 and D10: when the owner must approve [command] first. */
     fun approval(device: HomeDevice, command: DeviceCommand): Approval = when (command) {
         DeviceCommand.Unlock, DeviceCommand.Open -> Approval.ScreenOnly
-        DeviceCommand.Close, is DeviceCommand.SetMode -> Approval.Card
+        // Stopping a print for good can't be undone: always a card (C34).
+        DeviceCommand.Close, DeviceCommand.CancelPrint, is DeviceCommand.SetMode -> Approval.Card
         is DeviceCommand.SetTemperature -> {
             val current = device.state?.setpoint
             val limit = device.capability<Capability.Thermostat>()?.bigChange ?: 5.0
@@ -128,6 +134,9 @@ object HomeActions {
         DeviceCommand.Unlock -> "unlock"
         DeviceCommand.Open -> "open"
         DeviceCommand.Close -> "close"
+        DeviceCommand.Pause -> "pause the print"
+        DeviceCommand.Resume -> "resume the print"
+        DeviceCommand.CancelPrint -> "cancel the print"
     }
 
     /** The short name and value for the command log: ("set_temperature", "72"). */
@@ -144,6 +153,9 @@ object HomeActions {
         DeviceCommand.Unlock -> "unlock" to null
         DeviceCommand.Open -> "open" to null
         DeviceCommand.Close -> "close" to null
+        DeviceCommand.Pause -> "pause" to null
+        DeviceCommand.Resume -> "resume" to null
+        DeviceCommand.CancelPrint -> "cancel" to null
     }
 
     /** True when the state already shows [command] done: the re-check (C25 §6) stops early. */
@@ -160,6 +172,10 @@ object HomeActions {
         DeviceCommand.Unlock -> state.lock == LockState.Unlocked
         DeviceCommand.Open -> state.door == DoorState.Open
         DeviceCommand.Close -> state.door == DoorState.Closed
+        DeviceCommand.Pause -> state.print?.state == PrintState.Paused
+        DeviceCommand.Resume -> state.print?.state == PrintState.Printing
+        // Klipper says "cancelled" for a moment, then goes back to idle.
+        DeviceCommand.CancelPrint -> state.print?.state == PrintState.Cancelled || state.print?.state == PrintState.Idle
     }
 
     /** Thermostats and locks (and garage doors) report late: they're re-checked longer (C25 §6). */
@@ -189,9 +205,36 @@ object HomeActions {
             val mode = state.mode?.replaceFirstChar { it.titlecase(Locale.US) } ?: "Set"
             parts += mode + (state.setpoint?.let { " to ${fmt(it)}${unit?.symbol ?: "°"}" } ?: "")
         }
+        state.print?.let { parts += printText(it) }
+        if (state.heaters.isNotEmpty()) parts += state.heaters.joinToString(", ") { heatText(it) }
         state.temperature?.let { parts += "${fmt(it)}${unit?.symbol ?: "°"} now" }
         state.battery?.let { if (it <= 20) parts += "battery $it%" }
         return parts.joinToString(", ")
+    }
+
+    /** A print in words: "Printing Benchy, 42%, about 1 h 5 min left", "Paused Benchy, 42%", "Idle", "Error: Heater failed". */
+    fun printText(job: PrintJob): String = buildString {
+        append(job.state.label)
+        val active = job.state == PrintState.Printing || job.state == PrintState.Paused
+        job.title?.takeIf { job.state != PrintState.Idle }?.let { append(" $it") }
+        if (active) append(", ${(job.progress * 100).toInt()}%")
+        if (job.state == PrintState.Printing) job.timeLeftSeconds?.let { append(", about ${duration(it)} left") }
+        if (active && job.layer != null && job.layers != null) append(", layer ${job.layer} of ${job.layers}")
+        if (job.state == PrintState.Error || job.state == PrintState.Cancelled) job.message?.takeIf { it.isNotBlank() }?.let { append(": $it") }
+    }
+
+    /** "Nozzle 215/220°C", or "Bed 24°C" when it is off. */
+    fun heatText(h: Heat): String = "${h.label} ${fmt(h.temperature)}" + if (h.target > 0) "/${fmt(h.target)}°C" else "°C"
+
+    /** "1 h 5 min", "12 min", "under a minute". */
+    fun duration(seconds: Long): String {
+        val min = (seconds + 30) / 60
+        return when {
+            min < 1 -> "under a minute"
+            min < 60 -> "$min min"
+            min % 60 == 0L -> "${min / 60} h"
+            else -> "${min / 60} h ${min % 60} min"
+        }
     }
 
     /** "just now", "3 min ago", "2 h ago" (Jarvis's `ageOf`). */

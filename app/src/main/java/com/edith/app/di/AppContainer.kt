@@ -94,9 +94,18 @@ import com.edith.app.home.FakeHomeBackend
 import com.edith.app.home.Home
 import com.edith.app.home.RoomCommandLog
 import com.edith.app.home.homeTools
+import com.edith.app.alexa.AlexaApi
+import com.edith.app.alexa.AlexaService
 import com.edith.app.meross.MerossApi
 import com.edith.app.meross.MerossService
 import com.edith.app.meross.PahoMerossBus
+import com.edith.app.printer.MoonrakerApi
+import com.edith.app.printer.PrinterService
+import com.edith.app.blink.BlinkApi
+import com.edith.app.blink.BlinkEndpoints
+import com.edith.app.blink.BlinkService
+import com.edith.app.ring.RingApi
+import com.edith.app.ring.RingService
 import com.edith.app.microsoft.MicrosoftAccounts
 import com.edith.app.microsoft.MicrosoftOAuth
 import com.google.android.gms.common.ConnectionResult
@@ -388,12 +397,41 @@ class AppContainer(val app: Application) {
     /** Meross garage door openers (C26): the account's sign-in is kept encrypted in [secretStore]. */
     val meross: MerossService by lazy { MerossService(secretStore, MerossApi(httpClients.secure, clock), PahoMerossBus(dispatchers, clock), clock) }
 
+    /** Ring doorbells and cameras (C27): the sign-in is kept encrypted in [secretStore]. */
+    val ring: RingService by lazy { RingService(secretStore, RingApi(okHttpLazy), clock) }
+
+    /** Blink cameras (C29): the sign-in is kept encrypted in [secretStore]. */
+    val blink: BlinkService by lazy { BlinkService(secretStore, BlinkApi(okHttpLazy, blinkEndpoints()), clock) }
+
+    /**
+     * Debug builds only: a pretend Blink on the PC for trying the sign-in, snapshots and clips on the emulator without an
+     * account. It is used only when the debug app's private `files/blink-test-server.txt` holds its address
+     * (`adb shell run-as com.edith.app.debug`); release builds never look.
+     */
+    private fun blinkEndpoints(): BlinkEndpoints {
+        if (!BuildConfig.DEBUG) return BlinkEndpoints()
+        val base = runCatching { File(app.filesDir, "blink-test-server.txt").readText().trim().trimEnd('/') }.getOrNull()?.takeIf { it.startsWith("http") }
+            ?: return BlinkEndpoints()
+        Log.w(LogTag.Home, "Blink is using a test server instead of Blink's own (debug build)")
+        return BlinkEndpoints(oauth = base, tierInfo = "$base/rest/api/v1/users/tier_info", rest = { "$base/rest" })
+    }
+
+    /** Alexa devices (C30): the sign-in is kept encrypted in [secretStore]. */
+    val alexa: AlexaService by lazy { AlexaService(secretStore, AlexaApi(okHttpLazy), clock) }
+
+    /** A 3D printer's Moonraker on the home Wi-Fi (C34): its address and API key are kept encrypted in [secretStore]. */
+    val printer: PrinterService by lazy { PrinterService(secretStore, MoonrakerApi(okHttpLazy), clock) }
+
     val home: Home by lazy {
         Home(
             DataStoreHomePrefs(settingsStore.store), homeCommandLog, appScope, clock,
             demo = if (BuildConfig.DEBUG) FakeHomeBackend(clock, DemoPicture::jpeg) else null,
         ).also { h ->
-            h.register(meross)   // C26; C27–C31 register theirs here
+            h.register(meross)   // C26
+            h.register(ring)     // C27
+            h.register(alexa)    // C30
+            h.register(blink)    // C29
+            h.register(printer)  // C34; C28, C31 register theirs here
         }
     }
 
@@ -455,6 +493,30 @@ class AppContainer(val app: Application) {
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e(LogTag.Home, "Couldn't load the Meross sign-in", e)
+        }
+        try {
+            ring.load()   // C27: picks up the saved Ring sign-in
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.e(LogTag.Home, "Couldn't load the Ring sign-in", e)
+        }
+        try {
+            blink.load()   // C29: picks up the saved Blink sign-in
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.e(LogTag.Home, "Couldn't load the Blink sign-in", e)
+        }
+        try {
+            alexa.load()   // C30: picks up the saved Alexa sign-in
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.e(LogTag.Home, "Couldn't load the Alexa sign-in", e)
+        }
+        try {
+            printer.load()   // C34: picks up the saved printer
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.e(LogTag.Home, "Couldn't load the printer setup", e)
         }
     }
 

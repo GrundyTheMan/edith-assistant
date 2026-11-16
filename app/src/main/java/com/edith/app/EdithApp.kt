@@ -22,6 +22,9 @@ class EdithApp : Application() {
             StrictMode.ThreadPolicy.Builder()
                 .detectAll()
                 .penaltyLog()
+                // A release build already dies on network use on the main thread (NetworkOnMainThreadException); debug builds only logged
+                // it, so the Alexa sign-in crashed on the owner's phone and nothing failed on the emulator. Fail the same way here.
+                .penaltyDeathOnNetwork()
                 .build()
         )
         StrictMode.setVmPolicy(

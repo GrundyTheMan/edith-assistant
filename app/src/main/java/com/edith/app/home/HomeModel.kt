@@ -1,5 +1,6 @@
 package com.edith.app.home
 
+import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
 import com.edith.app.tools.framework.Integration
 
@@ -10,7 +11,7 @@ import com.edith.app.tools.framework.Integration
 enum class DeviceType(val label: String) {
     Light("Light"), Switch("Switch"), Plug("Plug"), Fan("Fan"), Thermostat("Thermostat"),
     TemperatureSensor("Temperature sensor"), Lock("Lock"), GarageDoor("Garage door"), Camera("Camera"),
-    Doorbell("Doorbell"), SecurityPanel("Security panel"), Sensor("Sensor"), Speaker("Speaker"), Other("Device"),
+    Doorbell("Doorbell"), SecurityPanel("Security panel"), Sensor("Sensor"), Speaker("Speaker"), Printer("3D printer"), Other("Device"),
 }
 
 enum class TempUnit(val symbol: String) { Fahrenheit("°F"), Celsius("°C") }
@@ -33,6 +34,8 @@ sealed interface Capability {
     data object OpenClose : Capability
     data object Snapshot : Capability
     data object Events : Capability
+    /** A 3D printer's job: pause, resume and cancel (C34). */
+    data object PrintControl : Capability
 
     companion object {
         val DEFAULT_COLORS = listOf("red", "orange", "yellow", "green", "blue", "purple", "pink", "white")
@@ -60,7 +63,33 @@ data class DeviceState(
     val battery: Int? = null,
     /** When it last changed or moved (ms since 1970), if the device says: a garage door's "last moved". */
     val changedAt: Long? = null,
+    /** A 3D printer's job (C34). */
+    val print: PrintJob? = null,
+    /** A printer's heaters, nozzle first (C34). */
+    val heaters: List<Heat> = emptyList(),
 )
+
+
+/** Where a 3D printer's job stands, as Klipper's `print_stats.state` reports it (C34). */
+enum class PrintState(val label: String) {
+    Idle("Idle"), Printing("Printing"), Paused("Paused"), Complete("Complete"), Cancelled("Cancelled"), Error("Error"),
+}
+
+/** One 3D printer job (C34). [progress] is 0 to 1; [timeLeftSeconds] is null when it can't be estimated yet. */
+data class PrintJob(
+    val state: PrintState,
+    /** For people: "Benchy", "Chimney and Platforms (plate 1)". */
+    val title: String? = null,
+    val progress: Double = 0.0,
+    val timeLeftSeconds: Long? = null,
+    val layer: Int? = null,
+    val layers: Int? = null,
+    /** Klipper's message: an error, or why the printer isn't ready. */
+    val message: String? = null,
+)
+
+/** A heater's reading: [target] is 0 when it is off. */
+data class Heat(val label: String, val temperature: Double, val target: Double)
 
 data class HomeDevice(
     /** The backend's own id; unique within [backend]. */
@@ -97,7 +126,35 @@ sealed interface DeviceCommand {
     data object Unlock : DeviceCommand
     data object Open : DeviceCommand
     data object Close : DeviceCommand
+    /** A print (C34): pause it, carry on, or stop it for good. */
+    data object Pause : DeviceCommand
+    data object Resume : DeviceCommand
+    data object CancelPrint : DeviceCommand
 }
+
+/** What made a camera or doorbell report (C27): Ring's `ding`, motion, a person, or the owner's own live view. */
+enum class EventKind(val label: String) {
+    Ring("Someone rang the doorbell"), Motion("Motion"), Person("A person"), LiveView("Live view"), Other("Activity"),
+}
+
+/** One thing a camera or doorbell reported, [at] ms since 1970. */
+data class DeviceEvent(val at: Long, val kind: EventKind)
+
+/** One recorded clip (C27): [backend] is filled in by [Home]; [id] is the service's own. */
+data class DeviceClip(
+    val id: String,
+    val backend: String,
+    val deviceName: String,
+    val at: Long,
+    val kind: EventKind,
+    val seconds: Int?,
+)
+
+/** Where a clip plays from: an address, and headers the player must send with it (Blink's clips need its sign-in; Ring's addresses are signed). */
+data class ClipSource(val url: String, val headers: Map<String, String> = emptyMap())
+
+/** A window of clips. [noPlan]: the service has recordings only with a paid plan, and this account has none (Ring Protect). */
+data class ClipsPage(val clips: List<DeviceClip>, val noPlan: Boolean = false)
 
 /**
  * One smart-home service (C20 §1): Alexa, Ring, Resideo, … Each lives in its own chunk (C26–C31) and fails on its own.
@@ -113,10 +170,28 @@ interface HomeBackend : Integration {
     val isHub: Boolean get() = false
     /** How long a read or command may take; null: [Home]'s 10 s. A service that signs in, connects and asks (Meross) needs more. */
     val timeoutMs: Long? get() = null
+    /** How long a camera picture may take; null: [Home.SNAPSHOT_TIMEOUT_MS]. A battery camera has to wake first (Ring: 30 s). */
+    val snapshotTimeoutMs: Long? get() = null
     suspend fun devices(): Outcome<List<HomeDevice>>
     suspend fun state(deviceId: String): Outcome<DeviceState>
     /** Sends [command]; the answer is what the device reports right after, which clouds often lag. */
     suspend fun command(deviceId: String, command: DeviceCommand): Outcome<DeviceState>
     /** A JPEG from a camera. */
     suspend fun snapshot(deviceId: String): Outcome<ByteArray>
+    /** What a camera or doorbell reported since [sinceMs] (ms since 1970), newest first. Only devices with [Capability.Events]. */
+    suspend fun events(deviceId: String, sinceMs: Long): Outcome<List<DeviceEvent>> =
+        Outcome.Failure(AppError.ToolFailed(displayName, "it doesn't report events"))
+    /** Whether this service has recorded clips to browse (Ring): the Home tab shows its Clips chip only then. */
+    val hasClips: Boolean get() = false
+    /** The clips recorded between [sinceMs] and [untilMs] (ms since 1970), newest first, from all this service's cameras. */
+    suspend fun clips(sinceMs: Long, untilMs: Long): Outcome<ClipsPage> =
+        Outcome.Failure(AppError.ToolFailed(displayName, "it has no clips"))
+    /** A fresh address the player can stream clip [clipId] from. Services sign these, and they expire, so it is asked for at play time. */
+    suspend fun clipUrl(clipId: String): Outcome<String> =
+        Outcome.Failure(AppError.ToolFailed(displayName, "it has no clips"))
+    /** [clipUrl] plus the headers the player must send; a service whose addresses are signed in themselves (Ring) needs no more. */
+    suspend fun clipSource(clipId: String): Outcome<ClipSource> = when (val r = clipUrl(clipId)) {
+        is Outcome.Success -> Outcome.Success(ClipSource(r.value))
+        is Outcome.Failure -> r
+    }
 }

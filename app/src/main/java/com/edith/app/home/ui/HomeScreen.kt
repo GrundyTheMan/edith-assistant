@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -28,6 +29,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
@@ -58,12 +60,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.edith.app.home.Capability
+import com.edith.app.home.DeviceClip
 import com.edith.app.home.DeviceCommand
 import com.edith.app.home.DeviceType
 import com.edith.app.home.DoorState
 import com.edith.app.home.HomeActions
 import com.edith.app.home.HomeDevice
 import com.edith.app.home.HomeProblem
+import com.edith.app.home.PrintState
 import com.edith.app.home.LockState
 import com.edith.app.home.HomeControlTool
 
@@ -82,6 +86,11 @@ data class HomeTabActions(
     val closePicture: () -> Unit = {},
     val messageShown: () -> Unit = {},
     val openSettings: () -> Unit = {},
+    val openClips: () -> Unit = {},
+    val closeClips: () -> Unit = {},
+    val moreClips: () -> Unit = {},
+    val playClip: (DeviceClip) -> Unit = {},
+    val closePlayer: () -> Unit = {},
 )
 
 @Composable
@@ -93,6 +102,7 @@ fun HomeScreen(onOpenSettings: () -> Unit, vm: HomeViewModel = viewModel(factory
             refresh = vm::refresh, chip = vm::selectChip, toggle = vm::toggle, send = vm::send, step = vm::step,
             favorite = vm::setFavorite, hide = vm::hide, snapshot = vm::snapshot, confirm = vm::confirm, dismiss = vm::dismiss,
             closePicture = vm::closePicture, messageShown = vm::messageShown, openSettings = onOpenSettings,
+            openClips = vm::openClips, closeClips = vm::closeClips, moreClips = vm::loadMoreClips, playClip = vm::play, closePlayer = vm::closePlayer,
         ),
     )
 }
@@ -118,6 +128,9 @@ fun HomeContent(ui: HomeUi, a: HomeTabActions) {
         Column(Modifier.fillMaxSize()) {
             LazyRow(Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag(CHIPS_TAG), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (ui.hasClips) item(key = "clips-chip") {
+                    AssistChip(onClick = a.openClips, label = { Text("Clips") }, modifier = Modifier.padding(end = 8.dp).testTag(CLIPS_CHIP_TAG))
+                }
                 items(HomeChip.entries) { chip ->
                     FilterChip(selected = ui.chip == chip, onClick = { a.chip(chip) }, label = { Text(chip.label) })
                 }
@@ -137,12 +150,18 @@ fun HomeContent(ui: HomeUi, a: HomeTabActions) {
                         )
                     }
                     // Locks and doors first, in their own section with explicit buttons (C25 §5).
+                    // A 3D printer has a card of its own (C34).
+                    val printers = shown.filter { it.type == DeviceType.Printer }
+                    if (printers.isNotEmpty()) {
+                        item(key = "h-printer") { Heading("3D printer") }
+                        items(printers, key = { it.key }) { d -> PrinterTile(d, ui, a) }
+                    }
                     val secure = shown.filter { it.type == DeviceType.Lock || it.type == DeviceType.GarageDoor }
                     if (secure.isNotEmpty()) {
                         item(key = "h-secure") { Heading("Locks and doors") }
                         items(secure, key = { it.key }) { d -> SecureTile(d, ui, a) }
                     }
-                    for ((room, list) in (shown - secure.toSet()).groupBy { it.room ?: "Other" }.toSortedMap()) {
+                    for ((room, list) in (shown - secure.toSet() - printers.toSet()).groupBy { it.room ?: "Other" }.toSortedMap()) {
                         item(key = "h-$room") { Heading(room) }
                         items(list, key = { it.key }) { d -> DeviceTile(d, ui, a, onOpen = { open = d.key }) }
                     }
@@ -154,6 +173,7 @@ fun HomeContent(ui: HomeUi, a: HomeTabActions) {
     open?.let { key -> ui.view.devices.firstOrNull { it.key == key } }?.let { d -> Controls(d, ui, a) { open = null } }
     ui.pending?.let { p -> ConfirmDialog(p, a) }
     ui.picture?.let { (name, jpeg) -> PictureDialog(name, jpeg, a.closePicture) }
+    ui.clips?.let { c -> ClipsDialog(c, ui.now, a) }
 }
 
 @Composable
@@ -175,7 +195,7 @@ private fun ProblemBanner(p: HomeProblem, onOpenSettings: () -> Unit) {
 
 /** "On, 40% · 3 min ago", or "Not responding". */
 private fun stateLine(d: HomeDevice, ui: HomeUi): String {
-    if (!d.online) return "Not responding"
+    if (!d.online) return if (d.type == DeviceType.Printer) "Not reachable. It works on your home Wi-Fi." else "Not responding"
     val text = HomeActions.stateText(d).ifEmpty { "—" }
     val at = d.stateAt ?: return text
     return if (ui.now > 0) "$text · ${HomeActions.age(at, ui.now)}" else text
@@ -213,6 +233,37 @@ private fun DeviceTile(d: HomeDevice, ui: HomeUi, a: HomeTabActions, onOpen: () 
                     modifier = Modifier.semantics { contentDescription = "${d.name} on or off" })
             }
             Star(d, ui, a)
+        }
+    }
+}
+
+/** A 3D printer (C34): its job, a progress bar while it prints, and pause / resume / cancel; Cancel asks first, like the tools do. */
+@Composable
+private fun PrinterTile(d: HomeDevice, ui: HomeUi, a: HomeTabActions) {
+    val job = d.state?.print
+    val printing = d.online && job?.state == PrintState.Printing
+    val paused = d.online && job?.state == PrintState.Paused
+    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+        Column(Modifier.padding(start = 12.dp, top = 10.dp, bottom = 4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(d.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(stateLine(d, ui), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Star(d, ui, a)
+            }
+            if (printing || paused) {
+                LinearProgressIndicator(progress = { (job?.progress ?: 0.0).toFloat() }, modifier = Modifier.fillMaxWidth().padding(end = 12.dp, top = 6.dp))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (printing) TextButton(onClick = { a.send(d, DeviceCommand.Pause) }) { Text("Pause") }
+                if (paused) TextButton(onClick = { a.send(d, DeviceCommand.Resume) }) { Text("Resume") }
+                if (printing || paused) TextButton(onClick = { a.send(d, DeviceCommand.CancelPrint) }) { Text("Cancel print") }
+                if (d.has(Capability.Snapshot) && d.online) {
+                    if (d.key in ui.fetching) CircularProgressIndicator(Modifier.size(24.dp).padding(end = 4.dp))
+                    else TextButton(onClick = { a.snapshot(d) }) { Text("Camera") }
+                }
+            }
         }
     }
 }
@@ -330,6 +381,8 @@ private fun PictureDialog(name: String, jpeg: ByteArray, onClose: () -> Unit) {
 private val FAN_SPEEDS = listOf("Low" to 33, "Medium" to 66, "High" to 100)
 
 const val CHIPS_TAG = "home-chips"
+const val CLIPS_CHIP_TAG = "home-clips-chip"
+const val CLIPS_LIST_TAG = "home-clips-list"
 const val LIST_TAG = "home-list"
 const val CONFIRM_TAG = "home-confirm"
 

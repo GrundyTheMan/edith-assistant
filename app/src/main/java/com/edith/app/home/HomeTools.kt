@@ -12,7 +12,7 @@ import com.edith.app.tools.framework.ToolResult
 import com.edith.app.tools.framework.ToolSpec
 
 /** The smart-home tools (C25 §4, D19: Jarvis's shape, plus camera snapshots). */
-fun homeTools(home: Home): List<Tool> = listOf(HomeDevicesTool(home), HomeControlTool(home), CameraSnapshotTool(home))
+fun homeTools(home: Home): List<Tool> = listOf(HomeDevicesTool(home), HomeControlTool(home), CameraSnapshotTool(home), RecentEventsTool(home), PrinterStatusTool(home))
 
 private val DEVICE_PARAM = ToolParam("device", ParamType.String, "The device's name as home_devices lists it, e.g. Porch light", required = true,
     aliases = listOf("name", "device_name", "target"))
@@ -31,7 +31,7 @@ private suspend fun find(home: Home, name: String?): Pair<HomeDevice?, String?> 
 class HomeDevicesTool(private val home: Home, private val now: () -> Long = System::currentTimeMillis) : Tool {
     override val spec = ToolSpec(
         "home_devices",
-        "The owner's smart-home devices (lights, plugs, fans, thermostats, locks, garage door, cameras) and what each is doing now. " +
+        "The owner's smart-home devices (lights, plugs, fans, thermostats, locks, garage door, cameras, the 3D printer) and what each is doing now. " +
             "Pass filter to see only some, by name, room or type, e.g. \"kitchen\" or \"lock\".",
         listOf(ToolParam("filter", ParamType.String, "Only devices whose name, room or type contains this", aliases = listOf("room", "type", "query"))),
     )
@@ -69,7 +69,7 @@ class HomeDevicesTool(private val home: Home, private val now: () -> Long = Syst
     }
 
     private fun stateForModel(d: HomeDevice, view: HomeView): String {
-        if (!d.online) return "not responding"
+        if (!d.online) return if (d.type == DeviceType.Printer) "not reachable (it works on the home Wi-Fi, or it is off)" else "not responding"
         val text = HomeActions.stateText(d).ifEmpty { "no state reported" }.let { t -> HomeActions.movedText(d.state, now())?.let { "$t, last $it" } ?: t }
         val at = d.stateAt
         return if (d.backend in view.stale && at != null) "$text (last reported ${HomeActions.age(at, now())}; no answer just now)" else text
@@ -109,6 +109,9 @@ class HomeControlTool(private val home: Home) : Tool {
             "unlock" -> "Unlocking $device…"
             "open" -> "Opening $device…"
             "close" -> "Closing $device…"
+            "pause" -> "Pausing $device…"
+            "resume" -> "Resuming $device…"
+            "cancel" -> "Cancelling $device…"
             else -> "Adjusting $device…"
         }
     }
@@ -160,7 +163,9 @@ class HomeControlTool(private val home: Home) : Tool {
             return ConfirmationRequest(
                 title = "${what.replaceFirstChar { it.uppercase() }}: ${device.name}?",
                 details = details,
-                confirmLabel = what.substringBefore(' ').replaceFirstChar { it.uppercase() }.let { if (it == "Set" || it == "Turn") "Confirm" else it },
+                confirmLabel = if (command == DeviceCommand.CancelPrint) "Cancel print" else what.substringBefore(' ').replaceFirstChar { it.uppercase() }.let { if (it == "Set" || it == "Turn") "Confirm" else it },
+                // "Cancel" on both buttons would mean "stop the print" on one and "keep printing" on the other.
+                denyLabel = if (command == DeviceCommand.CancelPrint) "Keep printing" else "Cancel",
                 screenOnly = approval == Approval.ScreenOnly,
             )
         }
@@ -193,5 +198,59 @@ class CameraSnapshotTool(private val home: Home) : Tool {
             )
             is Outcome.Failure -> ToolResult.Error("No picture from ${device.name}: ${Home.why(r.error)}.")
         }
+    }
+}
+
+/** `recent_events(device?, hours?)`: what the doorbells and cameras reported (rings, motion, people), newest first (C27). */
+class RecentEventsTool(private val home: Home) : Tool {
+    override val spec = ToolSpec(
+        "recent_events",
+        "What the owner's doorbells and cameras reported lately: doorbell rings, motion and people, newest first. " +
+            "Use it for \"did anyone ring today?\" or \"was there motion at the front door?\". Pass device to ask about one camera; hours defaults to 24.",
+        listOf(
+            ToolParam("device", ParamType.String, "One camera or doorbell's name as home_devices lists it; leave out for all of them", aliases = listOf("name", "camera")),
+            ToolParam("hours", ParamType.Integer, "How far back to look, 1-72 (default 24)", aliases = listOf("since_hours", "period")),
+        ),
+    )
+    override val statusLabel = "Checking the cameras…"
+    override val displayName = "camera"
+    override val integrationId = Home.ID
+
+    override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
+        val hours = (args.int("hours") ?: DEFAULT_HOURS).coerceIn(1, MAX_HOURS)
+        val view = home.devicesForTools()
+        val named = args.string("device")?.takeIf { it.isNotBlank() }
+        val cameras = if (named != null) {
+            val (device, problem) = find(home, named)
+            if (device == null) return ToolResult.Error(problem!!)
+            if (!device.has(Capability.Events)) return ToolResult.Error("${device.name} doesn't report events.")
+            listOf(device)
+        } else view.devices.filter { it.has(Capability.Events) }
+        if (cameras.isEmpty()) return ToolResult.Ok("No doorbell or camera that reports events is connected.")
+        val now = ctx.clock.now().toEpochMilli()
+        val since = now - hours * 3_600_000L
+        val zone = ctx.clock.zone()
+        val lines = mutableListOf<String>()
+        for (d in cameras) {
+            when (val r = home.events(d, since)) {
+                is Outcome.Failure -> lines += "${d.name}: couldn't get its events (${Home.why(r.error)})."
+                is Outcome.Success -> {
+                    val shown = r.value.filter { it.kind != EventKind.Other }.take(MAX_PER_CAMERA)
+                    if (shown.isEmpty()) lines += "${d.name}: nothing reported in the last $hours hours."
+                    else {
+                        lines += "${d.name}:"
+                        shown.forEach { lines += "- ${it.kind.label} at ${TIME.format(java.time.Instant.ofEpochMilli(it.at).atZone(zone))} (${HomeActions.age(it.at, now)})" }
+                    }
+                }
+            }
+        }
+        return ToolResult.Ok(lines.joinToString("\n"))
+    }
+
+    companion object {
+        const val DEFAULT_HOURS = 24
+        const val MAX_HOURS = 72
+        const val MAX_PER_CAMERA = 20
+        private val TIME = java.time.format.DateTimeFormatter.ofPattern("EEE h:mm a", java.util.Locale.US)
     }
 }
