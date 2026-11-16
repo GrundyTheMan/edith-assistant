@@ -179,6 +179,7 @@ dependencies {
     testImplementation(libs.coroutines.test)
     testImplementation(libs.junit)
     testImplementation(libs.mockwebserver)
+    testImplementation(libs.okhttp.tls)   // C37: a TLS test server, to prove the secure client follows no https -> http redirect
     testImplementation(libs.greenmail)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))

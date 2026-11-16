@@ -28,6 +28,23 @@ interface MerossSession {
     suspend fun request(deviceUuid: String, method: String, namespace: String, payload: JsonObject): MerossReply<JsonObject>
 }
 
+/**
+ * The MQTT connect options for a Meross sign-in (C26, C37). The server's host name is **checked against its
+ * certificate**: Paho 1.2.5 does this by default, but it's switched on here explicitly, so a changed default can't
+ * quietly let anyone with any valid certificate pose as Meross to a connection that carries the user id and a
+ * password derived from the key. `MerossBusOptionsTest` pins it.
+ */
+internal fun connectOptions(creds: MerossCreds, connectTimeoutS: Int): MqttConnectOptions = MqttConnectOptions().apply {
+    userName = creds.userId
+    password = MerossProtocol.mqttPassword(creds.userId, creds.key).toCharArray()
+    isCleanSession = true
+    connectionTimeout = connectTimeoutS
+    keepAliveInterval = 30
+    mqttVersion = MqttConnectOptions.MQTT_VERSION_3_1_1
+    isAutomaticReconnect = false
+    isHttpsHostnameVerificationEnabled = true
+}
+
 /** How Edith talks to Meross devices (a fake in tests). */
 interface MerossBus {
     /** Connects, runs [block] with the session, disconnects. A connection that can't be made is a [MerossReply.Failed]. */
@@ -86,15 +103,7 @@ class PahoMerossBus(
 
                     override fun deliveryComplete(token: IMqttDeliveryToken?) = Unit
                 })
-                val options = MqttConnectOptions().apply {
-                    userName = creds.userId
-                    password = MerossProtocol.mqttPassword(creds.userId, creds.key).toCharArray()
-                    isCleanSession = true
-                    connectionTimeout = connectTimeoutS
-                    keepAliveInterval = 30
-                    mqttVersion = MqttConnectOptions.MQTT_VERSION_3_1_1
-                    isAutomaticReconnect = false
-                }
+                val options = connectOptions(creds, connectTimeoutS)
                 try {
                     client.connect(options)
                     client.subscribe(replyTopic, 1)

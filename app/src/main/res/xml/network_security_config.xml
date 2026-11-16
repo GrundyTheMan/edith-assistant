@@ -2,6 +2,9 @@
 <network-security-config xmlns:tools="http://schemas.android.com/tools">
     <!-- Ollama on the LAN uses plain HTTP (01-architecture §9, 03-ollama-reference). Its address is whatever the
          owner types in Settings (an IP), and domain-config can't match IP ranges, so cleartext is allowed app-wide.
-         All other traffic (Open-Meteo, Google, web search) uses HTTPS URLs. -->
+         That is only the platform's side. Edith's own HTTP clients decide (C37, core/net/HttpClients): the `secure`
+         one, which every service that carries credentials uses, refuses cleartext by itself; only Ollama and the
+         web-page reader get the `plain` one. -->
+
     <base-config cleartextTrafficPermitted="true" tools:ignore="InsecureBaseConfiguration" />
 </network-security-config>

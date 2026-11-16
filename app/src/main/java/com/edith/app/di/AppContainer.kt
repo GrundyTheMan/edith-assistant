@@ -20,6 +20,7 @@ import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.lifecycle.AppVisibility
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
+import com.edith.app.core.net.HttpClients
 import com.edith.app.core.net.TaggedSocketFactory
 import com.edith.app.core.secrets.KeystoreSecretStore
 import com.edith.app.core.secrets.SecretStore
@@ -150,7 +151,7 @@ class AppContainer(val app: Application) {
         ToolRegistry(
             tools = listOf(
                 CurrentTimeTool(), WeatherTool(openMeteo, deviceLocation),
-                SearchWebTool(webSearch), ReadWebPageTool(webSearch.pages(PageReader(okHttpLazy, dispatchers))),
+                SearchWebTool(webSearch), ReadWebPageTool(webSearch.pages(PageReader(httpClients.plain, dispatchers))),
                 // C18/C22: calendars across every account; C19/C22: email (send only after the owner confirms: D5)
                 *calendarTools(accounts, calendarHandles).toTypedArray(),
                 *mailTools(accounts, mailHandles).toTypedArray(),
@@ -168,11 +169,11 @@ class AppContainer(val app: Application) {
      * stays in [secretStore].
      */
     val webSearchSetup: WebSearchSetup by lazy { WebSearchSetup(secretStore) }
-    val ollamaWeb: OllamaWebSearch by lazy { OllamaWebSearch(okHttpLazy, dispatchers, apiKey = { webSearchSetup.key() }) }
-    private val webSearch: WebSearch by lazy { WebSearch(DuckDuckGoSearch(okHttpLazy, dispatchers), ollamaWeb, webSearchSetup) }
+    val ollamaWeb: OllamaWebSearch by lazy { OllamaWebSearch(httpClients.secure, dispatchers, apiKey = { webSearchSetup.key() }) }
+    private val webSearch: WebSearch by lazy { WebSearch(DuckDuckGoSearch(httpClients.secure, dispatchers), ollamaWeb, webSearchSetup) }
 
     /** Weather data (C09): Open-Meteo, keyless. Shares the app's HTTP client, with its own 10 s timeouts. */
-    val openMeteo: OpenMeteoClient by lazy { OpenMeteoClient(okHttpLazy, dispatchers) }
+    val openMeteo: OpenMeteoClient by lazy { OpenMeteoClient(httpClients.secure, dispatchers) }
 
     /** Tool confirmations waiting for the owner's tap (C08 §6, D11). */
     val confirmations = Confirmations()
@@ -216,7 +217,7 @@ class AppContainer(val app: Application) {
 
     /** Downloads, checks and unpacks Edith's own voice, only while she is on screen (C36 §3). */
     val voiceDownloader: VoiceDownloader by lazy {
-        VoiceDownloader(OwnVoices.default, voicesDir, http = { okHttp }, visible = AppVisibility.visible, scope = appScope, io = dispatchers.io)
+        VoiceDownloader(OwnVoices.default, voicesDir, http = { httpClients.secure.value }, visible = AppVisibility.visible, scope = appScope, io = dispatchers.io)
     }
 
     /** Edith's own voice (C36): sherpa-onnx running a Piper voice, loaded when she first speaks with it. */
@@ -337,10 +338,10 @@ class AppContainer(val app: Application) {
     /** Microsoft as an account provider (C23, D18): Outlook mail and calendars through Graph. */
     val microsoftAccounts: MicrosoftAccounts by lazy {
         MicrosoftAccounts(
-            oauth = BrowserOAuth(okHttpLazy, dispatchers, MicrosoftOAuth.provider(BuildConfig.MICROSOFT_CLIENT_ID)),
+            oauth = BrowserOAuth(httpClients.secure, dispatchers, MicrosoftOAuth.provider(BuildConfig.MICROSOFT_CLIENT_ID)),
             signInFlow = browserSignIn,
             secrets = secretStore,
-            http = okHttpLazy,
+            http = httpClients.secure,
             dispatchers = dispatchers,
             clock = clock,
             windowsZone = { zone -> android.icu.util.TimeZone.getWindowsID(zone.id) },
@@ -349,7 +350,7 @@ class AppContainer(val app: Application) {
 
     val googleAccounts: GoogleAccounts by lazy {
         val browser = BrowserGoogle(
-            oauth = BrowserOAuth(okHttpLazy, dispatchers, BuildConfig.GOOGLE_DESKTOP_CLIENT_ID, BuildConfig.GOOGLE_DESKTOP_CLIENT_SECRET),
+            oauth = BrowserOAuth(httpClients.secure, dispatchers, BuildConfig.GOOGLE_DESKTOP_CLIENT_ID, BuildConfig.GOOGLE_DESKTOP_CLIENT_SECRET),
             secrets = secretStore,
             clock = clock,
             dispatchers = dispatchers,
@@ -365,14 +366,14 @@ class AppContainer(val app: Application) {
             playServicesAvailable = {
                 GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(app) == ConnectionResult.SUCCESS
             },
-            http = okHttpLazy,
+            http = httpClients.secure,
             clock = clock,
             dispatchers = dispatchers,
         )
     }
 
     /** iCloud as an account provider (C24): mail over IMAP/SMTP, calendars over CalDAV, an app-specific password. */
-    val icloudAccounts: ICloudAccounts by lazy { ICloudAccounts(secretStore, okHttpLazy, dispatchers) }
+    val icloudAccounts: ICloudAccounts by lazy { ICloudAccounts(secretStore, httpClients.secure, dispatchers) }
 
     /** Every email-and-calendar account (C22, D17), saved in the `settings` file under `accounts`. */
     val accounts: Accounts by lazy { Accounts(DataStoreAccountStore(settingsStore.store), googleAccounts, appScope, microsoftAccounts, icloudAccounts) }
@@ -385,7 +386,7 @@ class AppContainer(val app: Application) {
     val homeCommandLog: RoomCommandLog by lazy { RoomCommandLog(database.homeCommandDao()) }
 
     /** Meross garage door openers (C26): the account's sign-in is kept encrypted in [secretStore]. */
-    val meross: MerossService by lazy { MerossService(secretStore, MerossApi(okHttpLazy, clock), PahoMerossBus(dispatchers, clock), clock) }
+    val meross: MerossService by lazy { MerossService(secretStore, MerossApi(httpClients.secure, clock), PahoMerossBus(dispatchers, clock), clock) }
 
     val home: Home by lazy {
         Home(
@@ -463,11 +464,14 @@ class AppContainer(val app: Application) {
     val secretStore: SecretStore by lazy { KeystoreSecretStore(app) }
 
     /**
-     * One shared HTTP client (C03 §5). Long read timeout: the first token after a model load can take a while.
-     * Building it sets up TLS (~190 ms on the emulator), so it's lazy and first used from the IO dispatcher by
-     * [OkHttpOllamaClient] — don't read it on the main thread.
+     * The HTTP clients (C03 §5, C37), sharing one pool. Long read timeout: the first token after a model load can take
+     * a while. Building TLS takes ~190 ms on the emulator, so they're lazy and first used from the IO dispatcher by
+     * [OkHttpOllamaClient] — don't read them on the main thread.
+     *
+     * **Every service takes [HttpClients.secure] (HTTPS only)**, except the two that need plain HTTP: Ollama (the owner's
+     * LAN address) and the web-page reader (public pages, no credentials). `HttpClientsWiringTest` keeps it that way.
      */
-    private val okHttpLazy: Lazy<OkHttpClient> = lazy {
+    val httpClients = HttpClients {
         OkHttpClient.Builder()
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(180, TimeUnit.SECONDS)
@@ -476,9 +480,8 @@ class AppContainer(val app: Application) {
             .socketFactory(TaggedSocketFactory())
             .build()
     }
-    val okHttp: OkHttpClient by okHttpLazy
 
-    val ollama: OllamaClient by lazy { OkHttpOllamaClient(okHttpLazy, OllamaDtos.json, dispatchers) }
+    val ollama: OllamaClient by lazy { OkHttpOllamaClient(httpClients.plain, OllamaDtos.json, dispatchers) }
     val modelCatalog: ModelCatalog by lazy { ModelCatalog(ollama) }
 
     /** One DataStore per file per process, so the repository is created exactly once here (C04). */

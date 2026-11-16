@@ -43,7 +43,7 @@ class DebugGoogleReceiver : BroadcastReceiver() {
                             .url("https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=1&fields=kind")
                             .header("Authorization", "Bearer $token")
                             .build()
-                        container.okHttp.newCall(request).execute().use { response ->
+                        container.httpClients.secure.value.newCall(request).execute().use { response ->
                             when (response.code) {
                                 200 -> GoogleCall.Ok(response.code)
                                 401 -> GoogleCall.Unauthorized
