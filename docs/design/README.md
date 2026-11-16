@@ -66,7 +66,7 @@ design in the same PR, or ask the owner.
 | [C34](chunks/C34-printer.md) | 3D printer card (Moonraker) | 8 | C25 | Built (the owner's check against the real printer is open) |
 | [C35](chunks/C35-google-tasks.md) | To-dos: Google Tasks, as in Jarvis (D20) | 7 Accounts | C22, C08, C03 | Done |
 | [C36](chunks/C36-own-voice.md) | Edith's own voice: on-device speech for phones with no voice, such as Andarium (D21) | 3 Voice | C13, C14, C17b | Built (the Andarium check on the iPhone is the owner's) |
-| [C37](chunks/C37-https-only-clients.md) | HTTPS-only by construction: a `secure` HTTP client for everything that carries credentials, `plain` only for Ollama and public pages | Hardening | C03 and every service using the shared client | Built (the device and release-APK checks are pending) |
+| [C37](chunks/C37-https-only-clients.md) | HTTPS-only by construction: a `secure` HTTP client for everything that carries credentials, `plain` only for Ollama, the 3D printer and public pages | Hardening | C03 and every service using the shared client | Built, device tests pass (the release-APK check and the real sign-ins are pending) |
 
 ### State at handoff (2026-10-29)
 - `master` has the design and the C01 skeleton with its build/deploy tooling (`05-environment.md` §2, §6). Tag
