@@ -65,6 +65,7 @@ import java.util.Locale
 /** One day of the agenda: its heading ("Today", "Tomorrow", "Wednesday, Nov 4") and its events. */
 data class AgendaDay(val date: LocalDate, val heading: String, val events: List<MergedEvent>)
 
+/** The state of the Calendar tab's Agenda view (C22). */
 sealed interface CalendarUi {
     /** No account can be read: the tab explains and links to Settings. [needsSignIn]: there are accounts, but none works now. */
     data class NotConnected(val needsSignIn: Boolean) : CalendarUi

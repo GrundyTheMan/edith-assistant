@@ -47,6 +47,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.Locale
 
+/** What Settings → Voice shows. */
 data class VoiceUiState(
     val speakReplies: Boolean = true,
     val speechRate: Float = 1.0f,

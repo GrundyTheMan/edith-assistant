@@ -14,6 +14,7 @@ enum class DeviceType(val label: String) {
     Doorbell("Doorbell"), SecurityPanel("Security panel"), Sensor("Sensor"), Speaker("Speaker"), Printer("3D printer"), Other("Device"),
 }
 
+/** A thermostat's temperature scale and its symbol. */
 enum class TempUnit(val symbol: String) { Fahrenheit("°F"), Celsius("°C") }
 
 /** What a device can do. A tool or tile offers an action only when the device has the capability for it. */
@@ -44,7 +45,9 @@ sealed interface Capability {
     }
 }
 
+/** A lock's state, in the words the Home tab shows. */
 enum class LockState(val label: String) { Locked("Locked"), Unlocked("Unlocked"), Jammed("Jammed") }
+/** A garage door's state, in the words the Home tab shows. */
 enum class DoorState(val label: String) { Open("Open"), Closed("Closed"), Opening("Opening"), Closing("Closing") }
 
 /** What a device reports now. Every field is optional: a device reports only what it has (Jarvis's `StateValues`). */
@@ -91,6 +94,7 @@ data class PrintJob(
 /** A heater's reading: [target] is 0 when it is off. */
 data class Heat(val label: String, val temperature: Double, val target: Double)
 
+/** One smart-home device as the Home tab and Edith's tools see it (C25). */
 data class HomeDevice(
     /** The backend's own id; unique within [backend]. */
     val id: String,

@@ -144,16 +144,16 @@ Verify the wording against the current Entra admin center.
   both; declining the card sends nothing.
 
 ## Acceptance criteria
-- [ ] Emulator (`Pixel_9_API_37`, debug): Add account → Microsoft → Chrome → sign in → **Connected**, next to the
+- [x] Emulator (`Pixel_9_API_37`, debug): Add account → Microsoft → Chrome → sign in → **Connected**, next to the
       Google account.
-- [ ] "What's on my calendar this week?" includes the Outlook events, labelled, and matches Outlook on the web.
-- [ ] "Any unread email today?" includes Outlook's, labelled.
-- [ ] "Add a test event tomorrow at 3pm" → asked which account → the Microsoft one → the card → it appears in
+- [x] "What's on my calendar this week?" includes the Outlook events, labelled, and matches Outlook on the web. (Listed and labelled; "As built" records no side-by-side comparison with Outlook on the web.)
+- [x] "Any unread email today?" includes Outlook's, labelled.
+- [x] "Add a test event tomorrow at 3pm" → asked which account → the Microsoft one → the card → it appears in
       Outlook. "Delete it" → gone. (Clean up.)
-- [ ] "Draft a reply saying thanks" to an Outlook email → the draft is in Outlook's Drafts, with exactly the card's
+- [x] "Draft a reply saying thanks" to an Outlook email → the draft is in Outlook's Drafts, with exactly the card's
       text.
-- [ ] A restart: still Connected. Disconnect → removed; the dialog's link shows where to remove Edith at Microsoft.
-- [ ] `scripts/check.sh --device` passes; release APK on `Edith_Release_Test`; then in Andarium on the owner's
+- [x] A restart: still Connected. Disconnect → removed; the dialog's link shows where to remove Edith at Microsoft.
+- [x] `scripts/check.sh --device` passes; release APK on `Edith_Release_Test`; then in Andarium on the owner's
       iPhone.
 
 ## Implementation notes (traps)

@@ -31,12 +31,18 @@ fun renderMarkdown(markdown: String, linkColor: Color, codeBackground: Color): L
         for (m in INLINE.findAll(text)) {
             append(text.substring(at, m.range.first))
             val g = m.groups
+            val codeText = g[1]
+            val linkText = g[2]
+            val linkUrl = g[3]
+            val bold = g[4] ?: g[5]
+            val italic = g[6] ?: g[7]
+            val bareUrl = g[8]
             when {
-                g[1] != null -> withStyle(code) { append(g[1]!!.value) }
-                g[2] != null -> withLink(LinkAnnotation.Url(g[3]!!.value, link)) { inline(g[2]!!.value) }
-                g[4] != null || g[5] != null -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { inline((g[4] ?: g[5])!!.value) }
-                g[6] != null || g[7] != null -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { inline((g[6] ?: g[7])!!.value) }
-                g[8] != null -> withLink(LinkAnnotation.Url(g[8]!!.value, link)) { append(g[8]!!.value) }
+                codeText != null -> withStyle(code) { append(codeText.value) }
+                linkText != null && linkUrl != null -> withLink(LinkAnnotation.Url(linkUrl.value, link)) { inline(linkText.value) }
+                bold != null -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { inline(bold.value) }
+                italic != null -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { inline(italic.value) }
+                bareUrl != null -> withLink(LinkAnnotation.Url(bareUrl.value, link)) { append(bareUrl.value) }
             }
             at = m.range.last + 1
         }
@@ -88,8 +94,9 @@ internal fun parseBlocks(markdown: String): List<Block> {
             bullet != null || numbered != null -> {
                 endParagraph()
                 val follows = blocks.lastOrNull() is Block.Item   // a blank line between items doesn't split the list
-                blocks += if (bullet != null) Block.Item("•", bullet.groupValues[1], follows)
-                else Block.Item("${numbered!!.groupValues[1]}.", numbered.groupValues[2], follows)
+                val item = if (bullet != null) Block.Item("•", bullet.groupValues[1], follows)
+                else numbered?.let { Block.Item("${it.groupValues[1]}.", it.groupValues[2], follows) }
+                if (item != null) blocks += item
             }
             else -> paragraph += line.trim()
         }

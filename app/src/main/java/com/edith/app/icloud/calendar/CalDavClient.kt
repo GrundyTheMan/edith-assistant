@@ -68,7 +68,8 @@ class CalDavClient(
 
     /** Discovery (§3): the principal, its calendar home (on the partition host) and the calendars there. */
     suspend fun discover(): DavResult<DavHome> {
-        val principalDoc = when (val r = propfind(base.resolve("/")!!, 0, PRINCIPAL_BODY)) { is DavResult.Ok -> r.value; else -> return r.map() }
+        val root = base.resolve("/") ?: return DavResult.Failed("the server address can't be used")
+        val principalDoc = when (val r = propfind(root, 0, PRINCIPAL_BODY)) { is DavResult.Ok -> r.value; else -> return r.map() }
         val principal = principalDoc.first.firstHref("current-user-principal")?.let { principalDoc.second.resolve(it) }
             ?: return DavResult.Failed("no current-user-principal")
         val homeDoc = when (val r = propfind(principal, 0, HOME_BODY)) { is DavResult.Ok -> r.value; else -> return r.map() }

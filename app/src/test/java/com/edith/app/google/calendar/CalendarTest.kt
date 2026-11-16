@@ -31,6 +31,7 @@ import com.edith.app.core.error.AppError
 import com.edith.app.settings.Settings
 import com.edith.app.testing.FakeClock
 import com.edith.app.testing.FakeSettingsRepository
+import com.edith.app.tools.framework.ApprovalChannel
 import com.edith.app.tools.framework.Confirmations
 import com.edith.app.tools.framework.ToolArgs
 import com.edith.app.tools.framework.ToolContext
@@ -299,7 +300,7 @@ class CalendarTest {
         val runner = ToolTurnRunner(ollama, ToolRegistry(listOf(tool), listOf(h.accounts)), confirmations, settings, clock, dispatchers)
         var asked = false
         runner.run("http://ollama", ModelInfo("gemma4:12b", setOf("tools")), listOf(OllamaMessage("user", "add it"))).collect { e ->
-            if (e is TurnEvent.NeedsConfirmation) { asked = true; confirmations.resolve(e.request.id, false) }
+            if (e is TurnEvent.NeedsConfirmation) { asked = true; confirmations.resolve(e.request.id, false, ApprovalChannel.Tap) }
         }
         assertTrue(asked)
         assertTrue("nothing was written (the card only read the calendar names)", requests.none { it.method != "GET" })

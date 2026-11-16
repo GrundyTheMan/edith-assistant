@@ -44,6 +44,7 @@ interface OllamaClient {
     suspend fun version(baseUrl: String): Outcome<String>
 }
 
+/** One chat request to Ollama: the model, the messages and any tools. */
 data class ChatCall(
     val model: String,
     val messages: List<OllamaMessage>,
@@ -53,6 +54,7 @@ data class ChatCall(
     val temperature: Double? = null,
 )
 
+/** What a streamed chat request produces: text, tool calls and the end. */
 sealed interface ChatEvent {
     data class Delta(val text: String) : ChatEvent
     /** The assistant message to append to the history verbatim before the tool results. */
@@ -60,6 +62,7 @@ sealed interface ChatEvent {
     data class Done(val stats: ReplyStats) : ChatEvent
 }
 
+/** The timing and token counts Ollama reports at the end of a reply. */
 data class ReplyStats(val totalMs: Long?, val evalCount: Int?, val promptEvalCount: Int?)
 
 /**

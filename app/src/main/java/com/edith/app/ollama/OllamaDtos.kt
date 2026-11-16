@@ -86,6 +86,7 @@ object OllamaDtos {
     @SerialName("model_info") val modelInfo: JsonObject? = null,
 )
 
+/** Which `think` value each model is sent (L8). */
 object ThinkPolicy {
     fun forModel(model: String): JsonElement = if (model.startsWith("gpt-oss")) JsonPrimitive("low") else JsonPrimitive(false)
 }

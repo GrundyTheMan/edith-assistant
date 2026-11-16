@@ -80,6 +80,10 @@ com.edith.app
 │                               LoopbackReceiver (127.0.0.1, or both loopback addresses for `localhost`), BrowserGoogle
 ├── microsoft/                  C23: MicrosoftAccounts (provider), MicrosoftAccountAuth (per account), GraphClient, Outlook sources
 ├── icloud/                     C24: ICloudAccounts (provider, the add-account check), mail/ (IMAP/SMTP, Jakarta Mail), calendar/ (CalDAV, iCalendar)
+├── home/                       C25 (D19): HomeModel (devices, capabilities, states), Home (the services' devices, commands, the command log),
+│                               HomeActions (the words and the approval rules, D10), HomeTools (`home_devices`, `home_control`,
+│                               `camera_snapshot`), DeviceNames, HomePrefs, CommandLog, the Demo home (FakeHomeBackend, DemoPicture),
+│                               `ui/` (the Home tab); a service plugs in through `HomeService` (C26 Meross, C27–C31 next)
 ├── meross/                     C26: MerossService (HomeService + backend), MerossApi (HTTP), PahoMerossBus (MQTT), MerossProtocol (signing, topics)
 └── ui/
     ├── theme/                  EdithTheme (light/dark), colors, typography
@@ -277,6 +281,9 @@ Long work uses injected `AppDispatchers.io/default`.
   dictate, hands-free), location (only when the owner asks about "here"), notifications (Android 13+: the
   "Edith is replying…" notification, asked on the first Send (D13), and the hands-free foreground service).
 - Ollama has no authentication; anyone on the LAN can use it. Don't send secrets to it.
+- A confirmation card marked `screenOnly` (unlocking a door, opening the garage: D10) can be approved only by a tap:
+  `Confirmations.resolve` takes the channel (`ApprovalChannel`) and ignores a voice's approval of one. Hands-free
+  has no voice approval at all; this keeps it that way if one is ever added.
 - **Edith's own voice (C36)** is downloaded once, on the owner's tap, from the sherpa-onnx GitHub release (HTTPS, no
   secrets involved, no account). Its URL, size and SHA-256 are pinned in `OwnVoices.kt`; the file is checked before
   anything in it is used and unpacked defensively (no `..`, absolute paths or links; capped entries and size). It only
@@ -304,7 +311,7 @@ Settings sections in order: Server & model · Voice · Hands-free · Attachments
 
 - **Tools:** implement `Tool` (C08) and register it in `AppContainer`. A tool declares its JSON schema,
   a status label, whether it needs confirmation, and which integration it belongs to (for enable/disable).
-- **Integrations** (email and calendar accounts since C22, smart home later): implement `Integration` — `id`, `displayName`,
+- **Integrations** (email and calendar accounts since C22, the smart home since C25): implement `Integration` — `id`, `displayName`,
   `status: StateFlow<IntegrationStatus>` (`NotConfigured`/`Connected(account)`/`Error`), `tools()`,
   `promptLines()`, and a Settings section composable. The chat engine only offers tools from
   integrations that are `Connected`. This is how smart home plugs in for v2 (C20).

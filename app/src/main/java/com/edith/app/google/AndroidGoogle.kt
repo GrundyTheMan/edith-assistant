@@ -72,9 +72,10 @@ class PlayServicesAuthorizer(context: Context, private val email: String) : Goog
             .setAccount(Account(email, GOOGLE_ACCOUNT_TYPE))
             .build()
         val result = client.authorize(request).await()
+        val token = result.accessToken
         when {
             result.hasResolution() -> GoogleAuthorizer.Result.NeedsConsent(result.pendingIntent)
-            result.accessToken != null -> GoogleAuthorizer.Result.Granted(result.accessToken!!)
+            token != null -> GoogleAuthorizer.Result.Granted(token)
             else -> GoogleAuthorizer.Result.Failed("Google gave no access.")
         }
     } catch (e: ApiException) {

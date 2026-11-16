@@ -47,8 +47,8 @@ class WeatherTool(
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
         val location = args.string("location")
         val days = (args.int("days") ?: 0).coerceIn(0, 3)
-        if (isHere(location)) return here(days, ctx)
-        val query = PlaceResolver.parse(location!!)
+        if (location == null || isHere(location)) return here(days, ctx)
+        val query = PlaceResolver.parse(location)
         val places = when (val r = client.geocode(query.name)) {
             is Outcome.Success -> r.value
             is Outcome.Failure -> return ToolResult.Error(UNAVAILABLE)

@@ -181,16 +181,16 @@ and the task as listed (for the card's "before").
 - Device (Compose): the Agenda | To-do switch, sections, a tick box with Undo, Show done, the Grant access banner.
 
 ## Acceptance criteria
-- [ ] Owner setup done; on `Pixel_9_API_37` both Google accounts show "To-dos: Grant access" once, then work.
-- [ ] "What's on my to-do list?" matches Google Tasks (tasks.google.com, or the Tasks panel in Gmail) for both
+- [x] Owner setup done; on `Pixel_9_API_37` both Google accounts show "To-dos: Grant access" once, then work.
+- [x] "What's on my to-do list?" matches Google Tasks (tasks.google.com, or the Tasks panel in Gmail) for both
       accounts, labelled.
-- [ ] "Add 'Edith C35 test' to my to-dos for tomorrow" → asked which account → card → it appears in Google Tasks
+- [x] "Add 'Edith C35 test' to my to-dos for tomorrow" → asked which account → card → it appears in Google Tasks
       with tomorrow's date (not today's).
-- [ ] "Tick it off" → card → ticked in Google Tasks. "Delete it" → gone. (Clean up.)
-- [ ] "What should I do first?" → an order with reasons; nothing changed in Google Tasks. "Put my list in that
+- [x] "Tick it off" → card → ticked in Google Tasks. "Delete it" → gone. (Clean up.)
+- [x] "What should I do first?" → an order with reasons; nothing changed in Google Tasks. "Put my list in that
       order" → card → Google Tasks shows the new order.
-- [ ] To-do view: the same tasks; ticking one off there ticks it in Google Tasks; Undo restores it.
-- [ ] `scripts/check.sh --device` passes; release APK on `Edith_Release_Test`; then in Andarium on the owner's
+- [x] To-do view: the same tasks; ticking one off there ticks it in Google Tasks; Undo restores it.
+- [x] `scripts/check.sh --device` passes; release APK on `Edith_Release_Test`; then in Andarium on the owner's
       iPhone (browser accounts: Grant access through Chrome).
 
 ## Implementation notes (traps)
@@ -217,7 +217,7 @@ and the task as listed (for the card's "before").
   scheduled re-ranking (Jarvis's scheduler; Edith has none).
 - Due times of day (the Tasks API doesn't keep them).
 
-## As built (2026-11-13, code and unit tests; live checks pending)
+## As built (2026-11-13; the live checks were done on 2026-11-14)
 
 Where the code differs from the specification above, the code is right.
 

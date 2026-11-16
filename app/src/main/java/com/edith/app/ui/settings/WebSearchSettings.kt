@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+/** What Settings shows for web search. */
 data class WebSearchUiState(
     val keySaved: Boolean = false,
     /** What's typed; never pre-filled with the saved key, which never leaves SecretStore for display. */

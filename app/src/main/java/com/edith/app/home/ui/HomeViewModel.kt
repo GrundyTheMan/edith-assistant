@@ -49,6 +49,7 @@ enum class HomeChip(val label: String, val types: Set<DeviceType>?) {
 /** A command waiting for the owner's OK on the tab's dialog: the same rule as the tools' cards (C25 §5). */
 data class PendingCommand(val device: HomeDevice, val command: DeviceCommand, val screenOnly: Boolean)
 
+/** What the Home tab shows. */
 data class HomeUi(
     val connected: Boolean = false,
     val view: HomeView = HomeView(),

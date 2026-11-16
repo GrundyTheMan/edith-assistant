@@ -68,7 +68,7 @@ design in the same PR, or ask the owner.
 | [C36](chunks/C36-own-voice.md) | Edith's own voice: on-device speech for phones with no voice, such as Andarium (D21) | 3 Voice | C13, C14, C17b | Built (the Andarium check on the iPhone is the owner's) |
 | [C37](chunks/C37-https-only-clients.md) | HTTPS-only by construction: a `secure` HTTP client for everything that carries credentials, `plain` only for Ollama, the 3D printer and public pages | Hardening | C03 and every service using the shared client | Built, device tests pass (the release-APK check and the real sign-ins are pending) |
 
-### State at handoff (2026-10-29)
+### State of the build (written at the 2026-10-29 handoff, kept up to date since)
 - `master` has the design and the C01 skeleton with its build/deploy tooling (`05-environment.md` §2, §6). Tag
   `edith-v1` = the old app. Branch `rebuild-design` is an already-merged leftover — ignore it, don't build on it.
 - **Phase 1 is done** (C01–C07): the owner can chat with Edith in the app, across multiple conversations.
@@ -144,11 +144,12 @@ design in the same PR, or ask the owner.
   Demo home, and the first real service, Meross (C26), is done and live on the owner's account (the shed door opened and
   closed). The owner should apply for a Resideo developer key early (C28).
 - Judge tool reliability with `gemma4:12b`; `e4b` often skips tools (L26).
-- Owner decisions still open are in `06-decisions.md`. Ask early about the ones your chunk lists; the first ones
-  needed are **D8** (C03).
+- Owner decisions still open are in `06-decisions.md`. Ask early about the ones your chunk lists; D8 (`keep_alive`) is
+  still open: C03 shipped with the recommended default (not sent) and the owner hasn't confirmed it. D23 (where user-facing
+  strings live) is open too.
 - Releases: `v2.0.0-dev.1` (2026-11-11) is the first, published with `scripts/release.sh` + `scripts/publish.sh`
   as in 05-environment §6. Test the release APK on `Edith_Release_Test` with hands-free on before publishing
-  (L30). The next published APK needs `edith.versionCode` bumped to 2.
+  (L30). Every published APK needs a higher `edith.versionCode` than the last one (`gradle.properties`; `v2.0.0-dev.5` is 5).
 - The "Hey Edith" model is trained and in the app (`docs/wake-word-training.md`). Judging it with a real voice is
   still open.
 

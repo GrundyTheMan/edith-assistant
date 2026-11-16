@@ -26,6 +26,7 @@ data class HomeChoices(
     val hiddenNames: Map<String, String> = emptyMap(),
 )
 
+/** The owner's Home choices: favourites, hidden devices, the Demo home and the selected chip. */
 interface HomePrefs {
     val choices: Flow<HomeChoices>
     suspend fun setFavorite(key: String, on: Boolean)
@@ -34,6 +35,7 @@ interface HomePrefs {
     suspend fun setChip(chip: String)
 }
 
+/** [HomePrefs] kept in DataStore. */
 class DataStoreHomePrefs(private val store: DataStore<Preferences>) : HomePrefs {
     override val choices: Flow<HomeChoices> = store.data
         .catch { e -> if (e is IOException) emit(emptyPreferences()) else throw e }

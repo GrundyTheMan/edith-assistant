@@ -34,7 +34,7 @@ class SearchWebTool(private val provider: SearchProvider) : Tool {
         "read a page if the snippets aren't enough; mention the source site."
 
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
-        val query = args.string("query")!!
+        val query = args.string("query") ?: return ToolResult.Error("Say what to search for (query).")
         val hits = when (val r = provider.search(query, (args.int("max_results") ?: 5).coerceIn(1, 10))) {
             is Outcome.Success -> r.value
             is Outcome.Failure -> return ToolResult.Error((r.error as? AppError.ToolFailed)?.detail ?: WebSearch.UNAVAILABLE)
@@ -81,7 +81,7 @@ class ReadWebPageTool(private val pages: WebPageSource) : Tool {
         runCatching { args.string("url")?.let { hostOf(normalize(it)) } }.getOrNull()?.removePrefix("www.")?.let { "Reading $it…" } ?: statusLabel
 
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
-        val url = normalize(args.string("url")!!)
+        val url = normalize(args.string("url") ?: return ToolResult.Error("Give the page's address (url)."))
         val host = hostOf(url) ?: return ToolResult.Error(PageReader.NOT_WEB)
         // Private addresses are refused by the reader, on every redirect hop too.
         val page = when (val r = pages.read(url)) {

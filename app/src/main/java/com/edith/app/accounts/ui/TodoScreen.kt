@@ -78,6 +78,7 @@ import java.time.LocalDate
 /** One list in the To-do view: "My Tasks · personal" and its tasks in Google's order. */
 data class TodoSection(val account: Account, val list: TaskList, val title: String, val tasks: List<TaskItem>)
 
+/** The state of the Calendar tab's To-do view (C35). */
 sealed interface TodoUi {
     /** No account has to-dos: the view explains and links to Settings. */
     data object NotConnected : TodoUi

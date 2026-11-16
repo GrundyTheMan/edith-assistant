@@ -28,6 +28,7 @@ data class OwnVoice(
     }
 }
 
+/** The voices Edith can carry (C36, D21). */
 object OwnVoices {
     /**
      * `en_US-libritts_r-medium`, speaker 0: 22,050 Hz, 82,038,311 bytes (the SHA-256 is also the digest GitHub shows

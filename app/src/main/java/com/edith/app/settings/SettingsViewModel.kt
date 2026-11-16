@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+/** What the Settings screen shows. */
 data class SettingsUiState(
     val serverField: String = "",
     val serverSaved: String = "",
@@ -38,8 +39,10 @@ data class SettingsUiState(
     val hasUnsavedServer get() = serverField.trim() != serverSaved
 }
 
+/** Whether Edith may use the local network (L23). */
 enum class PermissionState { Unknown, Granted, NeedsRequest, Denied }
 
+/** How testing the connection to Ollama is going. */
 sealed interface ConnectionState {
     data object Idle : ConnectionState
     data object Testing : ConnectionState
@@ -47,6 +50,7 @@ sealed interface ConnectionState {
     data class Failed(val msg: String) : ConnectionState
 }
 
+/** The installed models' list as Settings shows it: loading, loaded or failed. */
 sealed interface ModelsState {
     data object Loading : ModelsState
     data class Loaded(val list: List<ModelInfo>) : ModelsState

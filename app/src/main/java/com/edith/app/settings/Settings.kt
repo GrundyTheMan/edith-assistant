@@ -58,6 +58,7 @@ enum class Units(val stored: String) {
     }
 }
 
+/** Where Edith's settings are kept and read. */
 interface SettingsRepository {
     val settings: Flow<Settings>
     suspend fun current(): Settings
