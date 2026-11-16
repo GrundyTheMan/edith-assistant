@@ -52,6 +52,79 @@ class BlinkApiTest {
         assertTrue(r is BlinkStart.Failed && "changed" in r.why)
     }
 
+    @Test fun `a sign-in page Blink refuses says which step, who answered and what the page said, and sends a language`() = runBlocking {
+        val real = blink.server.dispatcher
+        var language: String? = null
+        for (refusedPath in listOf("/oauth/v2/authorize" to "the first step", "/oauth/v2/signin" to "the second step")) {
+            blink.server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    if (request.url.encodedPath == refusedPath.first) {
+                        language = request.headers["Accept-Language"]
+                        return MockResponse.Builder().code(406).addHeader("Server", "AkamaiGHost").body("<html><head><style>x{}</style></head><body><h1>Not   Acceptable</h1><p>Blocked by policy</p></body></html>").build()
+                    }
+                    return real.dispatch(request)
+                }
+            }
+            val r = blink.api().begin(hw)
+            assertTrue(r.toString(), r is BlinkStart.Failed)
+            val why = (r as BlinkStart.Failed).why
+            assertTrue(why, "HTTP 406" in why && refusedPath.second in why && "AkamaiGHost" in why && "Not Acceptable Blocked by policy" in why)
+            assertTrue("no markup or style in the excerpt: $why", '<' !in why && "x{}" !in why)
+        }
+        assertEquals("en-US,en;q=0.9", language)
+    }
+
+    /** The pretend Blink with the sign-in's first page answering [statuses] in turn (the last repeats) and counting the asks. */
+    private fun answeringAuthorize(vararg statuses: Int): () -> Int {
+        val real = blink.server.dispatcher
+        var asked = 0
+        blink.server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                if (request.url.encodedPath == "/oauth/v2/authorize" && request.url.queryParameter("code_challenge") != null) {
+                    val status = statuses[minOf(asked++, statuses.size - 1)]
+                    if (status != 200) return MockResponse.Builder().code(status).body("Not Acceptable").build()
+                }
+                return real.dispatch(request)
+            }
+        }
+        return { asked }
+    }
+
+    @Test fun `a 406 from Blink is tried again over IPv4, and when that works IPv4 is used from then on`() = runBlocking {
+        val asked = answeringAuthorize(406, 200)
+        val api = blink.api()
+        assertTrue(api.begin(hw) is BlinkStart.Ok)
+        assertEquals(2, asked())
+        assertTrue(api.ipv4Only)
+        val again = api.begin(hw)
+        assertTrue(again is BlinkStart.Ok)
+        assertEquals("the next sign-in goes straight over IPv4, with no refused try first", 3, asked())
+    }
+
+    @Test fun `a 406 on both routes says so, with both answers, and does not loop`() = runBlocking {
+        val asked = answeringAuthorize(406)
+        val api = blink.api()
+        val r = api.begin(hw)
+        assertTrue(r.toString(), r is BlinkStart.Failed)
+        r as BlinkStart.Failed
+        assertEquals(406, r.status)
+        assertTrue(r.why, "Over IPv4 only: answered HTTP 406" in r.why)
+        assertEquals("one try on each route and no more", 2, asked())
+        assertTrue(!api.ipv4Only)
+    }
+
+    @Test fun `a refusal other than 406 is not retried`() = runBlocking {
+        val asked = answeringAuthorize(500)
+        val r = blink.api().begin(hw)
+        assertTrue(r is BlinkStart.Failed && r.status == 500)
+        assertEquals(1, asked())
+    }
+
+    @Test fun `the IPv4-only lookup keeps IPv4 addresses and fails for a host that has none`() {
+        assertTrue(BlinkApi.IPV4_ONLY.lookup("localhost").all { it is java.net.Inet4Address })
+        assertTrue(runCatching { BlinkApi.IPV4_ONLY.lookup("::1") }.exceptionOrNull() is java.net.UnknownHostException)
+    }
+
     @Test fun `a 202 that lists code methods also asks for the code`() = runBlocking {
         val real = blink.server.dispatcher
         blink.server.dispatcher = object : Dispatcher() {

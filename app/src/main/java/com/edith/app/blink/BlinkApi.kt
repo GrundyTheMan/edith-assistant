@@ -55,7 +55,8 @@ class BlinkSignInSession internal constructor(internal val client: OkHttpClient,
 
 sealed interface BlinkStart {
     data class Ok(val session: BlinkSignInSession) : BlinkStart
-    data class Failed(val why: String) : BlinkStart
+    /** [status] is the HTTP status Blink refused with, or 0 when it did not answer. */
+    data class Failed(val why: String, val status: Int = 0) : BlinkStart
 }
 
 /** How a sign-in step ended (C29). */
@@ -100,25 +101,70 @@ class BlinkApi(
 
     // ---- sign-in ----
 
-    /** Loads Blink's sign-in page the way its phone app does, to get its cookies and CSRF token. */
+    /**
+     * Whether Blink is reached over IPv4 only. Set when Blink refused the normal route with 406 and then answered over IPv4: from
+     * then on every Blink call goes that way. (Found on the owner's phone in Andarium, 2026-11-15: Blink's sign-in pages answered
+     * 406 there, for its browser too, and 200 from the owner's PC. Nothing in the request's headers, user agent, TLS version or
+     * protocol changed that from the PC; the way the phone is connected is the difference left, and IPv6 is one such way.)
+     */
+    @Volatile internal var ipv4Only = false
+        private set
+
+    private fun base(): OkHttpClient.Builder = http.value.newBuilder().also { if (ipv4Only) it.dns(IPV4_ONLY) }
+
+    /**
+     * Loads Blink's sign-in page the way its phone app does, to get its cookies and CSRF token. A 406 is tried once more over IPv4
+     * only; if that works, IPv4 is used for Blink from then on, and if not, the answer says both routes were refused.
+     */
     suspend fun begin(hardwareId: String): BlinkStart {
+        val first = attempt(hardwareId, ipv4 = ipv4Only)
+        if (first !is BlinkStart.Failed || first.status != 406 || ipv4Only) return first
+        return when (val second = attempt(hardwareId, ipv4 = true)) {
+            is BlinkStart.Ok -> {
+                ipv4Only = true
+                Log.w(LogTag.Home, "Blink refused the normal route (HTTP 406) but answered over IPv4: Blink is reached over IPv4 from now on")
+                second
+            }
+            is BlinkStart.Failed -> BlinkStart.Failed("${first.why}. Over IPv4 only: ${second.why.removePrefix("Blink's sign-in page ")}", first.status)
+        }
+    }
+
+    private suspend fun attempt(hardwareId: String, ipv4: Boolean): BlinkStart {
         val verifier = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also { SecureRandom().nextBytes(it) })
         val challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()))
-        val client = http.value.newBuilder().cookieJar(MemoryCookies()).callTimeout(CALL_S, TimeUnit.SECONDS).build()
+        val client = base().also { if (ipv4) it.dns(IPV4_ONLY) }.cookieJar(MemoryCookies()).callTimeout(CALL_S, TimeUnit.SECONDS).build()
         val authorize = "${endpoints.oauth}/oauth/v2/authorize".toHttpUrl().newBuilder()
             .addQueryParameter("app_brand", "blink").addQueryParameter("app_version", APP_VERSION).addQueryParameter("client_id", CLIENT_ID)
             .addQueryParameter("code_challenge", challenge).addQueryParameter("code_challenge_method", "S256")
             .addQueryParameter("device_brand", "Apple").addQueryParameter("device_model", "iPhone16,1").addQueryParameter("device_os_version", "26.1")
             .addQueryParameter("hardware_id", hardwareId).addQueryParameter("redirect_uri", REDIRECT_URI)
             .addQueryParameter("response_type", "code").addQueryParameter("scope", "client").build()
-        val first = send(client, Request.Builder().url(authorize).header("User-Agent", PAGE_AGENT).header("Accept", PAGE_ACCEPT).get().build())
+        val first = send(client, Request.Builder().url(authorize).header("User-Agent", PAGE_AGENT).header("Accept", PAGE_ACCEPT).header("Accept-Language", PAGE_LANGUAGE).get().build())
         if (first !is Raw.Done) return BlinkStart.Failed((first as Raw.Failed).why)
-        if (first.code != 200) return BlinkStart.Failed("Blink's sign-in page answered HTTP ${first.code}")
-        val page = send(client, Request.Builder().url("${endpoints.oauth}/oauth/v2/signin").header("User-Agent", PAGE_AGENT).header("Accept", PAGE_ACCEPT).get().build())
+        if (first.code != 200) return refused("the first step (authorize)", first)
+        val page = send(client, Request.Builder().url("${endpoints.oauth}/oauth/v2/signin").header("User-Agent", PAGE_AGENT).header("Accept", PAGE_ACCEPT).header("Accept-Language", PAGE_LANGUAGE).get().build())
         if (page !is Raw.Done) return BlinkStart.Failed((page as Raw.Failed).why)
-        if (page.code != 200) return BlinkStart.Failed("Blink's sign-in page answered HTTP ${page.code}")
+        if (page.code != 200) return refused("the second step (the sign-in page)", page)
         val csrf = BlinkParse.csrfToken(page.text) ?: return BlinkStart.Failed("Blink's sign-in page wasn't what Edith expected (Blink may have changed it)")
         return BlinkStart.Ok(BlinkSignInSession(client, csrf, verifier, hardwareId))
+    }
+
+    /**
+     * A sign-in page Blink would not give: says which step, the status and who answered (so a block by the network or by Blink's
+     * front door shows as such), and a short excerpt of the page's own words. These are pages fetched before anything is typed, so
+     * nothing of the owner's is in them. Logged too.
+     */
+    private suspend fun refused(step: String, r: Raw.Done): BlinkStart.Failed {
+        val said = r.text.replace(Regex("<(script|style)[^>]*>.*?</\\1>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)), " ")
+            .replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim().take(100)
+        val from = if (r.server.isNotEmpty()) ", from ${r.server.take(40)}" else ""
+        // Which addresses Blink's server has for this phone: Blink's own servers' addresses, so nothing of the owner's.
+        val addresses = withContext(Dispatchers.IO) {
+            runCatching { java.net.InetAddress.getAllByName(endpoints.oauth.toHttpUrl().host).take(4).joinToString { it.hostAddress.orEmpty() } }.getOrNull()
+        }
+        val where = if (!addresses.isNullOrEmpty()) ", reached at $addresses" else ""
+        Log.w(LogTag.Home, "Blink: $step answered HTTP ${r.code}$from$where; the page says: \"$said\"")
+        return BlinkStart.Failed("Blink's sign-in page answered HTTP ${r.code} at $step$from$where${if (said.isNotEmpty()) " (\"$said\")" else ""}", r.code)
     }
 
     /** The password step. Success or a code to type next; on success the tokens come back (the code is traded for them). */
@@ -179,7 +225,7 @@ class BlinkApi(
 
     private suspend fun token(form: FormBody): BlinkRefresh {
         val request = Request.Builder().url("${endpoints.oauth}/oauth/token").header("User-Agent", TOKEN_AGENT).header("Accept", "*/*").post(form).build()
-        val r = send(http.value.newBuilder().callTimeout(CALL_S, TimeUnit.SECONDS).build(), request)
+        val r = send(base().callTimeout(CALL_S, TimeUnit.SECONDS).build(), request)
         if (r !is Raw.Done) return BlinkRefresh.Failed((r as Raw.Failed).why)
         if (r.code == 400 || r.code == 401 || r.code == 403) return BlinkRefresh.Rejected
         if (r.code == 429) return BlinkRefresh.Failed("Blink says to slow down; try again in a few minutes")
@@ -232,13 +278,13 @@ class BlinkApi(
     // ---- HTTP ----
 
     private sealed interface Raw {
-        data class Done(val code: Int, val text: String, val location: String?, val type: String) : Raw
+        data class Done(val code: Int, val text: String, val location: String?, val type: String, val server: String = "") : Raw
         data class Failed(val why: String) : Raw
     }
 
     private suspend fun send(client: OkHttpClient, request: Request): Raw = withContext(Dispatchers.IO) {
         try {
-            client.newCall(request).await().use { r -> Raw.Done(r.code, r.body?.string().orEmpty(), r.header("Location"), r.header("Content-Type").orEmpty().substringBefore(';').trim().lowercase()) }
+            client.newCall(request).await().use { r -> Raw.Done(r.code, r.body?.string().orEmpty(), r.header("Location"), r.header("Content-Type").orEmpty().substringBefore(';').trim().lowercase(), r.header("Server").orEmpty()) }
         } catch (e: IOException) {
             Raw.Failed("Blink can't be reached right now")
         }
@@ -263,7 +309,7 @@ class BlinkApi(
     }
 
     private suspend fun <T> call(request: Request, what: String, parse: (String) -> T): BlinkReply<T> {
-        val r = send(http.value.newBuilder().callTimeout(CALL_S, TimeUnit.SECONDS).build(), request)
+        val r = send(base().callTimeout(CALL_S, TimeUnit.SECONDS).build(), request)
         if (r !is Raw.Done) return BlinkReply.Failed((r as Raw.Failed).why)
         return when {
             r.code == 401 -> BlinkReply.Unauthorized
@@ -284,7 +330,7 @@ class BlinkApi(
 
     private suspend fun bytes(request: Request, what: String, typeOk: (String) -> Boolean): BlinkReply<ByteArray> = withContext(Dispatchers.IO) {
         try {
-            http.value.newBuilder().callTimeout(IMAGE_S, TimeUnit.SECONDS).build().newCall(request).await().use { r ->
+            base().callTimeout(IMAGE_S, TimeUnit.SECONDS).build().newCall(request).await().use { r ->
                 val type = r.header("Content-Type").orEmpty().substringBefore(';').trim().lowercase()
                 when {
                     r.code == 401 -> BlinkReply.Unauthorized
@@ -316,7 +362,13 @@ class BlinkApi(
         const val PAGE_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Mobile/15E148 Safari/604.1"
         const val TOKEN_AGENT = "Blink/2511191620 CFNetwork/3860.200.71 Darwin/25.1.0"
         private const val PAGE_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        private const val PAGE_LANGUAGE = "en-US,en;q=0.9"
         private val REDIRECTS = setOf(301, 302, 303, 307, 308)
+        /** Only the IPv4 addresses of a host; with none, the lookup fails like an unknown host. */
+        internal val IPV4_ONLY = object : okhttp3.Dns {
+            override fun lookup(hostname: String): List<java.net.InetAddress> =
+                okhttp3.Dns.SYSTEM.lookup(hostname).filterIsInstance<java.net.Inet4Address>().ifEmpty { throw java.net.UnknownHostException("$hostname has no IPv4 address") }
+        }
         private const val CALL_S = 20L
         private const val IMAGE_S = 30L
     }
