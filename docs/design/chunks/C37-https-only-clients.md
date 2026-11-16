@@ -128,8 +128,8 @@ Device and release (05-environment §6, L30):
 - Making Ollama use HTTPS, or the page reader refuse `http` pages.
 
 ## Acceptance criteria
-- [ ] `scripts/check.sh --device` passes, with the new tests in it. (`scripts/check.sh` passed; the device tests were
-      not run: see As built.) [x] The new tests fail if `secure` is replaced by a plain client: checked by hand.
+- [x] `scripts/check.sh --device` passes, with the new tests in it (2026-11-16: 725 unit tests and 123 device tests; see
+      As built). [x] The new tests fail if `secure` is replaced by a plain client: checked by hand.
 - [x] No service except Ollama and the page reader can make a cleartext request (the wiring test).
 - [ ] Release APK checked on `Edith_Release_Test`: chat, weather, an `http` page, Sign in with Google, empty crash log.
 - [x] 01-architecture §9 says what is enforced and where; AGENTS.md has the "new services take `httpClients.secure`" rule.
@@ -177,12 +177,17 @@ Where the code differs from the specification above, the code is right.
   which also shows the path an Android 8 or 9 phone would take.
 - The debug build installed over `Pixel_9_API_37` (data kept), launched and chatted with Ollama (`plain`), and the crash
   log stayed empty.
+- **`scripts/check.sh --device`** on a clean checkout of `master` at `87dd98e` (after C37 and the Meross host check),
+  pinned to `Pixel_9_API_37` (2026-11-16, `build-logs/2026-11-16_10-50-45_check.log`): **OK, 123 device tests**, 725 unit
+  tests with 0 failures, lint 0 errors and the same 8 earlier warnings, and the emulator's crash buffer empty afterwards.
+  The device tests don't touch the network, so this shows the new wiring didn't break the app's screens or start-up,
+  not that any service works.
 
 **Not verified**
 - **Weather, web search and reading an `http` page on the emulator.** Both emulators' name lookup was failing
   (`ping: unknown host`; the PC's DNS is fine, so it's the emulators' stale forwarder, probably since NordVPN's DNS came
   up), and the weather call timed out. The services' behaviour was checked above instead.
-- **`scripts/check.sh --device`** and the **release APK on `Edith_Release_Test`**: not run.
-- **Real sign-ins** (Google, Microsoft, iCloud, Meross) through `secure`, and Android's own TLS stack: the probe ran on a
+- **The release APK on `Edith_Release_Test`**: not run. It needs the emulators' name lookup working first.
+- **Real sign-ins** (Google, Microsoft, iCloud, Meross, Ring, Blink, Alexa) through `secure`, and Android's own TLS stack: the probe ran on a
   JVM. Android 8 to 9 (minSdk 26) negotiate TLS 1.2 (TLS 1.3 starts at Android 10); `MODERN_TLS` covers 1.2.
 - **The Andarium check** on the owner's iPhone.
