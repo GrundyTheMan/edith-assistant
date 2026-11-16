@@ -9,6 +9,11 @@ scripts/fetch-sherpa.sh
 step "Build + unit tests + lint"
 gradle clean assembleDebug testDebugUnitTest lintDebug
 
+# Gradle prints no warning count, so say it here: "lint clean" in a PR has to match this line (04-lessons L40).
+lint_report=app/build/reports/lint-results-debug.txt
+lint_line="$(grep -E '^[0-9]+ errors?, [0-9]+ warnings?|^No issues found' "$lint_report" 2>/dev/null | tail -1 || true)"
+echo "Lint: ${lint_line:-no report found}"
+
 if [ "${1:-}" = "--device" ]; then
   device_ready || die "No booted emulator/phone. Start one with scripts/emulator.sh."
   # Not connectedDebugAndroidTest: that uninstalls the app afterwards, wiping the owner's data on the emulator.

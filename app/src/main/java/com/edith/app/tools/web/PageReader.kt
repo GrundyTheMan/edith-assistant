@@ -146,6 +146,7 @@ class PublicOnlyDns(private val base: Dns = Dns.SYSTEM) : Dns {
     }
 }
 
+/** A page's address is on a private network, so it isn't fetched. */
 class PrivateAddressException(host: String) : UnknownHostException("$host is on a private network")
 
 /** Loopback, link-local and private ranges, and names that only mean something on a LAN. No regexes (L25). */
@@ -156,9 +157,11 @@ object PrivateNetwork {
             h.endsWith(".internal") || h.endsWith(".home.arpa") || '.' !in h && ':' !in h
         ) return true
         if (':' in h) return h == "::1" || h == "::" || h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80")
-        val parts = h.split('.').map { it.toIntOrNull() }
-        if (parts.size != 4 || parts.any { it == null || it !in 0..255 }) return false   // a domain name
-        return isPrivateV4(parts[0]!!, parts[1]!!)
+        val parts = h.split('.').map { it.toIntOrNull()?.takeIf { n -> n in 0..255 } }
+        if (parts.size != 4 || parts.any { it == null }) return false   // a domain name
+        val first = parts[0] ?: return false
+        val second = parts[1] ?: return false
+        return isPrivateV4(first, second)
     }
 
     fun isPrivateAddress(address: InetAddress): Boolean {

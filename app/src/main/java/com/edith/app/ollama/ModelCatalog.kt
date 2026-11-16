@@ -44,6 +44,7 @@ class ModelCatalog(private val client: OllamaClient) {
     fun invalidate() = cache.clear()
 }
 
+/** An installed model and what it can do (its Ollama capabilities). */
 data class ModelInfo(val name: String, val capabilities: Set<String>) {
     val canUseTools get() = "tools" in capabilities
     val canSee get() = "vision" in capabilities

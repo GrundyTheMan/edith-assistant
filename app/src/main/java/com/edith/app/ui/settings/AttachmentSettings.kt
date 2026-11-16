@@ -32,6 +32,7 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
 
+/** What Settings shows for attachments. */
 data class AttachmentSettingsUi(
     val keep: Int = 10,
     val usage: Retention.Usage? = null,

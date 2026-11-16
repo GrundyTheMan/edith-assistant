@@ -24,6 +24,7 @@ import com.edith.app.ollama.ReplyStats
 import com.edith.app.settings.Settings
 import com.edith.app.testing.FakeClock
 import com.edith.app.testing.FakeSettingsRepository
+import com.edith.app.tools.framework.ApprovalChannel
 import com.edith.app.tools.framework.Confirmations
 import com.edith.app.tools.framework.Tool
 import com.edith.app.tools.framework.ToolArgs
@@ -257,7 +258,7 @@ class GmailTest {
         val runner = ToolTurnRunner(ollama, ToolRegistry(mailTools(h.accounts, handles), listOf(h.accounts)), confirmations, settings, clock, dispatchers)
         var asked = false
         runner.run("http://ollama", ModelInfo("gemma4:12b", setOf("tools")), listOf(OllamaMessage("user", "send it"))).collect { e ->
-            if (e is TurnEvent.NeedsConfirmation) { asked = true; confirmations.resolve(e.request.id, false) }
+            if (e is TurnEvent.NeedsConfirmation) { asked = true; confirmations.resolve(e.request.id, false, ApprovalChannel.Tap) }
         }
         assertTrue(asked)
         assertTrue("nothing reached Gmail", requests.isEmpty())

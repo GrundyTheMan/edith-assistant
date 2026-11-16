@@ -10,6 +10,7 @@ interface Clock {
     fun zone(): ZoneId
 }
 
+/** The real clock. */
 object SystemClock : Clock {
     override fun now(): Instant = Instant.now()
     override fun zone(): ZoneId = ZoneId.systemDefault()

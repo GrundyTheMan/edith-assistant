@@ -50,6 +50,7 @@ interface Tool {
 /** A runtime permission ([permission], e.g. `ACCESS_COARSE_LOCATION`) and what the model is told if it's denied. */
 data class PermissionNeed(val permission: String, val deniedResult: String)
 
+/** A tool as the model sees it: its name, description and parameters. */
 data class ToolSpec(val name: String, val description: String, val parameters: List<ToolParam> = emptyList()) {
     /** Ollama's tool JSON (03-ollama-reference §2): `{"type":"function","function":{name, description, parameters}}`. */
     fun toOllama(): OllamaTool = OllamaTool(
@@ -65,6 +66,7 @@ data class ToolSpec(val name: String, val description: String, val parameters: L
     )
 }
 
+/** One parameter of a tool, with the other names the model may use for it. */
 data class ToolParam(
     val name: String,
     val type: ParamType,
@@ -81,12 +83,14 @@ data class ToolParam(
     }
 }
 
+/** The JSON type of a tool parameter. */
 enum class ParamType(val jsonType: String) {
     String("string"), Integer("integer"), Number("number"), Boolean("boolean"),
     /** An ISO-8601 string. */
     DateTime("string"),
 }
 
+/** What a tool gives back: text for the model, or an error. */
 sealed interface ToolResult {
     /** What the model reads; plain and factual. */
     val text: kotlin.String
@@ -102,6 +106,7 @@ class ToolImage(val fileName: kotlin.String, val jpeg: ByteArray) {
     override fun toString() = "ToolImage($fileName, ${jpeg.size} bytes)"
 }
 
+/** What a running tool is given: the clock, the settings and the dispatchers. */
 data class ToolContext(val clock: Clock, val settings: Settings, val dispatchers: AppDispatchers)
 
 /** An outside service tools belong to (Google, later smart-home). Its tools are offered only while it's connected (L6). */
@@ -117,4 +122,5 @@ interface Integration {
     fun connectedNote(tools: List<Tool>): kotlin.String? = null
 }
 
+/** Whether an integration (Google, the smart home…) is connected, so its tools are offered. */
 enum class IntegrationStatus { Connected, NotConnected }

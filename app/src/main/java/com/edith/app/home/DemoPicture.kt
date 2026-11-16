@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import androidx.core.graphics.createBitmap
 import java.io.ByteArrayOutputStream
 import java.text.DateFormat
 import java.util.Date
@@ -13,7 +14,7 @@ object DemoPicture {
     fun jpeg(): ByteArray {
         val w = 640
         val h = 480
-        val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val bitmap = createBitmap(w, h)
         val c = Canvas(bitmap)
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
         c.drawColor(Color.rgb(120, 160, 200))                         // sky

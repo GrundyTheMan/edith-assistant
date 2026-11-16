@@ -51,7 +51,7 @@ object DeviceNames {
     }
 
     private fun withRoom(d: HomeDevice): List<String> {
-        val room = norm(d.room!!)
+        val room = norm(d.room ?: return emptyList())
         val name = norm(d.name)
         return listOf("$room $name", "$name in $room", "$name in the $room")
     }

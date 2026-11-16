@@ -43,8 +43,10 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
+/** How the wake-word test in Settings is going. */
 enum class WakeTest { Idle, Listening, Heard, NotHeard, MicUnavailable }
 
+/** What Settings shows for hands-free mode. */
 data class HandsFreeSettingsUi(
     val phrase: String = "",
     val isStandIn: Boolean = false,

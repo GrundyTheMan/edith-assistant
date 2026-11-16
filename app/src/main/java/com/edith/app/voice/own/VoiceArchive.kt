@@ -57,7 +57,7 @@ object VoiceArchive {
                     if (target == OwnVoice.MODEL && model) throw BadVoiceArchive("The voice has two models")
                     val out = File(root, target).canonicalFile
                     if (!out.path.startsWith(root.path + File.separator)) throw BadVoiceArchive("A file points outside the voice")
-                    out.parentFile!!.mkdirs()
+                    out.parentFile?.mkdirs()
                     out.outputStream().buffered().use { sink ->
                         val copied = tar.copyTo(sink)
                         if (copied != entry.size) throw BadVoiceArchive("A file in the voice is cut short")

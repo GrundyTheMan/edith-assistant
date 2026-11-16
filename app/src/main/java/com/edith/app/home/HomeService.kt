@@ -24,6 +24,7 @@ data class SignInField(
 /** What the owner types to sign in to a service: the words and the boxes (the dialog is the same for every service). */
 data class SignInForm(val title: String, val intro: String, val fields: List<SignInField>)
 
+/** How a smart-home service's sign-in ended. */
 sealed interface SignInResult {
     data object Done : SignInResult
     /** The service wants a code (2FA): the form shows its [SignInField.onlyWhenAsked] boxes, with this [message]. */

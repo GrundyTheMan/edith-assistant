@@ -87,12 +87,13 @@ class AudioRecorder(private val dir: File) : Recorder {
         running = false
         thread?.join(1_000)
         record?.run { runCatching { stop() }; release() }
-        val w = writer!!
-        w.close()
-        val result = RecordedAudio(file!!, w.durationMs)
+        val w = writer
+        val f = file
         record = null; writer = null; file = null; thread = null
         _level.value = 0f
-        return result
+        if (w == null || f == null) return null   // started without a recording: nothing to give back
+        w.close()
+        return RecordedAudio(f, w.durationMs)
     }
 
     override fun cancel() {

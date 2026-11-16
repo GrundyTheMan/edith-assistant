@@ -18,6 +18,7 @@ import com.edith.app.data.db.MessageSource
 import com.edith.app.ollama.ModelInfo
 import com.edith.app.settings.ModelSelection
 import com.edith.app.settings.SettingsRepository
+import com.edith.app.tools.framework.ApprovalChannel
 import com.edith.app.tools.framework.Confirmations
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -129,8 +130,11 @@ class ChatEngine(
         job?.cancel()
     }
 
-    /** The owner's answer to [EngineState.AwaitingConfirmation] (C08 §6). Approved runs the tool; denied tells Edith so. */
-    fun resolveConfirmation(id: String, approved: Boolean) = confirmations.resolve(id, approved)
+    /**
+     * The owner's answer to [EngineState.AwaitingConfirmation] (C08 §6). Approved runs the tool; denied tells Edith so.
+     * A screen-only card (D10) takes only a [ApprovalChannel.Tap].
+     */
+    fun resolveConfirmation(id: String, approved: Boolean, by: ApprovalChannel) = confirmations.resolve(id, approved, by)
 
     /**
      * If a turn is running in [conversationId], stops it and waits until its cancelled message is stored. Call before

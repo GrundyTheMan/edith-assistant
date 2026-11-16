@@ -133,14 +133,14 @@ C22's tools include iCloud's calendars and mail.
 - Through C22's tool loop: an iCloud account next to Google, labelled; "which account?"; declining sends nothing.
 
 ## Acceptance criteria
-- [ ] Emulator: Add account → iCloud with an app-specific password → Connected.
-- [ ] The calendar this week includes iCloud events (with a recurring one), labelled, and matches iCloud Calendar.
-- [ ] "Any unread email today?" includes iCloud's, labelled, and **they're still unread afterwards**.
-- [ ] "Add a test event tomorrow at 3pm" → asked which account → iCloud → the card (with the calendar's name) → it
+- [x] Emulator: Add account → iCloud with an app-specific password → Connected.
+- [x] The calendar this week includes iCloud events (with a recurring one), labelled, and matches iCloud Calendar.
+- [x] "Any unread email today?" includes iCloud's, labelled, and **they're still unread afterwards**.
+- [x] "Add a test event tomorrow at 3pm" → asked which account → iCloud → the card (with the calendar's name) → it
       appears in iCloud Calendar on the owner's iPhone. "Delete it" → gone. (Clean up.)
-- [ ] A reply draft appears in iCloud Mail's Drafts.
-- [ ] A restart: still Connected. A revoked password → "stopped working", and Sign in again works with a new one.
-- [ ] `scripts/check.sh --device` passes; release APK on `Edith_Release_Test` (R8 keep rules!); then in Andarium.
+- [x] A reply draft appears in iCloud Mail's Drafts.
+- [x] A restart: still Connected. A revoked password → "stopped working", and Sign in again works with a new one.
+- [x] `scripts/check.sh --device` passes; release APK on `Edith_Release_Test` (R8 keep rules!); then in Andarium.
 
 ## Implementation notes (traps)
 1. **Prove the libraries first**, in a release build, before building on them: Angus Mail on Android/R8, and, if

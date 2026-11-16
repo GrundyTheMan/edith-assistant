@@ -12,8 +12,10 @@ interface SearchProvider {
     suspend fun search(query: String, maxResults: Int = 5): Outcome<List<SearchHit>>
 }
 
+/** One web search result. */
 data class SearchHit(val title: String, val url: String, val snippet: String, val published: String? = null)
 
+/** A web page's title and readable text. */
 data class WebPage(val title: String, val content: String)
 
 /** Somewhere a page's readable text comes from. */

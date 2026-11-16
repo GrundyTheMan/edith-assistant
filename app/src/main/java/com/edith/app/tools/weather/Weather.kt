@@ -3,6 +3,7 @@ package com.edith.app.tools.weather
 import com.edith.app.settings.Units
 import java.util.Locale
 
+/** A place found by looking up a name. */
 data class Place(
     val name: String,
     val latitude: Double,
@@ -16,11 +17,14 @@ data class Place(
     val label: String get() = listOfNotNull(name, admin1?.takeIf { it != name }).joinToString(", ") + (countryCode?.let { " ($it)" } ?: "")
 }
 
+/** The weather now and the coming days. */
 data class Forecast(val current: CurrentWeather, val days: List<DailyWeather>)
+/** The weather now. */
 data class CurrentWeather(
     val time: String, val temperature: Double?, val feelsLike: Double?, val humidity: Int?,
     val weatherCode: Int?, val wind: Double?, val precipitation: Double?,
 )
+/** One day's forecast. */
 data class DailyWeather(val date: String, val weatherCode: Int?, val high: Double?, val low: Double?, val rainChance: Int?)
 
 /** Decision D7: automatic from the phone's locale unless Settings forces one. */

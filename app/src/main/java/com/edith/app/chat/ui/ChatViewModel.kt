@@ -28,6 +28,7 @@ import com.edith.app.data.db.MessageRole
 import com.edith.app.data.db.MessageSource
 import com.edith.app.data.db.MessageWithAttachments
 import com.edith.app.di.viewModelFactory
+import com.edith.app.tools.framework.ApprovalChannel
 import com.edith.app.voice.capture.LiveSpeech
 import com.edith.app.voice.capture.SpeechInput
 import com.edith.app.voice.capture.VoiceMemos
@@ -374,10 +375,10 @@ class ChatViewModel(
     /** Stops the reply being written; what Edith had written so far is kept (C06). */
     fun stopReply() = engine.cancel()
 
-    /** The owner's answer to a tool's confirmation card (C08 §6, D11). */
+    /** The owner's tap on a tool's confirmation card (C08 §6, D11). */
     fun answerConfirmation(approved: Boolean) {
         val waiting = engine.state.value as? EngineState.AwaitingConfirmation ?: return
-        engine.resolveConfirmation(waiting.request.id, approved)
+        engine.resolveConfirmation(waiting.request.id, approved, ApprovalChannel.Tap)   // the card's buttons: a tap
     }
 
     /** Regenerate on the newest reply, and Retry on a failed one: both replace the newest reply (C06). */

@@ -70,6 +70,7 @@ object Reads {
 /** One event in a merged list: the copy Edith acts on, and the same invite in other accounts (C22 §4). */
 data class MergedEvent(val event: CalendarEvent, val account: Account, val alsoIn: List<Pair<Account, CalendarEvent>> = emptyList())
 
+/** Merges several accounts' calendar events into one list (C22). */
 object CalendarMerge {
     /**
      * Every account's events in one list by start time. The same event in two accounts (an invite: the same

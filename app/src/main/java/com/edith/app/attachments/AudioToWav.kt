@@ -29,7 +29,7 @@ object AudioToWav {
             } ?: throw IOException("No audio track")
             extractor.selectTrack(track)
             val format = extractor.getTrackFormat(track)
-            val mime = format.getString(MediaFormat.KEY_MIME)!!
+            val mime = format.getString(MediaFormat.KEY_MIME) ?: throw IOException("No audio track")
             codec = MediaCodec.createDecoderByType(mime).apply {
                 configure(format, null, null, 0)
                 start()
@@ -46,7 +46,7 @@ object AudioToWav {
                     if (!inputDone) {
                         val i = codec.dequeueInputBuffer(TIMEOUT_US)
                         if (i >= 0) {
-                            val size = extractor.readSampleData(codec.getInputBuffer(i)!!, 0)
+                            val size = extractor.readSampleData(codec.getInputBuffer(i) ?: throw IOException("The decoder gave no input buffer"), 0)
                             if (size < 0) {
                                 codec.queueInputBuffer(i, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                                 inputDone = true
@@ -68,7 +68,7 @@ object AudioToWav {
                         }
                         o >= 0 -> {
                             if (info.size > 0) {
-                                val buffer = codec.getOutputBuffer(o)!!.order(ByteOrder.LITTLE_ENDIAN)
+                                val buffer = (codec.getOutputBuffer(o) ?: throw IOException("The decoder gave no output buffer")).order(ByteOrder.LITTLE_ENDIAN)
                                 buffer.position(info.offset).limit(info.offset + info.size)
                                 val mono = downmix(buffer, channels, floatPcm)
                                 val w = writer ?: WavWriter(target, sampleRate).also { writer = it }

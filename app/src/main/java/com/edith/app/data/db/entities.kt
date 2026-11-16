@@ -32,6 +32,7 @@ enum class TitleSource { None, FirstMessage, Edith, Owner }
     foreignKeys = [ForeignKey(ConversationEntity::class, ["id"], ["conversation_id"], onDelete = ForeignKey.CASCADE)],
     indices = [Index("conversation_id", "created_at")]
 )
+/** A chat message as stored in Room (C05). */
 data class MessageEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(name = "conversation_id") val conversationId: Long,
@@ -53,6 +54,7 @@ data class MessageEntity(
     foreignKeys = [ForeignKey(MessageEntity::class, ["id"], ["message_id"], onDelete = ForeignKey.CASCADE)],
     indices = [Index("message_id"), Index("direction", "created_at"), Index(value = ["number"])]
 )
+/** An attachment's record in Room; the file itself is in the attachment store (C16). */
 data class AttachmentEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(name = "message_id") val messageId: Long,
@@ -72,7 +74,11 @@ data class AttachmentEntity(
  * Enums stored as snake_case strings in Room.
  */
 enum class MessageRole { User, Assistant }
+/** How a message ended: written in full, failed, or stopped by the owner. */
 enum class MessageStatus { Complete, Failed, Cancelled }
+/** How the owner's message got into the chat: typed, dictated, a voice memo or hands-free. */
 enum class MessageSource { Typed, Dictated, VoiceMemo, HandsFree }
+/** Which way an attachment went: from the owner, or from Edith. */
 enum class AttachmentDirection { FromUser, FromEdith }
+/** What an attachment is: a photo, audio or a file. */
 enum class AttachmentKind { Image, Audio, File }

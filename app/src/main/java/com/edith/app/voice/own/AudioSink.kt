@@ -52,12 +52,14 @@ class AudioTrackSink : AudioSink {
     override fun write(samples: FloatArray, sampleRate: Int, generation: Int): Boolean {
         val t = synchronized(lock) {
             if (generation != this.generation) return false
-            if (track == null || rate != sampleRate) {
+            val existing = track
+            if (existing == null || rate != sampleRate) {
                 dropTrack()?.let { discard(it) }
-                track = create(sampleRate).also { it.play() }
+                val created = create(sampleRate).also { it.play() }
+                track = created
                 rate = sampleRate
-            }
-            track!!
+                created
+            } else existing
         }
         var offset = 0
         while (offset < samples.size) {
@@ -116,6 +118,7 @@ interface SpeechFocus {
     fun abandon()
 }
 
+/** [SpeechFocus] using Android's audio focus. */
 class AndroidSpeechFocus(private val audio: AudioManager) : SpeechFocus {
     override var onLost: () -> Unit = {}
     private var holding = false

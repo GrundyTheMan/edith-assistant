@@ -16,6 +16,7 @@ import com.edith.app.ui.settings.BrowserSignInDialogHost
 import com.edith.app.ui.settings.AccountsViewModel
 import com.edith.app.ui.theme.EdithTheme
 
+/** Edith's single activity: edge to edge, hosting the navigation. */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()

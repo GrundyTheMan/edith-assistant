@@ -231,7 +231,7 @@ object MailText {
         return part.parts.firstNotNullOfOrNull { find(it, mime) }
     }
 
-    private fun decode(part: PartDto): String = String(Base64.getUrlDecoder().decode(part.body!!.data!!.trimEnd('=')), Charsets.UTF_8)
+    private fun decode(part: PartDto): String = part.body?.data?.let { String(Base64.getUrlDecoder().decode(it.trimEnd('=')), Charsets.UTF_8) }.orEmpty()
 
     internal fun htmlToText(html: String): String = PageReader.readable(Jsoup.parse(html)).content
 

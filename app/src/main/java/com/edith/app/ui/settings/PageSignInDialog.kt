@@ -3,7 +3,7 @@ package com.edith.app.ui.settings
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.net.Uri
+import androidx.core.net.toUri
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
@@ -161,7 +161,7 @@ private fun PageWebView(name: String, start: PageSignInStart, onFinished: (addre
                             runCatching {
                                 cookies?.removeAllCookies(null)
                                 cookies?.setAcceptCookie(true)
-                                val domain = Uri.parse(start.cookieSite).host.orEmpty().removePrefix("www.")
+                                val domain = start.cookieSite.toUri().host.orEmpty().removePrefix("www.")
                                 start.cookies.forEach { (n, v) -> cookies?.setCookie(start.cookieSite, "$n=$v; Domain=.$domain; Path=/; Secure") }
                                 cookies?.flush()
                             }.onFailure { Log.w(LogTag.Home, "Setting the sign-in cookies failed: ${it.javaClass.name}") }
@@ -209,7 +209,7 @@ private fun BrowserSteps(name: String, siteName: String, start: PageSignInStart,
             confirmButton = {
                 TextButton(onClick = {
                     try {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(start.url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        context.startActivity(Intent(Intent.ACTION_VIEW, start.url.toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                         opened = true
                     } catch (e: ActivityNotFoundException) {
                         problem = "No browser was found to open the page."
@@ -234,7 +234,7 @@ private fun BrowserSteps(name: String, siteName: String, start: PageSignInStart,
             dismissButton = {
                 Row {
                     OutlinedButton(onClick = {
-                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(start.url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, start.url.toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                     }) { Text("Open the page again") }
                     TextButton(onClick = onClose) { Text("Cancel") }
                 }

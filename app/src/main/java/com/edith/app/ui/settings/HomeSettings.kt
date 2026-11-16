@@ -59,6 +59,7 @@ import java.util.Locale
 /** One service in Settings → Home: its name, where it stands, and how it signs in (C25 §7, C26–C31). */
 data class HomeServiceRow(val id: String, val name: String, val state: ServiceState, val form: SignInForm?, val removeHint: String? = null, val pageSite: String? = null)
 
+/** What Settings → Home shows. */
 data class HomeSettingsUi(
     val services: List<HomeServiceRow> = emptyList(),
     /** Debug builds: the Demo home switch exists. */

@@ -34,6 +34,7 @@ import com.edith.app.ollama.ReplyStats
 import com.edith.app.settings.Settings
 import com.edith.app.testing.FakeClock
 import com.edith.app.testing.FakeSettingsRepository
+import com.edith.app.tools.framework.ApprovalChannel
 import com.edith.app.tools.framework.ArgumentError
 import com.edith.app.tools.framework.Confirmations
 import com.edith.app.tools.framework.Integration
@@ -183,7 +184,7 @@ class TaskToolsTest {
         val runner = ToolTurnRunner(ollama, registry, confirmations, FakeSettingsRepository(settings), clock, dispatchers)
         var card: ConfirmationRequest? = null
         runner.run("http://ollama", ModelInfo("gemma4:12b", setOf("tools")), listOf(OllamaMessage("user", "go"))).collect { e ->
-            if (e is TurnEvent.NeedsConfirmation) { card = e.request; confirmations.resolve(e.request.id, approve) }
+            if (e is TurnEvent.NeedsConfirmation) { card = e.request; confirmations.resolve(e.request.id, approve, ApprovalChannel.Tap) }
         }
         Turn(card, result)
     }

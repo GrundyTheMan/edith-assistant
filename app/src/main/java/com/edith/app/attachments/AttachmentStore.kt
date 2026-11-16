@@ -39,6 +39,7 @@ interface AttachmentStore {
     fun delete(storedPath: String?)
 }
 
+/** [AttachmentStore] that keeps attachments as files in the app's private storage (C16). */
 class FileAttachmentStore(private val filesDir: File, private val cacheDir: File) : AttachmentStore {
     private val durations = ConcurrentHashMap<String, Long>()
 

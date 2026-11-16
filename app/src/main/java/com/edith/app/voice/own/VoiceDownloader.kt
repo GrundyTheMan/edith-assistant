@@ -1,5 +1,7 @@
 package com.edith.app.voice.own
 
+import android.content.Context
+import android.os.storage.StorageManager
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import kotlinx.coroutines.CoroutineDispatcher
@@ -56,7 +58,8 @@ class VoiceDownloader(
     private val visible: StateFlow<Boolean>,
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher,
-    private val freeBytes: () -> Long = { root.apply { mkdirs() }.usableSpace },
+    /** The space the download may use: [allocatableBytes] on the phone, a fixed number in tests. */
+    private val freeBytes: () -> Long,
     /** Tries again this many times when the connection drops, after [retryDelayMs]. */
     private val maxRetries: Int = 3,
     private val retryDelayMs: Long = 2_000,
@@ -268,6 +271,22 @@ class VoiceDownloader(
         const val MISMATCH = "The file didn't match what I expected. Try again."
         const val UNEXPECTED = "The voice file wasn't what I expected. Try again."
         const val GENERIC_FAILURE = "Something went wrong downloading the voice. Try again."
+
+        /**
+         * The space [dir] can be given: the free space plus cached data Android would clear to make room, which
+         * `File.usableSpace` leaves out (so a nearly full phone isn't refused for no reason). Creates [dir].
+         */
+        @Suppress("UsableSpace")   // only the fallback below uses it: when the platform can't say, plain free space is the safe number
+        fun allocatableBytes(context: Context, dir: File): Long {
+            dir.mkdirs()
+            val storage = context.getSystemService(StorageManager::class.java)
+            return try {
+                storage.getAllocatableBytes(storage.getUuidForPath(dir))
+            } catch (e: IOException) {
+                Log.w(LogTag.Voice, "Couldn't ask Android how much space can be freed", e)
+                dir.usableSpace
+            }
+        }
 
         fun directorySize(dir: File): Long = dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
 

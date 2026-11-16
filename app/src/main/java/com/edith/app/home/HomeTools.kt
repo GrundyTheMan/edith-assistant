@@ -14,6 +14,9 @@ import com.edith.app.tools.framework.ToolSpec
 /** The smart-home tools (C25 §4, D19: Jarvis's shape, plus camera snapshots). */
 fun homeTools(home: Home): List<Tool> = listOf(HomeDevicesTool(home), HomeControlTool(home), CameraSnapshotTool(home), RecentEventsTool(home), PrinterStatusTool(home))
 
+/** [find] always explains a miss; this only covers the case it somehow did not. */
+private const val NO_DEVICE = "I couldn't find that device."
+
 private val DEVICE_PARAM = ToolParam("device", ParamType.String, "The device's name as home_devices lists it, e.g. Porch light", required = true,
     aliases = listOf("name", "device_name", "target"))
 
@@ -118,7 +121,7 @@ class HomeControlTool(private val home: Home) : Tool {
 
     private suspend fun prepare(args: ToolArgs): Prepared {
         val (device, problem) = find(home, args.string("device"))
-        if (device == null) return Prepared.Stop(problem!!)
+        if (device == null) return Prepared.Stop(problem ?: NO_DEVICE)
         val action = args.string("action")?.trim().orEmpty()
         val command = HomeActions.parse(device, action, args.string("value")).getOrElse { return Prepared.Stop("${it.message}.") }
         return Prepared.Ready(device, command)
@@ -189,7 +192,7 @@ class CameraSnapshotTool(private val home: Home) : Tool {
 
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
         val (device, problem) = find(home, args.string("device"))
-        if (device == null) return ToolResult.Error(problem!!)
+        if (device == null) return ToolResult.Error(problem ?: NO_DEVICE)
         if (!device.has(Capability.Snapshot)) return ToolResult.Error("${device.name} isn't a camera.")
         return when (val r = home.snapshot(device)) {
             is Outcome.Success -> ToolResult.Ok(

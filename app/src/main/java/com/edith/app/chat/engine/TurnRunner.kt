@@ -18,6 +18,7 @@ interface TurnRunner {
     fun run(baseUrl: String, model: ModelInfo, messages: List<OllamaMessage>): Flow<TurnEvent>
 }
 
+/** What a turn reports as it runs: a status label, text, new rounds, confirmations and the end. */
 sealed interface TurnEvent {
     /** Shown while Edith works, e.g. "Edith is thinking…", "Checking the weather…". */
     data class Status(val label: String) : TurnEvent

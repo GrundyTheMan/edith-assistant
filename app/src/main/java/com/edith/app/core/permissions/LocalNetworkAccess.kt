@@ -20,6 +20,7 @@ interface LocalNetworkAccess {
     }
 }
 
+/** [LocalNetworkAccess] backed by Android's runtime permission (L23). */
 class AndroidLocalNetworkAccess(private val context: Context) : LocalNetworkAccess {
     override fun isGranted(): Boolean =
         Build.VERSION.SDK_INT < LocalNetworkAccess.FIRST_API ||
