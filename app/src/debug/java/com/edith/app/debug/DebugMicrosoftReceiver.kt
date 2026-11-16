@@ -30,7 +30,7 @@ class DebugMicrosoftReceiver : BroadcastReceiver() {
         val pending = goAsync()
         pending.finish()   // the probes can take minutes; they log as they go
         container.appScope.launch {
-            val http = container.okHttp.newBuilder().readTimeout(120, TimeUnit.SECONDS).callTimeout(150, TimeUnit.SECONDS).build()
+            val http = container.httpClients.secure.value.newBuilder().readTimeout(120, TimeUnit.SECONDS).callTimeout(150, TimeUnit.SECONDS).build()
             val accounts = container.accounts.entries().filter { it.account.provider == Provider.Microsoft }
             if (accounts.isEmpty()) Log.i(LogTag.Accounts, "DEBUG_MICROSOFT: no Microsoft account")
             for (entry in accounts) {

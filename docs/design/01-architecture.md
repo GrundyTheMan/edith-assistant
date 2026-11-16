@@ -252,8 +252,20 @@ Long work uses injected `AppDispatchers.io/default`.
 - `android:allowBackup="false"`; `dataExtractionRules`/`fullBackupContent` exclude everything. (v1 had
   backup on, which could have copied chat history to Google Drive.)
 - Cleartext HTTP is allowed (Ollama on the LAN speaks plain HTTP) via `network_security_config.xml`
-  `base-config cleartextTrafficPermitted="true"`. All other traffic (Open-Meteo, search, Google, Microsoft) is
-  HTTPS; only the sign-in's loopback redirect (`127.0.0.1` or `localhost`, never the network) is plain HTTP. Document the trade-off in the PR that adds it (C03).
+  `base-config cleartextTrafficPermitted="true"`: the platform can't limit it to a LAN IP the owner types. Only the
+  sign-in's loopback redirect (`127.0.0.1` or `localhost`, never the network) is also plain HTTP. **So HTTPS-only is
+  enforced by the HTTP client, not by each service (C37):** `core/net/HttpClients` gives two clients on one pool.
+  **`secure`** (TLS only, `https` → `http` redirects not followed) is for everything that carries a token, key,
+  password or personal data, or talks to a named online service: Google, Microsoft, iCloud, Meross, Ollama's web
+  search, weather, DuckDuckGo, the voice download, Ring, Blink, Alexa. **`plain`** (cleartext allowed) is for only
+  three things: addresses the owner types on their own network (Ollama; the 3D printer, C34) and the public web-page
+  reader (C10). None has a cloud account. The printer's optional Moonraker API key is a LAN key and is sent as typed,
+  so in the clear when the address is `http://`: the same exposure as Ollama on the LAN, and not something this
+  client can fix. A **new service takes `httpClients.secure`**; one that must speak plain HTTP to a LAN device takes
+  `plain` and its PR says why. `HttpClientsWiringTest` fails if any other service gets `plain`, if a service builds its own `OkHttpClient`, or
+  if `ConnectionSpec.CLEARTEXT` appears. Per-service checks stay as defence in depth (Meross `isTrustedDomain`, iCloud
+  `carriesPassword`): they guard against the wrong *host*. The Meross MQTT connection (`ssl://`) checks the server's host
+  name explicitly (`connectOptions`).
 - `SecretStore`: AES/GCM key in Android Keystore (`KeyGenParameterSpec`, non-exportable); ciphertext +
   IV stored in DataStore. Used for search API keys, the wake-word key, and per account (C22) `account/<id>/refresh_token`
   (a Google account signed in through the browser, D16; a Microsoft account, C23, whose refresh token changes on every
