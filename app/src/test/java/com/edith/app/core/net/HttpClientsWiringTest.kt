@@ -25,17 +25,18 @@ class HttpClientsWiringTest {
         assertFalse(Regex("""\bval okHttp\b""").containsMatchIn(container))
     }
 
-    @Test fun `only Ollama and the page reader get the plain client`() {
+    @Test fun `only Ollama, the page reader and the printer get the plain client`() {
         val plain = code(container).filter { "httpClients.plain" in it }
-        assertEquals("plain: $plain", 2, plain.size)
+        assertEquals("plain: $plain", 3, plain.size)
         assertTrue("Ollama's client: $plain", plain.any { "OkHttpOllamaClient(" in it })
         assertTrue("the page reader: $plain", plain.any { "PageReader(" in it })
+        assertTrue("the 3D printer, a LAN device (C34): $plain", plain.any { "MoonrakerApi(" in it })
     }
 
     @Test fun `the clients that carry credentials all come from the secure one`() {
         val expected = listOf(
             "OllamaWebSearch(", "DuckDuckGoSearch(", "OpenMeteoClient(", "VoiceDownloader(", "MicrosoftOAuth", "BrowserOAuth(",
-            "ICloudAccounts(", "MerossApi(",
+            "ICloudAccounts(", "MerossApi(", "RingApi(", "BlinkApi(", "AlexaApi(",
         )
         val lines = code(container)
         for (name in expected) {

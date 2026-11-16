@@ -398,10 +398,10 @@ class AppContainer(val app: Application) {
     val meross: MerossService by lazy { MerossService(secretStore, MerossApi(httpClients.secure, clock), PahoMerossBus(dispatchers, clock), clock) }
 
     /** Ring doorbells and cameras (C27): the sign-in is kept encrypted in [secretStore]. */
-    val ring: RingService by lazy { RingService(secretStore, RingApi(okHttpLazy), clock) }
+    val ring: RingService by lazy { RingService(secretStore, RingApi(httpClients.secure), clock) }
 
     /** Blink cameras (C29): the sign-in is kept encrypted in [secretStore]. */
-    val blink: BlinkService by lazy { BlinkService(secretStore, BlinkApi(okHttpLazy, blinkEndpoints()), clock) }
+    val blink: BlinkService by lazy { BlinkService(secretStore, BlinkApi(httpClients.secure, blinkEndpoints()), clock) }
 
     /**
      * Debug builds only: a pretend Blink on the PC for trying the sign-in, snapshots and clips on the emulator without an
@@ -417,10 +417,10 @@ class AppContainer(val app: Application) {
     }
 
     /** Alexa devices (C30): the sign-in is kept encrypted in [secretStore]. */
-    val alexa: AlexaService by lazy { AlexaService(secretStore, AlexaApi(okHttpLazy), clock) }
+    val alexa: AlexaService by lazy { AlexaService(secretStore, AlexaApi(httpClients.secure), clock) }
 
     /** A 3D printer's Moonraker on the home Wi-Fi (C34): its address and API key are kept encrypted in [secretStore]. */
-    val printer: PrinterService by lazy { PrinterService(secretStore, MoonrakerApi(okHttpLazy), clock) }
+    val printer: PrinterService by lazy { PrinterService(secretStore, MoonrakerApi(httpClients.plain), clock) }
 
     val home: Home by lazy {
         Home(
@@ -530,8 +530,9 @@ class AppContainer(val app: Application) {
      * a while. Building TLS takes ~190 ms on the emulator, so they're lazy and first used from the IO dispatcher by
      * [OkHttpOllamaClient] — don't read them on the main thread.
      *
-     * **Every service takes [HttpClients.secure] (HTTPS only)**, except the two that need plain HTTP: Ollama (the owner's
-     * LAN address) and the web-page reader (public pages, no credentials). `HttpClientsWiringTest` keeps it that way.
+     * **Every service takes [HttpClients.secure] (HTTPS only)**, except the three that need plain HTTP: Ollama and the
+     * 3D printer (addresses the owner types on their own network) and the web-page reader (public pages, no cloud
+     * account). `HttpClientsWiringTest` keeps it that way.
      */
     val httpClients = HttpClients {
         OkHttpClient.Builder()

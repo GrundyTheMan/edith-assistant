@@ -3,8 +3,8 @@
     <!-- Ollama on the LAN uses plain HTTP (01-architecture §9, 03-ollama-reference). Its address is whatever the
          owner types in Settings (an IP), and domain-config can't match IP ranges, so cleartext is allowed app-wide.
          That is only the platform's side. Edith's own HTTP clients decide (C37, core/net/HttpClients): the `secure`
-         one, which every service that carries credentials uses, refuses cleartext by itself; only Ollama and the
-         web-page reader get the `plain` one. -->
+         one, which every cloud service uses, refuses cleartext by itself; only Ollama, the 3D printer (both LAN
+         addresses the owner types) and the web-page reader get the `plain` one. -->
 
     <base-config cleartextTrafficPermitted="true" tools:ignore="InsecureBaseConfiguration" />
 </network-security-config>

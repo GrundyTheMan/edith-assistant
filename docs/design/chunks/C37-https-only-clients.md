@@ -53,9 +53,12 @@ class HttpClients(base: () -> OkHttpClient) {
 ### 2. Wiring (`AppContainer`)
 - Remove the single `okHttpLazy` and the public `okHttp` val. Add `val http: HttpClients`. A service can no longer be
   handed "the" client without choosing, and the compiler shows every site.
-- **`plain`, and only these two:** `OkHttpOllamaClient` (the owner's address, http or https), and `PageReader` (public
-  pages, no credentials; it already follows redirects by hand and refuses private addresses, C10).
+- **`plain`, and only these three:** `OkHttpOllamaClient` (the owner's address, http or https), `PageReader` (public
+  pages; it already follows redirects by hand and refuses private addresses, C10), and, once C34 exists,
+  `MoonrakerApi` (the 3D printer at an address the owner types, `http://` by default). None has a cloud account. The
+  printer's optional API key is a LAN key and goes in the clear over `http://`: the same exposure as Ollama on the LAN.
 - **`secure`, everything else:**
+  - Ring, Blink and Alexa (`RingApi`, `BlinkApi`, `AlexaApi`; added by C27, C29 and C30 after this chunk was written)
   - Google: `BrowserOAuth`, `CalendarClient`, `GmailClient`, `TasksClient`, the account sources
   - Microsoft: `BrowserOAuth`, `GraphClient`
   - iCloud: `ICloudAccounts` and `CalDavClient`
@@ -89,8 +92,8 @@ OkHttp's own artifact at the version already pinned, `libs.versions.toml`):
 - `secure` and `plain` share one connection pool and one dispatcher, and keep the base client's timeouts and socket factory.
 - **The guard** (`HttpClientsWiringTest`): reads `AppContainer.kt` as text, like `GmailTest`'s "only `GmailTools` calls
   `client.send(`". It asserts that `okHttpLazy` and `container.okHttp` no longer exist, and that `http.plain` appears
-  **exactly twice**: on the `OkHttpOllamaClient(` line and the `PageReader(` line. Any other use fails the test with a
-  message that says to use `http.secure` or justify it in the PR.
+  **exactly three times**: on the `OkHttpOllamaClient(`, `PageReader(` and `MoonrakerApi(` lines. Any other use fails the
+  test with a message that says to use `http.secure` or justify it in the PR.
 - **MQTT pin:** extract the connect options into `internal fun connectOptions(creds)` in `MerossBus.kt` and assert
   `isHttpsHostnameVerificationEnabled` is `true`, with the username and password set and the version 3.1.1. If Paho's
   default ever changes, this fails.
@@ -132,8 +135,17 @@ Where the code differs from the specification above, the code is right.
 
 - **`core/net/HttpClients.kt`**: `plain` is the base client; `secure` is `plain.newBuilder()` with
   `connectionSpecs(MODERN_TLS)` and `followSslRedirects(false)`. One pool and dispatcher. Both lazy.
-- **`AppContainer`**: `okHttpLazy` and the public `okHttp` are gone; `val httpClients`. `plain` is used twice
-  (`OkHttpOllamaClient`, `PageReader`); everything else, and the two debug receivers, takes `secure`.
+- **`AppContainer`**: `okHttpLazy` and the public `okHttp` are gone; `val httpClients`. `plain` is used three times
+  (`OkHttpOllamaClient`, `PageReader`, and the 3D printer's `MoonrakerApi`); everything else, and the two debug
+  receivers, takes `secure`.
+- **Brought up to date with `master` on 2026-11-16.** The branch was written against 13 services; by then the other
+  session had added **Ring, Blink, Alexa and the printer**, all on the shared client (17 call sites). That is the drift
+  this chunk exists to stop. After the merge Ring, Blink and Alexa take `secure` (all `https://`; Alexa also checked
+  the scheme by hand), and the printer takes `plain`. None of the four builds its own `OkHttpClient`: they derive from
+  the one they're given with `newBuilder()`, which keeps `secure`'s TLS-only setting.
+- **Found while doing it:** the printer's optional Moonraker API key is sent as typed, so over the default `http://`
+  it crosses the home network in the clear. The same as Ollama, and a LAN key rather than a cloud account, but it
+  isn't "no credentials". Documented, not changed.
 - **`MerossBus.kt`**: the connect options moved to `connectOptions(creds, timeout)`, with
   `isHttpsHostnameVerificationEnabled = true` set explicitly.
 - **Tests (13 new)**: `HttpClientsTest` (7, with a TLS `MockWebServer` and a throwaway self-signed certificate; the new
@@ -143,15 +155,21 @@ Where the code differs from the specification above, the code is right.
   only narrower handlers are the loopback listener (not OkHttp) and `PageReader` (on `plain`). No change was needed.
 
 **Verified**
-- `scripts/check.sh`: OK (`build-logs/2026-11-14_14-31-42_check.log`). **514 unit tests** (501 before, 13 new), 0
-  failures, lint 0 errors and 5 warnings (the earlier baseline; the debug build compiled, so `src/debug` did too).
+- `scripts/check.sh` on the branch **after the merge with `master`** (2026-11-16): OK
+  (`build-logs/2026-11-16_09-30-28_check.log`). **722 unit tests**, 0 failures, 13 of them new here; lint 0 errors and
+  8 warnings, **none in files this chunk touched** (`ExifInterface` ×2 in `AttachmentIntake`, `UsableSpace` ×2 in
+  `VoiceDownloader`, `UseKtx` ×4 in `DemoPicture` and `PageSignInDialog`: all from earlier chunks). The debug build
+  compiled, so `src/debug` did too. (Before the merge: 514 tests, lint 5 warnings, `2026-11-14_14-31-42_check.log`.)
 - **The tests can fail.** With `secure` replaced by the plain client and Meross handed `plain`, 3 of the 7
   `HttpClientsTest` and 2 of the 4 `HttpClientsWiringTest` fail. Both changes were reverted.
 - **A real TLS probe** (a throwaway test, deleted, not committed): an unauthenticated `HEAD` through the real `secure`
   client to the 14 hosts the app uses: Open-Meteo (forecast and geocoding), `ollama.com`, DuckDuckGo, Google
   (Calendar, Gmail, Tasks, OAuth token and consent), Microsoft (Graph, sign-in), iCloud CalDAV, Meross, and the voice
   download on GitHub. All 14 connected over **TLS 1.3** (11 on HTTP/2, 3 on HTTP/1.1), so `MODERN_TLS` suits every
-  server. The answers were 200, 401, 404 or 405 as expected for requests with no credentials.
+  server. The answers were 200, 401, 404 or 405 as expected for requests with no credentials. After the merge the
+  same probe covered the 8 hosts of the new `secure` users: Ring (`oauth`, `api`, `app-snaps`), Blink (`api.oauth`,
+  `rest-prod`) and Amazon (`www`, `alexa`, `api`). All connected: 7 on TLS 1.3 and `oauth.ring.com` on **TLS 1.2**,
+  which also shows the path an Android 8 or 9 phone would take.
 - The debug build installed over `Pixel_9_API_37` (data kept), launched and chatted with Ollama (`plain`), and the crash
   log stayed empty.
 

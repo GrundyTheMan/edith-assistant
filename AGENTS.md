@@ -44,4 +44,5 @@ scripts/run.sh              # build, install and launch the debug app on the emu
   merging, tagging or publishing anything. Don't discard uncommitted work you didn't create — ask.
 - Secrets (keys, tokens, passwords) never go in the repo, logs or chat.
 - Network code: a new service takes `httpClients.secure` (HTTPS only, C37), never its own `OkHttpClient`.
-  `httpClients.plain` is only for Ollama and the web-page reader; a LAN device that needs plain HTTP says why in its PR.
+  `httpClients.plain` is only for Ollama, the 3D printer and the web-page reader; a LAN device that needs plain HTTP
+  says why in its PR.

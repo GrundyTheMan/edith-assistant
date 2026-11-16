@@ -257,10 +257,12 @@ Long work uses injected `AppDispatchers.io/default`.
   enforced by the HTTP client, not by each service (C37):** `core/net/HttpClients` gives two clients on one pool.
   **`secure`** (TLS only, `https` → `http` redirects not followed) is for everything that carries a token, key,
   password or personal data, or talks to a named online service: Google, Microsoft, iCloud, Meross, Ollama's web
-  search, weather, DuckDuckGo, the voice download. **`plain`** (cleartext allowed) is for only two things: the owner's
-  Ollama address and the public web-page reader (C10), neither of which carries credentials. A **new service takes
-  `httpClients.secure`**; one that must speak plain HTTP to a LAN device (C34's printer) takes `plain` and its PR says
-  why. `HttpClientsWiringTest` fails if any other service gets `plain`, if a service builds its own `OkHttpClient`, or
+  search, weather, DuckDuckGo, the voice download, Ring, Blink, Alexa. **`plain`** (cleartext allowed) is for only
+  three things: addresses the owner types on their own network (Ollama; the 3D printer, C34) and the public web-page
+  reader (C10). None has a cloud account. The printer's optional Moonraker API key is a LAN key and is sent as typed,
+  so in the clear when the address is `http://`: the same exposure as Ollama on the LAN, and not something this
+  client can fix. A **new service takes `httpClients.secure`**; one that must speak plain HTTP to a LAN device takes
+  `plain` and its PR says why. `HttpClientsWiringTest` fails if any other service gets `plain`, if a service builds its own `OkHttpClient`, or
   if `ConnectionSpec.CLEARTEXT` appears. Per-service checks stay as defence in depth (Meross `isTrustedDomain`, iCloud
   `carriesPassword`): they guard against the wrong *host*. The Meross MQTT connection (`ssl://`) checks the server's host
   name explicitly (`connectOptions`).

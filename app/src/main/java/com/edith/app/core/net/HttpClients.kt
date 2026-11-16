@@ -10,8 +10,9 @@ import okhttp3.OkHttpClient
  *
  * - [secure]: **HTTPS only**. Anything that carries a token, key, password or personal data, or talks to a named online
  *   service. It cannot make a cleartext request, whatever an answer tells it to follow.
- * - [plain]: plain HTTP allowed. Only for an address the owner typed (Ollama on the LAN) and for public web pages. It
- *   carries no credentials.
+ * - [plain]: plain HTTP allowed. Only for an address the owner typed on their own network (Ollama, the 3D printer) and
+ *   for public web pages. None of them has a cloud account: the printer's optional Moonraker API key is a LAN one, and
+ *   goes in the clear when its address is `http://`, as Ollama's traffic does.
  *
  * A new service takes [secure], unless it must speak plain HTTP to a LAN device; its PR says why (01-architecture §9).
  * Both share [base]'s connection pool, dispatcher, timeouts and socket factory, and are built lazily: building TLS takes
