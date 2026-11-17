@@ -364,3 +364,56 @@ Built on three stacked branches in the Jarvis repo, committed locally, **not pus
 **Not verified:** the Outlook tasks op against a real Outlook (the PowerShell parses and the TypeScript side is tested against a
 stand-in only); the Settings card on screen; the Windows Firewall prompt; a real phone over Wi-Fi or Tailscale; the Playwright e2e
 of part 10 was **not written** (the HTTPS round trip is covered by a unit test, `feed.int.test.ts`, against stand-in data).
+
+## 15. Follow-up request (2026-11-17, from Edith's side): log how long each request takes
+
+**Why.** The owner paired Edith with the real Jarvis (it works) and then asked her about work email. The request **timed
+out and Edith never answered**. Edith's side had a defect (a blocking call that her time limit could not interrupt; fixed on
+her side and waiting for her next release) and gave a Jarvis read only 10 seconds. She now waits **45 seconds** per read, and
+cancels the call when her limit or the owner's Stop fires. We still don't know whether classic Outlook, through the helper,
+answers inside 45 seconds on the owner's real mailbox, and Jarvis's log had **no trace of the request at all**: the
+"Edith asked for mail: N returned" line is only written when a search finishes, so a search that is slow or never finishes
+leaves nothing. We cannot tune anything until the feed tells us where the time goes.
+
+**Do this (no change to the wire contract in part 7; nothing here is visible to Edith):**
+
+1. **One log line per request, when it ends**, in Jarvis's normal log under the existing `feed` tag, at INFO:
+   `GET /v1/mail/messages 200 1840 ms (queued 0 ms, Outlook 1790 ms) 37 items`. Fields: method, **route template**
+   (`/v1/mail/messages/{id}`, never the real id), status, total milliseconds, how long it **waited in the helper's queue**
+   (parts 9 and 11 say concurrent calls queue), how long the **Outlook/helper call itself** took, and the number of items
+   returned (omit for requests without a list). For a mail list add whether `archive` was on and the `limit` and `sinceDays`
+   actually used. Errors log the error `code` from part 5 (`OUTLOOK_UNAVAILABLE`, `TIMEOUT`, ...) and the status.
+2. **A "still running" line for slow requests.** If a request has not finished after **10 s**, log once
+   `GET /v1/mail/messages still running after 10 s (queued 0 ms)`, and again at **30 s**. A hang then leaves a trace even
+   if it never ends.
+3. **A line when the phone gives up.** Edith now cancels her call when her time limit or the owner's Stop fires. If the
+   connection closes before Jarvis has replied, log `GET /v1/mail/messages: phone closed the connection after 12040 ms` and
+   **stop the work if it is cheap to do so** (do not leave a 1000-message Outlook read running for nobody). If the helper
+   cannot be interrupted, say so in the log line and let it finish, but do not queue more work behind it for the same request.
+4. **Privacy is part of the requirement.** Never log the bearer token, a pairing code or proof, mail text, subject, sender,
+   recipient, a search `text`/`from`/`to` value, a draft body, a calendar title or a task title. Route templates, counts, ids
+   of **accounts** (not messages) and times are fine. A test (below) must prove it.
+5. **Optional, small:** under Settings → Edith, a read-only **"Recent requests"** list of the last 20 (time, route, status,
+   milliseconds), held in memory only (gone when Jarvis quits, not written to disk). Its purpose is that the owner can look at it
+   right after a failed question without opening log files. Skip it if it needs more than a small component.
+6. **Look at the slow path while you are there, and tell the owner, do not guess.** `GET /v1/mail/messages` asks the cache for
+   up to `limit: 1000` messages. If the helper turns out to be the slow part (Outlook COM under load), report the numbers
+   (typical and worst) in part 14 and propose, but do not make without asking, a change such as a smaller default `limit`
+   or a time-boxed read that returns what it has with a `truncated: true` flag. Any change to the wire shapes in part 7 must be
+   agreed with Edith's side first, because the contract says field names and shapes are final unless both sides change this
+   document.
+
+**Tests (vitest), at least:**
+- a finished request writes exactly one summary line with the route **template**, status, duration, queue and Outlook times
+  (use a fake clock and a fake data source that "takes" 1,840 ms);
+- a request that runs past 10 s writes the "still running" line once, and one at 30 s, and still writes its summary;
+- a connection that closes mid-request writes the "phone closed the connection" line and does not log it as an error;
+- **no log line from any request contains** the token, the pairing code, a mail subject/sender/body, or a search value
+  (feed those in through a fake data source and assert on every line written);
+- error responses log their code and status.
+
+**Report back (add to part 14, "As built"):** the log format you chose, whether `Recent requests` was built, and, after the owner
+asks Edith one work-mail question on the real mailbox, the numbers the log shows (queued / Outlook / total) so the next step
+(a smaller `limit`, a time-boxed read, or none) rests on measurements.
+
+One PR, branch `feed-4-timing`, merge commit, as before. Update the Jarvis `README.md` and `AGENTS.md` if they describe the feed.
