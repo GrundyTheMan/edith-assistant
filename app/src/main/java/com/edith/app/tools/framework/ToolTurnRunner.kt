@@ -56,6 +56,7 @@ class ToolTurnRunner(
         val history = messages.toMutableList()
         val used = linkedSetOf<String>()
         val images = mutableListOf<ToolImage>()
+        var lastFailure: Failure? = null
 
         repeat(MAX_ROUNDS) { round ->
             if (round > 0) emit(TurnEvent.TextReset)
@@ -71,13 +72,17 @@ class ToolTurnRunner(
                 }
             }
             if (assistant == null) {
-                emit(TurnEvent.Finished(reply.text, used.toList(), reply.stats, images.toList()))
+                // The model gave up with nothing to say right after a tool failed: say what failed instead of "didn't reply".
+                val text = if (reply.text.isBlank()) lastFailure?.let(::failureText) ?: reply.text else reply.text
+                emit(TurnEvent.Finished(text, used.toList(), reply.stats, images.toList()))
                 return@flow
             }
             history += assistant   // exactly as received (03 §4 rule 1)
             for (call in assistant.toolCalls.orEmpty()) {
                 val (name, result) = runCall(call, offered, ctx)
                 if (name != null) used += name
+                // Remembered so a turn that ends with nothing can still say what went wrong; a later success clears it.
+                lastFailure = if (result is ToolResult.Error) Failure(offered.firstOrNull { it.spec.name == name }?.displayName ?: name, result.text) else null
                 val limit = offered.firstOrNull { it.spec.name == name }?.maxResultChars ?: RESULT_MAX_CHARS
                 val pictures = (result as? ToolResult.Ok)?.images.orEmpty()
                 images += pictures
@@ -91,7 +96,20 @@ class ToolTurnRunner(
         emit(TurnEvent.TextReset)
         emit(TurnEvent.Status(PlainTurnRunner.THINKING))
         val final = streamRound(baseUrl, model, history, tools = null)
-        emit(TurnEvent.Finished(final.text, used.toList(), final.stats, images.toList()))
+        val text = if (final.text.isBlank()) lastFailure?.let(::failureText) ?: final.text else final.text
+        emit(TurnEvent.Finished(text, used.toList(), final.stats, images.toList()))
+    }
+
+    /** The last tool call that failed (null once a later call worked): the plain reason a turn can end with no answer. */
+    private class Failure(val tool: String?, val text: String)
+
+    /**
+     * What Edith says when the model ended with nothing after a tool failed (dev.16: the work-mail question failed five
+     * times in a row and only showed "Edith didn't reply"). Tool errors are written to be read, so they're shown as they are.
+     */
+    private fun failureText(f: Failure): String {
+        val why = f.text.removePrefix("Error: ").trim().take(FAILURE_MAX_CHARS)
+        return "I couldn't finish that: the ${f.tool ?: "tool"} step failed. $why"
     }
 
     private class Round(val text: String, val assistant: OllamaMessage?, val stats: ReplyStats?)
@@ -163,6 +181,7 @@ class ToolTurnRunner(
         const val MAX_ROUNDS = 5
         const val TOOL_TIMEOUT_MS = 20_000L
         const val RESULT_MAX_CHARS = 2_000
+        const val FAILURE_MAX_CHARS = 300
         const val WAITING_FOR_PERMISSION = "Waiting for your permission…"
         /** C08 §7: parse tool calls a model wrote as text. On by default; every use is logged. */
         const val TEXT_CALL_FALLBACK = true
