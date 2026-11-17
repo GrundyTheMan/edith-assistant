@@ -144,6 +144,7 @@ private fun accountRow(account: Account, calendarName: String?): Pair<String, St
 
 /** `list_calendar_events` (C18, C22): what's on the owner's calendars between two times, across every account. */
 class ListCalendarEventsTool(private val dir: AccountDirectory, private val handles: CalendarHandles) : Tool {
+    override val timeoutMs: Long? = Reads.PATIENT_TOOL_MS   // a Patient source (Jarvis, through Outlook) may take longer than 20 s
     override val spec = ToolSpec(
         "list_calendar_events",
         "List events on the user's calendars (every connected account) between two times, optionally matching words",
@@ -183,6 +184,7 @@ class ListCalendarEventsTool(private val dir: AccountDirectory, private val hand
 
 /** `find_free_time` (C18, C22): open slots of at least a given length, 8 AM–8 PM; busy in any account = busy. */
 class FindFreeTimeTool(private val dir: AccountDirectory) : Tool {
+    override val timeoutMs: Long? = Reads.PATIENT_TOOL_MS   // a Patient source (Jarvis, through Outlook) may take longer than 20 s
     override val spec = ToolSpec(
         "find_free_time",
         "Find free time on the user's calendars (every connected account) between two times, between 8 AM and 8 PM",

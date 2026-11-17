@@ -1,6 +1,7 @@
 package com.edith.app.jarvis
 
 import com.edith.app.accounts.Account
+import com.edith.app.accounts.sources.Patient
 import com.edith.app.accounts.sources.CalendarEvent
 import com.edith.app.accounts.sources.CalendarInfo
 import com.edith.app.accounts.sources.CalendarSource
@@ -25,6 +26,9 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 
 /** The words every read-only account says when asked to change something (C38: Jarvis's feed only reads and saves drafts). */
+/** Outlook on the PC can be slow; the HTTP call gives up at 40 s (JarvisApi), so the read waits a little longer than that. */
+internal const val JARVIS_PATIENCE_MS = 45_000L
+
 internal const val READ_ONLY = "Edith can only read your work account through Jarvis (and save email drafts); change it in Outlook on the PC."
 
 private fun <T> readOnly(): Outcome<T> = Outcome.Failure(AppError.ToolFailed("work account", READ_ONLY))
@@ -48,7 +52,8 @@ internal class JarvisMailSource(
     private val api: JarvisApi,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
     private val now: () -> Instant = Instant::now,
-) : MailSource {
+) : MailSource, Patient {
+    override val patienceMs: Long get() = JARVIS_PATIENCE_MS
     override val canSend: Boolean get() = false
 
     override suspend fun search(q: MailQuery, max: Int): Outcome<MailSearchResult> {
@@ -119,7 +124,8 @@ internal class JarvisCalendarSource(
     override val account: Account,
     private val api: JarvisApi,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
-) : CalendarSource {
+) : CalendarSource, Patient {
+    override val patienceMs: Long get() = JARVIS_PATIENCE_MS
     override val readOnly: Boolean get() = true
 
     override suspend fun calendars(): Outcome<List<CalendarInfo>> =
@@ -172,7 +178,8 @@ internal fun WireEvent.toEvent(accountId: String, calendarName: String, zone: Zo
 }
 
 /** The shared Outlook Tasks (spec part 8) as to-do lists, read-only. */
-internal class JarvisTaskSource(override val account: Account, private val api: JarvisApi) : TaskSource {
+internal class JarvisTaskSource(override val account: Account, private val api: JarvisApi) : TaskSource, Patient {
+    override val patienceMs: Long get() = JARVIS_PATIENCE_MS
     override val readOnly: Boolean get() = true
 
     override suspend fun lists(): Outcome<List<TaskList>> =

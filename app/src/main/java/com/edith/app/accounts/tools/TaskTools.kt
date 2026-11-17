@@ -154,6 +154,7 @@ private fun today(clock: Clock): LocalDate = clock.now().atZone(clock.zone()).to
 
 /** `list_tasks` (C35 §3): the open to-dos of every account, grouped by list. */
 class ListTasksTool(private val dir: AccountDirectory, private val handles: TaskHandles) : Tool {
+    override val timeoutMs: Long? = Reads.PATIENT_TOOL_MS   // a Patient source (Jarvis, through Outlook) may take longer than 20 s
     override val spec = ToolSpec(
         "list_tasks",
         "List the user's to-dos (Google Tasks, every connected Google account), grouped by list, with due dates and a task_id for each",

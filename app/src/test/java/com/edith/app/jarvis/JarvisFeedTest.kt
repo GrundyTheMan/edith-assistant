@@ -262,4 +262,14 @@ class JarvisFeedTest {
     @Test fun `the link never prints its token`() {
         assertFalse(link(token = "SECRET-TOKEN").toString().contains("SECRET"))
     }
+
+    @Test fun `a time limit cancels a slow Jarvis call at once instead of waiting for it`() = runBlocking {
+        // dev.14 on the owner's phone: a slow Outlook left a blocking call that no timeout could interrupt, and the reply never came.
+        server.enqueue(MockResponse.Builder().code(200).headersDelay(20, java.util.concurrent.TimeUnit.SECONDS).body("{}").build())
+        val started = System.nanoTime()
+        val r = kotlinx.coroutines.withTimeoutOrNull(300) { api().get("shared", emptyMap(), Shared.serializer()) }
+        val tookMs = (System.nanoTime() - started) / 1_000_000
+        assertNull("the limit fired", r)
+        assertTrue("stopped in $tookMs ms, not after the call finished", tookMs < 3_000)
+    }
 }

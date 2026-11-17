@@ -73,6 +73,7 @@ private const val NEEDS_SEARCH = "I don't have that email. Search first (search_
 
 /** `search_email` (C19, C22): every account's mail unless `account` is given, newest first. */
 class SearchEmailTool(private val dir: AccountDirectory, private val handles: MailHandles) : Tool {
+    override val timeoutMs: Long? = Reads.PATIENT_TOOL_MS   // a Patient source (Jarvis, through Outlook) may take longer than 20 s
     override val spec = ToolSpec(
         "search_email",
         "Search the user's email (every connected account). All fields are optional; give only what the user asked for",
@@ -131,6 +132,7 @@ class SearchEmailTool(private val dir: AccountDirectory, private val handles: Ma
 
 /** `read_email` (C19): one email in full, from its own account. */
 class ReadEmailTool(private val dir: AccountDirectory, private val handles: MailHandles) : Tool {
+    override val timeoutMs: Long? = Reads.PATIENT_TOOL_MS   // a Patient source (Jarvis, through Outlook) may take longer than 20 s
     override val spec = ToolSpec(
         "read_email",
         "Read one email from search_email in full",
@@ -169,6 +171,7 @@ private abstract class WriteEmailTool(protected val dir: AccountDirectory, prote
         ACCOUNT_PARAM,
     )
     override val displayName = "email"
+    override val timeoutMs: Long? = Reads.PATIENT_TOOL_MS   // a Patient source (Jarvis, through Outlook) may take longer than 20 s
     override val integrationId = Accounts.ID
 
     private sealed interface Prepared {

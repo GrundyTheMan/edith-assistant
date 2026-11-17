@@ -82,6 +82,7 @@ built by the Jarvis agent from the spec; this chunk is Edith's side.
 - **Tailscale and a phone off the home Wi-Fi.** Nothing here distinguishes the two, but it hasn't been tried.
 - **The Windows firewall** (the spec's Tailscale note) and the owner's **Outlook under load**.
 - **How Jarvis shows a mailbox's Drafts** after a saved draft, and whether Outlook's reply draft keeps the quoted history.
+- **Slow Outlook.** Jarvis sources are `Patient`: 45 s per read (tools wait up to 55 s) instead of 10 s, and the HTTP call is cancellable (L43). Whether that is long enough for the real Outlook is not verified.
 - A phone with the **wrong date or timezone** (all-day events follow the phone's zone).
 - The attendee list is not shown (Jarvis sends names only; the Calendar tab doesn't use attendees).
 
