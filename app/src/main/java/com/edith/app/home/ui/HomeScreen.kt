@@ -59,6 +59,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.edith.app.alerts.AlertTaps
 import com.edith.app.home.Capability
 import com.edith.app.home.DeviceClip
 import com.edith.app.home.DeviceCommand
@@ -96,6 +97,14 @@ data class HomeTabActions(
 @Composable
 fun HomeScreen(onOpenSettings: () -> Unit, vm: HomeViewModel = viewModel(factory = HomeViewModel.Factory)) {
     val ui by vm.state.collectAsStateWithLifecycle()
+    // C33: arriving from a tapped camera alert opens the Clips list.
+    val fromAlert by AlertTaps.openClips.collectAsStateWithLifecycle()
+    LaunchedEffect(fromAlert) {
+        if (fromAlert) {
+            vm.openClips()
+            AlertTaps.consume()
+        }
+    }
     HomeContent(
         ui,
         HomeTabActions(

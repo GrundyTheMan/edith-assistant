@@ -32,5 +32,10 @@
             android:name=".debug.DebugMicrosoftReceiver"
             android:exported="true"
             android:permission="android.permission.DUMP" />
+        <!-- C33: switch the Demo doorbell's alerts on or off, or ring it (see DebugAlertReceiver). DUMP: only the shell may send it. -->
+        <receiver
+            android:name=".debug.DebugAlertReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
     </application>
 </manifest>

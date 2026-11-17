@@ -62,7 +62,7 @@ design in the same PR, or ask the owner.
 | [C30](chunks/C30-alexa.md) | Alexa devices: Jarvis's full control, thermostats and locks too (fragile, D19) | 8 | C25 | Built: sign-in, devices, states (part 1, merged) and commands (part 2). The owner's first sign-in and live commands are open |
 | [C31](chunks/C31-philips-lock.md) | Philips smart lock (fragile; unlock needs the owner's OK) | 8 | C25 | Design |
 | [C32](chunks/C32-live-view.md) | Live camera view and camera wall (Ring, Blink) | 8 | C27, C29 | Design |
-| [C33](chunks/C33-camera-alerts.md) | Camera alerts: doorbell, person, motion notifications | 8 | C27, C29 | Design |
+| [C33](chunks/C33-camera-alerts.md) | Camera alerts: doorbell, person, motion notifications | 8 | C27, C29 | Built: Ring and Blink alerts from a foreground service every 45 s (D24), with a picture and tap-to-Clips; the owner's live check with a real doorbell and camera is open |
 | [C34](chunks/C34-printer.md) | 3D printer card (Moonraker) | 8 | C25 | Built (the owner's check against the real printer is open) |
 | [C35](chunks/C35-google-tasks.md) | To-dos: Google Tasks, as in Jarvis (D20) | 7 Accounts | C22, C08, C03 | Done |
 | [C36](chunks/C36-own-voice.md) | Edith's own voice: on-device speech for phones with no voice, such as Andarium (D21) | 3 Voice | C13, C14, C17b | Built (the Andarium check on the iPhone is the owner's) |

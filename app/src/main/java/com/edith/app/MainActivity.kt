@@ -1,5 +1,6 @@
 package com.edith.app
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -8,6 +9,8 @@ import androidx.compose.runtime.getValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.edith.app.alerts.AlertNotifier
+import com.edith.app.alerts.AlertTaps
 import com.edith.app.core.lifecycle.AppVisibility
 import com.edith.app.ui.components.CrashBanner
 import com.edith.app.ui.components.CrashReportViewModel
@@ -22,6 +25,7 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (savedInstanceState == null) openClipsIfAsked(intent)   // not again after a rotation
         setContent {
             EdithTheme {
                 val crash: CrashReportViewModel = viewModel(factory = CrashReportViewModel.Factory)
@@ -31,6 +35,17 @@ class MainActivity : ComponentActivity() {
                 BrowserSignInDialogHost(viewModel(factory = AccountsViewModel.Factory))
             }
         }
+    }
+
+    // C33: a tapped camera alert brings the Home tab's Clips forward.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        openClipsIfAsked(intent)
+    }
+
+    private fun openClipsIfAsked(intent: Intent?) {
+        if (intent?.action == AlertNotifier.ACTION_OPEN_CLIPS) AlertTaps.request()
     }
 
     // C17b: Edith's network is blocked while she's off screen; the browser sign-in waits for her to be back.
