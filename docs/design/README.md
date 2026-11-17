@@ -58,7 +58,7 @@ design in the same PR, or ask the owner.
 | [C26](chunks/C26-meross-garage.md) | Meross garage door opener | 8 | C25 | Done |
 | [C27](chunks/C27-ring.md) | Ring doorbell and cameras (snapshots, events, clips) | 8 | C25 | Built: sign-in, devices, snapshots, events and Clips (the owner's live Ring check, and a clip played in a release build, are open) |
 | [C28](chunks/C28-resideo-thermostat.md) | Honeywell/Resideo thermostat (official API; needs a developer key) | 8 | C25, C23 | Design |
-| [C29](chunks/C29-blink.md) | Blink cameras (fragile; clips) | 8 | C25 | Built (the owner's check against real Blink is open) |
+| [C29](chunks/C29-blink.md) | Blink cameras (fragile; clips) | 8 | C25 | Built; verified live on Andarium 2026-11-15 (sign-in, cameras, clips, snapshots) with the VPN off; live view is C32 |
 | [C30](chunks/C30-alexa.md) | Alexa devices: Jarvis's full control, thermostats and locks too (fragile, D19) | 8 | C25 | Built: sign-in, devices, states (part 1, merged) and commands (part 2). The owner's first sign-in and live commands are open |
 | [C31](chunks/C31-philips-lock.md) | Philips smart lock (fragile; unlock needs the owner's OK) | 8 | C25 | Design |
 | [C32](chunks/C32-live-view.md) | Live camera view and camera wall (Ring, Blink) | 8 | C27, C29 | Design |
