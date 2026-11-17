@@ -9,6 +9,12 @@ start_log release "$@"
 scripts/fetch-sherpa.sh
 
 [ -f "$KEYSTORE_PROPERTIES" ] || die "No signing key ($KEYSTORE_PROPERTIES). Release builds are made on the owner's PC only; see 05-environment.md §6."
+
+# The Google and Microsoft client IDs come from local.properties, which isn't in Git: a fresh checkout or worktree
+# has none, and the APK would ship with Google and Microsoft "not set up" (dev.14 did). Refuse to build without them.
+for key in edith.googleWebClientId edith.googleDesktopClientId edith.microsoftClientId; do
+  grep -Eq "^${key}=.+" local.properties 2>/dev/null || die "local.properties is missing $key. Copy local.properties from the main checkout (it isn't in Git) before a release build."
+done
 if [ "${1:-}" != "--allow-dirty" ] && [ -n "$(git status --porcelain)" ]; then
   die "Uncommitted changes. Commit first so the APK matches a commit (or pass --allow-dirty to test)."
 fi
