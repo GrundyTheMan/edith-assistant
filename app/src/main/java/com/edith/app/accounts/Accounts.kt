@@ -414,9 +414,15 @@ class Accounts(
         fun match(accounts: List<Account>, text: String): List<Account> {
             val t = text.trim().lowercase()
             if (t.isEmpty()) return emptyList()
-            val exact = accounts.filter { it.label.lowercase() == t || it.address.lowercase() == t }
+            // The owner, or the model, may also say the account the way Edith lists it: "work (sam@contoso.com)", or with a
+            // dash. Spelling out label and address is still an exact name, not a fuzzy one: only case and punctuation are ignored.
+            val shown = plain(t)
+            val exact = accounts.filter { it.label.lowercase() == t || it.address.lowercase() == t || plain(it.display) == shown }
             if (exact.isNotEmpty()) return exact
             return accounts.filter { it.label.lowercase().startsWith(t) || it.address.lowercase().startsWith(t) }
         }
+
+        /** Letters and digits only, lower case: "Work (FAKE-PC)" and "work - fake-pc" are the same name. */
+        private fun plain(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
     }
 }
