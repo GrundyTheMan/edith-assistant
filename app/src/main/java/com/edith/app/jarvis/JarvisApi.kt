@@ -7,17 +7,23 @@ import com.edith.app.core.error.Outcome
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import java.io.IOException
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import java.security.MessageDigest
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
@@ -171,7 +177,9 @@ internal class JarvisApi(
         }.build()
         val outcome = withContext(dispatchers.io) {
             try {
-                clientFor(l.fingerprint).newCall(request).execute().use { r ->
+                // Cancellable: when Edith's own time limit (or the owner's Stop) cancels this, the HTTP call is cancelled too.
+                // A blocking execute() ignored both, so a slow Outlook left the whole reply stuck.
+                clientFor(l.fingerprint).newCall(request).await().use { r ->
                     val text = r.body.string()
                     if (r.isSuccessful) Outcome.Success(feedJson.decodeFromString(serializer, text)) else Outcome.Failure(failureFor(r.code, text))
                 }
@@ -186,6 +194,17 @@ internal class JarvisApi(
         }
         if (outcome is Outcome.Failure && outcome.error == UNAUTHORIZED) onUnauthorized()
         return outcome
+    }
+
+    /** Runs the call without blocking a thread, and cancels it if the coroutine is cancelled. */
+    private suspend fun Call.await(): Response = suspendCancellableCoroutine { c ->
+        c.invokeOnCancellation { cancel() }
+        enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) { if (c.isActive) c.resumeWithException(e) }
+            override fun onResponse(call: Call, response: Response) {
+                if (c.isActive) c.resume(response) else response.close()
+            }
+        })
     }
 
     companion object {

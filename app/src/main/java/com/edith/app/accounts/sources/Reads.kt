@@ -30,8 +30,13 @@ data class ReadAll<T>(val results: List<Pair<Account, T>>, val failures: List<Re
  * Reads across accounts (C22 §4, note 5): one coroutine per account, each with its own timeout, so one slow or
  * signed-out account never hides the others' results.
  */
+/** A source that is slow by nature (Outlook on the PC, through Jarvis) and is given longer than [Reads.TIMEOUT_MS]. */
+interface Patient { val patienceMs: Long }
+
 object Reads {
     const val TIMEOUT_MS = 10_000L
+    /** The most a tool waits when a [Patient] source is involved: the source's own limit plus a little. */
+    const val PATIENT_TOOL_MS = 55_000L
     const val NEEDS_SIGN_IN = "it needs signing in again — Settings → Accounts"
 
     suspend fun <S, T> readAll(targets: List<Readable<S>>, timeoutMs: Long = TIMEOUT_MS, read: suspend (S) -> Outcome<T>): ReadAll<T> = coroutineScope {
@@ -39,7 +44,12 @@ object Reads {
             async {
                 when (t.state) {
                     is AccountState.NeedsSignIn -> t.account to Outcome.Failure(AppError.GoogleAuth(NEEDS_SIGN_IN))
-                    else -> t.account to (withTimeoutOrNull(timeoutMs) { read(t.source) } ?: Outcome.Failure(AppError.Timeout))
+                    else -> {
+                        val patience = (t.source as? Patient)?.patienceMs
+                        val limit = patience ?: timeoutMs
+                        t.account to (withTimeoutOrNull(limit) { read(t.source) }
+                            ?: Outcome.Failure(if (patience != null) AppError.ToolFailed("Jarvis", "it didn't answer within ${patience / 1000} seconds. Is Outlook busy on the PC?") else AppError.Timeout))
+                    }
                 }
             }
         }.awaitAll()
