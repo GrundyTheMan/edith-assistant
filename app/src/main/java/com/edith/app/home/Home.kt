@@ -1,5 +1,6 @@
 package com.edith.app.home
 
+import com.edith.app.alerts.Activity
 import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
 import com.edith.app.core.log.Log
@@ -265,6 +266,53 @@ class Home(
         val backend = backends.value.firstOrNull { it.id == clip.backend }
             ?: return Outcome.Failure(AppError.ToolFailed(clip.backend, "that service isn't connected"))
         return withTimeoutOrNull(backend.timeoutMs ?: timeoutMs) { safely(backend) { backend.clipSource(clip.id) } } ?: Outcome.Failure(AppError.Timeout)
+    }
+
+    /** The cameras and doorbells of each service the alerts have looked at, so the next look doesn't list the devices again (C33). */
+    private val alertCameras = ConcurrentHashMap<String, List<HomeDevice>>()
+
+    /**
+     * What [backendId]'s cameras and doorbells reported since [sinceMs], for alerts (C33): the service's clips when it has
+     * them (one call), else (Ring without a plan keeps events but no recordings) each camera's events.
+     */
+    suspend fun activity(backendId: String, sinceMs: Long): Outcome<List<Activity>> {
+        val backend = connected().firstOrNull { it.id == backendId }
+            ?: return Outcome.Failure(AppError.ToolFailed(backendId, "that service isn't connected"))
+        val wait = backend.timeoutMs ?: timeoutMs
+        if (backend.hasClips) {
+            val page = withTimeoutOrNull(wait) { safely(backend) { backend.clips(sinceMs, clock.now().toEpochMilli()) } }
+                ?: return Outcome.Failure(AppError.Timeout)
+            when (page) {
+                is Outcome.Failure -> return page
+                is Outcome.Success -> if (!page.value.noPlan) {
+                    return Outcome.Success(page.value.clips.map { Activity("$backendId:${it.id}", backendId, it.deviceName, it.at, it.kind) })
+                }
+            }
+        }
+        val cameras = cameras(backend, wait) ?: return Outcome.Failure(AppError.Timeout)
+        val found = mutableListOf<Activity>()
+        for (camera in cameras) {
+            val events = withTimeoutOrNull(wait) { safely(backend) { backend.events(camera.id, sinceMs) } } ?: return Outcome.Failure(AppError.Timeout)
+            when (events) {
+                is Outcome.Failure -> return events
+                is Outcome.Success -> events.value.forEach { found += Activity("$backendId:${camera.id}:${it.at}:${it.kind}", backendId, camera.name, it.at, it.kind) }
+            }
+        }
+        return Outcome.Success(found)
+    }
+
+    private suspend fun cameras(backend: HomeBackend, wait: Long): List<HomeDevice>? {
+        alertCameras[backend.id]?.let { return it }
+        val r = withTimeoutOrNull(wait) { safely(backend) { backend.devices() } } ?: return null
+        val list = (r as? Outcome.Success)?.value.orEmpty().filter { Capability.Events in it.capabilities }
+        if (list.isNotEmpty()) alertCameras[backend.id] = list
+        return list
+    }
+
+    /** The camera [name] of [backendId] that an alert is about, to take its picture; null if it isn't known (C33). */
+    suspend fun alertCamera(backendId: String, name: String): HomeDevice? {
+        val backend = connected().firstOrNull { it.id == backendId } ?: return null
+        return cameras(backend, backend.timeoutMs ?: timeoutMs).orEmpty().firstOrNull { it.name == name && Capability.Snapshot in it.capabilities }
     }
 
     suspend fun setFavorite(device: HomeDevice, on: Boolean) = prefs.setFavorite(device.key, on)

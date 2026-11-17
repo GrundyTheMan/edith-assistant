@@ -128,6 +128,12 @@ import com.edith.app.voice.capture.LiveSpeech
 import com.edith.app.voice.capture.OllamaTranscriber
 import com.edith.app.voice.capture.SpeechInput
 import com.edith.app.voice.capture.VoiceMemos
+import com.edith.app.alerts.ActivitySource
+import com.edith.app.alerts.AlertKeepAlive
+import com.edith.app.alerts.AlertNotifier
+import com.edith.app.alerts.AlertPrefs
+import com.edith.app.alerts.AlertService
+import com.edith.app.alerts.DataStoreAlertPrefs
 import com.edith.app.voice.handsfree.HandsFree
 import com.edith.app.voice.handsfree.MicWakeListener
 import com.edith.app.voice.handsfree.OpenWakeWord
@@ -468,6 +474,7 @@ class AppContainer(val app: Application) {
             }
         }
         replyKeepAlive.watch(appScope)
+        alertKeepAlive.watch(appScope)   // C33: starts watching the cameras when alerts are on
     }
 
     /**
@@ -522,6 +529,12 @@ class AppContainer(val app: Application) {
 
     /** Keeps a reply going when the owner leaves the app (D13): starts [ReplyService] as each turn begins. */
     val replyKeepAlive: ReplyKeepAlive by lazy { ReplyKeepAlive(chatEngine.state) { ReplyService.start(app) } }
+
+    /** Camera alerts (C33): the owner's switches, the notifications, and the rule that starts watching. */
+    val alertPrefs: AlertPrefs by lazy { DataStoreAlertPrefs(settingsStore.store) }
+    val alertNotifier: AlertNotifier by lazy { AlertNotifier(app) }
+    val activitySource: ActivitySource by lazy { ActivitySource { id, since -> home.activity(id, since) } }
+    val alertKeepAlive: AlertKeepAlive by lazy { AlertKeepAlive(alertPrefs.choices) { AlertService.start(app) } }
 
     val secretStore: SecretStore by lazy { KeystoreSecretStore(app) }
 

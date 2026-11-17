@@ -8,6 +8,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
+import com.edith.app.alerts.AlertCatalog
+import com.edith.app.alerts.AlertKind
+import com.edith.app.alerts.AlertPrefs
+import com.edith.app.alerts.MemoryAlertPrefs
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
@@ -59,6 +63,9 @@ import java.util.Locale
 /** One service in Settings → Home: its name, where it stands, and how it signs in (C25 §7, C26–C31). */
 data class HomeServiceRow(val id: String, val name: String, val state: ServiceState, val form: SignInForm?, val removeHint: String? = null, val pageSite: String? = null)
 
+/** One service's alert switches (C33): each kind it can tell apart, and whether it is on. */
+data class AlertServiceRow(val id: String, val name: String, val kinds: List<Pair<AlertKind, Boolean>>)
+
 /** What Settings → Home shows. */
 data class HomeSettingsUi(
     val services: List<HomeServiceRow> = emptyList(),
@@ -68,11 +75,17 @@ data class HomeSettingsUi(
     /** Hidden devices: (key, name). */
     val hidden: List<Pair<String, String>> = emptyList(),
     val log: List<LoggedCommand> = emptyList(),
+    /** Camera alerts (C33): the services that can alert and are signed in, with their switches. */
+    val alerts: List<AlertServiceRow> = emptyList(),
 )
 
 /** Settings → Home (C25 §7). */
 @OptIn(ExperimentalCoroutinesApi::class)
-class HomeSettingsViewModel(private val home: Home, log: kotlinx.coroutines.flow.Flow<List<LoggedCommand>>) : ViewModel() {
+class HomeSettingsViewModel(
+    private val home: Home,
+    log: kotlinx.coroutines.flow.Flow<List<LoggedCommand>>,
+    private val alertPrefs: AlertPrefs = MemoryAlertPrefs(),
+) : ViewModel() {
     private val services = home.services.flatMapLatest { list ->
         if (list.isEmpty()) flowOf(emptyList())
         else combine(list.map { it.state }) { states ->
@@ -80,14 +93,20 @@ class HomeSettingsViewModel(private val home: Home, log: kotlinx.coroutines.flow
         }
     }
 
-    val state: StateFlow<HomeSettingsUi> = combine(services, home.choices, log) { s, c, l ->
+    val state: StateFlow<HomeSettingsUi> = combine(services, home.choices, log, alertPrefs.choices) { s, c, l, a ->
         HomeSettingsUi(
             services = s,
             hasDemo = home.hasDemo, demo = c.demo,
             hidden = c.hidden.map { it to (c.hiddenNames[it] ?: it.substringAfter(':')) }.sortedBy { it.second.lowercase() },
             log = l,
+            alerts = s.filter { it.state == ServiceState.Connected && it.id in AlertCatalog.services }
+                .map { r -> AlertServiceRow(r.id, r.name, AlertCatalog.kindsOf(r.id).map { it to a.enabled(r.id, it) }) },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeSettingsUi(hasDemo = home.hasDemo))
+
+    fun setAlert(serviceId: String, kind: AlertKind, on: Boolean) {
+        viewModelScope.launch { alertPrefs.set(serviceId, kind, on) }
+    }
 
     fun setDemo(on: Boolean) {
         viewModelScope.launch { home.setDemo(on) }
@@ -140,14 +159,14 @@ class HomeSettingsViewModel(private val home: Home, log: kotlinx.coroutines.flow
     }
 
     companion object {
-        val Factory = viewModelFactory { c, _ -> HomeSettingsViewModel(c.home, c.homeCommandLog.recent) }
+        val Factory = viewModelFactory { c, _ -> HomeSettingsViewModel(c.home, c.homeCommandLog.recent, c.alertPrefs) }
     }
 }
 
 @Composable
 fun HomeSection(vm: HomeSettingsViewModel = viewModel(factory = HomeSettingsViewModel.Factory)) {
     val ui by vm.state.collectAsStateWithLifecycle()
-    HomeSettingsContent(ui, vm::setDemo, vm::show, vm::signIn, vm::disconnect, vm::beginPage, vm::finishPage)
+    HomeSettingsContent(ui, vm::setDemo, vm::show, vm::signIn, vm::disconnect, vm::beginPage, vm::finishPage, vm::setAlert)
 }
 
 @Composable
@@ -159,7 +178,16 @@ fun HomeSettingsContent(
     onDisconnect: (serviceId: String) -> Unit = {},
     onBeginPage: (serviceId: String) -> com.edith.app.home.PageSignInStart? = { null },
     onFinishPage: (serviceId: String, address: String, cookies: String, done: (SignInResult) -> Unit) -> Unit = { _, _, _, _ -> },
+    onAlert: (serviceId: String, kind: AlertKind, on: Boolean) -> Unit = { _, _, _ -> },
 ) {
+    // C33: alerts show as notifications, which Android 13 and later let through only after the owner allows them.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val requestNotifications = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {}
+    fun askForNotifications() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+            androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) requestNotifications.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+    }
     var showLog by remember { mutableStateOf(false) }
     var signingIn by remember { mutableStateOf<HomeServiceRow?>(null) }
     var disconnecting by remember { mutableStateOf<HomeServiceRow?>(null) }
@@ -190,6 +218,27 @@ fun HomeSettingsContent(
                     ServiceState.NeedsSignIn -> Row {
                         if (s.form != null || s.pageSite != null) Button(onClick = { signingIn = s }, modifier = Modifier.testTag(SIGN_IN_TAG + s.id)) { Text("Sign in again") }
                         TextButton(onClick = { disconnecting = s }) { Text("Disconnect") }
+                    }
+                }
+            }
+        }
+        if (ui.alerts.isNotEmpty()) {
+            Text("Alerts", style = MaterialTheme.typography.labelLarge)
+            Text(
+                "A notification when a doorbell rings or a camera sees something. All off until you switch them on. While any is on, " +
+                    "Edith checks every 45 seconds, even with the app closed, and shows a small notification saying so. A doorbell ring comes with its picture.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            ui.alerts.forEach { row ->
+                Text(row.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                row.kinds.forEach { (kind, on) ->
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Text(kind.label, modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = on,
+                            onCheckedChange = { turnOn -> if (turnOn) askForNotifications(); onAlert(row.id, kind, turnOn) },
+                            modifier = Modifier.testTag(ALERT_TAG + row.id + "_" + kind.name),
+                        )
                     }
                 }
             }
@@ -322,6 +371,7 @@ private fun CommandLogDialog(log: List<LoggedCommand>, onClose: () -> Unit) {
 }
 
 const val DEMO_TAG = "home-demo"
+const val ALERT_TAG = "home-alert-"
 const val LOG_TAG = "home-log"
 const val SERVICE_ROW_TAG = "home-service-"
 const val SIGN_IN_TAG = "home-signin-"

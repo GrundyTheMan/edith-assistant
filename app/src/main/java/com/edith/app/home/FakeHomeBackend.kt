@@ -114,6 +114,15 @@ class FakeHomeBackend(
         return Outcome.Success(picture())
     }
 
+    private val rings = java.util.concurrent.CopyOnWriteArrayList<Long>()
+
+    /** Debug builds: the doorbell rings now (C33's emulator check). */
+    fun ring() { rings += now() }
+
+    override suspend fun events(deviceId: String, sinceMs: Long): Outcome<List<DeviceEvent>> =
+        if (deviceId != "doorbell") Outcome.Success(emptyList())
+        else Outcome.Success(rings.filter { it >= sinceMs }.sortedDescending().map { DeviceEvent(it, EventKind.Ring) })
+
     private fun settle() {
         val now = now()
         val due = pending.filter { it.second <= now }
