@@ -83,6 +83,19 @@ class AccountsTest {
         assertTrue(Accounts.match(all, "  ").isEmpty())
     }
 
+    @Test fun `an account is also found by the name Edith lists it under`() {
+        // Release failure on the owner's phone (2026-11-17): the model asked for "Work (HomeGamingRig)", the name Edith's own error
+        // message listed, and the matcher refused it, five times over. Case and punctuation don't matter; the words do.
+        val pc = Account("j1", Provider.Jarvis, "HomeGamingRig", "Work")
+        val all = listOf(personal, work, pc)
+        assertEquals(listOf(pc), Accounts.match(all, "Work (HomeGamingRig)"))
+        assertEquals(listOf(pc), Accounts.match(all, "work — homegamingrig"))
+        assertEquals(listOf(pc), Accounts.match(all, "Work - HomeGamingRig"))
+        assertEquals(listOf(work), Accounts.match(all, work.display))
+        assertEquals(listOf(pc), Accounts.match(all, "HomeGamingRig"))
+        assertTrue("another PC's name is not this one", Accounts.match(all, "Work (OtherPC)").isEmpty())
+    }
+
     @Test fun `a new account's label is its address, made unique if needed`() {
         assertEquals("x@y.z", Accounts.uniqueLabel("x@y.z", listOf(personal)))
         assertEquals("X@y.z (2)", Accounts.uniqueLabel("X@y.z", listOf(personal.copy(label = "x@y.z"))))
