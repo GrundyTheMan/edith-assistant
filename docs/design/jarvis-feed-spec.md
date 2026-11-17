@@ -2,7 +2,8 @@
 
 **Written for:** the AI agent that works on the Jarvis project (`D:\Dev Projects\jarvis`). This document is the
 whole job. It can be done without asking questions, except where part 12 says to ask the owner.
-**Written by:** the Edith agent, 2026-11-16. Edith's own side (reading this feed) is a separate chunk in the Edith repo;
+**Written by:** the Edith agent, 2026-11-16. **Updated 2026-11-16 for Tailscale** (the owner's phone reaches the PC over Tailscale, not
+only the home Wi-Fi: parts 1, 2, 5, 9, 10 and 13 changed; they are marked "Tailscale"). Edith's own side (reading this feed) is a separate chunk in the Edith repo;
 the contract in parts 5-9 is what both sides build to. If you must change the contract, say so to the owner, and
 change this document in the same PR.
 
@@ -11,7 +12,7 @@ change this document in the same PR.
 The owner's work email, calendar and to-dos exist only in **Outlook (classic) on this PC**. Jarvis reads them through
 the Outlook helper (`src/main/outlook/`, COM through PowerShell, accounts with `auth: 'outlook-com'`). There is no
 password or token anywhere that another device could use, so Edith (an Android app on the owner's phone) cannot sign
-in to the work account. The fix: **Jarvis serves what it already reads, over the home network, to the paired phone.**
+in to the work account. The fix: **Jarvis serves what it already reads, over the home network or the owner's Tailscale network, to the paired phone.**
 Edith asks when she needs something; nothing is copied to the cloud; with the PC off or Jarvis closed, Edith simply
 has no work data (the owner accepts this).
 
@@ -19,7 +20,10 @@ Hard rules, from the owner:
 - **Read-only.** The only thing the feed may change is **saving a draft** (part 7.5). It never sends, moves, deletes,
   marks read/unread, flags, accepts or declines anything. Same promise as Jarvis's Mail page.
 - **No work-account credential ever leaves the PC.** The phone gets a revocable key that opens this feed and nothing else.
-- **Home network only.** Not reachable from the internet, no cloud relay, no port forwarding, no UPnP.
+- **Home network and the owner's Tailscale network only.** Not reachable from the open internet, no cloud relay, no port
+  forwarding, no UPnP. Tailscale (a private network between the owner's own devices, addresses `100.64.0.0/10`) is how the
+  phone reaches the PC away from home; the PC and phone are signed in to the owner's account there. Jarvis installs, starts
+  and configures nothing of Tailscale: it only accepts callers that arrive from its address range.
 - **Off by default.** Nothing is served until the owner switches it on and picks what to share.
 - **Contents are never logged** (subjects, bodies, names, addresses, event titles, task titles, tokens, codes). Logs
   say what was asked, how many items came back and how long it took, like `src/main/outlook/helper.ts` does.
@@ -28,9 +32,11 @@ Hard rules, from the owner:
 
 1. A switch **"Share work data with Edith on my phone"**. Off by default.
 2. **Address** (read-only text, with a Copy button): `https://<this PC's LAN IPv4>:<port>`, e.g.
-   `https://192.168.1.20:47821`. Computed from `os.networkInterfaces()`: the first non-internal IPv4 address in a
-   private range (10/8, 172.16/12, 192.168/16). If there are several, show them all, one per line. If none:
-   "This PC isn't on a home network."
+   `https://192.168.1.20:47821`. Computed from `os.networkInterfaces()`: every non-internal IPv4 address in a private
+   range (10/8, 172.16/12, 192.168/16) **and, for Tailscale, in `100.64.0.0/10`**. Show them one per line, each labelled
+   "home network" or "Tailscale" (the Tailscale one is the interface whose name starts with `Tailscale`, or failing that any
+   address in `100.64.0.0/10`), with its own Copy button. The Tailscale address is the one that works away from home, and it
+   does not change when the owner changes Wi-Fi. If none: "This PC isn't on a home network or Tailscale."
 3. **Port** (number box, default `47821`; valid 1024-65535; changing it restarts the server). If the port is busy
    the section says so in plain words and the switch shows off.
 4. **What to share** (nothing ticked by default): one tick-box per
@@ -44,7 +50,10 @@ Hard rules, from the owner:
 6. **Paired phones** list: name, paired on, last used, and a **Remove** button per phone (revokes at once). A
    **"Reset (remove all phones and make a new certificate)"** button with a `confirm()`.
 7. A status line: "Listening on …", "Off", "Port 47821 is in use", "Outlook isn't answering" (from the last request).
-8. A note under the switch: "Windows may ask to allow Jarvis on private networks. Choose **Private networks only**."
+8. A note under the switch: "Windows may ask to allow Jarvis on private networks. Choose **Private networks only**. Windows often
+   treats the Tailscale connection as a *public* network: if the phone can't reach this PC over Tailscale, add a Windows Firewall
+   rule that allows this port from `100.64.0.0/10` only." Jarvis shows the words and the exact port; it **must not** change
+   firewall settings itself.
 9. Jarvis must keep working with the section off exactly as today: no server, no certificate, no new background work.
 
 Follow the existing Settings page patterns (`src/renderer/src/components/SettingsView.tsx`, styles under
@@ -101,15 +110,18 @@ interface FeedSettings {
 1. **HTTPS only**, Node `https.createServer` in the main process, TLS 1.2+ (set `minVersion: 'TLSv1.2'`), listening on
    `0.0.0.0:<port>`. No plain HTTP listener at all.
 2. **Certificate:** self-signed, ECDSA P-256 (or RSA 2048 if the library can't do ECDSA), valid 10 years, CN `Jarvis feed`,
-   subjectAltName = the PC's hostname and its current private IPv4 addresses (Edith ignores the name and pins the
+   subjectAltName = the PC's hostname and its current private IPv4 addresses, **including its Tailscale address** (Edith ignores the name and pins the
    fingerprint, so a changed IP does not break her). Make it **once**, on first enable. It changes only on "Reset".
    Use the small pure-JS `selfsigned` package (check `package.json`; if it is not there, add it as a dependency and
    say so in the PR). If you know a safer way that adds no dependency, that is fine; the requirement is only: a
    stable self-signed certificate whose **fingerprint = lowercase hex SHA-256 of the DER-encoded certificate** (this is
    what Node's `X509Certificate.fingerprint256` gives, minus the colons).
 3. **Only private callers:** on every connection, check `req.socket.remoteAddress`. Allow only loopback (`127.0.0.1`,
-   `::1`), IPv4 10/8, 172.16/12, 192.168/16, link-local 169.254/16, and IPv4-mapped forms of those (`::ffff:192.168.x.x`),
-   IPv6 `fe80::/10` and `fc00::/7`. Anything else gets the connection destroyed without a response. Pure function
+   `::1`), IPv4 10/8, 172.16/12, 192.168/16, link-local 169.254/16, **Tailscale's `100.64.0.0/10` (100.64.0.0 to 100.127.255.255)**,
+   and IPv4-mapped forms of those (`::ffff:192.168.x.x`, `::ffff:100.80.x.x`), IPv6 `fe80::/10` and `fc00::/7` (this covers
+   Tailscale's `fd7a:115c:a1e0::/48`). Anything else gets the connection destroyed without a response. (`100.64.0.0/10` is also the range ISPs use for shared
+   addressing, but a caller only arrives from it if it reached this PC through Tailscale or the PC's own network; the pairing
+   code and the device token are what actually protect the feed, and the address check is a second wall.) Pure function
    `isPrivateAddress(addr)`, unit-tested with each range's edges.
 4. **Auth:** every endpoint except `GET /v1/hello` and `POST /v1/pair` needs `Authorization: Bearer <device token>`.
    Compare `sha256(token)` to each `devices[].tokenHash` with `crypto.timingSafeEqual`. No match → `401`
@@ -217,6 +229,7 @@ shared calendars. Item:
   "attendees": [ {"name":"…","email":"…","response":"…"} ], "attendeeCount": 14,
   "showAs": "busy", "cancelled": false }
 ```
+**All-day events** (`allDay: true`): `start` is local midnight of the PC's time zone and `end` is the next local midnight (exclusive), in ms; Edith reads them in the phone's zone, so the date is right only when both are in the same zone (added by the Edith agent, 2026-11-17).
 Fields absent in Jarvis are omitted, not null. `attendees` uses the same fields as the `Attendee` type in
 `src/shared/calendar.ts` (at most 100); `source` is **not** sent. Cancelled events are included with `cancelled: true`.
 Use the same `Range` type the calendar service uses.
@@ -256,9 +269,14 @@ herself. The owner's *work* to-dos are in Outlook (classic) and Jarvis cannot re
 - **Outlook not running or locked** (the helper's OFFLINE/FAILED codes) → `OUTLOOK_UNAVAILABLE`, never a 500, never a hang
   past the 60 s timeout. Do not try to start Outlook yourself beyond what the helper already does.
 - **Hidden start:** Jarvis started at sign-in with the tray on stays hidden; the server must run in that state.
-- **Quit/sleep:** the server stops with the app. After the PC wakes, the listener should still work; if the network
-  changed, re-listen when `os.networkInterfaces()` changes (check every 60 s while enabled; only restart if the set of
-  private addresses changed, and refresh the Settings address display).
+- **Quit/sleep:** the server stops with the app. After the PC wakes, the listener should still work (it listens on `0.0.0.0`,
+  so it already covers an interface that appears later, such as Tailscale connecting after Jarvis starts); check
+  `os.networkInterfaces()` every 60 s while enabled, and when the set of private or Tailscale addresses changes, **refresh the
+  Settings address display** and restart the listener only if it has stopped answering on its port.
+- **Tailscale off or signed out:** the Tailscale address simply isn't listed and the phone can't reach the PC from outside; nothing
+  else changes. Jarvis never starts Tailscale or reads its account.
+- **Another VPN holding `100.64.0.0/10`** (NordVPN's Meshnet does) sends Tailscale's traffic to the wrong adapter and breaks it; the
+  owner has removed NordVPN. If the Tailscale address is missing or unreachable, the Settings help text may say so, nothing more.
 - **Several windows / single-instance:** only the primary instance runs the server (`requestSingleInstanceLock` already guards this).
 - **Never block the main process:** each request is `async`; no sync file or crypto loops except the one-off certificate creation, which may run in a worker or at least not during a request.
 - **Truncation is by characters, not bytes**, with no splitting of surrogate pairs.
@@ -270,6 +288,10 @@ herself. The owner's *work* to-dos are in Outlook (classic) and Jarvis cannot re
 
 Unit tests (vitest), at least:
 - `isPrivateAddress`: each allowed range at its first/last address and the first address outside it; IPv4-mapped IPv6; garbage input.
+  **Tailscale:** `100.64.0.0` and `100.127.255.255` allowed, `100.63.255.255` and `100.128.0.0` refused, `::ffff:100.80.204.24` and
+  `fd7a:115c:a1e0::1` allowed.
+- Address listing: given a fake `networkInterfaces()` with a Wi-Fi `192.168.1.20`, a `Tailscale` `100.64.0.1`, a loopback and a public
+  address, only the first two are listed, with the right labels.
 - Pairing: code format and alphabet; expiry at 5 minutes (inject a clock); one use; death after 5 wrong tries; a new code replaces the old; proof computed from the example in the next bullet verifies, a changed fingerprint or code does not.
 - Proof vector: with code `ABCDE-FGHJK` and fingerprint `00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff`, compute `HMAC-SHA256(key="ABCDEFGHJK", msg=<that fingerprint string>)` once, put the hex in the test, and check it. (The Edith side uses the identical vector.)
 - Auth: valid token, wrong token, missing header, a token whose hash is of a removed device; the 429 after 10 failures and its release after 60 s.
@@ -284,7 +306,8 @@ calendar, pair with `fetch` from the test using the code shown (pin the fingerpr
 remove the phone and see 401. Under `JARVIS_E2E` use an ephemeral port and a temp `userData`.
 
 Manual check list for the PR (say which were done and which were not): Windows firewall prompt appears once and "Private" works;
-the phone on the same Wi-Fi reaches the address; the PC's other Wi-Fi/VPN states; Jarvis hidden in the tray still serves;
+the phone on the same Wi-Fi reaches the address; **the phone on mobile data (Wi-Fi off) with Tailscale on reaches the PC's Tailscale
+address, and whether a firewall rule was needed**; the PC's other Wi-Fi/VPN states; Jarvis hidden in the tray still serves;
 Outlook closed → `OUTLOOK_UNAVAILABLE`.
 
 ## 11. Order of work and PR
@@ -304,8 +327,40 @@ refreshing several lists at once must queue, not fail).
 
 ## 13. What Edith will do with this (so you can see the other side of the contract)
 
-Edith stores the PC address, the pinned fingerprint and the device token (in Android Keystore-backed storage), shows "Work
+Edith stores the PC address (the owner can use the Tailscale address, which works at home and away), the pinned fingerprint and the device token (in Android Keystore-backed storage), shows "Work
 (via Jarvis)" as one more account next to Google/Microsoft/iCloud, and calls the endpoints above only when the owner asks
 for something that needs work data. She shows the owner every draft and waits for approval before `POST /v1/mail/drafts`.
 She never sends a request to any host except the paired address. When the PC isn't reachable she says so. The wire
 types in part 7 are the contract: field names and shapes there are final unless both sides change this document.
+
+## 14. As built on the Jarvis side (2026-11-16, by the Jarvis agent)
+
+Built on three stacked branches in the Jarvis repo, committed locally, **not pushed and no PR yet**: `feed-1-server`
+(certificate, pairing, HTTPS server, Settings section), `feed-2-data` (shared, mail, calendar, drafts), `feed-3-tasks`
+(Outlook tasks). `feed-3-tasks` holds all three. Code is in `src/main/feed/`; 951 unit tests pass, `npm run typecheck` and a build pass.
+
+**Where the build differs from the text above (Edith, build to this):**
+- **Tailscale** is allowed: callers from `100.64.0.0/10` and `fd7a:115c:a1e0::/48` are accepted, and Settings lists the PC's Tailscale
+  address (labelled) next to its home-network one. The owner can pair with either address; the Tailscale one works away from home.
+- **Attendees have no `email`.** Jarvis's calendar keeps only each attendee's name and response, so `attendees` items are
+  `{ "name", "response"? }`. `organizer` is a display name.
+- **Tasks:** the source id is the Outlook **mail account id** (each Outlook account's own default Tasks folder), and there is
+  one list per source: `GET /v1/tasks/lists` → `{ "id": "<accountId>:default", "title": "<label> · Outlook tasks" }`;
+  `GET /v1/tasks?list=<accountId>:default&completed=0|1`. A task id is `<accountId>:<Outlook entry id>`. `importance` is
+  `low|normal|high`; `due` is `YYYY-MM-DD` (omitted when none); `completed` (ms) only on a done task. `/v1/shared` lists the
+  same sources under `tasks`.
+- **Calendar:** only Outlook (classic) calendars can be shared (spec 12.2's default); a Google or other calendar that is ticked
+  or asked for is `NOT_SHARED`. The phone should URL-encode ids (`outlook:main` contains a colon).
+- **Settings storage:** the feed's settings are in `userData/feed/feed.json`, not `settings.json` (the Settings page saves
+  that file whole and would erase them). Paired phones are stored as token hashes only.
+- **Errors:** a path the feed doesn't know is `404 NOT_SHARED`; a known path with the wrong method is `405`; the 429 body
+  code is `TOO_MANY`; a body over 64 KB is `413 TOO_LARGE`.
+- **Port:** 47821 is the default (spec 12.3 not asked; the owner can change it in Settings). The PC's Windows Firewall may
+  need a rule for Tailscale (Windows often treats it as a public network); the Settings text says so, and Jarvis doesn't change the firewall.
+- **Pinning in Node tests:** Node skips `checkServerIdentity` for a self-signed certificate unless the certificate is also
+  given as `ca`, and reuses TLS sessions; the Jarvis tests pin with `ca` plus `agent: false`. Android's own client has no such trap.
+- Pairing proof vector confirmed: code `ABCDE-FGHJK`, fingerprint `0011…eeff` → `c1fdf40ac14a134c3754fdc75a316a9a139f730dcbac5b9dc75f5d5226d6f1de`.
+
+**Not verified:** the Outlook tasks op against a real Outlook (the PowerShell parses and the TypeScript side is tested against a
+stand-in only); the Settings card on screen; the Windows Firewall prompt; a real phone over Wi-Fi or Tailscale; the Playwright e2e
+of part 10 was **not written** (the HTTPS round trip is covered by a unit test, `feed.int.test.ts`, against stand-in data).

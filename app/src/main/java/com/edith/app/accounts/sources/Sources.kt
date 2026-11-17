@@ -48,6 +48,8 @@ typealias EventDraft = EventChange
 /** One connected account's calendars (C22 §3): a Google account now, Microsoft and iCloud later. */
 interface CalendarSource {
     val account: Account
+    /** True for an account whose calendar can only be read (a work calendar read through Jarvis, C38): no event is added to it. */
+    val readOnly: Boolean get() = false
     /** The calendars Edith reads (for Google, those checked in Google Calendar: D15), the default first. */
     suspend fun calendars(): Outcome<List<CalendarInfo>>
     /** Events in [from, to) across [calendars], in start order (recurring events as their instances). */
@@ -112,6 +114,8 @@ interface MailSource {
     val account: Account
     suspend fun search(q: MailQuery, max: Int): Outcome<MailSearchResult>
     suspend fun read(id: String): Outcome<MailMessage>
+    /** False for an account that only saves drafts (a work account read through Jarvis, C38). */
+    val canSend: Boolean get() = true
     suspend fun draft(m: OutgoingMail): Outcome<Unit>
     suspend fun send(m: OutgoingMail): Outcome<Unit>
 }

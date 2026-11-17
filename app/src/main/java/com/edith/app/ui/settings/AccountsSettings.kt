@@ -95,6 +95,16 @@ class AccountsViewModel(private val accounts: Accounts, private val appScope: Co
         }
     }
 
+    /** Add account → Work (via Jarvis), step 1: finds the PC and its certificate fingerprint (C38). */
+    fun findJarvis(address: String, done: (com.edith.app.jarvis.JarvisAccounts.Probe) -> Unit) {
+        viewModelScope.launch { done(accounts.probeJarvis(address)) }
+    }
+
+    /** Step 2: pairs with the code; [done] gets why not, or null. Runs in [appScope] so it finishes if the screen is left. */
+    fun pairJarvis(base: String, fingerprint: String, code: String, done: (String?) -> Unit) {
+        appScope.launch { done(accounts.addJarvis(base, fingerprint, code, android.os.Build.MODEL ?: "Phone")) }
+    }
+
     fun addMicrosoft(activity: Activity) {
         appScope.launch(Dispatchers.Main.immediate) { accounts.addMicrosoft(activity) }
     }
@@ -159,6 +169,8 @@ fun AccountsSection(vm: AccountsViewModel) {
         microsoftNotSetUp = vm.microsoftNotSetUp,
         onAddMicrosoft = { activity?.let { vm.addMicrosoft(it) } },
         onAddICloud = vm::addICloud,
+        onFindJarvis = vm::findJarvis,
+        onPairJarvis = vm::pairJarvis,
         onGrant = { id -> activity?.let { a -> vm.grant(id, a) { consent.launch(IntentSenderRequest.Builder(it.intentSender).build()) } } },
         tasksNeedPermission = tasksAccess.filterValues { it == TasksAccess.NeedsPermission }.keys,
         onGrantTasks = { id -> activity?.let { a -> vm.grantTasks(id, a) { consent.launch(IntentSenderRequest.Builder(it.intentSender).build()) } } },
@@ -207,6 +219,8 @@ fun AccountsContent(
     microsoftNotSetUp: String? = MicrosoftAccounts.NOT_SET_UP,
     onAddMicrosoft: () -> Unit = {},
     onAddICloud: (address: String, password: String, done: (ICloudAnswer) -> Unit) -> Unit = { _, _, _ -> },
+    onFindJarvis: (address: String, done: (com.edith.app.jarvis.JarvisAccounts.Probe) -> Unit) -> Unit = { _, done -> done(com.edith.app.jarvis.JarvisAccounts.Probe.Failed("")) },
+    onPairJarvis: (base: String, fingerprint: String, code: String, done: (String?) -> Unit) -> Unit = { _, _, _, done -> done("") },
     /** C35 §2: accounts whose to-dos need permission, each with **To-dos: Grant access** under it. */
     tasksNeedPermission: Set<String> = emptySet(),
     onGrantTasks: (id: String) -> Unit = {},
@@ -215,6 +229,8 @@ fun AccountsContent(
     var adding by remember { mutableStateOf(false) }
     // C24: the iCloud dialog, for a new account ("") or a given address (Sign in again).
     var icloudFor by remember { mutableStateOf<String?>(null) }
+    // C38: the Jarvis pairing dialog, for a new work account ("") or the same PC again (its address).
+    var jarvisFor by remember { mutableStateOf<String?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Accounts", style = MaterialTheme.typography.titleMedium)
         Text(
@@ -239,7 +255,9 @@ fun AccountsContent(
             account, state,
             onGrant = {
                 open = null
-                if (account.provider == Provider.ICloud && state is AccountState.NeedsSignIn) icloudFor = account.address else onGrant(account.id)
+                if (account.provider == Provider.ICloud && state is AccountState.NeedsSignIn) icloudFor = account.address
+                else if (account.provider == Provider.Jarvis && state is AccountState.NeedsSignIn) jarvisFor = ""
+                else onGrant(account.id)
             },
             onRename = { label, done -> onRename(account.id, label, done) },
             loadCalendars = { done -> loadCalendars(account.id, done) },
@@ -280,8 +298,18 @@ fun AccountsContent(
                     leadingContent = { ProviderBadge(Provider.ICloud) },
                     modifier = Modifier.testTag(ADD_ICLOUD_TAG).clickable { adding = false; icloudFor = "" },
                 )
+                ListItem(
+                    headlineContent = { Text("Work (via Jarvis)") },
+                    supportingContent = { Text("Work Outlook mail, calendar and to-dos from your PC, read-only") },
+                    leadingContent = { ProviderBadge(Provider.Jarvis) },
+                    modifier = Modifier.testTag(ADD_JARVIS_TAG).clickable { adding = false; jarvisFor = "" },
+                )
             }
         }
+    }
+
+    jarvisFor?.let { address ->
+        JarvisDialog(fixedAddress = address.ifEmpty { null }, onFind = onFindJarvis, onPair = onPairJarvis, onClose = { jarvisFor = null })
     }
 
     icloudFor?.let { address ->
@@ -447,7 +475,7 @@ private fun AccountDialog(
                 }
                 DefaultCalendarChoice(state is AccountState.Connected, loadCalendars, onSetDefaultCalendar)
                 when (state) {
-                    is AccountState.NeedsSignIn -> Button(onClick = onGrant) { Text(if (state.viaBrowser || account.provider == Provider.ICloud) "Sign in again" else "Grant access") }
+                    is AccountState.NeedsSignIn -> Button(onClick = onGrant) { Text(if (state.viaBrowser || account.provider == Provider.ICloud) "Sign in again" else if (account.provider == Provider.Jarvis) "Pair again" else "Grant access") }
                     is AccountState.Error -> Button(onClick = onGrant) { Text("Try again") }
                     else -> Unit
                 }

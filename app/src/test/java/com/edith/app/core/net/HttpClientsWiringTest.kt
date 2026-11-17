@@ -36,7 +36,7 @@ class HttpClientsWiringTest {
     @Test fun `the clients that carry credentials all come from the secure one`() {
         val expected = listOf(
             "OllamaWebSearch(", "DuckDuckGoSearch(", "OpenMeteoClient(", "VoiceDownloader(", "MicrosoftOAuth", "BrowserOAuth(",
-            "ICloudAccounts(", "MerossApi(", "RingApi(", "BlinkApi(", "AlexaApi(",
+            "ICloudAccounts(", "JarvisAccounts(", "MerossApi(", "RingApi(", "BlinkApi(", "AlexaApi(",
         )
         val lines = code(container)
         for (name in expected) {
