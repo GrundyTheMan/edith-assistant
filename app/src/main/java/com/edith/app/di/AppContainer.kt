@@ -389,9 +389,10 @@ class AppContainer(val app: Application) {
 
     /** iCloud as an account provider (C24): mail over IMAP/SMTP, calendars over CalDAV, an app-specific password. */
     val icloudAccounts: ICloudAccounts by lazy { ICloudAccounts(secretStore, httpClients.secure, dispatchers) }
+    val jarvisAccounts: com.edith.app.jarvis.JarvisAccounts by lazy { com.edith.app.jarvis.JarvisAccounts(secretStore, httpClients.secure, dispatchers) }
 
     /** Every email-and-calendar account (C22, D17), saved in the `settings` file under `accounts`. */
-    val accounts: Accounts by lazy { Accounts(DataStoreAccountStore(settingsStore.store), googleAccounts, appScope, microsoftAccounts, icloudAccounts) }
+    val accounts: Accounts by lazy { Accounts(DataStoreAccountStore(settingsStore.store), googleAccounts, appScope, microsoftAccounts, icloudAccounts, jarvisAccounts) }
 
     /**
      * The smart home (C25, D10): every connected service's devices, the home tools and the Home tab. Debug builds add

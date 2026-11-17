@@ -10,6 +10,8 @@ enum class Provider(val displayName: String) {
     @SerialName("google") Google("Google"),
     @SerialName("microsoft") Microsoft("Microsoft"),
     @SerialName("icloud") ICloud("iCloud"),
+    /** C38: the owner's work Outlook, read through Jarvis on the PC (read-only, plus email drafts). */
+    @SerialName("jarvis") Jarvis("Jarvis"),
 }
 
 /**
@@ -77,4 +79,6 @@ object AccountSecrets {
     fun refreshToken(id: String) = "account/$id/refresh_token"
     /** C24: iCloud's app-specific password. */
     fun password(id: String) = "account/$id/password"
+    /** C38: the paired PC's address, pinned certificate and device token, as JSON. */
+    fun jarvisLink(id: String) = "account/$id/jarvis_link"
 }

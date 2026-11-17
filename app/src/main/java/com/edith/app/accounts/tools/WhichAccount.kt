@@ -38,7 +38,8 @@ object WhichAccount {
     }
 
     suspend fun forCalendar(dir: AccountDirectory, accountArg: String?, calendarArg: String?): Choice {
-        val all = dir.entries().filter { it.capabilities.calendar }
+        // A read-only calendar (a work calendar through Jarvis, C38) is never a place for a new event.
+        val all = dir.entries().filter { it.capabilities.calendar && it.calendar?.readOnly != true }
         val able = all.filter { it.state == AccountState.Connected && it.calendar != null }
         if (accountArg != null) {
             val entry = when (val c = named(dir, all, accountArg)) { is Choice.Use -> c.entry; is Choice.Stop -> return c }
@@ -93,7 +94,7 @@ object WhichAccount {
      * lists there are, and no request.
      */
     suspend fun forTasks(dir: AccountDirectory, accountArg: String?, listArg: String?): TaskChoice {
-        val all = dir.entries().filter { it.capabilities.tasks && it.tasks != null }
+        val all = dir.entries().filter { it.capabilities.tasks && it.tasks != null && it.tasks.readOnly.not() }
         val able = all.filter { it.state == AccountState.Connected && it.tasksAccess != TasksAccess.NeedsPermission }
         if (accountArg != null) {
             val entry = when (val c = named(dir, all, accountArg)) { is Choice.Use -> c.entry; is Choice.Stop -> return TaskChoice.Stop(c.result) }

@@ -46,6 +46,8 @@ enum class TasksAccess { Unknown, Granted, NeedsPermission }
 /** One account's to-dos (C35 §1): Google Tasks now; Microsoft To Do or iCloud Reminders could be later chunks. */
 interface TaskSource {
     val account: Account
+    /** True for to-dos that can only be read (Outlook Tasks through Jarvis, C38). */
+    val readOnly: Boolean get() = false
     /** The account's lists, Google's default ("My Tasks") first. */
     suspend fun lists(): Outcome<List<TaskList>>
     /** A list's tasks in Google's order ([TaskOrder.sort]); done ones only when [includeDone]. */

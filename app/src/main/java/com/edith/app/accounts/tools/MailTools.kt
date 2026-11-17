@@ -208,14 +208,17 @@ private abstract class WriteEmailTool(protected val dir: AccountDirectory, prote
     protected abstract val cardButton: String
     protected abstract suspend fun deliver(source: MailSource, email: OutgoingMail): Outcome<Unit>
     protected abstract fun done(entry: AccountEntry, email: OutgoingMail): String
+    /** Why this account can't be used for this tool (a draft-only work account can't send, C38); null when it can. */
+    protected open fun refusal(entry: AccountEntry): String? = null
 
     override suspend fun confirmation(args: ToolArgs): ConfirmationRequest? = when (val p = prepare(args)) {
-        is Prepared.Ready -> ConfirmationRequest(cardTitle, details(p.entry, p.email), confirmLabel = cardButton)
+        is Prepared.Ready -> if (refusal(p.entry) != null) null else ConfirmationRequest(cardTitle, details(p.entry, p.email), confirmLabel = cardButton)
         is Prepared.Stop -> null   // execute explains (which account? / can't be used): no card, no request
     }
 
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
         val p = when (val r = prepare(args)) { is Prepared.Ready -> r; is Prepared.Stop -> return r.result }
+        refusal(p.entry)?.let { return ToolResult.Error(it) }
         return when (val r = deliver(requireNotNull(p.entry.mail), p.email)) {
             is Outcome.Success -> ToolResult.Ok(done(p.entry, p.email))
             is Outcome.Failure -> accountError(p.entry.account, r.error)
@@ -246,6 +249,7 @@ private class SendEmailTool(dir: AccountDirectory, handles: MailHandles) : Write
     override val statusLabel = "Sending the email…"
     override val cardTitle = "Send this email?"
     override val cardButton = "Send"
+    override fun refusal(entry: AccountEntry) = if (entry.mail?.canSend == false) "${entry.account.display} can only save drafts, not send. Offer to save a draft with draft_email; the user sends it from Outlook." else null
     override suspend fun deliver(source: MailSource, email: OutgoingMail) = source.send(email)
     override fun done(entry: AccountEntry, email: OutgoingMail) = "Sent to ${email.to} from ${entry.account.display}."
 }

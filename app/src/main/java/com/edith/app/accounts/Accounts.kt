@@ -15,6 +15,7 @@ import com.edith.app.google.GoogleAccounts
 import com.edith.app.google.GoogleSignIn
 import com.edith.app.google.browser.BrowserOAuth
 import com.edith.app.icloud.ICloudAccounts
+import com.edith.app.jarvis.JarvisAccounts
 import com.edith.app.microsoft.MicrosoftAccounts
 import com.edith.app.microsoft.MicrosoftOAuth
 import com.edith.app.tools.framework.Integration
@@ -90,6 +91,8 @@ class Accounts(
     val microsoft: MicrosoftAccounts? = null,
     /** C24: iCloud accounts (null in tests that don't need it). */
     val icloud: ICloudAccounts? = null,
+    /** C38: the work account read through Jarvis (null in tests that don't need it). */
+    val jarvis: JarvisAccounts? = null,
 ) : Integration, AccountDirectory {
     override val id = ID
 
@@ -220,6 +223,29 @@ class Accounts(
         return if (check.calendar) null else ICloudAccounts.CALENDAR_UNAVAILABLE
     }
 
+    /** Add account → Work (via Jarvis), step 1 (C38 §1): finds the PC and its certificate, for the owner to compare. */
+    suspend fun probeJarvis(address: String): JarvisAccounts.Probe = jarvis?.probe(address) ?: JarvisAccounts.Probe.Failed(NOT_SET_UP_JARVIS)
+
+    /**
+     * Add account → Work (via Jarvis), step 2: pairs with the code Jarvis shows, then adds the account (or pairs the
+     * same PC again). Returns why not, or null when all is well.
+     */
+    suspend fun addJarvis(base: String, fingerprint: String, code: String, deviceName: String): String? {
+        _message.value = null
+        val j = jarvis ?: return NOT_SET_UP_JARVIS
+        val paired = when (val r = j.pair(base, fingerprint, code, deviceName)) {
+            is JarvisAccounts.Paired.Ok -> r
+            is JarvisAccounts.Paired.Failed -> return r.message
+        }
+        val isNew = list.value.none { it.provider == Provider.Jarvis && it.address.equals(paired.pcName, ignoreCase = true) }
+        val account = upsert(Provider.Jarvis, paired.pcName, null)
+        j.keep(account.id, paired)
+        // A first pairing is called "Work" when nothing else is (the owner can rename it).
+        if (isNew) rename(account.id, "Work")
+        connections[account.id]?.start()
+        return null
+    }
+
     /** Add account → Microsoft (C23). */
     suspend fun addMicrosoft(activity: Activity) {
         _message.value = null
@@ -308,6 +334,7 @@ class Accounts(
             Provider.Google -> google.connect(accountOf) { activity -> onGoogleSignIn(google.signInAgain(activity, accountOf())) }
             Provider.Microsoft -> microsoft?.connect(accountOf) { activity -> microsoft.signInAgain(activity, accountOf()).let { onMicrosoftSignIn(it) } }
             Provider.ICloud -> icloud?.connect(accountOf)
+            Provider.Jarvis -> jarvis?.connect(accountOf)
         } ?: return
         connections[id] = connection
         connectionsFlow.value = connections.toMap()
@@ -368,6 +395,7 @@ class Accounts(
     companion object {
         const val ID = "accounts"
         const val NOT_SET_UP_ICLOUD = "iCloud isn't available in this build."
+        const val NOT_SET_UP_JARVIS = "Work through Jarvis isn't available in this build."
         const val UNSUPPORTED = "This version of Edith can't use this kind of account."
 
         /** A label no other account has (ignoring case): the address, or "address (2)" in the odd case it's taken. */
