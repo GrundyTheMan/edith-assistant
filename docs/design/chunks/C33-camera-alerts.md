@@ -48,9 +48,9 @@ New-clip detection (no repeats, the 3-per-check limit, back-off); push parsing; 
     stops itself when the last alert goes off, and survives a service's surprise (logged by type only). `AlertKeepAlive` starts it
     when Edith opens with alerts on or the first switch goes on; `AlertBootReceiver` starts it after a restart.
   - `AlertNotifier`: a channel per kind (Doorbell high; Person, Motion default; plus the low "watching" channel), so each can be
-    silenced in Android's settings. A **doorbell ring** gets its camera's picture a few seconds after the alert shows (the alert
-    isn't held up by a battery doorbell waking). Person and motion alerts have **no picture**, so Ring and Blink battery cameras
-    aren't woken on every event; say so if the owner wants them.
+    silenced in Android's settings. **Every alert** (doorbell, person, motion) gets its camera's picture a few seconds after the alert shows (the alert
+    isn't held up by a battery camera waking). The picture is a fresh snapshot taken after the alert, not a frame of the event itself, and it
+    wakes the camera on each event (the owner asked for this; it costs some camera battery).
   - **Tap:** the notification starts `MainActivity` with `ACTION_OPEN_CLIPS`; `AlertTaps` (a flag) brings the Home tab forward, which
     opens the **Clips list** (events carry no clip id, so it opens the list, not one clip: the newest is at the top).
   - **Settings → Home → Alerts:** per signed-in service (Ring: doorbell, person, motion; Blink: motion), all off by default; turning

@@ -67,7 +67,7 @@ class AlertService : Service() {
                     }
                     for (alert in round.alerts) {
                         notifier.show(alert)
-                        if (alert.kind == AlertKind.Doorbell) scope.launch { addPicture(alert) }
+                        scope.launch { addPicture(alert) }
                     }
                     delay(round.nextInMs)
                 }
@@ -76,7 +76,7 @@ class AlertService : Service() {
         return START_STICKY
     }
 
-    /** A doorbell ring gets its camera's picture a few seconds later (a battery doorbell must wake first); the alert is already showing. */
+    /** Every alert gets its camera's picture a few seconds later (a battery doorbell must wake first); the alert is already showing. */
     private suspend fun addPicture(alert: Alert) {
         val container = (application as EdithApp).container
         val camera = container.home.alertCamera(alert.backend, alert.device) ?: return
