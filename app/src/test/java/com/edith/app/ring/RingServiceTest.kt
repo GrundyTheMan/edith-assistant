@@ -332,4 +332,21 @@ class RingServiceTest {
         assertFalse(plain.backend.hasLive)
         assertTrue((plain.backend.devices() as Outcome.Success).value.none { Capability.Live in it.capabilities })
     }
+
+    @Test fun `the camera id goes to Ring as a number, as ring-client-api sends it`() = runBlocking {
+        val rtc = FakeRtc()
+        (liveService(rtc).backend.startLive("1") as Outcome.Success)
+        val id = ring.liveOffers.single()["device_id"] as kotlinx.serialization.json.JsonPrimitive
+        assertFalse("a string id made Ring answer HTTP 400", id.isString)
+        assertEquals(1L, id.content.toLong())
+    }
+
+    @Test fun `when Ring refuses a live view its own error text is shown`() = runBlocking {
+        val s = liveService(FakeRtc())
+        ring.overrides["/integrations/v1/liveview/start"] = {
+            MockResponse.Builder().code(400).body("""{"error":"Invalid SDP offer"}""").addHeader("Content-Type", "application/json").build()
+        }
+        val detail = (((s.backend.startLive("1") as Outcome.Failure).error) as AppError.ToolFailed).detail
+        assertTrue(detail, "HTTP 400 for the live view (Invalid SDP offer)" in detail)
+    }
 }
