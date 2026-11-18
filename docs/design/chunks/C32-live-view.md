@@ -68,3 +68,12 @@ Two-way talk, recording live video, picture-in-picture.
   Ring refusing, an offline camera. `scripts/check.sh` OK, and `:app:minifyReleaseWithR8` builds with the library (the library ships its own keep rule `-keep class org.webrtc.** { *; }`).
 - **Not verified, and cannot be without a real Ring:** that `WebRtcClient` (offer, candidate gathering, the answer, decoding the video) works at all. Nothing has loaded the native library or
   run a call; the emulator has no Ring. A release build must also be checked on `Edith_Release_Test` before publishing (R8 builds, but only a live call proves the keep rules).
+
+## Found on the owner's phone (2026-11-17, v2.0.0-dev.18 in Andarium)
+- **Ring: "Ring answered HTTP 400 for the live view."** Ring refused the start request. Likely cause (not yet confirmed): `device_id` was sent as a string; `ring-client-api` sends
+  it as a number (Ring's device ids are numbers). **Change:** it is sent as a number now, and a refused live view shows Ring's own error text (`error`/`message`, 120 characters at most),
+  so a repeat says why. Tests: `RingServiceTest` (the id is a number; the error text is shown). Still unverified against a real Ring.
+- **Blink: "Blink ended the live view."** This one message covered two different causes (the stream server closing the connection, and Blink's live view command reporting it had stopped), so
+  it could not say which happened. **Change:** the reasons now differ. A closed stream says whether any video arrived and how much ("closed the connection before any video arrived", "after N KB of video");
+  a stopped command gives Blink's codes ("its command stopped: status_code …, state_condition …", as Jarvis logs them); both are also logged. The command poll now uses the camera's own network id,
+  as Jarvis does. This is diagnostics, not a known fix: the cause is still open until the owner tries it again and reads the new text.

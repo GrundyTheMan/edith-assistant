@@ -44,6 +44,7 @@ class BlinkLiveStream(
                         } catch (e: IOException) { return@launch }
                     }
                 }
+                var bytes = 0L
                 val reader = BlinkLive.FrameReader()
                 val buffer = ByteArray(16 * 1024)
                 val input = socket.getInputStream()
@@ -51,8 +52,8 @@ class BlinkLiveStream(
                     var why: String? = null
                     while (why == null && isActive) {
                         val n = input.read(buffer)
-                        if (n < 0) why = "Blink ended the live view."
-                        else for (chunk in reader.push(buffer, n)) onVideo(chunk)
+                        if (n < 0) why = if (bytes == 0L) "Blink's stream server closed the connection before any video arrived." else "Blink's stream server closed the connection after ${bytes / 1024} KB of video."
+                        else for (chunk in reader.push(buffer, n)) { bytes += chunk.size; onVideo(chunk) }
                     }
                     why ?: "Stopped."
                 } catch (e: SocketTimeoutException) { "The camera stopped sending video." }

@@ -152,7 +152,14 @@ class RingApi(
      * `ring-client-api`'s `SimpleWebRtcSession`, read from v14.3.0). [sessionId] is made by Edith and names the view for [liveEnd].
      */
     suspend fun liveStart(accessToken: String, hardwareId: String, cameraId: String, sessionId: String, offerSdp: String): RingReply<String> {
-        val body = buildJsonObject { put("session_id", sessionId); put("device_id", cameraId); put("sdp", offerSdp); put("protocol", "webrtc") }
+        // Ring's device ids are numbers, and ring-client-api sends this one as a number (Ring answered HTTP 400 to a string, 2026-11-17).
+        val body = buildJsonObject {
+            put("session_id", sessionId)
+            val numeric = cameraId.toLongOrNull()
+            if (numeric != null) put("device_id", numeric) else put("device_id", cameraId)
+            put("sdp", offerSdp)
+            put("protocol", "webrtc")
+        }
         val request = Request.Builder().url("${endpoints.liveView}/start").headers(authHeaders(accessToken, hardwareId))
             .header("Accept", "application/json").post(body.toString().toRequestBody(JSON)).build()
         return call(request, hardwareId, "the live view") { text ->
@@ -333,12 +340,23 @@ class RingApi(
                 r.code == 401 -> RingReply.Unauthorized
                 r.code == 404 && hardwareId in text -> RingReply.NoSession
                 r.code == 429 -> RingReply.Failed("Ring says to slow down; try again in a few minutes")
-                !r.isSuccessful -> { Log.w(LogTag.Home, "Ring: HTTP ${r.code} for $what"); RingReply.Failed("Ring answered HTTP ${r.code} for $what") }
+                !r.isSuccessful -> {
+                    // For a live view, Ring's own words (its error text, never the request) say what it didn't like.
+                    val why = if (what == "the live view") reason(text)?.let { " ($it)" }.orEmpty() else ""
+                    Log.w(LogTag.Home, "Ring: HTTP ${r.code} for $what$why")
+                    RingReply.Failed("Ring answered HTTP ${r.code} for $what$why")
+                }
                 else -> try { RingReply.Ok(parse(text)) } catch (e: SerializationException) { RingReply.Failed("Ring's answer for $what wasn't what Edith expected") }
             }
         }
     } catch (e: IOException) {
         RingReply.Failed("Ring can't be reached right now")
+    }
+
+    /** The error text in one of Ring's failure bodies, short, or null. Used only where it helps the owner (a refused live view). */
+    private fun reason(body: String): String? {
+        val o = runCatching { json.parseToJsonElement(body) as? JsonObject }.getOrNull() ?: return null
+        return listOf("error", "message", "error_description", "error_message").firstNotNullOfOrNull { k -> o.text(k) }?.take(120)
     }
 
     private fun tokens(d: JsonObject): RingTokens? {

@@ -219,7 +219,7 @@ class BlinkServiceTest {
         withTimeout(5_000) { feed.video.receive() }
         blink.liveState = "done"
         withTimeout(8_000) { while (feed.ended.value == null) delay(50) }
-        assertEquals("Blink ended the live view.", feed.ended.value)
+        assertEquals("Blink ended the live view (its command stopped: state_condition done).", feed.ended.value)
         withTimeout(5_000) { assertTrue(feed.video.receiveCatching().isClosed) }
         server.close()
     }

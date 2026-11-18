@@ -121,6 +121,19 @@ object BlinkParse {
         return state == null || state == "new" || state == "running"
     }
 
+    /**
+     * Null while the live view's command is running; otherwise what Blink said when it stopped, as codes only
+     * (Jarvis's `commandSummary`): "status_code 901, state_condition done".
+     */
+    fun commandStopped(body: JsonElement): String? {
+        if (commandRunning(body)) return null
+        val o = body.obj()
+        val first = (o?.get("commands") as? JsonArray)?.firstOrNull()?.obj()
+        fun pick(k: String): String? = (o?.get(k) as? JsonPrimitive)?.contentOrNull ?: (first?.get(k) as? JsonPrimitive)?.contentOrNull
+        return listOf("status_code", "state_condition", "state_stage", "status_msg").mapNotNull { k -> pick(k)?.let { "$k ${it.take(80)}" } }
+            .joinToString(", ").ifEmpty { "no status given" }
+    }
+
     /** The command a snapshot request started: poll [BlinkApi.commandDone] with these. Null when Blink gave none. */
     fun command(body: JsonElement): Pair<String, String?>? {
         val o = body.obj() ?: return null

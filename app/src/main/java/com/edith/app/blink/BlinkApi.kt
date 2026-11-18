@@ -264,9 +264,9 @@ class BlinkApi(
     suspend fun requestLive(token: String, where: BlinkTier, camera: BlinkCamera): BlinkReply<BlinkParse.LiveAnswer> =
         send(token, where, "POST", BlinkParse.liveviewPath(where.accountId, camera), "the live view") { BlinkParse.liveAnswer(json.parseToJsonElement(it)) }
 
-    /** Whether a live view's command is still running: Blink ends a view by ending its command. */
-    suspend fun liveRunning(token: String, where: BlinkTier, network: String, commandId: String): BlinkReply<Boolean> =
-        get(token, where, "/network/$network/command/$commandId", "the live view") { BlinkParse.commandRunning(json.parseToJsonElement(it)) }
+    /** Null while a live view's command is still running (Blink ends a view by ending its command); otherwise what Blink said when it stopped: codes only. */
+    suspend fun liveStatus(token: String, where: BlinkTier, network: String, commandId: String): BlinkReply<String?> =
+        get(token, where, "/network/$network/command/$commandId", "the live view") { BlinkParse.commandStopped(json.parseToJsonElement(it)) }
 
     /** Tells Blink a live view is over, so the camera stops streaming. */
     suspend fun endLive(token: String, where: BlinkTier, network: String, commandId: String): BlinkReply<Unit> =

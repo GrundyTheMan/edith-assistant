@@ -377,7 +377,8 @@ class BlinkService(
         private val _ended = MutableStateFlow<String?>(null)
         override val video: kotlinx.coroutines.channels.ReceiveChannel<ByteArray> = channel
         override val ended: StateFlow<String?> = _ended.asStateFlow()
-        private val network = answer.networkId ?: camera.networkId
+        /** The camera's own network, as Jarvis uses; the answer's `network_id` is not needed. */
+        private val network = camera.networkId
         @Volatile private var job: kotlinx.coroutines.Job? = null
 
         init {
@@ -389,8 +390,9 @@ class BlinkService(
                 if (answer.commandId != null) launch {
                     while (true) {
                         kotlinx.coroutines.delay(answer.pollSeconds * 1000L)
-                        val running = authed { t, w -> api.liveRunning(t, w, network, answer.commandId) }
-                        if (running is Outcome.Success && !running.value) { finish("Blink ended the live view."); break }
+                        val status = authed { t, w -> api.liveStatus(t, w, network, answer.commandId) }
+                        val stopped = (status as? Outcome.Success)?.value
+                        if (stopped != null) { finish("Blink ended the live view (its command stopped: $stopped)."); break }
                     }
                 }
                 launch { kotlinx.coroutines.delay(liveLimitMs); finish("Live view stops after a few minutes. Start it again to keep watching.") }
@@ -403,6 +405,7 @@ class BlinkService(
         private fun finish(reason: String) {
             if (!finished.compareAndSet(false, true)) return
             _ended.value = reason
+            Log.i(LogTag.Home, "Blink live view ended: $reason")
             channel.close()
             liveScope.launch {
                 // The camera keeps streaming until Blink is told the view is over.
