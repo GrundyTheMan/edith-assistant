@@ -380,6 +380,7 @@ class BlinkService(
         /** The camera's own network, as Jarvis uses; the answer's `network_id` is not needed. */
         private val network = camera.networkId
         @Volatile private var job: kotlinx.coroutines.Job? = null
+        private val startedAt = System.nanoTime()
 
         init {
             job = liveScope.launch {
@@ -406,7 +407,7 @@ class BlinkService(
         private fun finish(reason: String) {
             if (!finished.compareAndSet(false, true)) return
             _ended.value = reason
-            Log.i(LogTag.Home, "Blink live view ended: $reason")
+            Log.i(LogTag.Home, "Blink live view ended after ${(System.nanoTime() - startedAt) / 1_000_000_000} s: $reason")
             channel.close()
             liveScope.launch {
                 // The camera keeps streaming until Blink is told the view is over.
