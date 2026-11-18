@@ -386,15 +386,23 @@ Unit (`printerRoutes.test.ts`, `printerWire.test.ts`, `printerArm.test.ts`, `pri
 Playwright e2e (`feedPrinter.spec.ts`, against `fakeMoonraker` and a real feed server on a throwaway profile): pair a fake phone, read `shared`, `state`, a long-poll change, arm,
 a `confirm` round trip (409 then 200) for `home`, a refused jog while not homed, `estop`, switching `sharePrinter` off mid-poll.
 
-## 11. Order of work and PRs
+## 11. Order of work and PRs (nine steps, as agreed 2026-11-18)
 
-1. **J1 (read-only):** settings and switches (`sharePrinter` only), `printerWire.ts`, `printerEvents` skeleton not yet, `/v1/shared` entry, `state` (long-poll, `quick` without arm = all "Turn on Controls first" or per
-   check), `temperatures`, `macros`, `console`, `files`, `files/detail`, `history`, `camera/{id}/snapshot`, the service addition `snapshotFor`. Tests, e2e for the read routes.
-2. **J2 (controls):** `printerControl` switch, `printerArm.ts`, `controls`, `command` with the full order of 6.5 and `dryRun`, the `commandFor` refactor, rate limit, chat path. Tests, e2e.
-3. **J3 (alerts and uploads):** `printerAlerts` switch, `printerEvents.ts`, `events` route, `uploadBytes`, `files/upload`. Tests.
-4. **J4 (required since 2026-11-18, parity, after J3):** recordings, camera stream, screen taps. Part 15.4 says what else each step now carries.
+Each step is one PR on its own branch (`feed-5-j0`, `feed-5-j1a`, …), a merge commit, stacked in the order below (each branch starts from the previous one). A step is not done until `npm run typecheck`, `npm test`, a build into a scratch folder and its own tests pass. The sizes are why the work is cut this way: **J0 is the only step that changes code the work-data feed depends on**, so it is small and tested hardest (the mail and calendar routes must behave exactly as before).
 
-Edith builds against J1 first; she does not need J2 to ship her read-only stage. Tell the owner when each step is merged so Edith's side can start its matching stage.
+| Step | Content | Unlocks for Edith |
+|---|---|---|
+| **J0** | Groundwork, no printer in it: the device is passed to routes (15.1.1); **held requests** that do not count toward the 4-request cap, have their own deadline, and are left out of the "still running" log lines and the Recent requests list (15.1.2); **binary replies** and **gzip** (15.1.3, replies only); a **per-phone request limiter** (15.1.4); unpairing and switching off reach the feed's own parts (15.1.6) | nothing visible |
+| **J1a** | `sharePrinter` switch and settings, `/v1/shared` printer entry (with `features`, `schema`), the printer service's **feed-side watcher** (15.1.5, `watchFeed`), the `state` long-poll: revision, `epoch`, `quick`, `consoleSeq`, folding of live readings, `quiet`, 3 polls per phone; the **measurement** of 15.2.1 | the Printer page's Status and everything read from `state` |
+| **J1b** | The other read routes: `temperatures`, `macros` (with `hidden`), `console` (with `seq`/`after`), `files` (with the O3 rule) and `files/detail`, `history`, `camera/{id}/snapshot` (`snapshotFor`, `cameraSeen`), the **parity table and test** (15.6.6) | **stage 1** (see it) |
+| **J2a** | `printerControl`, `printerArm.ts`, `controls`, `printerWire.ts` (`parseCommand`), `command` in the full order of 6.5 with `dryRun`, `requestId` (15.2.3), the command limiter (8.7), emergency stop, the chat path, the `commandFor` refactor | the commands |
+| **J2b** | Per-phone "May control the printer" (15.2.5), the O1 safeguards (arm of 1 minute over Tailscale, the PC notification and `warn` log line, the "Controls on for <phone>" badge, the optional away switch and `AWAY_LIMITED`), `POST /v1/printer/settings` | **stage 2** (control it) |
+| **J3a** | `printerAlerts`, `printerEvents.ts`, the `events` route (the catch-up for O2) | alerts |
+| **J3b** | Streamed upload: `uploadBytes`, `files/upload` (request bodies read as a stream, 15.1.3) | **stage 3** |
+| **J4a** | Recordings (6.11) | recordings |
+| **J4b** | Camera stream (6.9) and screen taps | **stage 4** |
+
+Edith builds against J1a/J1b first; she does not need J2 to ship her read-only stage. Tell the owner when each step is merged so Edith's side can start its matching stage.
 
 ## 12. What not to build
 
