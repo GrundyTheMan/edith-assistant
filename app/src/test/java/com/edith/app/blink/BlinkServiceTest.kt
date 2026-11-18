@@ -208,7 +208,34 @@ class BlinkServiceTest {
         assertNull(feed.ended.value)
         feed.stop()
         assertEquals("Stopped.", feed.ended.value)
-        withTimeout(5_000) { while (blink.count("/rest/network/5/command/99/done/") == 0) delay(50) }
+        server.close()
+    }
+
+    @Test fun `a stream that closes at once is asked for again, once, and the second one plays`() = runBlocking {
+        val server = ServerSocket(0)
+        Thread {
+            server.accept().apply { getInputStream().readNBytes(122); close() }
+            val s = server.accept()
+            Thread { runCatching { s.getInputStream().copyTo(java.io.OutputStream.nullOutputStream()) } }.apply { isDaemon = true }.start()
+            s.getOutputStream().write(video(0x47, 7)); s.getOutputStream().flush()
+        }.apply { isDaemon = true; start() }
+        blink.liveServer = "immis://127.0.0.1:${server.localPort}/CONN?client_id=9"
+        val feed = liveService().also { it.signIn(login) }.backend.startLive("1").value() as com.edith.app.home.StreamLiveFeed
+        assertEquals(listOf(0x47, 7), withTimeout(8_000) { feed.video.receive() }.map { it.toInt() })
+        assertNull(feed.ended.value)
+        assertEquals(2, blink.requests.count { it.method == "POST" && it.url.encodedPath.endsWith("/liveview") })
+        feed.stop()
+        server.close()
+    }
+
+    @Test fun `a stream that closes early twice ends the view instead of asking forever`() = runBlocking {
+        val server = ServerSocket(0)
+        Thread { repeat(2) { server.accept().apply { getInputStream().readNBytes(122); close() } } }.apply { isDaemon = true; start() }
+        blink.liveServer = "immis://127.0.0.1:${server.localPort}/CONN?client_id=9"
+        val feed = liveService().also { it.signIn(login) }.backend.startLive("1").value()
+        withTimeout(8_000) { while (feed.ended.value == null) delay(50) }
+        assertTrue(feed.ended.value!!, feed.ended.value!!.startsWith("Blink's stream server closed"))
+        assertEquals(2, blink.requests.count { it.method == "POST" && it.url.encodedPath.endsWith("/liveview") })
         server.close()
     }
 
@@ -248,13 +275,12 @@ class BlinkServiceTest {
         assertTrue(crashes.joinToString { it.toString() }, crashes.isEmpty())
     }
 
-    @Test fun `a view is ended at the time limit and Blink is told`() = runBlocking {
+    @Test fun `a view is ended at the time limit`() = runBlocking {
         val (server, _) = streamServer(video(0x47, 1))
         blink.liveServer = "immis://127.0.0.1:${server.localPort}/CONN?client_id=9"
         val feed = liveService(limitMs = 300).also { it.signIn(login) }.backend.startLive("1").value()
         withTimeout(5_000) { while (feed.ended.value == null) delay(50) }
         assertTrue(feed.ended.value!!, feed.ended.value!!.startsWith("Live view stops after"))
-        withTimeout(5_000) { while (blink.count("/rest/network/5/command/99/done/") == 0) delay(50) }
         server.close()
     }
 

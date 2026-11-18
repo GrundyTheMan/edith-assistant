@@ -82,6 +82,10 @@ class BlinkLiveStream(
 
     companion object {
         private const val QUIET_MS = 20_000
+        private const val EARLY_S = 10
+
+        /** Whether the server dropped the connection soon after it began, which Blink does now and then and a second try gets past. */
+        fun closedEarly(reason: String, seconds: Long) = seconds < EARLY_S && reason.startsWith("Blink's stream server closed the connection")
 
         /** What went wrong, for the message and the log: the kind of error and its text, short. */
         internal fun describe(e: Throwable): String = "${e.javaClass.simpleName}${e.message?.takeIf { it.isNotBlank() }?.let { ": " + it.take(80) }.orEmpty()}"

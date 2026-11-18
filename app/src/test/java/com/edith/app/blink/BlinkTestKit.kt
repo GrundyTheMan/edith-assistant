@@ -136,7 +136,6 @@ class FakeBlink {
             path == "/network/5/command/77" -> json("""{"complete":$commandComplete,"status_code":908}""")
             r.method == "POST" && path.endsWith("/liveview") -> json("""{"server":${liveServer?.let { "\"$it\"" } ?: "null"},"command_id":99,"polling_interval":2,"network_id":5}""")
             path == "/network/5/command/99" -> json("""{"commands":[{"state_condition":"$liveState"}]}""")
-            r.method == "POST" && path == "/network/5/command/99/done/" -> json("{}")
             path.startsWith("/media/thumb/") || path.contains("/thumbnail/") -> MockResponse.Builder().code(200).body(Buffer().write(pictureBytes)).addHeader("Content-Type", "image/jpeg").build()
             path == "/api/v1/accounts/4242/media/changed" -> json(mediaJson)
             path.startsWith("/api/v2/accounts/4242/media/clip/") -> MockResponse.Builder().code(200).body(Buffer().write(byteArrayOf(1, 2))).addHeader("Content-Type", "video/mp4").build()

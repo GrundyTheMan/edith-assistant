@@ -268,10 +268,6 @@ class BlinkApi(
     suspend fun liveStatus(token: String, where: BlinkTier, network: String, commandId: String): BlinkReply<String?> =
         get(token, where, "/network/$network/command/$commandId", "the live view") { BlinkParse.commandStopped(json.parseToJsonElement(it)) }
 
-    /** Tells Blink a live view is over, so the camera stops streaming. */
-    suspend fun endLive(token: String, where: BlinkTier, network: String, commandId: String): BlinkReply<Unit> =
-        send(token, where, "POST", "/network/$network/command/$commandId/done/", "the live view") { }
-
     /** A camera's picture, from the address Blink gave for it. */
     suspend fun picture(token: String, where: BlinkTier, path: String): BlinkReply<ByteArray> {
         val url = absolute(where, path) ?: return BlinkReply.Failed("Blink gave an address Edith can't use")
@@ -327,7 +323,12 @@ class BlinkApi(
             r.code == 401 -> BlinkReply.Unauthorized
             r.code == 409 -> busy(r.text)
             r.code == 429 -> BlinkReply.Failed("Blink says to slow down; try again in a few minutes")
-            r.code !in 200..299 -> { Log.w(LogTag.Home, "Blink: HTTP ${r.code} for $what"); BlinkReply.Failed("Blink answered HTTP ${r.code} for $what") }
+            r.code !in 200..299 -> {
+                // Blink's own words ("message") say why; they hold no secrets, and are kept short.
+                val said = runCatching { ((json.parseToJsonElement(r.text) as? JsonObject)?.get("message") as? JsonPrimitive)?.contentOrNull }.getOrNull()?.take(100)
+                Log.w(LogTag.Home, "Blink: HTTP ${r.code} for $what${said?.let { ": $it" }.orEmpty()}")
+                BlinkReply.Failed("Blink answered HTTP ${r.code} for $what")
+            }
             else -> try { BlinkReply.Ok(parse(r.text)) } catch (e: SerializationException) { BlinkReply.Failed("Blink's answer for $what wasn't what Edith expected") }
                 catch (e: IllegalArgumentException) { BlinkReply.Failed("Blink's answer for $what wasn't what Edith expected") }
         }

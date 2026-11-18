@@ -372,7 +372,7 @@ class BlinkService(
     }
 
     /** One running live view: the stream, a poll of Blink's command (it ends a view by ending it), and the time limit. */
-    private inner class BlinkLiveFeed(camera: BlinkCamera, private val answer: BlinkParse.LiveAnswer, server: BlinkLive.Immis, serial: String) : StreamLiveFeed {
+    private inner class BlinkLiveFeed(private val camera: BlinkCamera, answer: BlinkParse.LiveAnswer, server: BlinkLive.Immis, private val serial: String) : StreamLiveFeed {
         private val channel = kotlinx.coroutines.channels.Channel<ByteArray>(64, kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST)
         private val _ended = MutableStateFlow<String?>(null)
         override val video: kotlinx.coroutines.channels.ReceiveChannel<ByteArray> = channel
@@ -381,20 +381,44 @@ class BlinkService(
         private val network = camera.networkId
         @Volatile private var job: kotlinx.coroutines.Job? = null
         private val startedAt = System.nanoTime()
+        /** The command being watched: it changes once if the stream closes early and the view is asked for again. */
+        @Volatile private var current = answer
+        @Volatile private var switching = false
+
+        /** Blink's stream server sometimes drops a new connection at once; the view is then asked for again, once, before giving up. */
+        private suspend fun again(): BlinkLive.Immis? {
+            if (finished.get()) return null
+            switching = true
+            kotlinx.coroutines.delay(RETRY_WAIT_MS)   // Blink ends the old command about a second after the connection closes; asking sooner met the same drop
+            try {
+                val next = (authed { t, w -> api.requestLive(t, w, camera) } as? Outcome.Success)?.value ?: return null
+                val immis = next.server?.takeIf { it.startsWith("immis://") }?.let { BlinkLive.parseImmis(it) } ?: return null
+                current = next
+                return immis
+            } finally { switching = false }
+        }
 
         init {
             job = liveScope.launch {
                 val stream = launch {
                     // trySend: the view can be stopped (channel closed) while a chunk is on its way, and send would throw and kill the app.
-                    val why = BlinkLiveStream(server, serial, liveConnect).run { channel.trySend(it) }
+                    val began = System.nanoTime()
+                    var why = BlinkLiveStream(server, serial, liveConnect).run { channel.trySend(it) }
+                    if (BlinkLiveStream.closedEarly(why, (System.nanoTime() - began) / 1_000_000_000)) {
+                        Log.i(LogTag.Home, "Blink live view: the stream closed early ($why); asking again")
+                        again()?.let { next -> why = BlinkLiveStream(next, serial, liveConnect).run { channel.trySend(it) } }
+                    }
                     finish(why)
                 }
                 if (answer.commandId != null) launch {
                     while (true) {
-                        kotlinx.coroutines.delay(answer.pollSeconds * 1000L)
-                        val status = authed { t, w -> api.liveStatus(t, w, network, answer.commandId) }
+                        kotlinx.coroutines.delay(current.pollSeconds * 1000L)
+                        val watched = current
+                        val id = watched.commandId ?: continue
+                        val status = authed { t, w -> api.liveStatus(t, w, network, id) }
                         val stopped = (status as? Outcome.Success)?.value
-                        if (stopped != null) { finish("Blink ended the live view (its command stopped: $stopped)."); break }
+                        // A command ended on purpose while the view is being asked for again is not the end of the view.
+                        if (stopped != null && !switching && watched === current) { finish("Blink ended the live view (its command stopped: $stopped)."); break }
                     }
                 }
                 launch { kotlinx.coroutines.delay(liveLimitMs); finish("Live view stops after a few minutes. Start it again to keep watching.") }
@@ -409,10 +433,7 @@ class BlinkService(
             _ended.value = reason
             Log.i(LogTag.Home, "Blink live view ended after ${(System.nanoTime() - startedAt) / 1_000_000_000} s: $reason")
             channel.close()
-            liveScope.launch {
-                // The camera keeps streaming until Blink is told the view is over.
-                answer.commandId?.let { id -> authed { t, w -> api.endLive(t, w, network, id) } }
-            }
+            // Blink ends the command itself within a second of the connection closing; its "done" call is retired (404).
             job?.cancel()
         }
 
@@ -426,6 +447,7 @@ class BlinkService(
         const val ID = "blink"
         const val SECRET_KEY = "home/blink"
         const val NEEDS_SIGN_IN = "it needs signing in again — Settings → Home"
+        private const val RETRY_WAIT_MS = 3_000L
         private const val MAX_TRIES = 6
         private const val BUSY_TRIES = 4
         private const val BUSY_WAIT_MS = 3_000L

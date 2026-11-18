@@ -103,3 +103,10 @@ Two-way talk, recording live video, picture-in-picture.
   dialog when a view ends, so the stream most likely ended at or during the tap. Cause unknown: the exception was thrown away. **Change (diagnostics, not a fix):** the message and the log now carry the error
   (`SocketException: Connection reset`…), how many seconds the view had run and how many KB arrived; a failed connect says "couldn't connect". The log line for every end now has the run time.
   Open until the owner tries again and reads the new text. Also made two `BlinkLiveTest` servers read the handshake before closing (closing a socket with unread data resets the connection, which made one test depend on timing).
+
+## dev.23: early closes, and the retired "done" call (2026-11-18)
+Tried against the owner's real Blink account in the emulator (about nine starts): most played, including full screen; two plain views (no full screen) were dropped by Blink's stream server at once (0 s with no video, and 4 KB at 3 s).
+- **Change:** when the stream server closes the connection within 10 s, the view is asked for again once, after 3 s (asking at once met the same drop twice in the emulator; with the wait, the one early close in ten starts recovered) (a new `liveview` request, and the command being watched switches to the new one); a second early close ends the view with the usual message.
+- **Change:** the `POST …/command/{id}/done/` call is gone. Blink answers 404 "Endpoint no longer supported", and Blink ends the command itself within about a second of the connection closing (status 523). Jarvis still sends it; harmless.
+- **Change:** a failed Blink call now logs Blink's own `message` (first 100 characters) next to the HTTP code.
+- Not verified on a phone: whether the retry gets past the owner's failures; the retry's cost is a few seconds more of black before video.
