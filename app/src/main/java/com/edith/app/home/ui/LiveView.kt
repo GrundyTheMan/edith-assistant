@@ -40,6 +40,7 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
 import androidx.media3.ui.PlayerView
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
@@ -159,7 +160,11 @@ internal fun LivePlayer(feed: StreamLiveFeed, modifier: Modifier = Modifier) {
         val factory = DefaultRenderersFactory(context).apply { if (software.value) setMediaCodecSelector(softwareFirst()) }
         // A live picture should start quickly and stay close to now: small buffers.
         val load = DefaultLoadControl.Builder().setBufferDurationsMs(1_000, 5_000, 500, 1_000).build()
-        val source = ProgressiveMediaSource.Factory(DataSource.Factory { FeedDataSource(feed, received) }, DefaultExtractorsFactory())
+        // Blink's video has no access-unit delimiters; without this flag the player never finishes a frame and the picture stays black.
+        val extractors = DefaultExtractorsFactory().setTsExtractorFlags(
+            DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS or DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES,
+        )
+        val source = ProgressiveMediaSource.Factory(DataSource.Factory { FeedDataSource(feed, received) }, extractors)
         ExoPlayer.Builder(context, factory).setLoadControl(load).setMediaSourceFactory(source).build().apply {
             setMediaItem(MediaItem.fromUri("feed://live"))
             addListener(object : Player.Listener {

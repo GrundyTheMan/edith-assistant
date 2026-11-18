@@ -117,3 +117,9 @@ The owner's phone showed a black box for Brooklyn's and Luke's Windows (Minis) w
 - **Change:** with no picture 10 s after the player starts, the software decoder is tried once; if there is still none, the video area says so ("No picture yet. Video is arriving (n MB)…") and the log gets the KB received, the decoder and the player state.
 - Tried and dropped: sending Jarvis's `{"intent":"liveview",…}` body with the live-view request made Backyard connect but never send video.
 - Open: why the players show nothing for Brooklyn's stream; compare with Jarvis's player (Jarvis plays it).
+
+## dev.25: the black box found (2026-11-18)
+Compared with Jarvis (same protocol and frame reader; it plays with mpegts.js), then bisected with the recorded stream from Brooklyn's Window in the emulator: the raw recording stayed black, the same streams remuxed by ffmpeg played, and ffmpeg's difference was access-unit delimiters, which Blink's H.264 does not have.
+- **Fix:** the TS extractor now gets `FLAG_DETECT_ACCESS_UNITS` and `FLAG_ALLOW_NON_IDR_KEYFRAMES`. Without them Media3 never finishes a frame, so the picture stays black with no error (and the hardware decoder of some devices gives no error either). Verified in the emulator on the owner's real Blink account: Brooklyn's Window, which stayed black for over a minute, plays; Luke's Window plays after a slow start (3 KB in the first 10 s, then the software decoder; the dev.24 message showed until the first frame); Backyard still plays.
+- Not verified on a phone. Slow starts on the emulator are partly its software H.264 decoding of 1080p.
+- **Change:** the time-limit message now says "5 minutes" instead of "a few minutes" (Blink and Ring, as Jarvis words it).

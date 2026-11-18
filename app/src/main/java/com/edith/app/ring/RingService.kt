@@ -350,7 +350,7 @@ class RingService(
 
         init {
             scope.launch { call.lost.filterNotNull().first().let { finish(it) } }
-            scope.launch { kotlinx.coroutines.delay(liveLimitMs); finish("Live view stops after a few minutes. Start it again to keep watching.") }
+            scope.launch { kotlinx.coroutines.delay(liveLimitMs); finish("Live view stops after 5 minutes. Start it again to keep watching.") }
         }
 
         private fun finish(reason: String) {
