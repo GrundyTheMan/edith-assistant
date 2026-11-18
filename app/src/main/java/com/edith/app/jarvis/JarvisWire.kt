@@ -31,6 +31,8 @@ internal val feedJson = Json { ignoreUnknownKeys = true; explicitNulls = false; 
     val mail: List<SharedMail> = emptyList(),
     val calendars: List<SharedCalendar> = emptyList(),
     val tasks: List<SharedTasks> = emptyList(),
+    /** The 3D printer (C39): absent when the owner doesn't share it, or Jarvis is too old to know it. */
+    val printer: com.edith.app.printer.feed.SharedPrinter? = null,
 )
 
 @Serializable internal data class Page<T>(val items: List<T> = emptyList(), val more: Boolean = false)
