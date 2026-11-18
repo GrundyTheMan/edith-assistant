@@ -5,7 +5,7 @@
 | Phase | 8 Smart home (v2) |
 | Depends on | C34 (the direct printer card), C38 (pairing with Jarvis, `jarvis/`), C25 (Home, confirmation cards), C33 (the alerts service, for stage 3) |
 | Unblocks | The whole Jarvis Printer page on the phone, at home and away, plus print alerts |
-| Size | Large: five work-package groups (E1-E14), delivered stage by stage. **Each stage is shippable on its own.** |
+| Size | Large: fourteen work packages (E1-E14) in four stages, delivered stage by stage. **Each stage is shippable on its own.** |
 | Read first | [`../jarvis-printer-feed-spec.md`](../jarvis-printer-feed-spec.md) (the contract; **you will not understand this chunk without it**), C38 "As built", C34 "As built", Jarvis's `docs/plans/printer.md` (parts 1, 2, 5, 6, 7) |
 
 **Audience: the AI agents who will build this.** It is written to be followed literally. Where it says "exactly", it means exactly. Where it
