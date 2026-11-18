@@ -89,7 +89,8 @@ class BlinkLiveTest {
 
     @Test fun `the server closing ends the stream with a reason`() = runBlocking {
         val server = ServerSocket(0)
-        Thread { server.accept().close() }.apply { isDaemon = true; start() }
+        // Read the handshake first: closing a socket with unread data resets the connection instead of ending it cleanly.
+        Thread { server.accept().apply { getInputStream().readNBytes(122); close() } }.apply { isDaemon = true; start() }
         val reason = withTimeout(5_000) { BlinkLiveStream(BlinkLive.Immis("127.0.0.1", server.localPort, "C", 1), "S") { Socket(it.host, it.port) }.run { } }
         assertEquals("Blink's stream server closed the connection before any video arrived.", reason)
         server.close()
@@ -119,9 +120,29 @@ class BlinkLiveTest {
         assertEquals("status_code 999", stopped("""{"status_code":999}"""))
     }
 
+    @Test fun `a connection that cannot be made says what failed`() = runBlocking {
+        val reason = withTimeout(5_000) {
+            BlinkLiveStream(BlinkLive.Immis("h", 443, "C", 1), "S") { throw java.net.ConnectException("Connection refused") }.run { }
+        }
+        assertEquals("The live view connection failed (couldn't connect: ConnectException: Connection refused)", reason)
+    }
+
+    @Test fun `a stream that breaks says what failed, how long it ran and how much arrived`() = runBlocking {
+        // A socket whose reads fail the way a reset connection does.
+        val broken = object : Socket() {
+            override fun getInputStream() = object : java.io.InputStream() {
+                override fun read(): Int = throw java.net.SocketException("Connection reset")
+                override fun read(b: ByteArray, off: Int, len: Int): Int = throw java.net.SocketException("Connection reset")
+            }
+            override fun getOutputStream() = java.io.OutputStream.nullOutputStream()
+        }
+        val reason = withTimeout(5_000) { BlinkLiveStream(BlinkLive.Immis("h", 443, "C", 1), "S") { broken }.run { } }
+        assertEquals("The live view connection failed (SocketException: Connection reset, after 0 s and 0 KB of video)", reason)
+    }
+
     @Test fun `a stream that closes after video says how much arrived`() = runBlocking {
         val server = ServerSocket(0)
-        Thread { server.accept().apply { repeat(11) { getOutputStream().write(message(0, List(190) { 0x47 })) }; getOutputStream().flush(); close() } }.apply { isDaemon = true; start() }
+        Thread { server.accept().apply { getInputStream().readNBytes(122); repeat(11) { getOutputStream().write(message(0, List(190) { 0x47 })) }; getOutputStream().flush(); close() } }.apply { isDaemon = true; start() }
         val reason = withTimeout(5_000) { BlinkLiveStream(BlinkLive.Immis("127.0.0.1", server.localPort, "C", 1), "S") { Socket(it.host, it.port) }.run { } }
         assertEquals("Blink's stream server closed the connection after 2 KB of video.", reason)
         server.close()

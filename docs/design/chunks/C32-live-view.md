@@ -95,3 +95,11 @@ Two-way talk, recording live video, picture-in-picture.
 - Full screen survives a rotation (it is saved with the dialog); the zoom does not, and starts again at the whole picture. Same for Blink and Ring (one shared player), but Ring's live view still doesn't connect, so Ring is untested here.
 - **Checked on the emulator** (Demo camera): the button, full screen, bars hidden, tap to hide/show the bar, double-tap zoom, rotation, the back gesture, Close. **Not checked:** the two-finger pinch itself (the emulator's shell can't inject
   two fingers, and the instrumented tests are not run on the owner's emulator); only its maths is tested. It uses Compose's stock `detectTransformGestures`.
+
+## Found on the owner's phone (2026-11-18, v2.0.0-dev.21 in Andarium)
+- **Ring's live view works** (the owner's report). Not changed; what made the earlier "couldn't connect to Ring" go away is not known.
+- Rotation (also in full screen) causes no problem.
+- **Blink: "The live view connection failed" when going to full screen.** That message means the connection to Blink's stream server broke while video was flowing; nothing in the full-screen code touches it, and full screen drops back to the small
+  dialog when a view ends, so the stream most likely ended at or during the tap. Cause unknown: the exception was thrown away. **Change (diagnostics, not a fix):** the message and the log now carry the error
+  (`SocketException: Connection reset`…), how many seconds the view had run and how many KB arrived; a failed connect says "couldn't connect". The log line for every end now has the run time.
+  Open until the owner tries again and reads the new text. Also made two `BlinkLiveTest` servers read the handshake before closing (closing a socket with unread data resets the connection, which made one test depend on timing).

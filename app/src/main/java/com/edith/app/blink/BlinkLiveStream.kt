@@ -1,5 +1,7 @@
 package com.edith.app.blink
 
+import com.edith.app.core.log.Log
+import com.edith.app.core.log.LogTag
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -26,7 +28,11 @@ class BlinkLiveStream(
 ) {
     /** Runs until the server ends the stream, it goes quiet for 20 s, or the caller cancels. Every video chunk goes to [onVideo]. */
     suspend fun run(onVideo: suspend (ByteArray) -> Unit): String = withContext(Dispatchers.IO) {
-        val socket = try { connect(server) } catch (e: IOException) { return@withContext "The live view connection failed" }
+        val started = System.nanoTime()
+        val socket = try { connect(server) } catch (e: IOException) {
+            Log.w(LogTag.Home, "Blink live view: couldn't connect to the stream server", e)
+            return@withContext "The live view connection failed (couldn't connect: ${describe(e)})"
+        }
         try {
             socket.soTimeout = QUIET_MS
             val out = socket.getOutputStream()
@@ -58,7 +64,14 @@ class BlinkLiveStream(
                     why ?: "Stopped."
                 } catch (e: SocketTimeoutException) { "The camera stopped sending video." }
                 catch (e: CancellationException) { throw e }
-                catch (e: IOException) { if (isActive) "The live view connection failed" else "Stopped." }
+                catch (e: IOException) {
+                    if (!isActive) "Stopped."
+                    else {
+                        val seconds = (System.nanoTime() - started) / 1_000_000_000
+                        Log.w(LogTag.Home, "Blink live view: the stream broke after $seconds s and ${bytes / 1024} KB", e)
+                        "The live view connection failed (${describe(e)}, after $seconds s and ${bytes / 1024} KB of video)"
+                    }
+                }
                 ticker.cancel()
                 reason
             }
@@ -69,6 +82,9 @@ class BlinkLiveStream(
 
     companion object {
         private const val QUIET_MS = 20_000
+
+        /** What went wrong, for the message and the log: the kind of error and its text, short. */
+        internal fun describe(e: Throwable): String = "${e.javaClass.simpleName}${e.message?.takeIf { it.isNotBlank() }?.let { ": " + it.take(80) }.orEmpty()}"
 
         /**
          * Blink's stream servers are reached by address, with certificates that don't name them, so the certificate isn't
