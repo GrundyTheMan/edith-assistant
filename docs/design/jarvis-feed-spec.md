@@ -417,3 +417,7 @@ asks Edith one work-mail question on the real mailbox, the numbers the log shows
 (a smaller `limit`, a time-boxed read, or none) rests on measurements.
 
 One PR, branch `feed-4-timing`, merge commit, as before. Update the Jarvis `README.md` and `AGENTS.md` if they describe the feed.
+
+## 16. The printer (follow-up, 2026-11-17)
+
+The owner wants the 3D printer in Edith too, served through this feed so it works away from home. That is a separate document so this one stays readable: **[`jarvis-printer-feed-spec.md`](jarvis-printer-feed-spec.md)**. Everything in parts 1-15 here still applies to it (pairing, pinning, private addresses, the bearer token, error shape, timing log). Do it **after** the current steps are merged, in the order in part 11 of that document.
