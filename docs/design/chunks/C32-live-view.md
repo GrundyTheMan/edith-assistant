@@ -110,3 +110,10 @@ Tried against the owner's real Blink account in the emulator (about nine starts)
 - **Change:** the `POST …/command/{id}/done/` call is gone. Blink answers 404 "Endpoint no longer supported", and Blink ends the command itself within about a second of the connection closing (status 523). Jarvis still sends it; harmless.
 - **Change:** a failed Blink call now logs Blink's own `message` (first 100 characters) next to the HTTP code.
 - Not verified on a phone: whether the retry gets past the owner's failures; the retry's cost is a few seconds more of black before video.
+
+## dev.24: no more silent black box (2026-11-18)
+The owner's phone showed a black box for Brooklyn's and Luke's Windows (Minis) with no message. In the emulator (owner's real Blink account) Brooklyn's Window reproduced it on dev.22 and dev.23 alike: video arrives (1080p H.264, 30 fps, clean when captured and decoded with ffmpeg) but the emulator's players never show a frame, and the hardware decoder raises no error, so no software fallback happens. **Cause not found.**
+- **Fix:** the buffer between the stream and the player held 64 chunks (about 12 KB) and dropped the oldest when full; a high-bitrate camera lost packets, which tore the first keyframe in a capture. It now holds 8192 (about 1.5 MB).
+- **Change:** with no picture 10 s after the player starts, the software decoder is tried once; if there is still none, the video area says so ("No picture yet. Video is arriving (n MB)…") and the log gets the KB received, the decoder and the player state.
+- Tried and dropped: sending Jarvis's `{"intent":"liveview",…}` body with the live-view request made Backyard connect but never send video.
+- Open: why the players show nothing for Brooklyn's stream; compare with Jarvis's player (Jarvis plays it).

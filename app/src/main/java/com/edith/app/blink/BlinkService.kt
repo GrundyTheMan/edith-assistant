@@ -373,7 +373,7 @@ class BlinkService(
 
     /** One running live view: the stream, a poll of Blink's command (it ends a view by ending it), and the time limit. */
     private inner class BlinkLiveFeed(private val camera: BlinkCamera, answer: BlinkParse.LiveAnswer, server: BlinkLive.Immis, private val serial: String) : StreamLiveFeed {
-        private val channel = kotlinx.coroutines.channels.Channel<ByteArray>(64, kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST)
+        private val channel = kotlinx.coroutines.channels.Channel<ByteArray>(8192, kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST)
         private val _ended = MutableStateFlow<String?>(null)
         override val video: kotlinx.coroutines.channels.ReceiveChannel<ByteArray> = channel
         override val ended: StateFlow<String?> = _ended.asStateFlow()

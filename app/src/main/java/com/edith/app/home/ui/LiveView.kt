@@ -2,7 +2,9 @@ package com.edith.app.home.ui
 
 import android.net.Uri
 import android.view.ViewGroup
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -14,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,7 +54,7 @@ import java.io.InterruptedIOException
  * feed's channel closes (the view ended or was stopped). It blocks the player's loader thread, never the main thread.
  */
 @UnstableApi
-internal class FeedDataSource(private val feed: StreamLiveFeed) : BaseDataSource(/* isNetwork = */ true) {
+internal class FeedDataSource(private val feed: StreamLiveFeed, private val received: java.util.concurrent.atomic.AtomicLong = java.util.concurrent.atomic.AtomicLong()) : BaseDataSource(/* isNetwork = */ true) {
     private var chunk: ByteArray? = null
     private var at = 0
     private var uri: Uri? = null
@@ -81,6 +84,7 @@ internal class FeedDataSource(private val feed: StreamLiveFeed) : BaseDataSource
         val n = minOf(length, current.size - at)
         System.arraycopy(current, at, buffer, offset, n)
         at += n
+        received.addAndGet(n.toLong())
         bytesTransferred(n)
         return n
     }
@@ -103,6 +107,9 @@ data class LiveUi(
 )
 
 private val DIALOG_PICTURE_HEIGHT = 220.dp
+
+/** How long a picture may take to appear before the player is retried or the viewer is told. */
+private const val PICTURE_WAIT_MS = 10_000L
 
 /** Live video from one camera. Closing the dialog stops the stream, so the camera and the phone's radio aren't left running. */
 @Composable
@@ -145,14 +152,18 @@ internal fun LivePlayer(feed: StreamLiveFeed, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val failure = remember(feed) { mutableStateOf<String?>(null) }
     val software = remember(feed) { mutableStateOf(false) }
+    val received = remember(feed) { java.util.concurrent.atomic.AtomicLong() }
+    val rendered = remember(feed) { mutableStateOf(false) }
+    val note = remember(feed) { mutableStateOf<String?>(null) }
     val player = remember(feed, software.value) {
         val factory = DefaultRenderersFactory(context).apply { if (software.value) setMediaCodecSelector(softwareFirst()) }
         // A live picture should start quickly and stay close to now: small buffers.
         val load = DefaultLoadControl.Builder().setBufferDurationsMs(1_000, 5_000, 500, 1_000).build()
-        val source = ProgressiveMediaSource.Factory(DataSource.Factory { FeedDataSource(feed) }, DefaultExtractorsFactory())
+        val source = ProgressiveMediaSource.Factory(DataSource.Factory { FeedDataSource(feed, received) }, DefaultExtractorsFactory())
         ExoPlayer.Builder(context, factory).setLoadControl(load).setMediaSourceFactory(source).build().apply {
             setMediaItem(MediaItem.fromUri("feed://live"))
             addListener(object : Player.Listener {
+                override fun onRenderedFirstFrame() { rendered.value = true; note.value = null }
                 override fun onPlayerError(error: PlaybackException) {
                     if (!software.value && error.errorCode in DECODER_ERRORS) {
                         Log.w(LogTag.Home, "A live view's decoder failed (${error.errorCodeName}); trying a software decoder")
@@ -168,7 +179,21 @@ internal fun LivePlayer(feed: StreamLiveFeed, modifier: Modifier = Modifier) {
         }
     }
     DisposableEffect(player) { onDispose { player.release() } }
+    // A decoder can swallow its own failure and leave a black picture with no error: try the software decoder once, then say what is happening.
+    LaunchedEffect(player) {
+        kotlinx.coroutines.delay(PICTURE_WAIT_MS)
+        if (rendered.value) return@LaunchedEffect
+        val kb = received.get() / 1024
+        if (kb > 0 && !software.value) {
+            Log.w(LogTag.Home, "A live view has no picture after ${PICTURE_WAIT_MS / 1000} s with $kb KB received; trying a software decoder")
+            software.value = true
+        } else {
+            Log.w(LogTag.Home, "A live view still has no picture after ${PICTURE_WAIT_MS / 1000} s ($kb KB received, ${if (software.value) "software" else "hardware"} decoder, player state ${player.playbackState})")
+            note.value = if (kb == 0L) "Waiting for the camera to send video…" else "No picture yet. Video is arriving (${kb / 1024} MB), but this phone has not shown it. It may need a few more seconds; if not, Close and try again."
+        }
+    }
     failure.value?.let { Text(it); return }
+    Box(modifier) {
     AndroidView(
         factory = { c ->
             PlayerView(c).apply {
@@ -178,8 +203,10 @@ internal fun LivePlayer(feed: StreamLiveFeed, modifier: Modifier = Modifier) {
             }
         },
         update = { it.player = player },
-        modifier = modifier,
+        modifier = Modifier.fillMaxSize(),
     )
+    note.value?.let { Text(it, color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.BottomStart).background(androidx.compose.ui.graphics.Color(0x99000000)).padding(8.dp)) }
+    }
 }
 
 /** Ring's live view: the WebRTC track drawn on a renderer that shares the call's EGL context. */
