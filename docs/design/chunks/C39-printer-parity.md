@@ -546,7 +546,7 @@ The agent checks the **emulator + pretend feed** items; the **owner** checks the
 
 - **Not verified until the owner tries:** everything against the **real Jarvis** and the **real AD5X**; Tailscale on mobile data; Windows firewall for the feed port (spec part 9 of the main spec); the camera's frame rate over Tailscale; the phone's battery with the page open for a long time.
 - **Known limits by design:** the Printer page needs the PC (Jarvis) on; the printer's address, key, presets and hidden macros are edited in Jarvis only; no printer discovery; no second printer; no push (alerts are a long-poll, so they stop when Android kills the service or the phone can't reach the PC); `.3mf` prints can't be started from the phone (the printer's own rule, shown in words); recordings, live video and screen taps are stage 4.
-- **Questions for the owner (ask before building the stage they affect; defaults in brackets):** (1) 64 MB upload cap [yes]; (2) e-stop from a look-only phone [yes, with a confirm]; (3) phone alerts when Jarvis's desktop alerts are off [yes]; (4) should the Printer page also be reachable by a **Quick Settings tile / notification** for a running print [not now]; (5) stage 4 at all [only if asked].
+- **Questions for the owner: all answered 2026-11-17 (the defaults were confirmed; do not ask again):** (1) 64 MB upload cap: yes; (2) emergency stop from a look-only phone: yes, with a confirm; (3) phone alerts when Jarvis's desktop alerts are off: yes; (4) a Quick Settings tile or notification for a running print: not now; (5) stage 4: only if the owner asks.
 
 ## 15. As built
 

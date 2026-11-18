@@ -334,7 +334,7 @@ service's, not the arm's). Never retry a cancel on the printer's behalf.
 ### 8.5 Emergency stop
 
 `estop` needs no arm (as the page, decision D9) and needs **`sharePrinter`** (so a phone can only stop a printer it can see) but **not** `printerControl`.
-(If you disagree, that is part 13, question 2: ask the owner.) It still needs `confirmed: true`. Log it at `warn`.
+(The owner decided this on 2026-11-17: part 13, question 2.) It still needs `confirmed: true`. Log it at `warn`.
 
 ### 8.6 Chat path
 
@@ -400,12 +400,12 @@ Edith builds against J1 first; she does not need J2 to ship her read-only stage.
 - No push to the phone (the phone asks; part 6.10 is a long-poll).
 - No change to the desktop alerts, the page's arming, the work-data routes or the pairing.
 
-## 13. Questions to ask the owner (do not guess)
+## 13. Questions for the owner (all answered 2026-11-17: the defaults below are the owner's decisions; do not ask again)
 
-1. Is **64 MB** a fine cap for uploads from the phone (the AD5X's `.3mf` files are a few MB)?
-2. Should the **emergency stop** work from a phone that is only allowed to see the printer (default here: yes, with a confirm), or only when "control" is also on?
-3. Should a **phone alert** also fire when Jarvis's own desktop alerts are off? (default here: yes, they are separate switches)
-4. Is it OK that **starting a print from the phone** has the same restrictions as the page (`.3mf` refused until U1 is settled, printer must be in "Local Only" mode, `docs/plans/printer.md` 2.7 and part 14)? (default: yes, identical)
+1. **Answered: yes.** 64 MB is the cap for uploads from the phone (the AD5X's `.3mf` files are a few MB).
+2. **Answered: yes.** The **emergency stop** works from a phone that is only allowed to see the printer, with a confirm.
+3. **Answered: yes.** A **phone alert** fires even when Jarvis's own desktop alerts are off (they are separate switches).
+4. **Answered: yes.** **Starting a print from the phone** has the same restrictions as the page (`.3mf` refused until U1 is settled, printer must be in "Local Only" mode, `docs/plans/printer.md` 2.7 and part 14).
 
 ## 14. As built on the Jarvis side
 
