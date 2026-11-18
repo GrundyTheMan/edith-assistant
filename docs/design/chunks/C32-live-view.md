@@ -86,3 +86,12 @@ Two-way talk, recording live video, picture-in-picture.
   coroutine with no handler, which killed the app. It could happen on any stop, not only a rotation. **Fix:** the stream hands video over with `trySend`, which does nothing on a closed channel.
   Test: `BlinkServiceTest › stopping a view while video is still arriving does not crash` (failed with the same exception before the fix).
 - **Change:** a rotation no longer ends the live view. Edith stops a view when the app leaves the screen, and a rotation counts as that; the Home screen now ignores a stop that is only a rotation (as the chat screen already did), because the view model and the stream live on. Checked on the emulator: the Demo live view kept playing through rotations, and Close still worked.
+
+## Full screen, edge to edge, with pinch zoom (v2.0.0-dev.21)
+- The live dialog has a **Full screen** button (`LiveFullScreen.kt`): a black window over the whole screen with the system bars hidden (a swipe from the edge shows them for a moment; the cutout is covered too), the picture
+  fitted to the screen at its own proportions, and a bar with **Exit full screen** and **Close**. The back gesture exits full screen; Close ends the view. A tap shows or hides the bar.
+- **Zoom:** pinch to zoom (up to 5×) around the fingers, drag to move, double tap to zoom to 2.5× or back to the whole picture. The maths is `LiveZoom` (unit tests: `LiveZoomTest`).
+  The picture can't be dragged away from the screen's edges; because it is fitted inside the screen, a zoomed picture can still be moved far enough to show the black bands around it.
+- Full screen survives a rotation (it is saved with the dialog); the zoom does not, and starts again at the whole picture. Same for Blink and Ring (one shared player), but Ring's live view still doesn't connect, so Ring is untested here.
+- **Checked on the emulator** (Demo camera): the button, full screen, bars hidden, tap to hide/show the bar, double-tap zoom, rotation, the back gesture, Close. **Not checked:** the two-finger pinch itself (the emulator's shell can't inject
+  two fingers, and the instrumented tests are not run on the owner's emulator); only its maths is tested. It uses Compose's stock `detectTransformGestures`.
