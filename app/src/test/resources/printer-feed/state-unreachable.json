@@ -1,0 +1,1 @@
+{"rev":70,"epoch":1763400000,"state":{"connection":"unreachable","message":"Printer not answering","lastSeen":1763399000000,"print":{"state":"standby"},"heaters":[],"cameras":[]},"arm":{"armed":false},"quick":{},"consoleSeq":0,"serverTime":1763400300000}

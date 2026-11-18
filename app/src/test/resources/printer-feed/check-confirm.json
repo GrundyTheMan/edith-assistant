@@ -1,0 +1,1 @@
+{"error":{"code":"CONFIRM_REQUIRED","message":"Ask the owner to confirm this first."},"check":{"allowed":true,"risk":"confirm","question":"Home all axes?","confirm":"Home"}}

@@ -1,0 +1,1 @@
+{"rev":71,"epoch":1763400000,"state":{"connection":"klippy-shutdown","message":"Heater extruder not heating at expected rate","print":{"state":"error"},"heaters":[],"cameras":[]},"arm":{"armed":false},"quick":{"firmwareRestart":{"allowed":true}},"consoleSeq":140,"serverTime":1763400400000}
