@@ -108,7 +108,11 @@ fun HomeScreen(onOpenSettings: () -> Unit, vm: HomeViewModel = viewModel(factory
         }
     }
     // A live view stops when the app leaves the screen: a camera left streaming drains its battery.
-    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_STOP) { vm.stopLive() }
+    // A rotation stops and recreates the screen too, but the view model (and the stream in it) lives on: keep the view going then.
+    val activity = androidx.activity.compose.LocalActivity.current
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+        if (activity?.isChangingConfigurations != true) vm.stopLive()
+    }
     HomeContent(
         ui,
         HomeTabActions(

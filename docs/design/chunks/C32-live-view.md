@@ -77,3 +77,12 @@ Two-way talk, recording live video, picture-in-picture.
   it could not say which happened. **Change:** the reasons now differ. A closed stream says whether any video arrived and how much ("closed the connection before any video arrived", "after N KB of video");
   a stopped command gives Blink's codes ("its command stopped: status_code …, state_condition …", as Jarvis logs them); both are also logged. The command poll now uses the camera's own network id,
   as Jarvis does. This is diagnostics, not a known fix: the cause is still open until the owner tries it again and reads the new text.
+
+## Found on the owner's phone (2026-11-17, v2.0.0-dev.19 in Andarium)
+- **Blink live view works** (a night picture from Front / Driveway). Blink's handshake and stream are verified against a real camera.
+- **Ring: "The live view couldn't connect to Ring."** The HTTP 400 is gone: Ring now accepts the request and answers, and the failure is the WebRTC connection itself (the peer connection reports failed). Cause still open;
+  the likely suspect is the network path from Andarium to Ring's servers (the video travels over UDP), which is a guess, not checked.
+- **Blink crash when the screen rotated (a real crash, not a coincidence).** Stopping a view closes its video channel; the stream could be mid-read and its next `channel.send` threw "Channel was closed" in a
+  coroutine with no handler, which killed the app. It could happen on any stop, not only a rotation. **Fix:** the stream hands video over with `trySend`, which does nothing on a closed channel.
+  Test: `BlinkServiceTest › stopping a view while video is still arriving does not crash` (failed with the same exception before the fix).
+- **Change:** a rotation no longer ends the live view. Edith stops a view when the app leaves the screen, and a rotation counts as that; the Home screen now ignores a stop that is only a rotation (as the chat screen already did), because the view model and the stream live on. Checked on the emulator: the Demo live view kept playing through rotations, and Close still worked.
