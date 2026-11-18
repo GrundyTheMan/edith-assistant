@@ -224,6 +224,30 @@ class BlinkServiceTest {
         server.close()
     }
 
+    @Test fun `stopping a view while video is still arriving does not crash`() = runBlocking {
+        // The owner's phone crashed this way when the screen rotated: video arrived just after the view was stopped.
+        val server = ServerSocket(0)
+        Thread {
+            val s = server.accept()
+            Thread { runCatching { s.getInputStream().copyTo(java.io.OutputStream.nullOutputStream()) } }.apply { isDaemon = true }.start()
+            runCatching { repeat(400) { s.getOutputStream().write(video(0x47, it)); s.getOutputStream().flush(); Thread.sleep(2) } }
+        }.apply { isDaemon = true; start() }
+        blink.liveServer = "immis://127.0.0.1:${server.localPort}/CONN?client_id=9"
+        val crashes = java.util.concurrent.CopyOnWriteArrayList<Throwable>()
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { _, e -> crashes += e }
+        try {
+            val feed = liveService().also { it.signIn(login) }.backend.startLive("1").value()
+            withTimeout(5_000) { (feed as com.edith.app.home.StreamLiveFeed).video.receive() }
+            feed.stop()
+            delay(1_500)   // the server keeps sending; the stream reads it after the stop
+        } finally {
+            Thread.setDefaultUncaughtExceptionHandler(previous)
+            server.close()
+        }
+        assertTrue(crashes.joinToString { it.toString() }, crashes.isEmpty())
+    }
+
     @Test fun `a view is ended at the time limit and Blink is told`() = runBlocking {
         val (server, _) = streamServer(video(0x47, 1))
         blink.liveServer = "immis://127.0.0.1:${server.localPort}/CONN?client_id=9"

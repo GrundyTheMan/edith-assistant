@@ -384,7 +384,8 @@ class BlinkService(
         init {
             job = liveScope.launch {
                 val stream = launch {
-                    val why = BlinkLiveStream(server, serial, liveConnect).run { channel.send(it) }
+                    // trySend: the view can be stopped (channel closed) while a chunk is on its way, and send would throw and kill the app.
+                    val why = BlinkLiveStream(server, serial, liveConnect).run { channel.trySend(it) }
                     finish(why)
                 }
                 if (answer.commandId != null) launch {
