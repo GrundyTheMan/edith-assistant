@@ -29,6 +29,8 @@ data class BlinkCamera(
     /** Blink says only "ok" or "low". */
     val lowBattery: Boolean?,
     val online: Boolean?,
+    /** The camera's serial number: a live view needs it (C32). */
+    val serial: String? = null,
 )
 
 /** One recorded clip from Blink's media list. [mediaPath] and [thumbnailPath] are paths on the account's server. */
@@ -60,6 +62,7 @@ object BlinkParse {
                     thumbnail = c.text("thumbnail"),
                     lowBattery = battery?.let { it == "low" },
                     online = if (network in offlineNetworks || status == "offline") false else if (status != null) true else null,
+                    serial = c.text("serial"),
                 )
             }
         }
@@ -85,6 +88,37 @@ object BlinkParse {
         BlinkKind.Mini -> "/api/v1/accounts/$accountId/networks/${camera.networkId}/owls/${camera.id}/thumbnail"
         BlinkKind.Doorbell -> "/api/v1/accounts/$accountId/networks/${camera.networkId}/doorbells/${camera.id}/thumbnail"
         BlinkKind.Camera -> "/network/${camera.networkId}/camera/${camera.id}/thumbnail"
+    }
+
+    /** Where to ask a camera for a live view (Jarvis's `liveviewPath`). */
+    fun liveviewPath(accountId: String, camera: BlinkCamera): String {
+        val base = "/accounts/$accountId/networks/${camera.networkId}"
+        return when (camera.kind) {
+            BlinkKind.Mini -> "/api/v2$base/owls/${camera.id}/liveview"
+            BlinkKind.Doorbell -> "/api/v2$base/doorbells/${camera.id}/liveview"
+            BlinkKind.Camera -> "/api/v6$base/cameras/${camera.id}/liveview"
+        }
+    }
+
+    /** What Blink answered to a live view request: the stream's address and the command that keeps it open. */
+    data class LiveAnswer(val server: String?, val commandId: String?, val networkId: String?, val pollSeconds: Int)
+
+    fun liveAnswer(body: JsonElement): LiveAnswer {
+        val o = body.obj()
+        return LiveAnswer(
+            server = o?.text("server"), commandId = o?.text("command_id"), networkId = o?.text("network_id"),
+            pollSeconds = (o?.text("polling_interval")?.toIntOrNull() ?: 5).coerceAtLeast(2),
+        )
+    }
+
+    /** Whether the live view's command is still running (Jarvis's `commandRunning`): Blink ends a view by ending its command. */
+    fun commandRunning(body: JsonElement): Boolean {
+        val o = body.obj() ?: return true
+        val code = (o["status_code"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
+        if (code != null && code != 908) return false
+        val first = (o["commands"] as? JsonArray)?.firstOrNull()?.obj()
+        val state = (o["state_condition"] as? JsonPrimitive)?.contentOrNull ?: (first?.get("state_condition") as? JsonPrimitive)?.contentOrNull
+        return state == null || state == "new" || state == "running"
     }
 
     /** The command a snapshot request started: poll [BlinkApi.commandDone] with these. Null when Blink gave none. */

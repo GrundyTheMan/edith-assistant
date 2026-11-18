@@ -35,6 +35,8 @@ sealed interface Capability {
     data object OpenClose : Capability
     data object Snapshot : Capability
     data object Events : Capability
+    /** Live video (C32): the Home tab shows a Live button. */
+    data object Live : Capability
     /** A 3D printer's job: pause, resume and cancel (C34). */
     data object PrintControl : Capability
 
@@ -157,6 +159,26 @@ data class DeviceClip(
 /** Where a clip plays from: an address, and headers the player must send with it (Blink's clips need its sign-in; Ring's addresses are signed). */
 data class ClipSource(val url: String, val headers: Map<String, String> = emptyMap())
 
+/**
+ * Live video from a camera (C32). [ended] is why it ended, null while it runs; [stop] ends it and tells the service, so a camera
+ * isn't left streaming. Video arrives one of two ways: [StreamLiveFeed] (Blink) or [TrackLiveFeed] (Ring, WebRTC).
+ */
+interface LiveFeed {
+    val ended: kotlinx.coroutines.flow.StateFlow<String?>
+    fun stop()
+}
+
+/** Video as MPEG transport stream bytes in [video]; the channel closes when the view ends (Blink). */
+interface StreamLiveFeed : LiveFeed {
+    val video: kotlinx.coroutines.channels.ReceiveChannel<ByteArray>
+}
+
+/** Video as a WebRTC track, drawn with [eglContext] (Ring). */
+interface TrackLiveFeed : LiveFeed {
+    val track: org.webrtc.VideoTrack
+    val eglContext: org.webrtc.EglBase.Context
+}
+
 /** A window of clips. [noPlan]: the service has recordings only with a paid plan, and this account has none (Ring Protect). */
 data class ClipsPage(val clips: List<DeviceClip>, val noPlan: Boolean = false)
 
@@ -193,6 +215,11 @@ interface HomeBackend : Integration {
     /** A fresh address the player can stream clip [clipId] from. Services sign these, and they expire, so it is asked for at play time. */
     suspend fun clipUrl(clipId: String): Outcome<String> =
         Outcome.Failure(AppError.ToolFailed(displayName, "it has no clips"))
+    /** Whether this service can show live video (C32). */
+    val hasLive: Boolean get() = false
+    /** Opens live video from a camera. The caller must [LiveFeed.stop] it; a service also ends it on its own after its time limit. */
+    suspend fun startLive(deviceId: String): Outcome<LiveFeed> =
+        Outcome.Failure(AppError.ToolFailed(displayName, "it has no live view"))
     /** [clipUrl] plus the headers the player must send; a service whose addresses are signed in themselves (Ring) needs no more. */
     suspend fun clipSource(clipId: String): Outcome<ClipSource> = when (val r = clipUrl(clipId)) {
         is Outcome.Success -> Outcome.Success(ClipSource(r.value))

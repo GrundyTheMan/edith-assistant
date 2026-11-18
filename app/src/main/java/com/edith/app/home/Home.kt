@@ -224,6 +224,14 @@ class Home(
         return withTimeoutOrNull(backend.snapshotTimeoutMs ?: SNAPSHOT_TIMEOUT_MS) { safely(backend) { backend.snapshot(device.id) } } ?: Outcome.Failure(AppError.Timeout)
     }
 
+    /** Opens live video from a camera (C32). The caller stops the feed; the service also ends it at its own limit. */
+    suspend fun startLive(device: HomeDevice): Outcome<LiveFeed> {
+        val backend = backends.value.firstOrNull { it.id == device.backend }
+            ?: return Outcome.Failure(AppError.ToolFailed(device.backend, "that service isn't connected"))
+        if (!backend.hasLive) return Outcome.Failure(AppError.ToolFailed(backend.displayName, "it has no live view"))
+        return withTimeoutOrNull(LIVE_START_TIMEOUT_MS) { safely(backend) { backend.startLive(device.id) } } ?: Outcome.Failure(AppError.Timeout)
+    }
+
     /** What a camera or doorbell reported since [sinceMs], newest first. */
     suspend fun events(device: HomeDevice, sinceMs: Long): Outcome<List<DeviceEvent>> {
         val backend = backends.value.firstOrNull { it.id == device.backend }
@@ -378,6 +386,8 @@ class Home(
         const val ID = "home"
         const val TIMEOUT_MS = 10_000L
         const val SNAPSHOT_TIMEOUT_MS = 15_000L
+        /** A camera wakes, Blink starts the view and the first video arrives: a battery camera is slow (Jarvis waits 20 s for Blink alone). */
+        const val LIVE_START_TIMEOUT_MS = 40_000L
 
         /** C25 §6: 3 s; thermostats, locks and garage doors also 10 s and 30 s. */
         fun recheckTimes(device: HomeDevice): List<Long> =

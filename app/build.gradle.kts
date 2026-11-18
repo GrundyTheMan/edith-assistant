@@ -171,6 +171,7 @@ dependencies {
     implementation(libs.coil.compose)   // C15: attachment thumbnails
     implementation(libs.media3.exoplayer)   // C27: plays Ring clips in the app (the owner approved adding Media3, 2026-11-14)
     implementation(libs.media3.ui)
+    implementation(libs.stream.webrtc)   // C32: Ring live view (WebRTC). Apache 2.0; its 64-bit libraries are 16 KB aligned (checked 2026-11-17)
     // C17: Google sign-in (Credential Manager) and access to Calendar/Gmail (AuthorizationClient)
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services.auth)

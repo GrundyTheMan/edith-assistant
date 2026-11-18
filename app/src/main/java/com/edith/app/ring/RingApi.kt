@@ -37,6 +37,7 @@ data class RingEndpoints(
     val oauth: String = "https://oauth.ring.com",
     val clients: String = "https://api.ring.com/clients_api",
     val snapshots: String = "https://app-snaps.ring.com",
+    val liveView: String = "https://api.ring.com/integrations/v1/liveview",
 )
 
 /** The tokens Ring hands out. [refreshToken] rotates: the one it replaces stops working soon after. */
@@ -144,6 +145,27 @@ class RingApi(
             .header("authorization", "Bearer $accessToken").header("Accept", "application/json")
             .post(body.toString().toRequestBody(JSON)).build()
         return call(request, hardwareId, "the session") { Unit }
+    }
+
+    /**
+     * Starts a live view: Edith's WebRTC offer goes to Ring, which answers with its own SDP (`integrations/v1/liveview/start`, as
+     * `ring-client-api`'s `SimpleWebRtcSession`, read from v14.3.0). [sessionId] is made by Edith and names the view for [liveEnd].
+     */
+    suspend fun liveStart(accessToken: String, hardwareId: String, cameraId: String, sessionId: String, offerSdp: String): RingReply<String> {
+        val body = buildJsonObject { put("session_id", sessionId); put("device_id", cameraId); put("sdp", offerSdp); put("protocol", "webrtc") }
+        val request = Request.Builder().url("${endpoints.liveView}/start").headers(authHeaders(accessToken, hardwareId))
+            .header("Accept", "application/json").post(body.toString().toRequestBody(JSON)).build()
+        return call(request, hardwareId, "the live view") { text ->
+            ((json.parseToJsonElement(text) as? JsonObject)?.get("sdp") as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: throw SerializationException("no sdp")
+        }
+    }
+
+    /** Ends a live view, so the camera stops streaming. */
+    suspend fun liveEnd(accessToken: String, hardwareId: String, sessionId: String): RingReply<Unit> {
+        val body = buildJsonObject { put("session_id", sessionId) }
+        val request = Request.Builder().url("${endpoints.liveView}/end").headers(authHeaders(accessToken, hardwareId))
+            .header("Accept", "application/json").post(body.toString().toRequestBody(JSON)).build()
+        return call(request, hardwareId, "the live view") { Unit }
     }
 
     /** The cameras and doorbells (not the chimes, base stations or sensors). */

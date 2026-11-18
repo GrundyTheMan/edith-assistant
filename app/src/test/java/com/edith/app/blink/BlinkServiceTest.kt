@@ -11,6 +11,10 @@ import com.edith.app.home.SignInResult
 import com.edith.app.testing.FakeClock
 import com.edith.app.testing.InMemorySecretStore
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.delay
+import java.net.ServerSocket
+import java.net.Socket
 import mockwebserver3.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -166,5 +170,81 @@ class BlinkServiceTest {
         again.load()
         assertEquals(ServiceState.Connected, again.state.value)
         assertEquals(1, again.backend.devices().value().size)
+    }
+
+    // ---- live view (C32) ----
+
+    private fun video(vararg b: Int): ByteArray {
+        val h = ByteArray(9); h[8] = b.size.toByte()
+        return h + ByteArray(b.size) { b[it].toByte() }
+    }
+
+    /** A pretend stream server that sends [chunks] and then waits; returns what it received. */
+    private fun streamServer(vararg chunks: ByteArray): Pair<ServerSocket, java.io.ByteArrayOutputStream> {
+        val server = ServerSocket(0)
+        val got = java.io.ByteArrayOutputStream()
+        Thread {
+            val s = server.accept()
+            Thread { runCatching { s.getInputStream().copyTo(got) } }.apply { isDaemon = true }.start()
+            chunks.forEach { s.getOutputStream().write(it) }
+            s.getOutputStream().flush()
+        }.apply { isDaemon = true; start() }
+        return server to got
+    }
+
+    private fun liveService(limitMs: Long = 60_000) = BlinkService(secrets, blink.api(), clock, { Socket(it.host, it.port) }, limitMs) { waits += it }
+
+    @Test fun `a live view asks Blink, connects to the stream server with the camera's serial, and passes the video on`() = runBlocking {
+        val (server, got) = streamServer(video(0x47, 1), video(0x47, 2))
+        blink.liveServer = "immis://127.0.0.1:${server.localPort}/CONN__x?client_id=9"
+        val s = liveService().also { assertEquals(SignInResult.Done, it.signIn(login)) }
+        assertTrue(s.backend.hasLive)
+        val feed = s.backend.startLive("1").value() as com.edith.app.home.StreamLiveFeed
+        val first = withTimeout(5_000) { feed.video.receive() }
+        val second = withTimeout(5_000) { feed.video.receive() }
+        assertEquals(listOf(listOf(0x47, 1), listOf(0x47, 2)), listOf(first, second).map { c -> c.map { it.toInt() } })
+        assertEquals(1, blink.requests.count { it.method == "POST" && it.url.encodedPath == "/rest/api/v6/accounts/4242/networks/5/cameras/1/liveview" })
+        assertTrue("the handshake names the camera", String(got.toByteArray().copyOfRange(8, 24)).startsWith("SN1"))
+        assertNull(feed.ended.value)
+        feed.stop()
+        assertEquals("Stopped.", feed.ended.value)
+        withTimeout(5_000) { while (blink.count("/rest/network/5/command/99/done/") == 0) delay(50) }
+        server.close()
+    }
+
+    @Test fun `Blink ending the command ends the view and the video channel closes`() = runBlocking {
+        val (server, _) = streamServer(video(0x47, 1))
+        blink.liveServer = "immis://127.0.0.1:${server.localPort}/CONN?client_id=9"
+        val feed = liveService().also { it.signIn(login) }.backend.startLive("1").value() as com.edith.app.home.StreamLiveFeed
+        withTimeout(5_000) { feed.video.receive() }
+        blink.liveState = "done"
+        withTimeout(8_000) { while (feed.ended.value == null) delay(50) }
+        assertEquals("Blink ended the live view.", feed.ended.value)
+        withTimeout(5_000) { assertTrue(feed.video.receiveCatching().isClosed) }
+        server.close()
+    }
+
+    @Test fun `a view is ended at the time limit and Blink is told`() = runBlocking {
+        val (server, _) = streamServer(video(0x47, 1))
+        blink.liveServer = "immis://127.0.0.1:${server.localPort}/CONN?client_id=9"
+        val feed = liveService(limitMs = 300).also { it.signIn(login) }.backend.startLive("1").value()
+        withTimeout(5_000) { while (feed.ended.value == null) delay(50) }
+        assertTrue(feed.ended.value!!, feed.ended.value!!.startsWith("Live view stops after"))
+        withTimeout(5_000) { while (blink.count("/rest/network/5/command/99/done/") == 0) delay(50) }
+        server.close()
+    }
+
+    @Test fun `a live view says why it can't start`() = runBlocking {
+        suspend fun fresh() = liveService().also { it.signIn(login) }
+        val s = liveService().also { it.signIn(login) }
+        blink.liveServer = null
+        assertTrue(s.backend.startLive("1").why(), s.backend.startLive("1").why().contains("form Edith can't play"))
+        blink.liveServer = "rtsp://x/y"
+        assertTrue(s.backend.startLive("1").why().contains("form Edith can't play"))
+        blink.homescreen = FakeBlink.homescreenJson(cameras = listOf(FakeBlink.camera("1", "Backyard", serial = null)))
+        assertTrue(fresh().backend.startLive("1").why().contains("serial number"))
+        blink.homescreen = FakeBlink.homescreenJson(cameras = listOf(FakeBlink.camera("1", "Backyard", status = "offline")))
+        assertTrue(fresh().backend.startLive("1").why().contains("offline"))
+        assertTrue(s.backend.startLive("404").why().contains("no longer on the account"))
     }
 }

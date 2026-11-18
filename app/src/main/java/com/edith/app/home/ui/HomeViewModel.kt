@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -68,6 +70,8 @@ data class HomeUi(
     val hasClips: Boolean = false,
     /** The clips list while it is open (null: closed). */
     val clips: ClipsUi? = null,
+    /** The live view while it is open (null: closed). */
+    val live: LiveUi? = null,
 ) {
     /** The devices the chip shows. Favorites with none starred show everything, with a hint. */
     val shown: List<HomeDevice> get() = view.devices.filter { chip.includes(it, favorites) }
@@ -102,6 +106,7 @@ class HomeViewModel(private val home: Home, private val clock: Clock) : ViewMode
         val now: Long = 0,
         val chip: HomeChip? = null,
         val clips: ClipsUi? = null,
+        val live: LiveUi? = null,
     )
 
     val state: StateFlow<HomeUi> = combine(home.view, home.choices, home.status, local, home.hasClips) { view, choices, status, l, hasClips ->
@@ -111,7 +116,7 @@ class HomeViewModel(private val home: Home, private val clock: Clock) : ViewMode
             chip = l.chip ?: saved ?: HomeChip.All,   // never switches by itself (starring one mustn't jump to Favorites)
             favorites = choices.favorites, now = l.now, stepping = l.stepping, pending = l.pending,
             picture = l.picture, fetching = l.fetching, message = l.message,
-            hasClips = hasClips, clips = l.clips,
+            hasClips = hasClips, clips = l.clips, live = l.live,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUi())
 
@@ -196,6 +201,44 @@ class HomeViewModel(private val home: Home, private val clock: Clock) : ViewMode
                 is Outcome.Failure -> local.value = local.value.copy(message = "No picture from ${device.name}: ${Home.why(r.error)}.")
             }
         }
+    }
+
+    // ---- Live view (C32) ----
+
+    private var liveFeed: com.edith.app.home.LiveFeed? = null
+    private var liveJob: Job? = null
+
+    /** Opens a live view of [device]; one at a time. The dialog shows a spinner until the service has the stream. */
+    fun startLive(device: HomeDevice) {
+        stopLive()
+        local.value = local.value.copy(live = LiveUi(device.name))
+        liveJob = viewModelScope.launch {
+            when (val r = home.startLive(device)) {
+                is Outcome.Failure -> local.value = local.value.copy(live = LiveUi(device.name, error = "No live view from ${device.name}: ${Home.why(r.error)}."))
+                is Outcome.Success -> {
+                    val feed = r.value
+                    if (local.value.live?.name != device.name) { feed.stop(); return@launch }   // closed or replaced meanwhile
+                    liveFeed = feed
+                    local.value = local.value.copy(live = LiveUi(device.name, feed = feed))
+                    val why = feed.ended.filterNotNull().first()
+                    if (liveFeed === feed) {   // it ended by itself, not because the owner closed it
+                        liveFeed = null
+                        local.value = local.value.copy(live = LiveUi(device.name, endedBecause = why))
+                    }
+                }
+            }
+        }
+    }
+
+    /** Stops the live view and the camera's stream. Also called when the app leaves the screen (battery). */
+    fun stopLive() {
+        liveJob?.cancel(); liveJob = null
+        liveFeed?.stop(); liveFeed = null
+        if (local.value.live != null) local.value = local.value.copy(live = null)
+    }
+
+    override fun onCleared() {
+        liveFeed?.stop(); liveFeed = null
     }
 
     fun closePicture() {

@@ -12,6 +12,14 @@ import com.edith.app.testing.InMemorySecretStore
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import com.edith.app.core.error.AppError
+import com.edith.app.home.TrackLiveFeed
+import org.webrtc.EglBase
+import org.webrtc.VideoTrack
 import mockwebserver3.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -237,5 +245,91 @@ class RingServiceTest {
         ring.validRefresh.clear(); ring.validAccess.clear()
         val later = service().also { it.load() }
         assertTrue((later.backend.clipUrl("9") as Outcome.Failure).error.userMessage.contains("signing in again"))
+    }
+
+    // ---- live view (C32) ----
+
+    /** A call with no native library behind it: the JVM can't run WebRTC, so the call's pieces are stand-ins. */
+    private class FakeCall : RtcCall {
+        override val track = VideoTrack(1L)
+        override val eglContext = object : EglBase.Context { override fun getNativeEglContext() = 0L }
+        val lostState = MutableStateFlow<String?>(null)
+        override val lost: StateFlow<String?> = lostState
+        @Volatile var closed = false
+        override fun close() { closed = true }
+    }
+
+    private class FakeRtc : RingRtc {
+        val call = FakeCall()
+        var opened = 0
+        var answer: String? = null
+        override suspend fun open(exchange: suspend (offerSdp: String) -> String?): Outcome<RtcCall> {
+            opened++
+            answer = exchange("v=0 offer") ?: return Outcome.Failure(AppError.ToolFailed("Ring", "Ring didn't start the live view"))
+            return Outcome.Success(call)
+        }
+    }
+
+    private suspend fun liveService(rtc: FakeRtc, limitMs: Long = 60_000): RingService {
+        ring.devicesJson = twoCameras
+        return RingService(secrets, ring.api(), clock, rtc = rtc, liveLimitMs = limitMs).also { assertEquals(SignInResult.Done, it.signIn(login)) }
+    }
+
+    @Test fun `live view sends Edith's offer for the camera, gives Ring's answer to the call, and ends the session at Ring when stopped`() = runBlocking {
+        val rtc = FakeRtc()
+        val s = liveService(rtc)
+        assertTrue(s.backend.hasLive)
+        assertTrue(s.backend.devices().let { (it as Outcome.Success).value }.all { Capability.Live in it.capabilities })
+        val feed = (s.backend.startLive("1") as Outcome.Success).value as TrackLiveFeed
+        val sent = ring.liveOffers.single()
+        assertEquals("1", sent["device_id"]!!.toString().trim('"'))
+        assertEquals("v=0 offer", sent["sdp"]!!.toString().trim('"'))
+        assertEquals("webrtc", sent["protocol"]!!.toString().trim('"'))
+        assertEquals("v=0 answer", rtc.answer)
+        assertEquals(null, feed.ended.value)
+        feed.stop()
+        assertEquals("Stopped.", feed.ended.value)
+        assertTrue(rtc.call.closed)
+        withTimeout(5_000) { while (ring.liveEnded.isEmpty()) delay(20) }
+        assertEquals(sent["session_id"]!!.toString().trim('"'), ring.liveEnded.single())
+    }
+
+    @Test fun `a lost connection ends the view and Ring is told`() = runBlocking {
+        val rtc = FakeRtc()
+        val feed = (liveService(rtc).backend.startLive("1") as Outcome.Success).value
+        rtc.call.lostState.value = "Ring ended the live view."
+        withTimeout(5_000) { while (feed.ended.value == null) delay(20) }
+        assertEquals("Ring ended the live view.", feed.ended.value)
+        assertTrue(rtc.call.closed)
+        withTimeout(5_000) { while (ring.liveEnded.isEmpty()) delay(20) }
+    }
+
+    @Test fun `a view is ended at the time limit`() = runBlocking {
+        val rtc = FakeRtc()
+        val feed = (liveService(rtc, limitMs = 200).backend.startLive("1") as Outcome.Success).value
+        withTimeout(5_000) { while (feed.ended.value == null) delay(20) }
+        assertTrue(feed.ended.value!!.startsWith("Live view stops after"))
+        withTimeout(5_000) { while (ring.liveEnded.isEmpty()) delay(20) }
+    }
+
+    @Test fun `Ring refusing a live view says so and leaves nothing open`() = runBlocking {
+        val rtc = FakeRtc()
+        val s = liveService(rtc)
+        ring.liveAnswerSdp = null
+        val r = s.backend.startLive("1")
+        assertTrue(r is Outcome.Failure)
+        assertTrue("Ring answered HTTP 500" in ((r as Outcome.Failure).error as AppError.ToolFailed).detail)
+        assertTrue(ring.liveEnded.isEmpty())
+    }
+
+    @Test fun `an offline camera has no live view, and without WebRTC there is no Live button`() = runBlocking {
+        ring.devicesJson = """{"doorbots":[],"stickup_cams":[${ring.camera(2, "Driveway", connection = "offline")}]}"""
+        val rtc = FakeRtc()
+        val s = RingService(secrets, ring.api(), clock, rtc = rtc).also { it.signIn(login) }
+        assertTrue(((s.backend.startLive("2") as Outcome.Failure).error as AppError.ToolFailed).detail.contains("offline"))
+        assertEquals(0, rtc.opened)
+        val plain = RingService(secrets, ring.api(), clock).also { it.signIn(login) }
+        assertFalse(plain.backend.hasLive)
+        assertTrue((plain.backend.devices() as Outcome.Success).value.none { Capability.Live in it.capabilities })
     }
 }

@@ -82,6 +82,8 @@ data class HomeTabActions(
     val favorite: (HomeDevice, Boolean) -> Unit = { _, _ -> },
     val hide: (HomeDevice) -> Unit = {},
     val snapshot: (HomeDevice) -> Unit = {},
+    val startLive: (HomeDevice) -> Unit = {},
+    val stopLive: () -> Unit = {},
     val confirm: () -> Unit = {},
     val dismiss: () -> Unit = {},
     val closePicture: () -> Unit = {},
@@ -105,11 +107,13 @@ fun HomeScreen(onOpenSettings: () -> Unit, vm: HomeViewModel = viewModel(factory
             AlertTaps.consume()
         }
     }
+    // A live view stops when the app leaves the screen: a camera left streaming drains its battery.
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_STOP) { vm.stopLive() }
     HomeContent(
         ui,
         HomeTabActions(
             refresh = vm::refresh, chip = vm::selectChip, toggle = vm::toggle, send = vm::send, step = vm::step,
-            favorite = vm::setFavorite, hide = vm::hide, snapshot = vm::snapshot, confirm = vm::confirm, dismiss = vm::dismiss,
+            favorite = vm::setFavorite, hide = vm::hide, snapshot = vm::snapshot, startLive = vm::startLive, stopLive = vm::stopLive, confirm = vm::confirm, dismiss = vm::dismiss,
             closePicture = vm::closePicture, messageShown = vm::messageShown, openSettings = onOpenSettings,
             openClips = vm::openClips, closeClips = vm::closeClips, moreClips = vm::loadMoreClips, playClip = vm::play, closePlayer = vm::closePlayer,
         ),
@@ -183,6 +187,7 @@ fun HomeContent(ui: HomeUi, a: HomeTabActions) {
     ui.pending?.let { p -> ConfirmDialog(p, a) }
     ui.picture?.let { (name, jpeg) -> PictureDialog(name, jpeg, a.closePicture) }
     ui.clips?.let { c -> ClipsDialog(c, ui.now, a) }
+    ui.live?.let { LiveDialog(it, a.stopLive) }
 }
 
 @Composable
@@ -233,6 +238,7 @@ private fun DeviceTile(d: HomeDevice, ui: HomeUi, a: HomeTabActions, onOpen: () 
                 d.has(Capability.Snapshot) -> {
                     if (d.key in ui.fetching) CircularProgressIndicator(Modifier.size(24.dp).padding(end = 4.dp))
                     else TextButton(onClick = { a.snapshot(d) }) { Text("Snapshot") }
+                    if (d.has(Capability.Live) && d.online) TextButton(onClick = { a.startLive(d) }) { Text("Live") }
                 }
                 d.capability<Capability.Thermostat>() != null -> {
                     TextButton(onClick = { a.step(d, -1.0) }, modifier = Modifier.semantics { contentDescription = "Lower ${d.name}" }) { Text("−") }
@@ -271,6 +277,7 @@ private fun PrinterTile(d: HomeDevice, ui: HomeUi, a: HomeTabActions) {
                 if (d.has(Capability.Snapshot) && d.online) {
                     if (d.key in ui.fetching) CircularProgressIndicator(Modifier.size(24.dp).padding(end = 4.dp))
                     else TextButton(onClick = { a.snapshot(d) }) { Text("Camera") }
+                    if (d.has(Capability.Live) && d.online) TextButton(onClick = { a.startLive(d) }) { Text("Live") }
                 }
             }
         }

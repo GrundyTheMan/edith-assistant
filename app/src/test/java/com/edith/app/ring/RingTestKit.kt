@@ -43,6 +43,10 @@ class FakeRing {
     /** Access tokens Ring accepts; everything else gets 401. */
     val validAccess: MutableSet<String> = Collections.synchronizedSet(mutableSetOf())
     var sessionStarted = 0
+    /** The SDP Ring answers a live view with; null: Ring refuses (HTTP 500). The offers and ended session ids it was sent are recorded. */
+    @Volatile var liveAnswerSdp: String? = "v=0 answer"
+    val liveOffers: MutableList<JsonObject> = Collections.synchronizedList(mutableListOf())
+    val liveEnded: MutableList<String> = Collections.synchronizedList(mutableListOf())
 
     init {
         server.dispatcher = object : Dispatcher() {
@@ -55,6 +59,8 @@ class FakeRing {
                     !authorised(request) -> MockResponse.Builder().code(401).body("{}").build()
                     path == "/clients_api/session" -> { sessionStarted++; json("{}") }
                     path == "/clients_api/ring_devices" -> json(devicesJson)
+                    path == "/integrations/v1/liveview/start" -> { liveOffers += Json.parseToJsonElement(request.body?.utf8().orEmpty()).jsonObject; liveAnswerSdp?.let { json("""{"sdp":"$it"}""") } ?: MockResponse.Builder().code(500).build() }
+                    path == "/integrations/v1/liveview/end" -> { liveEnded += Json.parseToJsonElement(request.body?.utf8().orEmpty()).jsonObject["session_id"]!!.jsonPrimitive.content; json("{}") }
                     path.endsWith("/events") -> json(eventsJson)
                     path == "/clients_api/video_search/history" -> json(clipsJson)
                     path.startsWith("/clients_api/dings/") -> (if (path.endsWith("/recording")) recordingUrl else sharePlayUrl)?.let { json("""{"url":"$it"}""") } ?: MockResponse.Builder().code(404).body("{}").build()
@@ -117,7 +123,7 @@ class FakeRing {
 
     val endpoints: RingEndpoints get() {
         val base = server.url("/").toString().trimEnd('/')
-        return RingEndpoints(oauth = base, clients = "$base/clients_api", snapshots = base)
+        return RingEndpoints(oauth = base, clients = "$base/clients_api", snapshots = base, liveView = "$base/integrations/v1/liveview")
     }
 
     fun api() = RingApi(lazy { OkHttpClient() }, endpoints)

@@ -17,12 +17,15 @@ import com.edith.app.home.DeviceType
 import com.edith.app.home.HomeBackend
 import com.edith.app.home.HomeDevice
 import com.edith.app.home.HomeService
+import com.edith.app.home.LiveFeed
+import com.edith.app.home.StreamLiveFeed
 import com.edith.app.home.ServiceState
 import com.edith.app.home.SignInField
 import com.edith.app.home.SignInForm
 import com.edith.app.home.SignInResult
 import com.edith.app.tools.framework.IntegrationStatus
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
@@ -42,15 +45,20 @@ import java.util.concurrent.ConcurrentHashMap
  * `hardware_id` that isn't a UUID. A UUID is made once and kept. When Blink changes something, Edith says Blink can't be
  * reached or wants a new sign-in; the other services keep working. Like Ring's, the refresh token is treated as
  * rotating: each new one is saved *before* the access token it came with is used, and refreshes never overlap.
- * No live view (C32).
+ * Live view (C32) is [BlinkLiveStream] (the stream server) plus Blink's command, kept open until the view ends.
  */
 class BlinkService(
     private val secrets: SecretStore,
     private val api: BlinkApi,
     private val clock: Clock,
-    /** Waits between polls; tests pass one that does not wait. */
+    /** Opens the stream server's connection for a live view; tests pass a plain socket. */
+    private val liveConnect: (BlinkLive.Immis) -> java.net.Socket = BlinkLiveStream::tlsSocket,
+    /** How long a live view runs before Edith ends it (Blink ends them itself after a while). */
+    private val liveLimitMs: Long = 5 * 60_000L,
+    /** Waits between polls; tests pass one that does not wait. (A live view always waits in real time.) */
     private val pause: suspend (Long) -> Unit = { kotlinx.coroutines.delay(it) },
 ) : HomeService {
+    private val liveScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
     private val json = Json { ignoreUnknownKeys = true }
 
     private val _state = MutableStateFlow(ServiceState.NotConnected)
@@ -222,7 +230,7 @@ class BlinkService(
     private fun device(c: BlinkCamera, now: Long) = HomeDevice(
         id = c.id, name = c.name, room = null,
         type = if (c.kind == BlinkKind.Doorbell) DeviceType.Doorbell else DeviceType.Camera,
-        capabilities = setOf(Capability.Snapshot, Capability.Events),
+        capabilities = setOf(Capability.Snapshot, Capability.Events, Capability.Live),
         backend = ID, online = c.online != false,
         state = DeviceState(), stateAt = now,
     )
@@ -313,6 +321,31 @@ class BlinkService(
                 is Outcome.Success -> Outcome.Success(m.value.filter { it.cameraId == deviceId && it.at >= sinceMs }.map { DeviceEvent(it.at, it.kind) })
             }
 
+        override val hasLive: Boolean get() = true
+
+        /**
+         * Opens a live view (C32): Blink starts a command and names a stream server; video then comes over that connection
+         * until the command ends, [liveLimitMs] pass or the caller stops it. The camera is told when it is over.
+         */
+        override suspend fun startLive(deviceId: String): Outcome<LiveFeed> {
+            val camera = when (val c = cameraWithId(deviceId)) {
+                is Outcome.Failure -> return c
+                is Outcome.Success -> c.value
+            }
+            if (camera.online == false) return Outcome.Failure(AppError.ToolFailed("Blink", "${camera.name} is offline"))
+            val serial = camera.serial ?: return Outcome.Failure(AppError.ToolFailed("Blink", "Blink didn't give ${camera.name}'s serial number, which live view needs"))
+            val answer = when (val r = authed { t, w -> api.requestLive(t, w, camera) }) {
+                is Outcome.Failure -> return r
+                is Outcome.Success -> r.value
+            }
+            val server = answer.server?.takeIf { it.startsWith("immis://") }?.let { BlinkLive.parseImmis(it) }
+            if (server == null) {
+                Log.w(LogTag.Home, "Blink offered a ${camera.kind} live view as ${answer.server?.substringBefore(':') ?: "nothing"}")
+                return Outcome.Failure(AppError.ToolFailed("Blink", "Blink offered ${camera.name}'s live view in a form Edith can't play yet"))
+            }
+            return Outcome.Success(BlinkLiveFeed(camera, answer, server, serial))
+        }
+
         override val hasClips: Boolean get() = true
 
         override suspend fun clips(sinceMs: Long, untilMs: Long): Outcome<ClipsPage> =
@@ -336,6 +369,49 @@ class BlinkService(
             val url = api.absolute(where, path) ?: return Outcome.Failure(AppError.ToolFailed("Blink", "Blink gave an address Edith can't use"))
             return Outcome.Success(ClipSource(url.toString(), mapOf("Authorization" to "Bearer $token")))
         }
+    }
+
+    /** One running live view: the stream, a poll of Blink's command (it ends a view by ending it), and the time limit. */
+    private inner class BlinkLiveFeed(camera: BlinkCamera, private val answer: BlinkParse.LiveAnswer, server: BlinkLive.Immis, serial: String) : StreamLiveFeed {
+        private val channel = kotlinx.coroutines.channels.Channel<ByteArray>(64, kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST)
+        private val _ended = MutableStateFlow<String?>(null)
+        override val video: kotlinx.coroutines.channels.ReceiveChannel<ByteArray> = channel
+        override val ended: StateFlow<String?> = _ended.asStateFlow()
+        private val network = answer.networkId ?: camera.networkId
+        @Volatile private var job: kotlinx.coroutines.Job? = null
+
+        init {
+            job = liveScope.launch {
+                val stream = launch {
+                    val why = BlinkLiveStream(server, serial, liveConnect).run { channel.send(it) }
+                    finish(why)
+                }
+                if (answer.commandId != null) launch {
+                    while (true) {
+                        kotlinx.coroutines.delay(answer.pollSeconds * 1000L)
+                        val running = authed { t, w -> api.liveRunning(t, w, network, answer.commandId) }
+                        if (running is Outcome.Success && !running.value) { finish("Blink ended the live view."); break }
+                    }
+                }
+                launch { kotlinx.coroutines.delay(liveLimitMs); finish("Live view stops after a few minutes. Start it again to keep watching.") }
+                stream.join()
+            }
+        }
+
+        private val finished = java.util.concurrent.atomic.AtomicBoolean(false)
+
+        private fun finish(reason: String) {
+            if (!finished.compareAndSet(false, true)) return
+            _ended.value = reason
+            channel.close()
+            liveScope.launch {
+                // The camera keeps streaming until Blink is told the view is over.
+                answer.commandId?.let { id -> authed { t, w -> api.endLive(t, w, network, id) } }
+            }
+            job?.cancel()
+        }
+
+        override fun stop() = finish("Stopped.")
     }
 
     @Serializable
