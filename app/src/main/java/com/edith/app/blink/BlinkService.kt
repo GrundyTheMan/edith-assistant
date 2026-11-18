@@ -421,7 +421,7 @@ class BlinkService(
                         if (stopped != null && !switching && watched === current) { finish("Blink ended the live view (its command stopped: $stopped)."); break }
                     }
                 }
-                launch { kotlinx.coroutines.delay(liveLimitMs); finish("Live view stops after a few minutes. Start it again to keep watching.") }
+                launch { kotlinx.coroutines.delay(liveLimitMs); finish("Live view stops after 5 minutes. Start it again to keep watching.") }
                 stream.join()
             }
         }
