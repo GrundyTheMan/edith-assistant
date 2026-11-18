@@ -422,9 +422,100 @@ Edith builds against J1a/J1b first; she does not need J2 to ship her read-only s
 7. **Answered 2026-11-18:** the file-listing rule of 15.3 O3 (refused while printing or paused; at most once a minute across phones).
 8. **Answered 2026-11-18 ("use your best judgement"):** adopt all of 15.2 (1-5 required, 6 recommended).
 
-## 14. As built on the Jarvis side
+## 14. As built on the Jarvis side (2026-11-18)
 
-_(The Jarvis agent fills this in: branches, what differs from the text above, the numbers it measured, anything Edith's side must know. Keep the same style as part 14 of the main spec.)_
+Written by the Jarvis agent after building all nine steps of part 11. **Nothing is merged**: nine pull requests in the Jarvis repo, each stacked on the one before
+(merge them in this order, each as a merge commit): **J0** #25 (groundwork, the only step that touches code the work-data feed uses), **J1a** #26 (shared entry and the
+`state` long poll), **J1b** #27 (the other read routes, the parity table), **J2a** #28 (Controls and commands), **J2b** #29 (which phone may control, away from home,
+settings), **J3a** #30 (alerts), **J3b** #31 (upload), **J4a** #32 (recordings), **J4b** #33 (the camera view). Everything was tested against `e2e/fakeMoonraker.ts` only;
+**the real printer was never touched** (not even a read-only request). Jarvis's `docs/plans/printer.md` progress log has one row per step.
+
+### 14.1 What the phone gets (as built)
+
+All under `/v1/printer/`, bearer token, the private-address rule, JSON errors `{ "error": { "code", "message" } }` as in the main spec. A route answers `403 PRINTER_NOT_SHARED`
+when sharing is off or no printer is set up. **A printer that is off is a `200` from `state`** (`connection: "unreachable"` with the last values); only commands, files, camera and recordings
+answer `502 PRINTER_UNREACHABLE` (or `504 TIMEOUT`), in the printer service's own plain words.
+
+| Route | Notes |
+|---|---|
+| `GET /v1/shared` | gains `printer`: `{ name, control, alerts, armMinutes, presets, cameras:[{id,name}], features:[…], schema: 1 }`. `control` is **per phone** (the global switch and this phone's tick). `features` today: `state temperatures macros console files history camera controls events upload recordings stream` |
+| `GET state?after&epoch&wait&quiet` | `{ rev, epoch, state, arm, quick, consoleSeq, serverTime }`. See 14.2 |
+| `GET temperatures`, `history?start`, `macros` | as 6.3. **`macros` also returns `groups` and `hidden`** (14.3) |
+| `GET console?after&count` | `{ lines:[{seq,time,text,kind}], seq }` |
+| `GET files?fresh`, `files/detail?path` | the rules of 14.5 |
+| `GET camera/{id}/snapshot`, `camera/{id}/stream` | image bytes; `multipart/x-mixed-replace`, 14.8 |
+| `POST controls`, `POST command`, `POST settings` | 14.4 |
+| `GET events?after&wait` | 14.6 |
+| `POST files/upload?name` | 14.7 |
+| `GET recordings`, `recordings/info?path`, `recordings/video?path` | 14.9 |
+
+### 14.2 `state`: how to ask, and how much is sent
+
+- Without `after`, with an old `after`, with an `after` **newer than Jarvis's** (Jarvis restarted) or a different `epoch`: answered at once. Always keep the `epoch` of the answer and send it back; if it changed, replace everything.
+- With `after` = the current `rev` and `wait` (0-25 s): held. The answer when nothing changed has the **same `rev`** (it is the signal "nothing new", not an error).
+- **A meaningful change** (print state, file, heater *target*, alert, cameras, queue, slots, Controls on or off…) is answered after about 250 ms. **Live readings alone** (current temperatures, position, speed, progress within a percent, times) are answered **at most every 2 s**, or **every 10 s when you send `quiet=1`** (send it when the screen is off or the Printer screen is not in front).
+- At most **3** held polls per phone (`state` and `events` share the count): the fourth is `429 TOO_MANY`. A removed phone's polls end with `401`; un-sharing ends them with `403 PRINTER_NOT_SHARED`.
+- **Send `Accept-Encoding: gzip`**: answers of 1 KB or more are compressed.
+- **Measured** (a simulated ten minutes of a print, the printer updating every 250 ms): **301 answers instead of 2,400**; one answer of the trimmed AD5X sample is 2.3 KB, 1.1 KB gzipped (a full state with mesh and objects is bigger); about 320 KB for ten minutes gzipped.
+- `arm` is **this phone's** (`{ armed, until? }`); `quick` is computed with it. `state.cameras` has no `streamUrl`/`snapshotUrl`.
+- **The state is exactly `PrinterState`.** The parity check of 15.5 found nothing a Printer-page card reads that is not in it: `PRINTER_STATE_KEYS` in `src/main/feed/printerWire.ts` is checked against `keyof PrinterState` by the compiler, so a new field cannot be added without it being named there. `schema` goes up only when a field is renamed or removed.
+
+### 14.3 Where Jarvis differs from the text of this spec
+
+1. **Macro groups.** The ids are Jarvis's own (`MACRO_GROUPS`): `filament`, `print`, `calibration`, `screen`, `system`, `other` (not `printing`, `bed`, `camera`). `macros` returns `groups: [{id,title}]` (Jarvis's titles, e.g. "Filament and nozzle") and `hidden: [NAME…]`.
+2. **Console.** Lines carry a `seq`; `?after=` returns only newer ones; `state.consoleSeq` says when to ask (15.6.1).
+3. **Recordings** are Jarvis's `RecordingList`, not the shape of the first draft of 6.11 (14.9).
+4. **The `error` event kind is not produced.** Jarvis's `printAlert` has four rules: `finished`, `failed`, `paused`, `klipper-stopped`. The `error` kind stays in the vocabulary; do not wait for it.
+5. **`cameraSeen` (15.2.6) was not built** (it was marked optional). A phone that wants to warn "you can't see the printer" can ask for a snapshot or open the view.
+6. **`/v1/shared.printer.alerts`** is the owner's "Send print alerts to paired phones" switch (default on), separate from Jarvis's own desktop alerts.
+7. **Away from home means a Tailscale address** (`100.64.0.0/10`, also when IPv4-mapped). A phone that uses the Tailscale address *at home* is treated as away: Controls last one minute. Use the home address at home.
+8. **A held request's quiet answer is not logged or listed** in Settings (a poll that times out with nothing new); answered ones are.
+
+### 14.4 Controls and commands
+
+- `POST controls` `{ on }` → `{ arm }`. Needs control switched on in Jarvis **and this phone ticked** ("May control the printer", off for every phone until the owner ticks it), else `403 CONTROL_OFF` (the message says which). Lasts the printer's `armMinutes` (default 2) at home and **one minute at most away from home**; each accepted command restarts it. It also ends when: you turn it off, the phone is removed, control or sharing is switched off, the owner un-ticks the phone, the printer stops being ready, or the printer's setup changes. **Read `arm.until` and `serverTime`; never hard-code the length.** Allowed in `klippy-shutdown`/`klippy-error` (a firmware restart).
+- `POST command` `{ command, via, confirmed, dryRun, requestId }`. **`requestId` is required** (except for `dryRun`): a new UUID per command, **the same one when you send it again** after a timeout. Jarvis keeps the answers of the last 200 requests per phone for 5 minutes and answers a repeat the same without sending again; a refused attempt is not remembered, so the same id works once the problem is fixed.
+- The order is 6.5, each step refusing before the next: control (`403 CONTROL_OFF`), the optional away limit (`403 AWAY_LIMITED`), chat limit (`422 REFUSED`), the body (`400 BAD_REQUEST`, all 33 kinds, a one-line console, 200 characters), the printer reachable and its state refreshed (`502`), your Controls (`409 CONTROLS_OFF`), Jarvis's `checkCommand` (`422 REFUSED` with its reason), the confirmation (**`409 CONFIRM_REQUIRED`** with the body `{ "error": {…}, "check": { "allowed": true, "risk": "confirm", "question": "…", "confirm": "Home" } }`; send again with `confirmed: true`), 10 commands a second (`429`), then sent: `200 { "sent": "G28", "risk": "confirm" }`. A dry run answers `200` with the check (`{ allowed, risk, question?, confirm?, reason? }`; a refusal is `risk: "none"` with `reason`), also without Controls.
+- `via: "chat"` may only be `pause`, `resume`, `cancel`, `light`: anything else is `422 REFUSED "Edith’s chat can’t do that."`. It needs control on and the phone ticked, no Controls, and still `confirmed: true`.
+- **Emergency stop**: needs the printer shared and `confirmed: true`; **not** the control switch, the tick or Controls. Logged at warn.
+- **The cancel guard** (60 s) is Jarvis's across the page and every phone: a second cancel is `422 REFUSED`.
+- **Optional limit away from home** (owner's switch, default **off**): such a phone may only `pause`, `resume`, `cancel`, `estop`, `light`, `camera`, and look; everything else (including upload and settings) is `403 AWAY_LIMITED` "This isn’t allowed away from home: …".
+- **The owner is told at the PC** (a Windows notification and a warn log line; kind only, no values) when a phone starts a print, heats (`setTemp`, `preset`), runs a macro, types a console line, deletes a file, adds to the queue, restarts, or uploads. The Printer page shows "Controls on for <phone>".
+- `POST settings` `{ presets?, hiddenMacros? }` (at least one): **only** the temperature presets (names ≤ 30 characters and unique, nozzle 0-300 °C, bed 0-120 °C, at most 10; an empty list means "use the defaults") and the hidden-macro names (upper-cased, `[A-Za-z0-9_]`). Needs control, the tick and **your Controls on** (`409 CONTROLS_OFF` otherwise). The address, API key, arm time, camera and alerts cannot be reached. Answers `{ presets, hiddenMacros }`.
+
+### 14.5 Files
+
+- `GET files` serves the **cached list whatever its age** with `cachedAt`. When there is none (or `fresh=1`) it must list, which freezes the AD5X 6-11 s (the emergency stop waits too): **refused `422 REFUSED` "Not while printing: …" while a print is running or paused**, and **at most once a minute across all phones** (`429 TOO_MANY`). So: disable "Load files" while printing, and show the cache.
+- `files/detail?path=` only for a path in the list Jarvis has (`404 NOT_FOUND` otherwise, also when no list was loaded); a file without metadata is just `{ path }`.
+
+### 14.6 Alerts (`GET events?after&wait`)
+
+`{ "seq": N, "events": [ { seq, time, kind, title, text } ] }`, the last 50, in memory only. **`seq` starts from the time in seconds when Jarvis started**, so after a restart your `after` is lower: you are answered at once with everything kept (usually nothing) and the new `seq` to ask from. **Always take `seq` from the answer.** Without `after`, or behind: at once; up to date: held up to 25 s; a wait that ends with nothing is the same `seq` and `events: []`. **Catch-up on opening** is just this call with the last `seq` you saw. The watcher runs while sharing is on, alerts are on and a phone is paired; it holds the printer connection open, so it works with no page open, and it **does not depend on Jarvis's desktop alerts**. A pause that Jarvis or a phone sent is not alerted.
+
+### 14.7 Upload
+
+`POST files/upload?name=<file name>`, `Content-Type: application/octet-stream`, the file as the body. A command like any other: control, the tick, **your Controls**, the printer `ready`. The name: ≤ 100 characters of letters, digits, space and `_ . ( ) + -`, ending `.gcode` or `.3mf` (`400`). **At most 64 MB**: `413 TOO_LARGE` as soon as it is over. Answers `{ "path": "name.gcode" }`. Up to 5 minutes. A refusal is answered before the body is read, and Jarvis throws the rest away, so a client that writes the whole body first (OkHttp does) still gets its answer.
+
+### 14.8 The camera view
+
+`GET camera/{id}/stream` → `multipart/x-mixed-replace; boundary=jarvisframe`, each part `Content-Type: image/jpeg` and `Content-Length`. **Two views at most, in all** (`429 TOO_MANY`); each ends when you close the connection and **after ten minutes** (open it again). The first picture is waited for (up to about 10 s): a camera that is off is `502 PRINTER_UNREACHABLE "The camera isn’t answering."`. The printer's own screen is camera `screen`; **a tap is the `screenTap` command** with the printer's own pixels, through `POST command` like any other (it needs Controls). `snapshot` (about a frame a second) still works and is cached for half a second.
+
+### 14.9 Recordings
+
+`GET recordings` is Jarvis's `RecordingList` (`folders`, `recordings:[{path,name,title,size,time,thumbnail?,job?}]`, `sshError?`). Not set up on the PC is a `200` with an empty list and `sshError` in plain words ("show it, and say it is set up in Jarvis on the PC"). `recordings/info?path=` is `{ thumbnail?, duration? }` (the picture as a `data:` URL). `recordings/video?path=` is the playable MP4 **with `Range`** (`200`, `206` with `Content-Range`, `416`), also what "Save" downloads. **Only a `path` from the last list is accepted** (`404 NOT_FOUND` otherwise, also before any list: load the list first). The video is made once and kept five minutes, so the first request of a long one can take a while.
+
+### 14.10 New error codes (beyond the table in part 5)
+
+`PRINTER_NOT_SHARED 403`, `CONTROL_OFF 403`, `AWAY_LIMITED 403`, `CONTROLS_OFF 409`, `CONFIRM_REQUIRED 409`, `REFUSED 422`, `PRINTER_UNREACHABLE 502`, `NOT_FOUND 404`, `TOO_LARGE 413`, plus `TOO_MANY 429` (also for the camera views, the polls and the file list) and `TIMEOUT 504`.
+
+### 14.11 Not verified, and why it matters
+
+- **Everything against the real AD5X**: nothing was sent to it, as the rules said. The fake printer follows the real one's quirks (a camera that hangs when off, the file-list behaviour is *counted*, not timed), but real timings, real G-code results, real uploads and the real camera (including whether its MJPEG stream sends frames) are untested.
+- **Recordings with real data**: the fake has none; the list, info, ranged video and the SSH path are unit-tested against stand-ins. The path through `ffmpeg` for FlashForge's AVI is the page's own, unchanged.
+- **A real phone**, and a **real Tailscale address** (the e2e connects over loopback; the "away" rules are unit-tested with an address).
+- The Windows Firewall rule for Tailscale (see part 9 of the main spec).
+- **Alerts when the app is asleep** (O2): Jarvis keeps them; whether Edith on the owner's iPhone through Andarium can poll in the background is unverified on this side.
+- **Per-phone control, away-from-home limits and the settings route were decided by the owner on 2026-11-18** (parts 13 and 15); the defaults are: nothing is allowed until the owner ticks the phone; the away limit is off.
 
 ## 15. Review from the Jarvis side (2026-11-18): what the feed server cannot do yet, and gaps in this design
 
