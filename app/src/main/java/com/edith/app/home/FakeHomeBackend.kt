@@ -18,6 +18,8 @@ class FakeHomeBackend(
     /** The doorbell's picture (a JPEG drawn by the app; any bytes in tests). */
     private val picture: () -> ByteArray,
     private val lagMs: Long = 4_000,
+    /** The Demo doorbell's live video: a made-up MPEG-TS clip and its length in seconds. Null: no Live button (tests). */
+    private val live: Pair<ByteArray, Int>? = null,
     override val id: String = ID,
     override val displayName: String = "Demo home",
     override val isHub: Boolean = false,
@@ -37,7 +39,7 @@ class FakeHomeBackend(
         device("front-lock", "Front door", "Entry", DeviceType.Lock, setOf(Capability.LockUnlock), DeviceState(lock = LockState.Locked, battery = 80)),
         device("back-lock", "Back door", "Kitchen", DeviceType.Lock, setOf(Capability.LockUnlock), DeviceState(lock = LockState.Locked, battery = 15)),
         device("garage", "Garage door", "Garage", DeviceType.GarageDoor, setOf(Capability.OpenClose), DeviceState(door = DoorState.Closed)),
-        device("doorbell", "Doorbell", "Entry", DeviceType.Doorbell, setOf(Capability.Snapshot, Capability.Events), DeviceState(battery = 90)),
+        device("doorbell", "Doorbell", "Entry", DeviceType.Doorbell, setOf(Capability.Snapshot, Capability.Events) + (if (live != null) setOf(Capability.Live) else emptySet()), DeviceState(battery = 90)),
         device("printer", "3D printer", null, DeviceType.Printer, setOf(Capability.PrintControl, Capability.Snapshot),
             DeviceState(print = PrintJob(PrintState.Printing, "Benchy", 0.42, 3_900, 126, 300), heaters = listOf(Heat("Nozzle", 215.0, 220.0), Heat("Bed", 60.0, 60.0)))),
     )
@@ -105,6 +107,14 @@ class FakeHomeBackend(
             devices[i] = d.copy(state = next, stateAt = now())
             Outcome.Success(next)
         }
+    }
+
+    override val hasLive: Boolean get() = live != null
+
+    override suspend fun startLive(deviceId: String): Outcome<LiveFeed> {
+        val (clip, seconds) = live ?: return Outcome.Failure(AppError.ToolFailed(displayName, "it has no live view"))
+        if (deviceId != "doorbell") return Outcome.Failure(AppError.ToolFailed(displayName, "that device has no live view"))
+        return Outcome.Success(DemoLive(clip, seconds))
     }
 
     override suspend fun snapshot(deviceId: String): Outcome<ByteArray> {

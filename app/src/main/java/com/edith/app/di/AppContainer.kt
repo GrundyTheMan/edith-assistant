@@ -405,7 +405,7 @@ class AppContainer(val app: Application) {
     val meross: MerossService by lazy { MerossService(secretStore, MerossApi(httpClients.secure, clock), PahoMerossBus(dispatchers, clock), clock) }
 
     /** Ring doorbells and cameras (C27): the sign-in is kept encrypted in [secretStore]. */
-    val ring: RingService by lazy { RingService(secretStore, RingApi(httpClients.secure), clock) }
+    val ring: RingService by lazy { RingService(secretStore, RingApi(httpClients.secure), clock, rtc = com.edith.app.ring.WebRtcClient(app)) }   // C32: rtc is Ring live view
 
     /** Blink cameras (C29): the sign-in is kept encrypted in [secretStore]. */
     val blink: BlinkService by lazy { BlinkService(secretStore, BlinkApi(httpClients.secure, blinkEndpoints()), clock) }
@@ -432,7 +432,7 @@ class AppContainer(val app: Application) {
     val home: Home by lazy {
         Home(
             DataStoreHomePrefs(settingsStore.store), homeCommandLog, appScope, clock,
-            demo = if (BuildConfig.DEBUG) FakeHomeBackend(clock, DemoPicture::jpeg) else null,
+            demo = if (BuildConfig.DEBUG) FakeHomeBackend(clock, DemoPicture::jpeg, live = runCatching { app.assets.open("demo-live.ts").use { it.readBytes() } to 8 }.getOrNull()) else null,
         ).also { h ->
             h.register(meross)   // C26
             h.register(ring)     // C27

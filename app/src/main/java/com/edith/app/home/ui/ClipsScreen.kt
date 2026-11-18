@@ -138,11 +138,11 @@ private fun ClipPlayerDialog(clip: DeviceClip, ui: ClipsUi, onClose: () -> Unit)
  * `c2.goldfish.h264.decoder` failed on a plain H.264 file).
  */
 @androidx.annotation.OptIn(UnstableApi::class)
-private fun softwareFirst() = MediaCodecSelector { mimeType, secure, tunneling ->
+internal fun softwareFirst() = MediaCodecSelector { mimeType, secure, tunneling ->
     MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, secure, tunneling).sortedBy { if (it.softwareOnly) 0 else 1 }
 }
 
-private val DECODER_ERRORS = setOf(
+internal val DECODER_ERRORS = setOf(
     PlaybackException.ERROR_CODE_DECODING_FAILED, PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
     PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED, PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
 )

@@ -16,12 +16,18 @@ import com.edith.app.home.DeviceType
 import com.edith.app.home.HomeBackend
 import com.edith.app.home.HomeDevice
 import com.edith.app.home.HomeService
+import com.edith.app.home.LiveFeed
+import com.edith.app.home.TrackLiveFeed
 import com.edith.app.home.ServiceState
 import com.edith.app.home.SignInField
 import com.edith.app.home.SignInForm
 import com.edith.app.home.SignInResult
 import com.edith.app.tools.framework.IntegrationStatus
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
@@ -45,6 +51,10 @@ class RingService(
     private val secrets: SecretStore,
     private val api: RingApi,
     private val clock: Clock,
+    /** Makes WebRTC calls for live view (C32); null: no live view (tests, where the native library cannot run). */
+    private val rtc: RingRtc? = null,
+    /** How long a live view runs before Edith ends it (Jarvis ends one after 5 minutes too). */
+    private val liveLimitMs: Long = 5 * 60_000L,
 ) : HomeService {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -209,7 +219,7 @@ class RingService(
     private fun device(c: RingCamera, now: Long) = HomeDevice(
         id = c.id, name = c.name, room = null,
         type = if (c.doorbell) DeviceType.Doorbell else DeviceType.Camera,
-        capabilities = setOf(Capability.Snapshot, Capability.Events),
+        capabilities = setOf(Capability.Snapshot, Capability.Events) + (if (rtc != null) setOf(Capability.Live) else emptySet()),
         backend = ID, online = !c.offline,
         state = DeviceState(battery = c.battery), stateAt = now,
     )
@@ -250,6 +260,33 @@ class RingService(
                 return Outcome.Failure(AppError.ToolFailed("Ring", "Motion detection is off for ${camera.name}, which stops Ring taking pictures from it"))
             }
             return authed { t, h -> api.snapshot(t, h, deviceId, afterMs = clock.now().toEpochMilli() - 1000) }
+        }
+
+        override val hasLive: Boolean get() = rtc != null
+
+        /**
+         * Opens a live view (C32): a WebRTC call whose offer goes to Ring and whose answer comes back. The view is ended at Ring when
+         * it is stopped, lost or runs out of time, so the camera is not left streaming.
+         */
+        override suspend fun startLive(deviceId: String): Outcome<LiveFeed> {
+            val rtc = rtc ?: return Outcome.Failure(AppError.ToolFailed("Ring", "it has no live view"))
+            val camera = when (val c = cameraNamed(deviceId)) {
+                is Outcome.Failure -> return c
+                is Outcome.Success -> c.value
+            }
+            if (camera.offline) return Outcome.Failure(AppError.ToolFailed("Ring", "${camera.name} is offline"))
+            val sessionId = UUID.randomUUID().toString()
+            var refused: AppError? = null
+            val call = when (val r = rtc.open { offer ->
+                when (val a = authed { t, h -> api.liveStart(t, h, deviceId, sessionId, offer) }) {
+                    is Outcome.Success -> a.value
+                    is Outcome.Failure -> { refused = a.error; null }
+                }
+            }) {
+                is Outcome.Failure -> return Outcome.Failure(refused ?: r.error)
+                is Outcome.Success -> r.value
+            }
+            return Outcome.Success(RingLiveFeed(call, sessionId))
         }
 
         override suspend fun events(deviceId: String, sinceMs: Long): Outcome<List<DeviceEvent>> {
@@ -300,6 +337,34 @@ class RingService(
             listedUrls[clipId]?.let { return Outcome.Success(it) }
             return failure ?: Outcome.Failure(AppError.ToolFailed("Ring", "Ring has no address for that clip"))
         }
+    }
+
+    /** A Ring live view: the call's video, ended when the call is lost, the time limit passes or [stop] is called; Ring is told each time. */
+    private inner class RingLiveFeed(private val call: RtcCall, private val sessionId: String) : TrackLiveFeed {
+        private val _ended = MutableStateFlow<String?>(null)
+        override val ended: StateFlow<String?> = _ended.asStateFlow()
+        override val track = call.track
+        override val eglContext = call.eglContext
+        private val finished = java.util.concurrent.atomic.AtomicBoolean(false)
+        private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+
+        init {
+            scope.launch { call.lost.filterNotNull().first().let { finish(it) } }
+            scope.launch { kotlinx.coroutines.delay(liveLimitMs); finish("Live view stops after a few minutes. Start it again to keep watching.") }
+        }
+
+        private fun finish(reason: String) {
+            if (!finished.compareAndSet(false, true)) return
+            _ended.value = reason
+            call.close()
+            // The camera keeps streaming until Ring is told the view is over.
+            scope.launch {
+                authed { t, h -> api.liveEnd(t, h, sessionId) }
+                scope.cancel()
+            }
+        }
+
+        override fun stop() = finish("Stopped.")
     }
 
     @Serializable

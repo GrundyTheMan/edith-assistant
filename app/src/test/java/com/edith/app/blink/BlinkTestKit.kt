@@ -39,6 +39,9 @@ class FakeBlink {
     @Volatile var thumbnailAfterSnapshot: String? = "/media/thumb/1-new"
     @Volatile private var snapshotAsked = false
     @Volatile var pictureBytes: ByteArray = byteArrayOf(9, 8, 7)
+    /** The stream server a live view request names (C32), and the state Blink reports for the live view command. */
+    @Volatile var liveServer: String? = "immis://127.0.0.1:1/CONN?client_id=1"
+    @Volatile var liveState = "running"
     /** Every Authorization header the account's server saw, for checking the bearer. */
     val bearers: MutableList<String> = Collections.synchronizedList(mutableListOf())
 
@@ -131,6 +134,9 @@ class FakeBlink {
             path == "/api/v3/accounts/4242/homescreen" -> json(if (snapshotAsked && thumbnailAfterSnapshot != null) homescreen.replace("/media/thumb/1\"", "$thumbnailAfterSnapshot\"") else homescreen)
             r.method == "POST" && path.endsWith("/thumbnail") -> { snapshotAsked = true; if (snapshotAnswers.isEmpty()) json("""{"id":77,"network_id":5}""") else snapshotAnswers.let { if (it.size > 1) it.removeAt(0) else it[0] } }
             path == "/network/5/command/77" -> json("""{"complete":$commandComplete,"status_code":908}""")
+            r.method == "POST" && path.endsWith("/liveview") -> json("""{"server":${liveServer?.let { "\"$it\"" } ?: "null"},"command_id":99,"polling_interval":2,"network_id":5}""")
+            path == "/network/5/command/99" -> json("""{"commands":[{"state_condition":"$liveState"}]}""")
+            r.method == "POST" && path == "/network/5/command/99/done/" -> json("{}")
             path.startsWith("/media/thumb/") || path.contains("/thumbnail/") -> MockResponse.Builder().code(200).body(Buffer().write(pictureBytes)).addHeader("Content-Type", "image/jpeg").build()
             path == "/api/v1/accounts/4242/media/changed" -> json(mediaJson)
             path.startsWith("/api/v2/accounts/4242/media/clip/") -> MockResponse.Builder().code(200).body(Buffer().write(byteArrayOf(1, 2))).addHeader("Content-Type", "video/mp4").build()
@@ -149,8 +155,8 @@ class FakeBlink {
     fun shutdown() = server.close()
 
     companion object {
-        fun camera(id: String, name: String, network: String = "5", status: String = "done", battery: String = "ok", thumbnail: String? = null, type: String = "catalina") =
-            """{"id":$id,"name":"$name","network_id":$network,"status":"$status","battery":"$battery","type":"$type"${if (thumbnail != null) ""","thumbnail":"$thumbnail"""" else ""}}"""
+        fun camera(id: String, name: String, network: String = "5", status: String = "done", battery: String = "ok", thumbnail: String? = null, type: String = "catalina", serial: String? = "SN$id") =
+            """{"id":$id,"name":"$name","network_id":$network,"status":"$status","battery":"$battery","type":"$type"${if (serial != null) ""","serial":"$serial"""" else ""}${if (thumbnail != null) ""","thumbnail":"$thumbnail"""" else ""}}"""
 
         fun homescreenJson(cameras: List<String> = emptyList(), owls: List<String> = emptyList(), doorbells: List<String> = emptyList(), syncOffline: Boolean = false) =
             """{"networks":[{"id":5,"armed":true}],"sync_modules":[{"network_id":5,"status":"${if (syncOffline) "offline" else "online"}"}],"cameras":[${cameras.joinToString()}],"owls":[${owls.joinToString()}],"doorbells":[${doorbells.joinToString()}]}"""
