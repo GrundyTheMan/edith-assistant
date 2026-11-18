@@ -14,8 +14,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -99,9 +102,18 @@ data class LiveUi(
     val endedBecause: String? = null,
 )
 
+private val DIALOG_PICTURE_HEIGHT = 220.dp
+
 /** Live video from one camera. Closing the dialog stops the stream, so the camera and the phone's radio aren't left running. */
 @Composable
 fun LiveDialog(live: LiveUi, onClose: () -> Unit) {
+    // Saved, so a rotation (which recreates the screen) keeps full screen. It ends if the view ends: the small dialog says why.
+    var full by rememberSaveable { mutableStateOf(false) }
+    val playing = live.feed != null && live.error == null && live.endedBecause == null
+    if (full && playing) {
+        LiveFullScreen(live, onExit = { full = false }, onClose = onClose)
+        return
+    }
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text("${live.name} — live", style = MaterialTheme.typography.titleMedium) },
@@ -111,8 +123,8 @@ fun LiveDialog(live: LiveUi, onClose: () -> Unit) {
                     live.error != null -> Text(live.error)
                     live.endedBecause != null -> Text(live.endedBecause)
                     live.feed == null -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                    live.feed is StreamLiveFeed -> LivePlayer(live.feed)
-                    live.feed is TrackLiveFeed -> RtcPlayer(live.feed)
+                    live.feed is StreamLiveFeed -> LivePlayer(live.feed, Modifier.fillMaxWidth().height(DIALOG_PICTURE_HEIGHT))
+                    live.feed is TrackLiveFeed -> RtcPlayer(live.feed, Modifier.fillMaxWidth().height(DIALOG_PICTURE_HEIGHT))
                     else -> Text("This camera has no picture to show.")
                 }
                 Text(
@@ -123,12 +135,13 @@ fun LiveDialog(live: LiveUi, onClose: () -> Unit) {
             }
         },
         confirmButton = { TextButton(onClick = onClose) { Text("Close") } },
+        dismissButton = if (playing) ({ TextButton(onClick = { full = true }) { Text("Full screen") } }) else null,
     )
 }
 
 @Composable
 @androidx.annotation.OptIn(UnstableApi::class)
-private fun LivePlayer(feed: StreamLiveFeed) {
+internal fun LivePlayer(feed: StreamLiveFeed, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val failure = remember(feed) { mutableStateOf<String?>(null) }
     val software = remember(feed) { mutableStateOf(false) }
@@ -165,13 +178,13 @@ private fun LivePlayer(feed: StreamLiveFeed) {
             }
         },
         update = { it.player = player },
-        modifier = Modifier.fillMaxWidth().height(220.dp),
+        modifier = modifier,
     )
 }
 
 /** Ring's live view: the WebRTC track drawn on a renderer that shares the call's EGL context. */
 @Composable
-private fun RtcPlayer(feed: TrackLiveFeed) {
+internal fun RtcPlayer(feed: TrackLiveFeed, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val renderer = remember(feed) {
         org.webrtc.SurfaceViewRenderer(context).apply {
@@ -188,5 +201,5 @@ private fun RtcPlayer(feed: TrackLiveFeed) {
             renderer.release()
         }
     }
-    AndroidView(factory = { renderer }, modifier = Modifier.fillMaxWidth().height(220.dp))
+    AndroidView(factory = { renderer }, modifier = modifier)
 }
