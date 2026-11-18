@@ -102,6 +102,8 @@ data class LiveUi(
     val endedBecause: String? = null,
 )
 
+private val DIALOG_PICTURE_HEIGHT = 220.dp
+
 /** Live video from one camera. Closing the dialog stops the stream, so the camera and the phone's radio aren't left running. */
 @Composable
 fun LiveDialog(live: LiveUi, onClose: () -> Unit) {
@@ -121,8 +123,8 @@ fun LiveDialog(live: LiveUi, onClose: () -> Unit) {
                     live.error != null -> Text(live.error)
                     live.endedBecause != null -> Text(live.endedBecause)
                     live.feed == null -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                    live.feed is StreamLiveFeed -> LivePlayer(live.feed)
-                    live.feed is TrackLiveFeed -> RtcPlayer(live.feed)
+                    live.feed is StreamLiveFeed -> LivePlayer(live.feed, Modifier.fillMaxWidth().height(DIALOG_PICTURE_HEIGHT))
+                    live.feed is TrackLiveFeed -> RtcPlayer(live.feed, Modifier.fillMaxWidth().height(DIALOG_PICTURE_HEIGHT))
                     else -> Text("This camera has no picture to show.")
                 }
                 Text(
@@ -139,7 +141,7 @@ fun LiveDialog(live: LiveUi, onClose: () -> Unit) {
 
 @Composable
 @androidx.annotation.OptIn(UnstableApi::class)
-internal fun LivePlayer(feed: StreamLiveFeed, modifier: Modifier = Modifier.fillMaxWidth().height(220.dp)) {
+internal fun LivePlayer(feed: StreamLiveFeed, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val failure = remember(feed) { mutableStateOf<String?>(null) }
     val software = remember(feed) { mutableStateOf(false) }
@@ -182,7 +184,7 @@ internal fun LivePlayer(feed: StreamLiveFeed, modifier: Modifier = Modifier.fill
 
 /** Ring's live view: the WebRTC track drawn on a renderer that shares the call's EGL context. */
 @Composable
-internal fun RtcPlayer(feed: TrackLiveFeed, modifier: Modifier = Modifier.fillMaxWidth().height(220.dp)) {
+internal fun RtcPlayer(feed: TrackLiveFeed, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val renderer = remember(feed) {
         org.webrtc.SurfaceViewRenderer(context).apply {
