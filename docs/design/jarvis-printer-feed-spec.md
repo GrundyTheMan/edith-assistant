@@ -188,7 +188,7 @@ Answer (`200`):
 |---|---|
 | `GET /v1/printer/temperatures` | `{ "series": [ TempSeries … ] }`: from `service.temperatures()`. The phone calls it when the chart opens and appends from `state` after that. |
 | `GET /v1/printer/macros` | `{ "macros": [ MacroInfo … ] }`: **already filtered** exactly as the Macros card (`visibleMacros`: deny list, hidden list, the "has its own button" list) with `risk` filled in, **and grouped**: add `"group": "filament"` (one of `filament`, `printing`, `bed`, `camera`, `system`, `other`) from `groupMacros()`. |
-| `GET /v1/printer/console?count=200` | `{ "lines": [ ConsoleLine … ] }`, oldest first, from `service.consoleLines()`. `count` 1-500. Lines matching `/^\/\/ value:/` are **not** filtered here (the phone filters). |
+| `GET /v1/printer/console?after=<seq>&count=200` | `{ "lines": [ { "seq", "time", "text", "kind" } … ], "seq": N }`, oldest first, from `service.consoleLines()`: `ConsoleLine` plus a `seq` the feed adds (a counter that goes up by one per line; **additive**, see 15.6.1). `after` absent: the last `count` lines (1-500, default 200); `after` given: only the lines newer than it. Lines matching `/^\/\/ value:/` are **not** filtered here (the phone filters). The `state` answer carries `consoleSeq` (the newest `seq`) so the phone fetches only when it changed. |
 | `GET /v1/printer/files?fresh=0\|1` | `{ "files": [ PrinterFile … ], "cachedAt": 1794948226679 }`. **`fresh=1` forces a re-list**, which freezes the AD5X for 6-11 s (`docs/plans/printer.md` 7.9): only do it when the phone asks. `fresh=0` returns the cache if there is one, else **does the listing** (the phone only calls this after the owner pressed "Load files"). Cached 60 s as the page does; cleared on `notify_filelist_changed`. |
 | `GET /v1/printer/files/detail?path=<moonraker path>` | `PrinterFileDetail` (thumbnail as a `data:` URL, as the page gets it). `NOT_FOUND` when the path isn't in the cached list. A 404 from Moonraker (no metadata) is **not** an error: return `{ "path": "…" }` with nothing else. |
 | `GET /v1/printer/history?start=0` | `{ "jobs": [ HistoryJob … ], "totals": HistoryTotals }`, 50 jobs per page, from `service.history(start)`. `start` ≥ 0 integer. |
@@ -267,11 +267,14 @@ re-derive the rules). `seq` is a counter that survives only until Jarvis quits (
 repeats a number a phone already saw). Keep the last 50 events in memory. A phone that asks with `after` ≥ `seq` waits; with `after` older
 than the oldest kept event gets everything kept. Needs `printerAlerts` on (else an empty list that waits normally). Part 9.7 says how it is fed.
 
-### 6.11 Recordings (stage 4)
+### 6.11 Recordings (stage 4, required for parity)
 
-Built in J4 (required since 2026-11-18). `GET /v1/printer/recordings` → `{ "items": [ { "name", "size", "modified", "duration"? } ] }` from the existing recordings
-service (SSH, `printerRecordings.ts`); `GET /v1/printer/recordings/{name}` streams the video with `Range` support (`206`), `Content-Type: video/mp4`.
-`name` must come from the list (never a path from the phone; reject `/`, `\`, `..`). The SSH key and its set-up stay on the PC; the phone never sees them.
+Built in J4. The answers are **Jarvis's own types** (`src/shared/printerRecordings.ts`), not a new shape (7.1's rule applies):
+- `GET /v1/printer/recordings` → `RecordingList` exactly: `{ "folders": [ … ], "recordings": [ { "path", "name", "title", "size", "time", "thumbnail"?, "job"? } … ], "sshError"? }`, from the recordings service (SSH, `printerRecordings.ts`).
+  When recordings are not set up on the PC the answer is a `200` with an empty list and `sshError` saying why in plain words ("Recordings aren't set up. Set them up in Jarvis on the PC"); the phone shows it. Setting up (the key, the command to run) stays on the PC.
+- `GET /v1/printer/recordings/info?path=<path>` → `{ "thumbnail"?, "duration"? }` (what the page's `recordingInfo` gives: the thumbnail as a `data:` URL, and the length).
+- `GET /v1/printer/recordings/video?path=<path>` streams the video with `Range` support (`206`), `Content-Type: video/mp4`. The phone's "Save" downloads this.
+- `path` must be one **from the last list Jarvis sent** (remember the set; never use a path from the phone otherwise; reject `..`, backslashes and anything not in the set with `NOT_FOUND`). The SSH key and its set-up never go to the phone.
 
 ## 7. Wire types (the single source is Jarvis's own TypeScript)
 
@@ -540,3 +543,18 @@ Source: the cards in `src/renderer/src/components/printer/` and `PrinterConfig` 
 the **same validation the Settings card uses** (preset names, numbers inside the printer's limits, upper-cased macro names; a refusal is `BAD_REQUEST` or `REFUSED` with its reason). Logged like a command: `sent settings (phone "<name>"): presets` (the names of
 the settings changed, never the values of anything secret; there is none here). It answers the new `presets` and `hiddenMacros`. It **cannot** touch the address, the API key, `armMinutes`, `camera`, `alerts` or the SSH key; extra fields are ignored. `GET /v1/printer/macros` already returns the visible list; add
 `"hidden": [ … ]` to its answer so the phone can show what is hidden and offer to show it again.
+
+### 15.6 Further parity gaps found by comparing every Printer-page channel (2026-11-18)
+
+Method: every channel in `src/shared/channels/printer.ts` was set against this spec and Edith's C39. Most are covered (15.5). What the comparison added:
+
+1. **The console is live on the page and was not on the phone.** The page receives new lines as they arrive (`printer:console`); this spec returned the last N lines each time, and `ConsoleLine` has no id, so a phone polling every 5 s re-downloads 200 lines and cannot tell
+   a repeated line from a new one. Fixed in 6.3: lines carry a `seq` (added by the feed, nothing renamed), `console?after=<seq>` returns only newer lines, and `state` carries `consoleSeq`. J1.
+2. **The recordings shape in 6.11 was invented** (`items`, `modified`, no `title`, no job link, no folders, no thumbnail, no "not set up" case). Jarvis's real answer is `RecordingList` plus `recordingInfo` (thumbnail and length) and `recordingVideo`. 6.11 now follows them. J4.
+3. **Save a snapshot or a recording.** The page saves them to a folder (`saveSnapshot`, `saveRecording`). The phone does the same on its own side from the bytes it already has (the snapshot, the recording download), into Downloads or the share sheet: **Edith only, no new route**.
+4. **Channels that are not routes, on purpose.** `config`, `setConfig`, `forget`, `test`, `recordingSsh`, `recordingSshKey`, `recordingSshTest` are the PC's setup (credentials, the SSH key, the arm time): **PC only**. `setCamera` (which camera the card shows) is **the phone's own choice**, kept in Edith's preferences. `setAlerts` is the phone's own switch (part 2).
+5. **A new error code.** When the optional restriction of 15.3 O1 is on and the request came over Tailscale, a command it forbids answers `403 AWAY_LIMITED` ("This isn't allowed away from home: Jarvis is set to let the phone only look, pause, cancel, stop, change the light and use the camera."). Add it to the table in part 5.
+6. **Parity must not rot.** Jarvis's Printer page will keep gaining things. Add `src/main/feed/printerParity.ts`: a table from **every** channel in `printerChannels` to one of `{ route: '…' }`, `'pc-only'` or `'phone-local'`, and a unit test that **fails when a channel is not in the table** (and when a route it names does not exist). `COMMAND_KINDS` already has the same guard through the validator test (6.8), and the state through the fixtures (part 10).
+   The rule for later Jarvis work: a PR that adds a Printer channel, command kind or state field **classifies it in the same PR** (and, for a phone feature, adds the route and a line for Edith in part 14). This is what keeps "if it can do it in Jarvis, Edith can" true after today.
+
+Effect on the steps (15.4): items 1 and 6 go in **J1**; item 5 in **J2** with the restriction switch; item 2 in **J4**. Edith's side: C39 part 16.

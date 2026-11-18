@@ -44,7 +44,7 @@ too** (Tailscale, C38), and the printer's logic and safety live in one place, Ja
 | **1. See it** (read-only) | A **Printer page** (open it from the printer's tile on Home): status with progress and time left, temperatures with a 20-minute chart, sensors, fans and light (values), filament slots, limits (values), system, bed mesh, history, files list and details, console, objects, the queue, the camera picture (about 1 a second). Works at home **and away**. The Home tile and `printer_status` fall back to Jarvis when the printer doesn't answer directly. | E1-E6 | J1 |
 | **2. Control it** | **Controls** (a switch that turns itself off), then everything the page can do: pause/resume/cancel, set temperatures and presets, home, jog, Z offset, extrude/retract, motors off, fans, light, air circulation, speed/flow, limits, retraction, macros, filament sensor, exclude an object, the queue, the console, restart, **emergency stop**. Chat: "pause the print", "turn the printer light on" with approval cards. | E7-E10 | J2 |
 | **3. Extras** | Upload a file from the phone, start a print, delete a file, add to the queue; **print alerts** on the phone (finished, failed, paused, Klipper stopped), also away from home. | E11-E12 | J3 |
-| **4. Only if asked** | Timelapse recordings, a live (moving) camera, taps on the printer's own screen. | E13-E14 | J4 |
+| **4. Parity (required since 2026-11-18)** | Timelapse recordings (with thumbnails, play, save), a live (moving) camera, taps on the printer's own screen. | E13-E14 | J4 |
 
 Away from home needs the phone to reach the PC (Tailscale, C38) **and** Jarvis running; otherwise the Printer page says so (part 6.4).
 
@@ -392,7 +392,7 @@ Disabled-with-reason texts come from the server's `REFUSED`: "Heat the nozzle to
 **Macros (`MacrosCard.kt`, stage 2).** `macros()` loaded when the card opens. A filter box; groups in this order with counts and a fold toggle: Filament and nozzle, Printing, Bed and calibration, Camera screen and sound, System, Other (`MacroInfo.group` = `filament`, `printing`, `bed`, `camera`, `system`, `other`). Each macro a button with its description underneath; `risk == "danger"` has a red outline. A macro with `params` opens a small form (a text box per param, the default as the hint) with **Run**. Every run goes through the confirm sheet (`macro(name, params)`).
 While the filter has text, every group is open. **Edith never decides what is hidden or denied: she shows exactly the list Jarvis sends.**
 
-**Console (`ConsoleCard.kt`).** `console(200)` when the card opens, then updated from `state` answers (poll `console` once every 5 s while the card is open and expanded). Lines coloured by kind (error in red); lines matching `^// value:` hidden by default (a switch **Hide "// value" lines**, on). **Clear** clears the view only. Stage 2: a one-line input
+**Console (`ConsoleCard.kt`).** `console(200)` when the card opens, then **only the new lines**: when a `state` answer's `consoleSeq` is higher than the last line's `seq`, ask `console?after=<seq>` and append (no polling every 5 s, no re-reading 200 lines; Jarvis spec 15.6.1). Lines coloured by kind (error in red); lines matching `^// value:` hidden by default (a switch **Hide "// value" lines**, on). **Clear** clears the view only. Stage 2: a one-line input
 (max 200 chars, up/down history of the last 50 in DataStore `printer.history`); Enter sends `gcode(script)`; the confirm sheet shows **the exact line** and the risk; a refused line shows the server's reason ("Use the System card or the printer's screen for this").
 
 **Files (`FilesCard.kt`).** **Nothing loads when the page opens.** The card shows "Listing the files keeps the printer busy for several seconds, and its buttons wait." and a button **Load files**. After loading: a search box, a switch **Printed before** (on) / **All**, sorted newest first; each row title, size, "{age}", a "printed before" badge. Tapping a row opens a detail sheet
@@ -518,7 +518,7 @@ Behaviour: while the service runs, loop `events(after = lastSeq, wait = 20)`; fo
 Tests: dedupe by seq, restart doesn't repeat, backoff, one notification per event, stop on switch off (fake api + fake notifier).
 Done when: the pretend feed's `finished` event raises a notification that opens the page. **Stage 3 ships here.**
 
-### Stage 4 (only when the owner asks; each needs Jarvis J4)
+### Stage 4 (required since 2026-11-18, parity; each needs Jarvis J4; build after stage 3)
 
 **E13 — Recordings.** `RecordingsCard.kt`: list from `recordings`, play with the platform `VideoView`/Media3 if already a dependency (check `libs.versions.toml`; **do not add a library without asking**), save to Downloads through the system picker. **E14 — Live camera and screen taps.** The MJPEG stream (`camera/{id}/stream`) replacing snapshot polling when available; the printer's screen view with taps (`screenTap`, the letterboxed point mapping of Jarvis's `screenPoint`, Controls on, no confirm per tap, a ring marks the tap, one tap in flight).
 
@@ -545,9 +545,30 @@ The agent checks the **emulator + pretend feed** items; the **owner** checks the
 ## 14. Not verified, and known limits (fill in "As built" as you go)
 
 - **Not verified until the owner tries:** everything against the **real Jarvis** and the **real AD5X**; Tailscale on mobile data; Windows firewall for the feed port (spec part 9 of the main spec); the camera's frame rate over Tailscale; the phone's battery with the page open for a long time.
-- **Known limits by design:** the Printer page needs the PC (Jarvis) on; the printer's address, key, presets and hidden macros are edited in Jarvis only; no printer discovery; no second printer; no push (alerts are a long-poll, so they stop when Android kills the service or the phone can't reach the PC); `.3mf` prints can't be started from the phone (the printer's own rule, shown in words); recordings, live video and screen taps are stage 4.
-- **Questions for the owner: all answered 2026-11-17 (the defaults were confirmed; do not ask again):** (1) 64 MB upload cap: yes; (2) emergency stop from a look-only phone: yes, with a confirm; (3) phone alerts when Jarvis's desktop alerts are off: yes; (4) a Quick Settings tile or notification for a running print: not now; (5) stage 4: only if the owner asks.
+- **Known limits by design:** the Printer page needs the PC (Jarvis) on; the printer's address, API key, SSH key and arm time are edited in Jarvis only (**presets and the hidden-macro list are editable from the phone since 2026-11-18**, part 16); no printer discovery; no second printer; no push (alerts are a long-poll, so they stop when Android kills the service or the phone can't reach the PC); `.3mf` prints can't be started from the phone (the printer's own rule, shown in words); recordings, live video and screen taps are stage 4 (**required** since 2026-11-18).
+- **Questions for the owner: all answered 2026-11-17 (the defaults were confirmed; do not ask again):** (1) 64 MB upload cap: yes; (2) emergency stop from a look-only phone: yes, with a confirm; (3) phone alerts when Jarvis's desktop alerts are off: yes; (4) a Quick Settings tile or notification for a running print: not now; (5) stage 4: ~~only if the owner asks~~ **changed 2026-11-18: required** (parity). **Answered 2026-11-18:** parity is the rule ("if it can do it in Jarvis, Edith needs to be able to do it, if at all possible"); away from home nothing is restricted by default; alerts when the app is asleep: catch-up on opening plus an optional foreground poll, no push service; all the contract additions of part 16 are adopted. Jarvis spec parts 13 and 15 have the detail.
 
 ## 15. As built
 
 _(Each work package adds its lines here: date, what was built, what was verified where, what differs from the text above.)_
+
+## 16. Changes from the Jarvis-side review (2026-11-18): what Edith must now do
+
+Source: Jarvis spec `jarvis-printer-feed-spec.md` part 15 and parts 6.3 and 6.11. Where this chunk and that spec disagree, that spec wins; fix this chunk.
+
+**New fields her client and fixtures must carry** (all additive; `state` and `shared` answers):
+- `state`: `epoch` (when Jarvis's printer service started: if it changes, replace everything and start the poll again; an `after` newer than Jarvis's revision is answered at once) and `consoleSeq`; a `quiet=1` query parameter to send when the screen is off or the Printer page is not in front.
+- `shared.printer`: `features` (hide what this Jarvis lacks), `schema` (the `PrinterState` shape version; show "Update Jarvis" when higher than the one built in), `control` **per phone**, and `cameraSeen` in the `controls` answer (warn "you can't see the printer" before a heating or starting command from away).
+- `POST /command`: a `requestId` (a new UUID for each send, **reused when the same send is retried**, so a retry after a timeout is not run twice).
+- Compressed answers: send `Accept-Encoding: gzip`.
+- New error codes in `PrinterWords.kt`: `AWAY_LIMITED`, and `REFUSED` "Not while printing: the printer would stop answering for several seconds" for the file list (the phone also disables **Load files** while printing).
+
+**New things to build** (put them in the stage named):
+- **Stage 2, settings editor:** edit the temperature presets and show or hide macros (`POST /v1/printer/settings`; needs Controls; the same bounds as Jarvis's Settings card, which the server enforces and the phone shows). `macros` now returns `hidden`; list them with Show.
+- **Stage 2, arming:** show the time left from `arm.until` and `serverTime`; away from home it is **1 minute** and each accepted command restarts it. Do not hard-code the length.
+- **Stage 3, alerts:** **catch-up on opening** (ask `events` with the last `seq`, show what was missed) is always on; **"Watch my print"** is a switch that runs the foreground poll (on Andarium it is unverified: the screen says so). No push service.
+- **Stage 1, camera:** the **save snapshot** button (Downloads or the share sheet, from the bytes already fetched); which camera is shown is the phone's own preference (`printer.camera`), no setting is written to Jarvis.
+- **Stage 4, recordings:** Jarvis's own `RecordingList` (folders, title, size, time, thumbnail, linked job, "not set up" message) with `recordings/info` for the thumbnail and length and `recordings/video` (ranged) to play and **Save**.
+- **Parity test on this side:** a list of the Printer-page cards and commands in this chunk checked against the fixtures from Jarvis's `printerSample.ts` (part 11.1), so a card or field Jarvis adds shows up as a failing test here too.
+
+**Not on the phone, on purpose:** the printer's address, API key, SSH key and set-up for recordings, and how long Controls stay on (they stay in Jarvis's Settings on the PC).
