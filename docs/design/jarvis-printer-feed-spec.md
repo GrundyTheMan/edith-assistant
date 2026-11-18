@@ -250,10 +250,10 @@ extra fields are ignored. A failure is `BAD_REQUEST` with a sentence ("jog needs
 are `checkCommand`'s.** Add a test that feeds every kind in `COMMAND_KINDS` a valid and an invalid body (the list is the loop; a new kind
 without a validator must fail the test).
 
-### 6.9 Camera frames as a stream (stage 4, optional)
+### 6.9 Camera frames as a stream (stage 4, **required for parity** since 2026-11-18)
 
 `GET /v1/printer/camera/{id}/stream` as `multipart/x-mixed-replace` MJPEG relayed from the printer's stream through `camera.ts`, at most 2 simultaneous
-streams in total, closed when the phone disconnects, and closed after 10 minutes (the phone reopens). Only build this if the owner asks; the phone
+streams in total, closed when the phone disconnects, and closed after 10 minutes (the phone reopens). Built in J4 (15.4); until then the phone
 works with `snapshot` polling (about one frame a second).
 
 ### 6.10 `GET /v1/printer/events` (print alerts for the phone)
@@ -269,7 +269,7 @@ than the oldest kept event gets everything kept. Needs `printerAlerts` on (else 
 
 ### 6.11 Recordings (stage 4)
 
-Only after the owner asks. `GET /v1/printer/recordings` → `{ "items": [ { "name", "size", "modified", "duration"? } ] }` from the existing recordings
+Built in J4 (required since 2026-11-18). `GET /v1/printer/recordings` → `{ "items": [ { "name", "size", "modified", "duration"? } ] }` from the existing recordings
 service (SSH, `printerRecordings.ts`); `GET /v1/printer/recordings/{name}` streams the video with `Range` support (`206`), `Content-Type: video/mp4`.
 `name` must come from the list (never a path from the phone; reject `/`, `\`, `..`). The SSH key and its set-up stay on the PC; the phone never sees them.
 
@@ -389,23 +389,27 @@ a `confirm` round trip (409 then 200) for `home`, a refused jog while not homed,
    check), `temperatures`, `macros`, `console`, `files`, `files/detail`, `history`, `camera/{id}/snapshot`, the service addition `snapshotFor`. Tests, e2e for the read routes.
 2. **J2 (controls):** `printerControl` switch, `printerArm.ts`, `controls`, `command` with the full order of 6.5 and `dryRun`, the `commandFor` refactor, rate limit, chat path. Tests, e2e.
 3. **J3 (alerts and uploads):** `printerAlerts` switch, `printerEvents.ts`, `events` route, `uploadBytes`, `files/upload`. Tests.
-4. **J4 (optional, only when the owner asks):** recordings, camera stream, screen taps.
+4. **J4 (required since 2026-11-18, parity, after J3):** recordings, camera stream, screen taps. Part 15.4 says what else each step now carries.
 
 Edith builds against J1 first; she does not need J2 to ship her read-only stage. Tell the owner when each step is merged so Edith's side can start its matching stage.
 
 ## 12. What not to build
 
 - No Moonraker pass-through, no generic "send G-code" route (the console is the `gcode` command with its rules).
-- No second printer, no printer discovery, no printer settings edits from the phone (address, key, presets, hidden macros stay in Jarvis's Settings).
+- No second printer, no printer discovery, no edits to the printer's address, API key, SSH key or arm time from the phone (they stay in Jarvis's Settings). Presets and the hidden-macro list **are** editable from the phone (15.5, `POST /v1/printer/settings`).
 - No push to the phone (the phone asks; part 6.10 is a long-poll).
 - No change to the desktop alerts, the page's arming, the work-data routes or the pairing.
 
-## 13. Questions for the owner (all answered 2026-11-17: the defaults below are the owner's decisions; do not ask again)
+## 13. Questions for the owner (1-4 answered 2026-11-17, 5-8 answered 2026-11-18: these are the owner's decisions; do not ask again)
 
 1. **Answered: yes.** 64 MB is the cap for uploads from the phone (the AD5X's `.3mf` files are a few MB).
 2. **Answered: yes.** The **emergency stop** works from a phone that is only allowed to see the printer, with a confirm.
 3. **Answered: yes.** A **phone alert** fires even when Jarvis's own desktop alerts are off (they are separate switches).
 4. **Answered: yes.** **Starting a print from the phone** has the same restrictions as the page (`.3mf` refused until U1 is settled, printer must be in "Local Only" mode, `docs/plans/printer.md` 2.7 and part 14).
+5. **Answered 2026-11-18: parity.** "If it can do it in Jarvis, Edith needs to be able to do it, if at all possible." Nothing the Printer page can do is withheld from the phone by default (including starting and heating from away from home); part 15.5 lists how the phone gets each thing and the only deliberate exceptions (address, API key, SSH key, arm time). The away-from-home restriction of an earlier draft is an **opt-in** switch, default off (15.3 O1).
+6. **Answered 2026-11-18:** alerts when the app is asleep: catch-up on opening always, a foreground poll as an option, **no** outbound push service (15.3 O2).
+7. **Answered 2026-11-18:** the file-listing rule of 15.3 O3 (refused while printing or paused; at most once a minute across phones).
+8. **Answered 2026-11-18 ("use your best judgement"):** adopt all of 15.2 (1-5 required, 6 recommended).
 
 ## 14. As built on the Jarvis side
 
@@ -416,9 +420,8 @@ _(The Jarvis agent fills this in: branches, what differs from the text above, th
 **Status of this part.** Written after reading this spec against the Jarvis code on `main` (the feed in `src/main/feed/`, the printer in
 `src/main/printer/service.ts`). Nothing here has been built. Part 15.1 is a list of **corrections to what parts 3 and 9 assume** about the
 feed server; they are mechanical and belong in step J1 (or J2 where marked). Part 15.2 is **contract additions**; they change wire shapes,
-so Edith's side must agree before they are built (the contract says field names are final unless both sides change this document). Part
-15.3 is **owner decisions**, each marked **OPEN**: **do not build an OPEN item until the owner has answered it, and then record the answer
-in part 13.** Sizes in 15.2 are estimates; nothing was measured.
+and the owner has decided to adopt them (15.3 O4); Edith's side carries the new fields (the contract says field names are final unless both sides change this document). Part
+15.3 records the **owner's decisions** (answered 2026-11-18, also in part 13), and 15.5 is the **parity check** against the Printer page. Sizes in 15.2 are estimates; nothing was measured.
 
 ### 15.1 What the feed server does not do today (add to J1's file list)
 
@@ -449,7 +452,7 @@ Each item is something parts 3, 5, 6 or 9 assume. Files are in `src/main/feed/`.
 7. **`/v1/shared` already lists work data only.** The `printer` entry (6.1) goes in `createRoutes` `GET /v1/shared`; a phone paired before the printer was shared sees it on its next read.
 8. **Timing log (part 15 of the main spec) applies to every printer route**, with the same privacy rule: never log a file name from the phone beyond its name (spec 10 already says it), a camera frame, or the printer's address. The route template for `files/detail?path=` and `camera/{id}/…` must be a template (`{id}`), never the real value.
 
-### 15.2 Contract additions (need Edith's agreement before they are built)
+### 15.2 Contract additions (adopted by the owner, 2026-11-18: see 15.3 O4)
 
 1. **Do not flood the phone with state.** 6.2 sends the whole state, 10-20 KB, with a 250 ms debounce. While printing, the nozzle and bed temperatures, the position, the speed
    and fan values change almost every second, so a phone left open would receive a new answer about **4 times a second**, roughly 40-80 KB/s (an estimate: step J1 must
@@ -474,32 +477,66 @@ Each item is something parts 3, 5, 6 or 9 assume. Files are in `src/main/feed/`.
 6. **Look at the printer before touching it** (a suggestion, not a requirement): `controls` on answers `PRINTER_UNREACHABLE` today only when the printer is unreachable. Consider also saying, in the
    answer, whether the printer's camera answered in the last minute (`"cameraSeen": true|false`), so Edith can warn "you cannot see the printer" before a heating or starting command is sent from away.
 
-### 15.3 Decisions for the owner (OPEN: not yet answered; do not build until they are)
+### 15.3 The owner's decisions (answered 2026-11-18; these replace the OPEN items of the first version of this part)
 
-**O1. Remote safety: what may a phone do when it is away from home?** Arming (8.1) protects against an accidental tap. It does **not** protect against a phone or token in someone else's hands, or against
-starting a print or heating the bed when nobody can see the printer. At home the owner is near the printer; away they are not. Jarvis can tell where a request comes from (`net.ts` separates the home
-network from Tailscale, `100.64.0.0/10`). Proposal for the owner to accept or change:
+**The governing rule: parity.** The owner: "If it can do it in Jarvis, Edith needs to be able to do it, if at all possible." Where this part and the rule disagree, the rule wins; part 15.5
+lists everything the Printer page can do and how the phone gets it, and the few deliberate exceptions.
 
-| From | Allowed |
-|---|---|
-| Home network | everything this spec allows |
-| Tailscale (away) | view; `pause`, `resume`, `cancel`, `estop`, `light`, `camera`; everything else (`start`, heating, `jog`, `extrude`, macros, `gcode`, files, queue) only if the owner turns on a **separate** switch "Allow starting, heating and moving from away" (default off) |
+**O1. Away from home: decided, parity.** A phone is **not** restricted when it reaches Jarvis over Tailscale: starting, heating, moving, macros, files and the queue all work away from home, as at home.
+The restriction table proposed earlier is **dropped as a default**. What stays, because it adds friction without removing a capability:
+- **a phone does nothing unless the owner ticked it**: the per-phone "May control the printer" (15.2.5, default off), on top of the global `printerControl`;
+- the confirmations of 8.3 and the arm of 8.1 as written;
+- the arm lasts **1 minute** (not `armMinutes`) when the request came over Tailscale; every accepted command restarts it, so it costs a working session nothing;
+- a **notification on the PC and a `warn` log line** whenever a phone sends `start`, a heating command (`setTemp`, `preset`), a macro, `gcode`, `deleteFile` or an upload, naming the phone; the Printer page shows "Controls on for <phone name>" while a phone is armed;
+- **optional, default off:** a switch "When a phone is away from home, let it only look, pause, cancel, stop, change the light and use the camera". An owner who wants the old restriction turns it on; nobody gets it by default.
+The owner chose this knowing that a phone can then start a print or heat the bed while nobody is at the printer.
 
-Also proposed: a notification on the **PC** (and a log line at `warn`) whenever a phone sends `start`, a heating command or a macro; the Printer page shows "Controls on for <phone name>" while a phone is armed; the default arm
-time away is **1 minute**, not `armMinutes`. Default if the owner does not answer: the table above.
+**O2. Alerts when the app is asleep: decided.** (a) **Catch-up on opening** is always on: Edith asks `events` with the last `seq` she saw and shows what she missed. (b) A **foreground-service poll**
+("Watch my print") is an option the owner turns on in Edith; on Andarium it is unverified and Edith's side says so in the screen. (c) **No outbound push service** for now; it is a new decision if (a) and (b) prove not enough, and its text would be generic ("A print finished").
 
-**O2. Print alerts when the app is asleep.** The design has no push (part 12) and Edith asks Jarvis with a long poll. A long poll runs only while Edith is running. The owner's phone is an **iPhone running Edith
-through Andarium, without Google Play services**, so a background poll may not run at all and FCM is not available. A print finishing or failing away from home may then be seen late or never. Options:
-(a) **catch-up on opening**: Edith asks `events` with her last `seq` when it opens and shows what she missed (free, no background work; alerts are late); (b) a **foreground-service poll** while the owner turns on "Watch my print" (reliable on Android; on Andarium it is **unverified**; costs battery);
-(c) an **outbound push service** such as ntfy that Jarvis posts to (reliable and instant; **it sends data outside the home network**, and the service sees that a print finished unless the text is generic). Recommendation: (a) always, (b) as an option, (c) only if the owner accepts the privacy cost and then with a **generic text** ("A print finished") and no file name.
+**O3. File listing from a phone: decided, the default.** `files?fresh=1`, and a `fresh=0` that has to list because there is no cache, is refused while `print.state` is `printing` or `paused` (`REFUSED`,
+"Not while printing: the printer would stop answering for several seconds") and is allowed at most once a minute across **all** phones; a cached list is always served. (Why: listing freezes the AD5X for 6-11 s, the emergency stop included, `docs/plans/printer.md` 7.9.) The page's own Load files is not changed.
 
-**O3. Listing the files from a phone.** `docs/plans/printer.md` 7.9 and part 14 (8 November) record that listing files makes the AD5X's Moonraker **block for 6-11 s, the emergency stop included**, and once dropped Jarvis's connection. Part 6.3's `fresh=1` lets a phone cause that from anywhere, possibly mid-print. Proposal: a forced listing is refused while `print.state` is `printing` or `paused` (`REFUSED`, "Not while printing: the printer would stop answering for several seconds"), and allowed at most once a minute across **all** phones; a cached list is always served. The owner may prefer to allow it mid-print with a confirm.
+**O4. Which contract additions to adopt: decided, all of 15.2** on the owner's "use your best judgement": 15.2.1 to 15.2.5 are **required**; 15.2.6 (`cameraSeen`) is **recommended** and cheap, build it with the camera route. The Jarvis agent builds them with the step in 15.4; Edith's side
+carries `epoch`, `features`, `schema` and `requestId` in her Kotlin client and fixtures.
 
-**O4. Which of 15.2 to adopt.** 15.2 changes wire shapes; the owner and Edith's side agree before the Jarvis agent builds them. Items 1-3 are the ones I would not leave out; 4 and 5 are cheap; 6 is optional.
+### 15.4 Effect on the order of work (part 11), as decided
 
-### 15.4 Effect on the order of work (part 11)
+- **J1** also does **15.1 (all eight items)**, the measuring in 15.2.1, 15.2.2 (`epoch`), 15.2.4 (`features`, `schema`) and the O3 rule. J1 ends with the **parity check** of 15.5 (a list, in part 14, of any data a Printer-page card reads that is not in the state JSON).
+- **J2** adds 15.2.3 (`requestId`), 15.2.5 (per-phone control), the O1 safeguards (arm of 1 minute over Tailscale, the PC notification and log line, the "Controls on for <phone>" badge, the optional restriction switch) and the settings route of 15.5.
+- **J3** adds alerts and uploads as written, plus the O2 behaviour on Jarvis's side (the `events` route is the catch-up).
+- **J4 is no longer optional.** Parity needs it: recordings (6.11), the camera stream (6.9) and screen taps (the `screenTap` command with the `screen` camera, 9.12). Build it after J3.
+- Edith's side: `epoch`, `features`, `schema`, `requestId`, `cameraSeen` and the per-phone `control` are new fields her Kotlin client and fixtures must carry.
 
-- **J1** also does 15.1 (all eight items; they are what makes a long-poll possible without breaking mail) and the measuring in 15.2.1.
-- **J2** adds 15.2.3 (`requestId`), 15.2.5 (per-phone control), and whatever the owner decides in O1.
-- **J3** adds the decision in O2 and the O3 rule for `files`.
-- Edith's side: `epoch`, `features` and `requestId` are new fields her Kotlin client and fixtures must carry.
+### 15.5 Parity check: what the Printer page can do, and how the phone gets it
+
+Source: the cards in `src/renderer/src/components/printer/` and `PrinterConfig` in `src/shared/printer.ts` on Jarvis `main`, 2026-11-18. "Covered" means the spec already has it; "Added" means this part adds it.
+
+| Printer page | Phone | |
+|---|---|---|
+| Status: progress, time left, pause, resume, cancel, emergency stop, alert | `state`, `quick`, the commands | Covered |
+| Temperatures: targets, presets, chart, heaters off | `state`, `temperatures`, `setTemp`, `preset`, `heatersOff`; presets come from `/v1/shared` | Covered |
+| Toolhead: home, jog, Z offset, extrude, motors off, speed and flow | commands | Covered |
+| Fans, light, air circulation, camera on/off, filament sensors | `state` and commands | Covered |
+| Sensors, slots (filament), objects and Exclude object, bed mesh, retraction, limits | `state` (objects, slots, mesh, retraction, toolhead) and commands | Covered; **J1 verifies that every value these cards read is in the state JSON** and lists any that is not (the spec's 7.1 field list was written from memory of the type; `limits` is an example to check) |
+| Macros: list, run with parameters | `macros`, the `macro` command | Covered |
+| Hide a macro from the list | `POST /v1/printer/settings` | **Added** |
+| Console: lines, typing a line | `console`, the `gcode` command | Covered |
+| Files: list, details, upload, delete, start, add to queue | `files`, `files/detail`, `files/upload`, `deleteFile`, `start`, `queueAdd` | Covered |
+| Queue: add, remove, start, pause | `state.queue` and four commands | Covered |
+| History and totals | `history` | Covered |
+| Camera card: snapshot | `camera/{id}/snapshot` | Covered |
+| Camera card: live view, and choosing which camera is shown | stream (6.9); the choice is the phone's own, no setting is written | **J4, now required** |
+| Camera card: tap the printer's screen | `screenTap` with camera `screen` | **J4, now required** |
+| Recordings (videos kept on the printer) | 6.11 | **J4, now required** |
+| System: versions, restart Klipper, firmware restart | `state.versions`, `restart`, `firmwareRestart` | Covered |
+| Settings card: temperature presets | `POST /v1/printer/settings` | **Added** |
+| Settings card: print alerts on or off | the phone's own switch (`printerAlerts`, part 2) | Covered |
+| Settings card: printer address, API key, SSH key for recordings, how long Controls stay on | stay on the PC | **Deliberate exception**: credentials and the safety timer are not reachable from a phone. If the owner wants any of these on the phone, they say so and it is a new decision |
+| Chat: `printer_status`, and `printer_control` for pause, resume, cancel and light behind an approval card | Edith's chat uses `state` and `via: "chat"` (8.6) | Covered |
+| Home and Today printer tiles, print alerts | Edith's own screens, from `state` and `events` | Covered (Edith's side) |
+
+**`POST /v1/printer/settings` (added).** Body `{ "presets": [ {"name","extruder","bed"} … ] }` and/or `{ "hiddenMacros": [ "NAME" … ] }`; at least one. Needs `printerControl` and the phone **armed** (it changes what a later `preset` command does), and runs through
+the **same validation the Settings card uses** (preset names, numbers inside the printer's limits, upper-cased macro names; a refusal is `BAD_REQUEST` or `REFUSED` with its reason). Logged like a command: `sent settings (phone "<name>"): presets` (the names of
+the settings changed, never the values of anything secret; there is none here). It answers the new `presets` and `hiddenMacros`. It **cannot** touch the address, the API key, `armMinutes`, `camera`, `alerts` or the SSH key; extra fields are ignored. `GET /v1/printer/macros` already returns the visible list; add
+`"hidden": [ … ]` to its answer so the phone can show what is hidden and offer to show it again.
