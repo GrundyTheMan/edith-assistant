@@ -394,6 +394,10 @@ class AppContainer(val app: Application) {
     /** Every email-and-calendar account (C22, D17), saved in the `settings` file under `accounts`. */
     val accounts: Accounts by lazy { Accounts(DataStoreAccountStore(settingsStore.store), googleAccounts, appScope, microsoftAccounts, icloudAccounts, jarvisAccounts) }
 
+    /** The 3D printer through the paired Jarvis (C39, D26): finds the printer Jarvis shares, and the one session the Printer page uses. */
+    internal val printerFeed: com.edith.app.printer.feed.PrinterFeed by lazy { com.edith.app.printer.feed.PrinterFeed { accounts.jarvisConnection() } }
+    internal val printerSession: com.edith.app.printer.feed.PrinterSession by lazy { com.edith.app.printer.feed.PrinterSession(printerFeed, clock, appScope) }
+
     /**
      * The smart home (C25, D10): every connected service's devices, the home tools and the Home tab. Debug builds add
      * the Demo home's fake backend behind a switch in Settings → Home; release builds have none.
