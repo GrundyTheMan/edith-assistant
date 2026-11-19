@@ -53,6 +53,9 @@ internal class PrinterSession(
     @Volatile var quiet: Boolean = false
 
     @Volatile private var routes: PrinterRoutes? = null
+
+    /** The routes of the printer Jarvis shares, once the session has found them (the cards ask them for the chart, the files, the history). */
+    fun routes(): PrinterRoutes? = routes
     private var job: Job? = null
 
     /** The page came on screen. */

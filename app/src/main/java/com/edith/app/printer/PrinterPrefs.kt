@@ -41,6 +41,14 @@ internal interface PrinterPrefs {
     /** The cards that are folded. Until the owner changes one, every card except Status, Camera and Temperatures. */
     val collapsed: Flow<Set<String>>
     suspend fun setCollapsed(card: String, collapsed: Boolean)
+
+    /** The camera the owner last chose on the Camera card (null: the first one). */
+    val camera: Flow<String?>
+    suspend fun setCamera(id: String)
+
+    /** Hide the printer's "// value:" console lines (on until switched off). */
+    val consoleHideValues: Flow<Boolean>
+    suspend fun setConsoleHideValues(on: Boolean)
 }
 
 internal class DataStorePrinterPrefs(private val store: DataStore<Preferences>) : PrinterPrefs {
@@ -53,8 +61,15 @@ internal class DataStorePrinterPrefs(private val store: DataStore<Preferences>) 
         }
     }
 
+    override val camera: Flow<String?> = store.data.map { it[CAMERA] }
+    override suspend fun setCamera(id: String) { store.edit { it[CAMERA] = id } }
+    override val consoleHideValues: Flow<Boolean> = store.data.map { it[HIDE_VALUES] ?: true }
+    override suspend fun setConsoleHideValues(on: Boolean) { store.edit { it[HIDE_VALUES] = on } }
+
     private companion object {
         val COLLAPSED = stringSetPreferencesKey("printer.collapsed")
+        val CAMERA = androidx.datastore.preferences.core.stringPreferencesKey("printer.camera")
+        val HIDE_VALUES = androidx.datastore.preferences.core.booleanPreferencesKey("printer.consoleHideValues")
     }
 }
 
@@ -65,4 +80,10 @@ internal class MemoryPrinterPrefs(initial: Set<String> = PrinterCards.COLLAPSED_
     override suspend fun setCollapsed(card: String, collapsed: Boolean) {
         state.value = if (collapsed) state.value + card else state.value - card
     }
+    private val cameraState = MutableStateFlow<String?>(null)
+    override val camera: Flow<String?> = cameraState.asStateFlow()
+    override suspend fun setCamera(id: String) { cameraState.value = id }
+    private val hideState = MutableStateFlow(true)
+    override val consoleHideValues: Flow<Boolean> = hideState.asStateFlow()
+    override suspend fun setConsoleHideValues(on: Boolean) { hideState.value = on }
 }

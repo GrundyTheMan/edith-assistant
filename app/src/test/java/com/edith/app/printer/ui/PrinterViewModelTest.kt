@@ -118,6 +118,11 @@ class PrinterViewModelTest {
         assertNull("the cards are shown, so there is no full-page message", u.message)
     }
 
+    @Test fun `a phone Jarvis removed says so in the header, not that Jarvis is unreachable`() {
+        val u = ui(PrinterScreenState.JarvisAway(null, com.edith.app.printer.feed.PrinterWords.UNAUTHORIZED))
+        assertEquals(ConnectionChip("Jarvis removed this phone", Tone.Bad), u.chip)
+    }
+
     @Test fun `Jarvis away with nothing to show is a full-page message`() {
         val u = ui(PrinterScreenState.JarvisAway(null, "Jarvis removed this phone: pair it again."))
         assertEquals("Jarvis removed this phone: pair it again.", u.message)

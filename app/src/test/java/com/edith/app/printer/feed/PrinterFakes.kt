@@ -17,13 +17,26 @@ internal class FakePrinterRoutes : PrinterRoutes {
         return answers.receive()
     }
     override suspend fun controls(on: Boolean): FeedResult<ArmState> { controlsCalls += on; return FeedResult.Ok(ArmState(on)) }
-    override suspend fun temperatures() = error("not used")
+    // What the other routes answer, and what they were asked: tests set these.
+    var temperaturesAnswer: FeedResult<List<TempSeries>> = FeedResult.Ok(emptyList())
+    var historyAnswer: (Int) -> FeedResult<HistoryAnswer> = { FeedResult.Ok(HistoryAnswer()) }
+    var filesAnswer: FeedResult<FilesAnswer> = FeedResult.Ok(FilesAnswer())
+    var detailAnswer: FeedResult<PrinterFileDetail> = FeedResult.Ok(PrinterFileDetail())
+    var consoleAnswer: (Long?) -> FeedResult<ConsoleAnswer> = { FeedResult.Ok(ConsoleAnswer()) }
+    var snapshotAnswer: () -> FeedResult<ByteArray> = { FeedResult.Ok(byteArrayOf(1, 2, 3)) }
+    var temperaturesCalls = 0
+    val historyStarts = mutableListOf<Int>()
+    val filesFresh = mutableListOf<Boolean>()
+    val detailPaths = mutableListOf<String>()
+    val consoleAfters = mutableListOf<Long?>()
+    val snapshotIds = mutableListOf<String>()
+    override suspend fun temperatures(): FeedResult<List<TempSeries>> { temperaturesCalls++; return temperaturesAnswer }
     override suspend fun macros() = error("not used")
-    override suspend fun console(after: Long?, count: Int) = error("not used")
-    override suspend fun files(fresh: Boolean) = error("not used")
-    override suspend fun fileDetail(path: String) = error("not used")
-    override suspend fun history(start: Int) = error("not used")
-    override suspend fun snapshot(cameraId: String) = error("not used")
+    override suspend fun console(after: Long?, count: Int): FeedResult<ConsoleAnswer> { consoleAfters += after; return consoleAnswer(after) }
+    override suspend fun files(fresh: Boolean): FeedResult<FilesAnswer> { filesFresh += fresh; return filesAnswer }
+    override suspend fun fileDetail(path: String): FeedResult<PrinterFileDetail> { detailPaths += path; return detailAnswer }
+    override suspend fun history(start: Int): FeedResult<HistoryAnswer> { historyStarts += start; return historyAnswer(start) }
+    override suspend fun snapshot(cameraId: String): FeedResult<ByteArray> { snapshotIds += cameraId; return snapshotAnswer() }
     override suspend fun command(command: PrinterCommand, via: String, confirmed: Boolean, dryRun: Boolean, requestId: String?) = error("not used")
     override suspend fun events(after: Long?, waitS: Int) = error("not used")
     override suspend fun settings(presets: List<Preset>?, hiddenMacros: List<String>?) = error("not used")
