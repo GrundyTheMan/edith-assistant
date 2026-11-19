@@ -123,3 +123,11 @@ Compared with Jarvis (same protocol and frame reader; it plays with mpegts.js), 
 - **Fix:** the TS extractor now gets `FLAG_DETECT_ACCESS_UNITS` and `FLAG_ALLOW_NON_IDR_KEYFRAMES`. Without them Media3 never finishes a frame, so the picture stays black with no error (and the hardware decoder of some devices gives no error either). Verified in the emulator on the owner's real Blink account: Brooklyn's Window, which stayed black for over a minute, plays; Luke's Window plays after a slow start (3 KB in the first 10 s, then the software decoder; the dev.24 message showed until the first frame); Backyard still plays.
 - Not verified on a phone. Slow starts on the emulator are partly its software H.264 decoding of 1080p.
 - **Change:** the time-limit message now says "5 minutes" instead of "a few minutes" (Blink and Ring, as Jarvis words it).
+
+## dev.26: faster starts (2026-11-18)
+The owner: all cameras work on dev.25, but some take 30 s or more, with the "no picture yet" messages showing. Causes found in the code: the 10 s picture wait counted from when the player started, so a camera still waking (Blink takes 5–9 s, Jarvis's log) tripped the software fallback and a pointless player restart; and every view repeated the hardware attempt that had already failed.
+- **Change:** the picture wait (now 6 s) starts when video begins to arrive; "Waiting for the camera…" shows only after 10 s with nothing received.
+- **Change:** once a view needed the software decoder, later views in the same run start on it (`preferSoftware`).
+- **Change:** the log says how long the picture took ("Live view picture appeared N s after the player opened…") so slow starts can be measured.
+- Emulator, owner's Blink account: first view of the run 9 s (hardware failed, then software); later views Brooklyn's Window 4 s, Backyard 5 s, Luke's Window 5 s and 8 s (35–40 s on dev.25). The emulator's decoder behaves differently from a phone's: on a phone whose hardware decoder works, the first view should not need the fallback at all. Not verified on a phone.
+- **Change:** `BlinkServiceTest` waits for the handshake bytes before reading them (a race made it fail now and then in CI).
