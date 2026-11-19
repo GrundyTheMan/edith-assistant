@@ -44,7 +44,7 @@ private data class CommandRequest(
  * One function per route of the printer feed (C39 part 5.2), over the paired Jarvis's pinned client. Every function returns a
  * [FeedResult]; none throws for a network or server problem, and a cancelled coroutine cancels the HTTP call.
  */
-internal class PrinterFeedApi(private val api: JarvisApi) {
+internal class PrinterFeedApi(private val api: JarvisApi) : PrinterRoutes {
     private fun printer(vararg more: String) = listOf("printer") + more
 
     /**
@@ -52,7 +52,7 @@ internal class PrinterFeedApi(private val api: JarvisApi) {
      * (at most 25) and the answer then has the same `rev` when nothing changed. Send the [epoch] of the last answer. [quiet] when the
      * screen is off or the page isn't in front: Jarvis then sends live readings every 10 s instead of 2.
      */
-    suspend fun state(after: Long?, epoch: Long?, waitS: Int, quiet: Boolean = false): FeedResult<StateAnswer> {
+    override suspend fun state(after: Long?, epoch: Long?, waitS: Int, quiet: Boolean): FeedResult<StateAnswer> {
         val query = buildMap {
             if (after != null) put("after", after.toString())
             if (epoch != null) put("epoch", epoch.toString())
@@ -62,12 +62,12 @@ internal class PrinterFeedApi(private val api: JarvisApi) {
         return api.getJson(printer("state"), query, StateAnswer.serializer(), readTimeoutS = (waitS.coerceAtMost(MAX_WAIT_S) + 15).toLong())
     }
 
-    suspend fun temperatures(): FeedResult<List<TempSeries>> = map(api.getJson(printer("temperatures"), serializer = TempAnswer.serializer())) { it.series }
+    override suspend fun temperatures(): FeedResult<List<TempSeries>> = map(api.getJson(printer("temperatures"), serializer = TempAnswer.serializer())) { it.series }
 
-    suspend fun macros(): FeedResult<MacrosAnswer> = api.getJson(printer("macros"), serializer = MacrosAnswer.serializer())
+    override suspend fun macros(): FeedResult<MacrosAnswer> = api.getJson(printer("macros"), serializer = MacrosAnswer.serializer())
 
     /** The newest [count] console lines, or only those after the line numbered [after]. */
-    suspend fun console(after: Long? = null, count: Int = 200): FeedResult<ConsoleAnswer> {
+    override suspend fun console(after: Long?, count: Int): FeedResult<ConsoleAnswer> {
         val query = buildMap {
             if (after != null) put("after", after.toString())
             put("count", count.toString())
@@ -76,20 +76,20 @@ internal class PrinterFeedApi(private val api: JarvisApi) {
     }
 
     /** The cached list, or a fresh one (which freezes the printer for several seconds: never while printing). */
-    suspend fun files(fresh: Boolean): FeedResult<FilesAnswer> =
+    override suspend fun files(fresh: Boolean): FeedResult<FilesAnswer> =
         api.getJson(printer("files"), mapOf("fresh" to if (fresh) "1" else "0"), FilesAnswer.serializer(), readTimeoutS = 40)
 
-    suspend fun fileDetail(path: String): FeedResult<PrinterFileDetail> =
+    override suspend fun fileDetail(path: String): FeedResult<PrinterFileDetail> =
         api.getJson(printer("files", "detail"), mapOf("path" to path), PrinterFileDetail.serializer())
 
-    suspend fun history(start: Int): FeedResult<HistoryAnswer> =
+    override suspend fun history(start: Int): FeedResult<HistoryAnswer> =
         api.getJson(printer("history"), mapOf("start" to start.toString()), HistoryAnswer.serializer(), readTimeoutS = 40)
 
     /** A camera picture (JPEG or PNG bytes), about one a second. */
-    suspend fun snapshot(cameraId: String): FeedResult<ByteArray> =
+    override suspend fun snapshot(cameraId: String): FeedResult<ByteArray> =
         map(api.getBytes(printer("camera", cameraId, "snapshot"))) { it.body }
 
-    suspend fun controls(on: Boolean): FeedResult<ArmState> =
+    override suspend fun controls(on: Boolean): FeedResult<ArmState> =
         map(api.postJson(printer("controls"), feedJson.encodeToString(ControlsRequest.serializer(), ControlsRequest(on)), ControlsAnswer.serializer())) { it.arm }
 
     /**
@@ -97,7 +97,7 @@ internal class PrinterFeedApi(private val api: JarvisApi) {
      * asks the server what it would say, sending nothing. A real send needs a [requestId]: a new UUID for each command and **the same one
      * when the same send is retried**, so a retry after a timeout is not run twice.
      */
-    suspend fun command(command: PrinterCommand, via: String, confirmed: Boolean, dryRun: Boolean, requestId: String?): CommandAnswer {
+    override suspend fun command(command: PrinterCommand, via: String, confirmed: Boolean, dryRun: Boolean, requestId: String?): CommandAnswer {
         val body = commandJson.encodeToString(CommandRequest.serializer(), CommandRequest(command, via, confirmed, dryRun, if (dryRun) null else requestId))
         return when (val r = api.exchange(printer("command"), body = jsonBody(body)) { it.body.string() }) {
             is FeedResult.Ok -> answerOf(r.value, dryRun)
@@ -121,7 +121,7 @@ internal class PrinterFeedApi(private val api: JarvisApi) {
     }
 
     /** The print alerts (stage 3): held up to [waitS]; take `seq` from the answer, always (it restarts when Jarvis does). */
-    suspend fun events(after: Long?, waitS: Int): FeedResult<EventsAnswer> {
+    override suspend fun events(after: Long?, waitS: Int): FeedResult<EventsAnswer> {
         val query = buildMap {
             if (after != null) put("after", after.toString())
             if (waitS > 0) put("wait", waitS.coerceAtMost(MAX_WAIT_S).toString())
@@ -130,11 +130,11 @@ internal class PrinterFeedApi(private val api: JarvisApi) {
     }
 
     /** Temperature presets and hidden macros, the two settings a phone may change (needs Controls). */
-    suspend fun settings(presets: List<Preset>?, hiddenMacros: List<String>?): FeedResult<SettingsAnswer> =
+    override suspend fun settings(presets: List<Preset>?, hiddenMacros: List<String>?): FeedResult<SettingsAnswer> =
         api.postJson(printer("settings"), feedJson.encodeToString(SettingsRequest.serializer(), SettingsRequest(presets, hiddenMacros)), SettingsAnswer.serializer())
 
     /** Sends a file to the printer (stage 3): at most 64 MB, up to five minutes. Streams [source]; never reads it all into memory. */
-    suspend fun upload(name: String, source: InputStream, size: Long): FeedResult<String> {
+    override suspend fun upload(name: String, source: InputStream, size: Long): FeedResult<String> {
         val body = object : RequestBody() {
             override fun contentType() = OCTET
             override fun contentLength() = size

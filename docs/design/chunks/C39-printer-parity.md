@@ -567,6 +567,15 @@ _(Each work package adds its lines here: date, what was built, what was verified
 - Tests: `PrinterFeedApiTest` (24: every route's URL, query and signed header; encoding of odd file paths and camera ids; the confirm, controls-off and refused answers; upload bytes; removed phone; PC off; wrong certificate; unreadable answer; the token never in an error; a time limit cancels a held poll). `JarvisFeedTest`, `JarvisAccountsTest` and `JarvisMailToolsTest` still pass.
 - Not done here: the session (E3) and anything on screen.
 
+**E3 (2026-11-18): the session.** Stacked on E2.
+- `printer/feed/PrinterRoutes.kt`: an interface of every route function; `PrinterFeedApi` implements it, so the session and (later) the page are tested with fakes and no network.
+- `printer/feed/PrinterFeed.kt`: `PrinterAccess` (`NoJarvis`, `NotShared`, `Ready(api, shared)`, `Away(why, removed)`) and `PrinterFeed.access()`, which asks Jarvis what it shares once and maps the answer. **Difference from 6.1:** `JarvisConnection.refreshShared()` now returns an `Outcome`, so "the PC is off" is `Away`, never mistaken for "not shared" (a Jarvis that cannot be asked has no printer entry to read).
+- `printer/feed/PrinterSession.kt`: `PrinterScreenState` (with `Live.stale`, new: set when the page returns and nothing newer has come yet) and the loop of 6.1 with Jarvis's `epoch` (a changed epoch is taken as a whole new state, even with a lower `rev`, and sent back), `quiet`, 429 wait of 3 s, backoff 2/4/8/16/30 s, a removed phone ends the loop, `PRINTER_NOT_SHARED` ends the loop, `detach()` turns Controls off if the last answer says they are on, `refreshNow()` asks again without a revision.
+- `di/AppContainer.kt`: `printerFeed` and `printerSession` (lazy, on `appScope`).
+- Tests: `PrinterSessionTest` (17, virtual time, fake routes): first question has no revision and no wait; unchanged revision changes nothing; epoch change; offset from the server's clock; quiet; no Jarvis / not shared; share stopped; removed phone; backoff 2 to 30 s and the wait starting over after recovery; 429; unreachable at the start then retried; removed at the start not retried; leaving and coming back (stale); Controls turned off only when on; `refreshNow`.
+- `PrinterFeedAccessTest` (7): `PrinterFeed.access()` with a real `JarvisConnection` paired through `Accounts` against a TLS mock Jarvis: no Jarvis; shared (and the api it hands out is signed with the paired token and pinned); not shared; the share switched off later; a PC that is off is `Away`, never `NotShared`; a removed phone; a changed certificate. Also covers `Accounts.jarvisConnection()` and `JarvisConnection.refreshShared()`.
+- **Not verified:** the session against the pretend feed on the emulator ("follows changes within a second of the fake changing"). That needs a screen; it is checked with E4's page.
+
 ## 16. Changes from the Jarvis-side review (2026-11-18): what Edith must now do
 
 Source: Jarvis spec `jarvis-printer-feed-spec.md` part 15 and parts 6.3 and 6.11. Where this chunk and that spec disagree, that spec wins; fix this chunk.

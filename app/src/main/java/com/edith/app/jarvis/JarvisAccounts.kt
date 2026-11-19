@@ -119,12 +119,16 @@ class JarvisConnection internal constructor(
     /** Whether this phone is paired at all (a saved link), without asking Jarvis. */
     internal val isPaired: Boolean get() = link != null
 
-    /** Asks Jarvis what it shares again (the page does this once each time it opens). Null when Jarvis can't be asked. */
-    internal suspend fun refreshShared(): com.edith.app.printer.feed.SharedPrinter? {
+    /**
+     * Asks Jarvis what it shares again (the printer page does this each time it opens). Success holds the printer entry, which is
+     * null when the owner doesn't share it (or this Jarvis is too old to know it); Failure says why Jarvis couldn't be asked, so the
+     * page can tell "not shared" from "the PC is off".
+     */
+    internal suspend fun refreshShared(): Outcome<com.edith.app.printer.feed.SharedPrinter?> {
         if (link == null) link = secrets.get(AccountSecrets.jarvisLink(id))?.let { runCatching { feedJson.decodeFromString(JarvisLink.serializer(), it) }.getOrNull() }
         return when (val r = api.get("shared", emptyMap(), Shared.serializer())) {
-            is Outcome.Success -> { shared = r.value; r.value.printer }
-            is Outcome.Failure -> shared?.printer
+            is Outcome.Success -> { shared = r.value; Outcome.Success(r.value.printer) }
+            is Outcome.Failure -> r
         }
     }
 
