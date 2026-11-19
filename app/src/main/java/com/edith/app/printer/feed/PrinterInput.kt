@@ -49,6 +49,14 @@ internal object PrinterInput {
         return PrinterCommand.Retraction(length = l, speed = sp, extraLength = ex, unretractSpeed = un)
     }
 
+    /** The console takes one line of at most 200 characters; an empty line, a longer one or one with a line break is not sent. */
+    const val MAX_LINE = 200
+    fun consoleLine(text: String): PrinterCommand.Gcode? {
+        val t = text.trim()
+        if (t.isEmpty() || t.length > MAX_LINE || t.any { it.code == 10 || it.code == 13 }) return null
+        return PrinterCommand.Gcode(t)
+    }
+
     /** A percentage the slider gives (whole numbers only; the server's range is enforced there). */
     fun percent(value: Float): Double = Math.round(value).toDouble()
 

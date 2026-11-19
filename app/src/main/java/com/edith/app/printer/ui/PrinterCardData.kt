@@ -49,7 +49,10 @@ internal data class FilesUi(
     val detailError: String? = null,
 )
 
-internal data class ConsoleUi(val lines: List<ConsoleLine> = emptyList(), val hideValues: Boolean = true, val error: String? = null)
+internal data class ConsoleUi(val lines: List<ConsoleLine> = emptyList(), val hideValues: Boolean = true, val error: String? = null, val history: List<String> = emptyList())
+
+/** The Macros card: what Jarvis sent (null until read), and the filter. */
+internal data class MacrosUi(val answer: com.edith.app.printer.feed.MacrosAnswer? = null, val loading: Boolean = false, val error: String? = null, val query: String = "")
 
 /** The camera picture: [frame] is the newest JPEG or PNG; [number] changes with each picture so the page redraws even for equal bytes. */
 internal class CameraUi(val cameraId: String? = null, val frame: ByteArray? = null, val number: Int = 0, val offline: Boolean = false)
@@ -61,6 +64,7 @@ internal data class CardsUi(
     val files: FilesUi = FilesUi(),
     val console: ConsoleUi = ConsoleUi(),
     val camera: CameraUi = CameraUi(),
+    val macros: MacrosUi = MacrosUi(),
 )
 
 /**
@@ -85,6 +89,7 @@ internal class PrinterCardData(
     private var chartSeeded = false
     private var historyLoaded = false
     private var consoleLoaded = false
+    private var macrosLoaded = false
     private var cameraJob: Job? = null
     private var consoleJob: Job? = null
     private var camera = CameraUi()
@@ -96,6 +101,7 @@ internal class PrinterCardData(
             }
         }
         scope.launch { prefs.consoleHideValues.collect { hide -> _ui.update { it.copy(console = it.console.copy(hideValues = hide)) } } }
+        scope.launch { prefs.consoleHistory.collect { h -> _ui.update { it.copy(console = it.console.copy(history = h)) } } }
     }
 
     /** The page left the screen: nothing is polled, and the next visit reads the chart again (it has a gap now). */
@@ -104,6 +110,7 @@ internal class PrinterCardData(
         chartSeeded = false
         historyLoaded = false
         consoleLoaded = false
+        macrosLoaded = false
     }
 
     /** The page came back: the cards that are open load again. */
@@ -120,6 +127,7 @@ internal class PrinterCardData(
         PrinterCards.TEMPERATURES -> !chartSeeded
         PrinterCards.HISTORY -> !historyLoaded
         PrinterCards.CONSOLE -> !consoleLoaded
+        PrinterCards.MACROS -> !macrosLoaded
         PrinterCards.CAMERA -> cameraJob?.isActive != true
         else -> false
     }
@@ -129,6 +137,7 @@ internal class PrinterCardData(
             PrinterCards.TEMPERATURES -> seedChart()
             PrinterCards.HISTORY -> loadHistory(start = 0)
             PrinterCards.CONSOLE -> loadConsole()
+            PrinterCards.MACROS -> loadMacros()
             PrinterCards.CAMERA -> startCamera()
         }
     }
@@ -184,6 +193,35 @@ internal class PrinterCardData(
 
     /** "More": the next 50 jobs. */
     fun moreHistory() = loadHistory(_ui.value.history.jobs.size)
+
+    // --- Macros ---------------------------------------------------------------------------------------------------------
+
+    private fun loadMacros() {
+        val routes = session.routes() ?: return
+        _ui.update { it.copy(macros = it.macros.copy(loading = true, error = null)) }
+        scope.launch {
+            when (val r = routes.macros()) {
+                is FeedResult.Ok -> { macrosLoaded = true; _ui.update { it.copy(macros = it.macros.copy(answer = r.value, loading = false, error = null)) } }
+                else -> _ui.update { it.copy(macros = it.macros.copy(loading = false, error = PrinterWords.forFailure(r))) }
+            }
+        }
+    }
+
+    fun setMacroQuery(q: String) = _ui.update { it.copy(macros = it.macros.copy(query = q)) }
+
+    /** Hide or show macros on the phone and the PC (Jarvis saves the list; it needs Controls on, and refuses a name that is not a macro name). */
+    fun setHiddenMacros(hidden: List<String>) {
+        val routes = session.routes() ?: return
+        scope.launch {
+            when (val r = routes.settings(null, hidden)) {
+                is FeedResult.Ok -> loadMacros()
+                else -> _ui.update { it.copy(macros = it.macros.copy(error = PrinterWords.forFailure(r))) }
+            }
+        }
+    }
+
+    /** A console line the owner sent is kept for the up arrow. */
+    fun rememberConsoleLine(line: String) { scope.launch { prefs.pushConsoleHistory(line) } }
 
     // --- Console ---------------------------------------------------------------------------------------------------------
 

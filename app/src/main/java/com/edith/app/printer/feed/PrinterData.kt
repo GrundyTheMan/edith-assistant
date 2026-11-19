@@ -131,3 +131,52 @@ internal object MeshColors {
         return if (lo == null || hi == null) null else Extremes(hi!!.first - lo!!.first, lo!!, hi!!)
     }
 }
+
+/** The Macros card's list: Jarvis's groups in Jarvis's order, filtered by what the owner typed. Edith never decides what is hidden: she shows what Jarvis sends. */
+internal object MacroList {
+    /** A group with the macros that are shown in it. */
+    data class Section(val id: String, val title: String, val macros: List<MacroInfo>)
+
+    private const val OTHER = "other"
+
+    /**
+     * The sections to draw. A macro whose group Jarvis did not list goes under "Other". With a [query] only the macros whose name or
+     * description contains it (any case) are kept, and a section with none is left out. Macros keep the order Jarvis sent.
+     */
+    fun sections(answer: MacrosAnswer, query: String): List<Section> {
+        val q = query.trim().lowercase()
+        val known = answer.groups.map { it.id }.toSet()
+        fun groupOf(m: MacroInfo) = if (m.group in known) m.group else OTHER
+        val titles = answer.groups.associate { it.id to it.title } + (OTHER to (answer.groups.firstOrNull { it.id == OTHER }?.title ?: "Other"))
+        val order = answer.groups.map { it.id }.let { if (OTHER in it) it else it + OTHER }
+        val kept = answer.macros.filter { q.isEmpty() || it.name.lowercase().contains(q) || it.description.orEmpty().lowercase().contains(q) }
+        return order.mapNotNull { id ->
+            val inGroup = kept.filter { groupOf(it) == id }
+            if (inGroup.isEmpty()) null else Section(id, titles[id] ?: "Other", inGroup)
+        }
+    }
+
+    /** The parameters to send: what the owner typed, trimmed; a box left empty is not sent, so the macro uses its own default. */
+    fun params(typed: Map<String, String>): Map<String, String> = typed.mapValues { it.value.trim() }.filterValues { it.isNotEmpty() }
+}
+
+/** The lines the owner typed into the console, newest first, at most 50 (kept between visits). */
+internal object ConsoleHistory {
+    const val MAX = 50
+
+    /** [line] goes to the front; the same line sent again moves to the front instead of repeating; the list stays at 50. */
+    fun push(history: List<String>, line: String): List<String> {
+        val t = line.trim()
+        if (t.isEmpty()) return history
+        return (listOf(t) + history.filter { it != t }).take(MAX)
+    }
+
+    /** Where the up arrow goes from [index] (-1 means "nothing chosen yet"): one older, stopping at the oldest. */
+    fun older(history: List<String>, index: Int): Int = if (history.isEmpty()) -1 else minOf(index + 1, history.lastIndex)
+
+    /** Where the down arrow goes: one newer; past the newest it is -1, which is an empty box again. */
+    fun newer(index: Int): Int = if (index <= 0) -1 else index - 1
+
+    /** The text at [index], or "" for -1. */
+    fun at(history: List<String>, index: Int): String = history.getOrNull(index).orEmpty()
+}

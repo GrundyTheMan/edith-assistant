@@ -33,7 +33,9 @@ internal class FakePrinterRoutes : PrinterRoutes {
     val consoleAfters = mutableListOf<Long?>()
     val snapshotIds = mutableListOf<String>()
     override suspend fun temperatures(): FeedResult<List<TempSeries>> { temperaturesCalls++; return temperaturesAnswer }
-    override suspend fun macros() = error("not used")
+    var macrosAnswer: FeedResult<MacrosAnswer> = FeedResult.Ok(MacrosAnswer())
+    var macrosCalls = 0
+    override suspend fun macros(): FeedResult<MacrosAnswer> { macrosCalls++; return macrosAnswer }
     override suspend fun console(after: Long?, count: Int): FeedResult<ConsoleAnswer> { consoleAfters += after; return consoleAnswer(after) }
     override suspend fun files(fresh: Boolean): FeedResult<FilesAnswer> { filesFresh += fresh; return filesAnswer }
     override suspend fun fileDetail(path: String): FeedResult<PrinterFileDetail> { detailPaths += path; return detailAnswer }
@@ -48,7 +50,9 @@ internal class FakePrinterRoutes : PrinterRoutes {
         return commandAnswers.removeFirstOrNull() ?: CommandAnswer.Sent(command.toString(), Risks.NONE)
     }
     override suspend fun events(after: Long?, waitS: Int) = error("not used")
-    override suspend fun settings(presets: List<Preset>?, hiddenMacros: List<String>?) = error("not used")
+    var settingsAnswer: FeedResult<SettingsAnswer> = FeedResult.Ok(SettingsAnswer())
+    val settingsCalls = mutableListOf<Pair<List<Preset>?, List<String>?>>()
+    override suspend fun settings(presets: List<Preset>?, hiddenMacros: List<String>?): FeedResult<SettingsAnswer> { settingsCalls += presets to hiddenMacros; return settingsAnswer }
     override suspend fun upload(name: String, source: InputStream, size: Long) = error("not used")
     fun say(answer: StateAnswer) { answers.trySend(FeedResult.Ok(answer)) }
     fun say(rev: Long, epoch: Long = 1, serverTime: Long = 0, armed: Boolean = false) {

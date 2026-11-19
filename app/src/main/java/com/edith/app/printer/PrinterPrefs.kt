@@ -49,6 +49,10 @@ internal interface PrinterPrefs {
     /** Hide the printer's "// value:" console lines (on until switched off). */
     val consoleHideValues: Flow<Boolean>
     suspend fun setConsoleHideValues(on: Boolean)
+
+    /** The lines the owner typed into the console, newest first, at most 50. */
+    val consoleHistory: Flow<List<String>>
+    suspend fun pushConsoleHistory(line: String)
 }
 
 internal class DataStorePrinterPrefs(private val store: DataStore<Preferences>) : PrinterPrefs {
@@ -66,7 +70,18 @@ internal class DataStorePrinterPrefs(private val store: DataStore<Preferences>) 
     override val consoleHideValues: Flow<Boolean> = store.data.map { it[HIDE_VALUES] ?: true }
     override suspend fun setConsoleHideValues(on: Boolean) { store.edit { it[HIDE_VALUES] = on } }
 
+    override val consoleHistory: Flow<List<String>> = store.data.map { lines(it[HISTORY]) }
+    override suspend fun pushConsoleHistory(line: String) {
+        store.edit { p -> p[HISTORY] = com.edith.app.printer.feed.ConsoleHistory.push(lines(p[HISTORY]), line).joinToString(LINE_BREAK.toString()) }
+    }
+
+    /** A saved history is one line of text per entry (a console line never holds a line break). */
+    private fun lines(saved: String?): List<String> = saved?.split(LINE_BREAK)?.filter { it.isNotEmpty() }.orEmpty()
+
     private companion object {
+        /** The character that separates saved lines: a line feed (character 10). */
+        val LINE_BREAK: Char = 10.toChar()
+        val HISTORY = androidx.datastore.preferences.core.stringPreferencesKey("printer.history")
         val COLLAPSED = stringSetPreferencesKey("printer.collapsed")
         val CAMERA = androidx.datastore.preferences.core.stringPreferencesKey("printer.camera")
         val HIDE_VALUES = androidx.datastore.preferences.core.booleanPreferencesKey("printer.consoleHideValues")
@@ -86,4 +101,7 @@ internal class MemoryPrinterPrefs(initial: Set<String> = PrinterCards.COLLAPSED_
     private val hideState = MutableStateFlow(true)
     override val consoleHideValues: Flow<Boolean> = hideState.asStateFlow()
     override suspend fun setConsoleHideValues(on: Boolean) { hideState.value = on }
+    private val historyState = MutableStateFlow<List<String>>(emptyList())
+    override val consoleHistory: Flow<List<String>> = historyState.asStateFlow()
+    override suspend fun pushConsoleHistory(line: String) { historyState.value = com.edith.app.printer.feed.ConsoleHistory.push(historyState.value, line) }
 }
