@@ -8,7 +8,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.text.input.ImeAction
+import com.edith.app.printer.feed.ConsoleHistory
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -55,7 +64,7 @@ internal class ControlsCtx(val ui: PrinterUi, val controls: ControlUi, val send:
 /** A button that sends [cmd]: disabled with Jarvis's reason when it cannot be used, a spinner while its change is awaited. [cmd] null means the boxes are not valid yet. */
 @Composable
 internal fun CmdButton(
-    text: String, cmd: PrinterCommand?, ctx: ControlsCtx, quickKey: String? = null, danger: Boolean = false, filled: Boolean = false, tag: String? = null,
+    text: String, cmd: PrinterCommand?, ctx: ControlsCtx, quickKey: String? = null, danger: Boolean = false, filled: Boolean = false, tag: String? = null, after: () -> Unit = {},
 ) {
     val key = cmd?.let { controlKey(it) }
     val pending = key != null && key in ctx.controls.pending
@@ -65,9 +74,9 @@ internal fun CmdButton(
         Text(text)
     }
     val tagged = Modifier.testTag(tag ?: "cmd:$text")
-    if (filled) Button(onClick = { cmd?.let(ctx.send) }, enabled = enabled, modifier = tagged, colors = if (danger) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors()) { label() }
+    if (filled) Button(onClick = { cmd?.let { ctx.send(it); after() } }, enabled = enabled, modifier = tagged, colors = if (danger) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors()) { label() }
     else OutlinedButton(
-        onClick = { cmd?.let(ctx.send) }, enabled = enabled, modifier = tagged,
+        onClick = { cmd?.let { ctx.send(it); after() } }, enabled = enabled, modifier = tagged,
         colors = if (danger) ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error) else ButtonDefaults.outlinedButtonColors(),
     ) { label() }
 }
@@ -313,6 +322,44 @@ internal fun SystemControls(ctx: ControlsCtx) {
 @Composable
 internal fun CameraControls(ctx: ControlsCtx) {
     CmdButton("Turn camera on", PrinterCommand.Camera(true), ctx, "camera:on")
+}
+
+// --- Console input ---------------------------------------------------------------------------------------------------
+
+/**
+ * The console's one-line input (C39 part 8.4): at most 200 characters, never a line break, Enter or Send asks Jarvis (the sheet then shows the
+ * exact line and its risk), and the arrows walk through the last 50 lines sent. Jarvis's refusal ("Use the System card or the printer's screen
+ * for this") shows under the box.
+ */
+@Composable
+internal fun ConsoleInput(history: List<String>, ctx: ControlsCtx, onRemember: (String) -> Unit) {
+    var text by remember { mutableStateOf("") }
+    var index by remember { mutableIntStateOf(-1) }
+    val cmd = PrinterInput.consoleLine(text)
+    fun sendNow() { cmd?.let { ctx.send(it); onRemember(it.script); text = ""; index = -1 } }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.testTag("console-input")) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { typed -> text = typed.filter { it.code != 10 && it.code != 13 }.take(PrinterInput.MAX_LINE); index = -1 },
+                label = { Text("Send a line to the printer") }, singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send), keyboardActions = KeyboardActions(onSend = { sendNow() }),
+                modifier = Modifier.weight(1f).testTag("console-line"),
+            )
+            IconButton(onClick = { index = ConsoleHistory.older(history, index); text = ConsoleHistory.at(history, index) }, enabled = history.isNotEmpty(), modifier = Modifier.testTag("console-older")) {
+                Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Older line")
+            }
+            IconButton(onClick = { index = ConsoleHistory.newer(index); text = ConsoleHistory.at(history, index) }, enabled = index >= 0, modifier = Modifier.testTag("console-newer")) {
+                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Newer line")
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            CmdButton("Send", cmd, ctx, tag = "console-send", after = { cmd?.let { onRemember(it.script) }; text = ""; index = -1 })
+            Text("${text.length}/${PrinterInput.MAX_LINE}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Refusal(ctx, "gcode")
+        WhyOff(ctx)
+    }
 }
 
 /** Used by the banner when Klipper has stopped: the way out is a firmware restart. */

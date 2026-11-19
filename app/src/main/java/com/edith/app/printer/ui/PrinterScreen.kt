@@ -50,6 +50,7 @@ import com.edith.app.printer.ui.cards.FansCard
 import com.edith.app.printer.ui.cards.FilesCard
 import com.edith.app.printer.ui.cards.HistoryCard
 import com.edith.app.printer.ui.cards.LimitsCard
+import com.edith.app.printer.ui.cards.MacrosCard
 import com.edith.app.printer.ui.cards.MeshCard
 import com.edith.app.printer.ui.cards.ObjectsCard
 import com.edith.app.printer.ui.cards.QueueCard
@@ -76,6 +77,7 @@ internal fun PrinterScreen(onBack: () -> Unit, onOpenPairing: () -> Unit, vm: Pr
             cardVisible = vm.data::visible, toggleSeries = vm.data::toggleSeries, moreHistory = vm.data::moreHistory, setHideValues = vm.data::setHideValues,
             clearConsole = vm.data::clearConsole, loadFiles = vm.data::loadFiles, setFileQuery = vm.data::setFileQuery, setPrintedOnly = vm.data::setPrintedOnly,
             openFile = vm.data::openFile, closeFile = vm.data::closeFile, chooseCamera = vm.data::chooseCamera,
+            setMacroQuery = vm.data::setMacroQuery, setHiddenMacros = vm.data::setHiddenMacros, rememberConsoleLine = vm.data::rememberConsoleLine,
             setControls = vm.control::setControls, send = vm.control::send, confirm = vm.control::confirm, dismissSheet = vm.control::dismissSheet, messageShown = vm.control::messageShown,
         ),
         cards, controls,
@@ -179,7 +181,7 @@ private fun Cards(ui: PrinterUi, is24Hour: Boolean, a: PrinterActions, data: Car
                 }
             }
         }
-        items(PrinterCards.ALL.filter { shows(it, state) }, key = { it }) { id ->
+        items(PrinterCards.ALL.filter { shows(it, state, controls.mayControl) }, key = { it }) { id ->
             CardFrame(title(id), id !in ui.collapsed, onToggle = { a.toggleCard(id) }, id = id, onVisible = a.cardVisible) {
                 when (id) {
                     PrinterCards.STATUS -> StatusCard(ui, state, is24Hour, a.dismissAlert, controls, a.send)
@@ -194,7 +196,8 @@ private fun Cards(ui: PrinterUi, is24Hour: Boolean, a: PrinterActions, data: Car
                     PrinterCards.OBJECTS -> ObjectsCard(state, ctx)
                     PrinterCards.QUEUE -> QueueCard(state, ui.now, ui.zone, ctx)
                     PrinterCards.HISTORY -> HistoryCard(data.history, ui.now, ui.zone, a.moreHistory)
-                    PrinterCards.CONSOLE -> ConsoleCard(data.console, a.setHideValues, a.clearConsole)
+                    PrinterCards.CONSOLE -> ConsoleCard(data.console, a.setHideValues, a.clearConsole, ctx, a.rememberConsoleLine)
+                    PrinterCards.MACROS -> MacrosCard(data.macros, ctx, a.setMacroQuery, a.setHiddenMacros)
                     PrinterCards.MESH -> state.mesh?.let { MeshCard(it) }
                     PrinterCards.SYSTEM -> SystemCard(state, ctx)
                     else -> Unit
@@ -205,8 +208,10 @@ private fun Cards(ui: PrinterUi, is24Hour: Boolean, a: PrinterActions, data: Car
 }
 
 /** Which cards this printer has now, in the order of [PrinterCards.ALL]. Macros come in stage 2 and Recordings in stage 4. */
-private fun shows(id: String, state: com.edith.app.printer.feed.PrinterState): Boolean = when (id) {
-    PrinterCards.MACROS, PrinterCards.RECORDINGS -> false
+private fun shows(id: String, state: com.edith.app.printer.feed.PrinterState, mayControl: Boolean): Boolean = when (id) {
+    PrinterCards.RECORDINGS -> false
+    // Every macro button is a control: a look-only phone has no Macros card at all.
+    PrinterCards.MACROS -> mayControl
     PrinterCards.OBJECTS -> (state.print.state == "printing" || state.print.state == "paused") && state.objects.isNotEmpty()
     PrinterCards.MESH -> state.mesh != null
     PrinterCards.QUEUE -> state.queue != null
@@ -218,6 +223,7 @@ private fun title(id: String) = when (id) {
     PrinterCards.LIMITS -> "Limits and retraction"
     PrinterCards.SLOTS -> "Filament slots"
     PrinterCards.MESH -> "Bed mesh"
+    PrinterCards.MACROS -> "Macros"
     else -> id.replaceFirstChar { it.uppercase() }
 }
 

@@ -209,7 +209,7 @@ internal fun HistoryCard(history: HistoryUi, nowMs: Long, zone: ZoneId, onMore: 
 
 /** Console: what the printer said, newest at the bottom; its "// value:" chatter hidden unless switched off. Reading only in stage 1. */
 @Composable
-internal fun ConsoleCard(console: ConsoleUi, onHideValues: (Boolean) -> Unit, onClear: () -> Unit) {
+internal fun ConsoleCard(console: ConsoleUi, onHideValues: (Boolean) -> Unit, onClear: () -> Unit, ctx: ControlsCtx? = null, onRemember: (String) -> Unit = {}) {
     val lines = ConsoleView.visible(console.lines, console.hideValues).takeLast(120)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.testTag("console-card")) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -225,5 +225,6 @@ internal fun ConsoleCard(console: ConsoleUi, onHideValues: (Boolean) -> Unit, on
             if (lines.isEmpty()) Text("Nothing yet.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         console.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        if (ctx?.mayControl == true) ConsoleInput(console.history, ctx, onRemember)
     }
 }

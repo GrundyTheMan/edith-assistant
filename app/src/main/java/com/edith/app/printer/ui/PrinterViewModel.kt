@@ -145,6 +145,9 @@ internal data class PrinterActions(
     val confirm: () -> Unit = {},
     val dismissSheet: () -> Unit = {},
     val messageShown: () -> Unit = {},
+    val setMacroQuery: (String) -> Unit = {},
+    val setHiddenMacros: (List<String>) -> Unit = {},
+    val rememberConsoleLine: (String) -> Unit = {},
 )
 
 /**

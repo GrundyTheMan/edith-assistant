@@ -66,6 +66,7 @@ internal fun controlKey(c: PrinterCommand): String = when (c) {
     is PrinterCommand.SetTemp -> "setTemp:${c.heater}"
     is PrinterCommand.Preset -> "preset:${c.name}"
     is PrinterCommand.Fan -> "fan:${c.fan}"
+    is PrinterCommand.Macro -> "macro:${c.name}"
     else -> c.kind
 }
 

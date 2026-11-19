@@ -410,6 +410,106 @@ class PrinterScreenTest {
         assertEquals(listOf<com.edith.app.printer.feed.PrinterCommand>(com.edith.app.printer.feed.PrinterCommand.FirmwareRestart), sent)
     }
 
+    // --- Stage 2 (E9): macros and the console input ----------------------------------------------------------------------
+
+    private val macroAnswer = com.edith.app.printer.feed.MacrosAnswer(
+        macros = listOf(
+            com.edith.app.printer.feed.MacroInfo("LOAD_FILAMENT", "Load filament", group = "filament"),
+            com.edith.app.printer.feed.MacroInfo("CLEAN_NOZZLE", group = "print"),
+            com.edith.app.printer.feed.MacroInfo("BED_MESH_CALIBRATE", "Probe the bed", params = listOf(com.edith.app.printer.feed.MacroParam("PROFILE", "default")), risk = "danger", group = "calibration"),
+        ),
+        groups = listOf(com.edith.app.printer.feed.MacroGroup("filament", "Filament and nozzle"), com.edith.app.printer.feed.MacroGroup("print", "Printing"), com.edith.app.printer.feed.MacroGroup("calibration", "Bed and calibration")),
+        hidden = listOf("SECRET_MACRO"),
+    )
+    private fun macroCards() = CardsUi(macros = MacrosUi(answer = macroAnswer))
+
+    @Test fun theMacrosCardShowsJarvisGroupsInOrderWithCounts() {
+        controlsContent(control(armed = true), mutableListOf(), cards = macroCards())
+        scrollTo("macros-card")
+        compose.onNodeWithText("Filament and nozzle (1)").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Printing (1)").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Bed and calibration (1)").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Load filament").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test fun aLookOnlyPhoneHasNoMacrosCard() {
+        compose.setContent { EdithTheme { PrinterContent(richUi(), true, PrinterActions(), macroCards(), control(may = false)) } }
+        compose.onNodeWithTag("macros-card").assertDoesNotExist()
+    }
+
+    @Test fun aMacroWithNoParametersRunsWithOneTap() {
+        val sent = mutableListOf<PrinterCommand>()
+        controlsContent(control(armed = true), sent, cards = macroCards())
+        scrollTo("macros-card")
+        compose.onNodeWithTag("run-CLEAN_NOZZLE").performScrollTo().performClick()
+        assertEquals(listOf<PrinterCommand>(PrinterCommand.Macro("CLEAN_NOZZLE")), sent)
+    }
+
+    @Test fun aMacroWithParametersOpensAFormAndSendsWhatWasTyped() {
+        val sent = mutableListOf<PrinterCommand>()
+        controlsContent(control(armed = true), sent, cards = macroCards())
+        scrollTo("macros-card")
+        compose.onNodeWithTag("open-BED_MESH_CALIBRATE").performScrollTo().performClick()
+        compose.onNodeWithTag("run-BED_MESH_CALIBRATE").performScrollTo().performClick()
+        compose.onNodeWithTag("param-BED_MESH_CALIBRATE-PROFILE").performScrollTo().performTextInput("mine")
+        compose.onNodeWithTag("run-BED_MESH_CALIBRATE").performScrollTo().performClick()
+        assertEquals(listOf<PrinterCommand>(PrinterCommand.Macro("BED_MESH_CALIBRATE"), PrinterCommand.Macro("BED_MESH_CALIBRATE", mapOf("PROFILE" to "mine"))), sent)
+    }
+
+    @Test fun theFilterNarrowsTheListAndOpensEveryGroup() {
+        var query by androidx.compose.runtime.mutableStateOf("")
+        compose.setContent { EdithTheme { PrinterContent(richUi(), true, PrinterActions(setMacroQuery = { query = it }), CardsUi(macros = MacrosUi(answer = macroAnswer, query = query)), control(armed = true)) } }
+        scrollTo("macros-card")
+        compose.onNodeWithTag("macro-filter").performScrollTo().performTextInput("probe")
+        compose.waitForIdle()
+        assertEquals("probe", query)
+    }
+
+    @Test fun hidingAMacroAsksJarvisAndAHiddenOneCanBeShownAgain() {
+        val hidden = mutableListOf<List<String>>()
+        compose.setContent { EdithTheme { PrinterContent(richUi(), true, PrinterActions(setHiddenMacros = { hidden += it }), macroCards(), control(armed = true)) } }
+        scrollTo("macros-card")
+        compose.onNodeWithTag("hide-CLEAN_NOZZLE").performScrollTo().performClick()
+        compose.onNodeWithTag("show-SECRET_MACRO").performScrollTo().performClick()
+        assertEquals(listOf(listOf("SECRET_MACRO", "CLEAN_NOZZLE"), emptyList<String>()), hidden)
+    }
+
+    @Test fun theConsoleSendsTheLineTypedAndKeepsIt() {
+        val sent = mutableListOf<PrinterCommand>(); val remembered = mutableListOf<String>()
+        compose.setContent { EdithTheme { PrinterContent(richUi(), true, PrinterActions(send = { sent += it }, rememberConsoleLine = { remembered += it }), CardsUi(), control(armed = true)) } }
+        scrollTo("console-card")
+        compose.onNodeWithTag("console-send").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("console-line").performScrollTo().performTextInput("  M105 ")
+        compose.onNodeWithTag("console-send").performScrollTo().assertIsEnabled().performClick()
+        assertEquals(listOf<PrinterCommand>(PrinterCommand.Gcode("M105")), sent)
+        assertEquals(listOf("M105"), remembered)
+    }
+
+    @Test fun theConsoleLineIsCutAt200Characters() {
+        compose.setContent { EdithTheme { PrinterContent(richUi(), true, PrinterActions(), CardsUi(), control(armed = true)) } }
+        scrollTo("console-card")
+        compose.onNodeWithTag("console-line").performScrollTo().performTextInput("G".repeat(250))
+        compose.onNodeWithText("200/200").assertExists()
+    }
+
+    @Test fun theUpArrowRecallsTheLastLinesSent() {
+        val history = listOf("G28", "M105")
+        compose.setContent { EdithTheme { PrinterContent(richUi(), true, PrinterActions(), CardsUi(console = ConsoleUi(history = history)), control(armed = true)) } }
+        scrollTo("console-card")
+        compose.onNodeWithTag("console-older").performScrollTo().performClick()
+        compose.onNodeWithText("G28").assertExists()
+        compose.onNodeWithTag("console-older").performClick()
+        compose.onNodeWithText("M105").assertExists()
+        compose.onNodeWithTag("console-newer").performClick()
+        compose.onNodeWithText("G28").assertExists()
+    }
+
+    @Test fun aLookOnlyPhoneHasNoConsoleInput() {
+        compose.setContent { EdithTheme { PrinterContent(richUi(), true, PrinterActions(), CardsUi(), control(may = false)) } }
+        scrollTo("console-card")
+        compose.onNodeWithTag("console-input").assertDoesNotExist()
+    }
+
     @Test fun noEmergencyStopWhileJarvisCannotReachThePrinter() {
         compose.setContent { EdithTheme { PrinterContent(open(PrinterState(connection = Connections.UNREACHABLE)), true, PrinterActions(), CardsUi(), control()) } }
         compose.onNodeWithTag("estop").assertDoesNotExist()
