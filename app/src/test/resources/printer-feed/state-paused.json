@@ -1,0 +1,1 @@
+{"rev":60,"epoch":1763400000,"state":{"connection":"ready","print":{"state":"paused","title":"Chimney","progress":0.41,"printDuration":1850,"totalDuration":2000,"timeLeft":2600,"filamentUsed":12800,"paused":true,"busy":true},"heaters":[],"cameras":[]},"arm":{"armed":false},"quick":{"resume":{"allowed":true}},"consoleSeq":131,"serverTime":1763400200000}
