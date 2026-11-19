@@ -40,6 +40,8 @@ internal data class PrinterUi(
     /** The phone's clock, in ms; moves every 30 s so the ages on the page stay right. */
     val now: Long = 0,
     val zone: ZoneId = ZoneId.systemDefault(),
+    /** The temperature presets Jarvis offers this phone (edited in Jarvis). */
+    val presets: List<com.edith.app.printer.feed.Preset> = emptyList(),
 ) {
     /** The printer's state to draw: the live one, or the last one while Jarvis is away. Null when there is none. */
     val state: PrinterState? get() = when (val s = screen) {
@@ -168,7 +170,7 @@ internal class PrinterViewModel(
     private var ticking: Job? = null
 
     val ui: StateFlow<PrinterUi> = combine(session.state, session.shared, prefs.collapsed, local) { screen, shared, collapsed, l ->
-        PrinterUi(screen, shared?.name?.takeIf { it.isNotBlank() } ?: "Printer", collapsed, l.dismissedAlert, l.now, clock.zone())
+        PrinterUi(screen, shared?.name?.takeIf { it.isNotBlank() } ?: "Printer", collapsed, l.dismissedAlert, l.now, clock.zone(), shared?.presets.orEmpty())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PrinterUi(now = local.value.now, zone = clock.zone()))
 
     /** The page is on screen. */

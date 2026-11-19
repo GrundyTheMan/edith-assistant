@@ -4,14 +4,18 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.edith.app.printer.PrinterCards
 import com.edith.app.printer.feed.ChartLine
 import com.edith.app.printer.feed.Connections
+import com.edith.app.printer.feed.PrinterCommand
 import com.edith.app.printer.feed.FilamentSlot
 import com.edith.app.printer.feed.Heater
 import com.edith.app.printer.feed.PrinterCamera
@@ -222,7 +226,8 @@ class PrinterScreenTest {
         compose.setContent { EdithTheme { PrinterContent(withQuick(printing), true, PrinterActions(), CardsUi(), control(armed = false)) } }
         compose.onNodeWithTag("job-main").assertIsNotEnabled()
         compose.onNodeWithTag("job-cancel").assertIsNotEnabled()
-        compose.onNodeWithText("Turn on Controls to use this").assertIsDisplayed()
+        compose.onNodeWithTag("job-why").assertIsDisplayed()
+        compose.onAllNodesWithText("Turn on Controls to use this")[0].assertExists()
     }
 
     @Test fun withControlsOnPauseAndCancelSendTheirCommands() {
@@ -258,6 +263,151 @@ class PrinterScreenTest {
     @Test fun theEmergencyStopIsThereOnALookOnlyPhoneButNotWhenThePrinterIsUnreachable() {
         compose.setContent { EdithTheme { PrinterContent(withQuick(printing), true, PrinterActions(), CardsUi(), control(may = false)) } }
         compose.onNodeWithTag("estop").assertExists()
+    }
+
+    // --- Stage 2 (E8): the controls in the cards -------------------------------------------------------------------------
+
+    private val rich = printing.copy(
+        heaters = listOf(Heater("extruder", "Nozzle", 219.8, 220.0, 0.3, 300.0), Heater("heater_bed", "Bed", 60.0, 60.0, 0.2, 120.0)),
+        fans = listOf(com.edith.app.printer.feed.Fan("fan_generic fanM106", "Part cooling", 0.5, true)),
+        light = 0.5,
+        filamentSensors = listOf(com.edith.app.printer.feed.FilamentSensor("filament_switch_sensor head", "Head switch sensor", true, true)),
+        objects = listOf(com.edith.app.printer.feed.PrintObject("Chimney", excluded = false, current = true)),
+        queue = com.edith.app.printer.feed.JobQueue("ready", listOf(com.edith.app.printer.feed.QueueJob("0001", "a.gcode", "Benchy", 1))),
+        retraction = com.edith.app.printer.feed.Retraction(0.8, 35.0, 0.0, 35.0),
+        cameras = listOf(PrinterCamera("video", "Camera")),
+    )
+    private fun richUi(state: PrinterState = rich) = PrinterUi(
+        PrinterScreenState.Live(StateAnswer(rev = 1, state = state), now, 0), "FlashForge AD5X", emptySet(), null, now, ZoneId.of("UTC"),
+        listOf(com.edith.app.printer.feed.Preset("PLA", 220, 60)),
+    )
+    private fun controlsContent(c: ControlUi, sent: MutableList<com.edith.app.printer.feed.PrinterCommand>, state: PrinterState = rich, cards: CardsUi = CardsUi()) =
+        compose.setContent { EdithTheme { PrinterContent(richUi(state), true, PrinterActions(send = { sent += it }), cards, c) } }
+    private fun click(tag: String, card: String) { scrollTo(card); compose.onNodeWithTag(tag).performScrollTo().performClick() }
+
+    @Test fun theTemperatureControlsSendTargetsPresetsAndAllOff() {
+        val sent = mutableListOf<com.edith.app.printer.feed.PrinterCommand>()
+        controlsContent(control(armed = true), sent)
+        scrollTo("temperature-controls")
+        compose.onNodeWithTag("target-extruder").performScrollTo().performTextInput("220")
+        compose.onNodeWithTag("set-extruder").performScrollTo().performClick()
+        compose.onNodeWithTag("off-heater_bed").performScrollTo().performClick()
+        compose.onNodeWithTag("cmd:PLA").performScrollTo().performClick()
+        compose.onNodeWithTag("cmd:All off").performScrollTo().performClick()
+        assertEquals(
+            listOf(com.edith.app.printer.feed.PrinterCommand.SetTemp("extruder", 220.0), com.edith.app.printer.feed.PrinterCommand.SetTemp("heater_bed", 0.0),
+                com.edith.app.printer.feed.PrinterCommand.Preset("PLA"), com.edith.app.printer.feed.PrinterCommand.HeatersOff), sent,
+        )
+    }
+
+    @Test fun aTargetBoxThatIsEmptyOrTooHotSendsNothing() {
+        val sent = mutableListOf<com.edith.app.printer.feed.PrinterCommand>()
+        controlsContent(control(armed = true), sent)
+        scrollTo("temperature-controls")
+        compose.onNodeWithTag("set-heater_bed").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("target-heater_bed").performScrollTo().performTextInput("130")
+        compose.onNodeWithTag("set-heater_bed").performScrollTo().assertIsNotEnabled()
+        assertEquals(emptyList<com.edith.app.printer.feed.PrinterCommand>(), sent)
+    }
+
+    @Test fun theToolheadControlsSendHomeJogZOffsetAndExtrude() {
+        val sent = mutableListOf<com.edith.app.printer.feed.PrinterCommand>()
+        controlsContent(control(armed = true), sent)
+        scrollTo("toolhead-controls")
+        compose.onNodeWithTag("cmd:All").performScrollTo().performClick()
+        compose.onNodeWithTag("step-10").performScrollTo().performClick()
+        compose.onNodeWithTag("cmd:X+").performScrollTo().performClick()
+        compose.onNodeWithTag("cmd:Y−").performScrollTo().performClick()
+        compose.onNodeWithTag("step-100").performScrollTo().performClick()
+        compose.onNodeWithTag("cmd:Z+").performScrollTo().performClick()
+        compose.onNodeWithTag("cmd:+0.05").performScrollTo().performClick()
+        compose.onNodeWithTag("cmd:Extrude").performScrollTo().performClick()
+        compose.onNodeWithTag("cmd:Retract").performScrollTo().performClick()
+        compose.onNodeWithTag("cmd:Motors off").performScrollTo().performClick()
+        assertEquals(
+            listOf(
+                PrinterCommand.Home(com.edith.app.printer.feed.HomeAxes.ALL), PrinterCommand.Jog("x", 10.0), PrinterCommand.Jog("y", -10.0), PrinterCommand.Jog("z", 50.0), PrinterCommand.ZOffset(0.05),
+                PrinterCommand.Extrude(10.0, 5.0), PrinterCommand.Extrude(-10.0, 5.0), PrinterCommand.MotorsOff,
+            ), sent,
+        )
+    }
+
+    @Test fun theFanLightAndAirControlsSend() {
+        val sent = mutableListOf<com.edith.app.printer.feed.PrinterCommand>()
+        controlsContent(control(armed = true), sent)
+        scrollTo("fan-controls")
+        compose.onNodeWithTag("cmd:On").performScrollTo().performClick()
+        compose.onNodeWithTag("cmd:Internal").performScrollTo().performClick()
+        compose.onNodeWithTag("cmd:Stop").performScrollTo().performClick()
+        assertEquals(listOf(PrinterCommand.Light(1.0), PrinterCommand.AirCirculation("internal"), PrinterCommand.AirCirculation("stop")), sent)
+    }
+
+    @Test fun theLimitsAreAppliedOnlyWhenSomethingIsTyped() {
+        val sent = mutableListOf<com.edith.app.printer.feed.PrinterCommand>()
+        controlsContent(control(armed = true), sent)
+        scrollTo("limit-controls")
+        compose.onNodeWithTag("cmd:Apply limits").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("limit-velocity").performScrollTo().performTextInput("200")
+        compose.onNodeWithTag("cmd:Apply limits").performScrollTo().assertIsEnabled().performClick()
+        assertEquals(listOf<com.edith.app.printer.feed.PrinterCommand>(com.edith.app.printer.feed.PrinterCommand.Limits(velocity = 200.0)), sent)
+    }
+
+    @Test fun theSensorObjectQueueAndSystemControlsSend() {
+        val sent = mutableListOf<com.edith.app.printer.feed.PrinterCommand>()
+        controlsContent(control(armed = true), sent)
+        scrollTo("sensor-controls"); compose.onNodeWithTag("filament-filament_switch_sensor head").performScrollTo().performClick()
+        scrollTo("object-controls"); compose.onNodeWithTag("cmd:Exclude Chimney").performScrollTo().performClick()
+        scrollTo("queue-controls"); compose.onNodeWithTag("cmd:Start queue").performScrollTo().performClick()
+        compose.onNodeWithTag("cmd:Remove Benchy").performScrollTo().performClick()
+        scrollTo("system-controls"); compose.onNodeWithTag("cmd:Restart Klipper").performScrollTo().performClick()
+        assertEquals(listOf(PrinterCommand.FilamentSensor("filament_switch_sensor head", false), PrinterCommand.ExcludeObject("Chimney"), PrinterCommand.QueueStart, PrinterCommand.QueueRemove("0001"), PrinterCommand.Restart), sent)
+    }
+
+    @Test fun withControlsOffEveryCardControlIsDisabledAndSaysWhy() {
+        val sent = mutableListOf<com.edith.app.printer.feed.PrinterCommand>()
+        controlsContent(control(armed = false), sent)
+        scrollTo("toolhead-controls")
+        compose.onNodeWithTag("cmd:All").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("cmd:X+").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("cmd:Extrude").performScrollTo().assertIsNotEnabled()
+        scrollTo("temperature-controls")
+        compose.onNodeWithTag("cmd:All off").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("cmd:PLA").performScrollTo().assertIsNotEnabled()
+        assertEquals(emptyList<com.edith.app.printer.feed.PrinterCommand>(), sent)
+    }
+
+    @Test fun aLookOnlyPhoneGetsNoControlsInAnyCard() {
+        compose.setContent { EdithTheme { PrinterContent(richUi(), true, PrinterActions(), CardsUi(), control(may = false)) } }
+        val cardOf = mapOf(
+            "toolhead-controls" to "toolhead-card", "temperature-controls" to "temperature-card", "fan-controls" to "fans-card", "limit-controls" to "limits-card",
+            "sensor-controls" to "sensors-card", "object-controls" to "objects-card", "queue-controls" to "queue-card", "system-controls" to "system-card",
+        )
+        for ((controls, card) in cardOf) {
+            scrollTo(card)
+            compose.onNodeWithTag(controls).assertDoesNotExist()
+        }
+    }
+
+    @Test fun aRefusalFromJarvisIsShownUnderTheJogControls() {
+        val c = control(armed = true).copy(refused = mapOf("jog" to "Home the printer first."))
+        compose.setContent { EdithTheme { PrinterContent(richUi(), true, PrinterActions(), CardsUi(), c) } }
+        scrollTo("toolhead-controls")
+        compose.onNodeWithText("Home the printer first.").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test fun anOfflineCameraOffersToTurnItOn() {
+        val sent = mutableListOf<com.edith.app.printer.feed.PrinterCommand>()
+        controlsContent(control(armed = true), sent, cards = CardsUi(camera = CameraUi("video", null, 0, offline = true)))
+        compose.onNodeWithTag("cmd:Turn camera on").performScrollTo().performClick()
+        assertEquals(listOf<com.edith.app.printer.feed.PrinterCommand>(com.edith.app.printer.feed.PrinterCommand.Camera(true)), sent)
+    }
+
+    @Test fun whenKlipperHasStoppedTheBannerOffersAFirmwareRestart() {
+        val sent = mutableListOf<com.edith.app.printer.feed.PrinterCommand>()
+        val stopped = PrinterState(connection = Connections.KLIPPY_SHUTDOWN, message = "Heater not heating")
+        controlsContent(control(armed = true), sent, state = stopped)
+        compose.onNodeWithTag("cmd:Firmware restart").assertIsDisplayed().performClick()
+        assertEquals(listOf<com.edith.app.printer.feed.PrinterCommand>(com.edith.app.printer.feed.PrinterCommand.FirmwareRestart), sent)
     }
 
     @Test fun noEmergencyStopWhileJarvisCannotReachThePrinter() {
