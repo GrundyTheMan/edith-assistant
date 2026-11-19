@@ -55,7 +55,7 @@ Fowlerville?").
 | 8 | **Smart home.** Decision A8 first deferred it to v2; D10 and D19 brought it in. A Home tab and tools with Jarvis's features, then each service: the Meross garage door opener is built (C26), and Ring, Resideo, Blink, Alexa, the Philips lock, camera views and alerts, and the 3D printer are designed | C25–C34 |
 
 **Non-goals for v1:** multiple *users* (several accounts of the one owner are in scope, phase 7); a cloud backend;
-a native iOS app (the owner's iPhone runs Edith inside Andarium); image generation; server-side text-to-speech
+a native iOS app (the owner's iPhone runs Edith inside Andarium; C40 tests whether a Kotlin Multiplatform port is feasible, D27); image generation; server-side text-to-speech
 (see §4.2); sending email, unlocking a door or opening the garage without the owner's tap on the screen.
 
 ## 4. Owner decisions (binding)
