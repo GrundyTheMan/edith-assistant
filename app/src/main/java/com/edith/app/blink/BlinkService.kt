@@ -386,6 +386,12 @@ class BlinkService(
         /** The command being watched: it changes once if the stream closes early and the view is asked for again. */
         @Volatile private var current = answer
         @Volatile private var switching = false
+        /**
+         * Set once, when the view ends. It must be declared **before** the `init` block below: that block starts the stream on another thread,
+         * and if the stream closes at once the thread reads this before the constructor would reach a declaration placed after `init`
+         * (a null here crashed the app, or left a view that never ended).
+         */
+        private val finished = java.util.concurrent.atomic.AtomicBoolean(false)
 
         /** Blink's stream server sometimes drops a new connection at once; the view is then asked for again, once, before giving up. */
         private suspend fun again(): BlinkLive.Immis? {
@@ -427,8 +433,6 @@ class BlinkService(
                 stream.join()
             }
         }
-
-        private val finished = java.util.concurrent.atomic.AtomicBoolean(false)
 
         private fun finish(reason: String) {
             if (!finished.compareAndSet(false, true)) return
