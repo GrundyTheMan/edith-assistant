@@ -87,7 +87,7 @@ const fileDefs = [
   { path: 'holder.3mf', size: 900_000, modified: now - 9 * day, title: 'Holder', kind: '3mf', printedBefore: false },
 ]
 const P = {
-  rev: 1, consoleSeq: 0, waiters: [], eventWaiters: [], armedUntil: 0, lastListing: 0, filesCache: null, answers: new Map(),
+  rev: 1, consoleSeq: 0, waiters: [], eventWaiters: [], armed: new Map(), lastListing: 0, filesCache: null, answers: new Map(),
   state: 'standby', filename: null, title: null, progress: 0, printStart: 0, pausedAt: 0, completeAt: 0, cancelAt: 0,
   homed: 'xyz', homeAt: 0, pos: [110, 110, 5], motors: true, light: 0, fans: { fanM106: 0 }, air: 'stop', camera: true,
   speed: 1, flow: 1, zOffset: 0, limits: { velocity: 300, accel: 3000, scv: 5, cruiseRatio: 0.5 }, retraction: { length: 0.8, speed: 35, extraLength: 0, unretractSpeed: 35 },
@@ -161,8 +161,9 @@ function check(c) {
 }
 const quickCommands = { pause: { kind: 'pause' }, resume: { kind: 'resume' }, cancel: { kind: 'cancel' }, estop: { kind: 'estop' }, 'home:xyz': { kind: 'home', axes: 'xyz' }, 'home:xy': { kind: 'home', axes: 'xy' }, 'home:z': { kind: 'home', axes: 'z' }, motorsOff: { kind: 'motorsOff' }, heatersOff: { kind: 'heatersOff' }, restart: { kind: 'restart' }, firmwareRestart: { kind: 'firmwareRestart' }, queueStart: { kind: 'queueStart' }, queuePause: { kind: 'queuePause' }, 'camera:on': { kind: 'camera', on: true }, 'camera:off': { kind: 'camera', on: false } }
 const quick = () => Object.fromEntries(Object.entries(quickCommands).map(([k, c]) => { const r = check(c); return [k, r.allowed ? { allowed: true } : { allowed: false, reason: r.reason }] }))
-const arm = () => (P.armedUntil > Date.now() ? { armed: true, until: P.armedUntil } : { armed: false })
-const stateAnswer = () => ({ rev: P.rev, epoch: EPOCH, state: printerState(), arm: arm(), quick: quick(), consoleSeq: P.consoleSeq, serverTime: Date.now() })
+// Controls are per phone (its token), as in Jarvis: another phone arming them does not arm this one.
+const armOf = (token) => ((P.armed.get(token) ?? 0) > Date.now() ? { armed: true, until: P.armed.get(token) } : { armed: false })
+const stateAnswer = (token) => ({ rev: P.rev, epoch: EPOCH, state: printerState(), arm: armOf(token), quick: quick(), consoleSeq: P.consoleSeq, serverTime: Date.now() })
 // What each command does to the pretend printer; returns the line Jarvis would say it sent.
 function apply(c) {
   consoleAdd(c.kind === 'gcode' ? c.script : c.kind, 'command')
@@ -219,7 +220,7 @@ setInterval(() => {
   if (P.cancelAt && t >= P.cancelAt) { P.cancelAt = 0; P.state = 'standby'; P.progress = 0; P.filename = null; P.title = null; P.nozzleTarget = 0; P.bedTarget = 0; meaningful = true }
   if (P.completeAt && t - P.completeAt >= 20_000) { P.completeAt = 0; pushEvent('finished', 'Print finished', `${P.title ?? 'The print'} is done.`) }
   if (P.homeAt && t >= P.homeAt) { P.homeAt = 0; meaningful = true }
-  if (P.armedUntil && t >= P.armedUntil) { P.armedUntil = 0; meaningful = true }
+  for (const [tok, until] of P.armed) if (t >= until) { P.armed.delete(tok); meaningful = true }
   for (const [id, v] of [['extruder', P.nozzle], ['heater_bed', P.bed], ['head', 25.5]]) { P.series[id].push(Math.round(v * 10) / 10); if (P.series[id].length > 1200) P.series[id].shift() }
   // Live readings alone are announced at most every 2 s, like Jarvis.
   if (meaningful || (t - lastBump >= 2000 && (printing() || Math.abs(P.nozzle - P.nozzleTarget) > 0.5 || Math.abs(P.bed - P.bedTarget) > 0.5))) { lastBump = t; bump() }
@@ -252,8 +253,8 @@ function printerRoute(req, res, path, url, body, token) {
   }
   if (method === 'GET' && route === 'state') {
     const after = q.get('after'); const epoch = q.get('epoch')
-    if (after === null || Number(after) !== P.rev || (epoch !== null && Number(epoch) !== EPOCH) || !(Number(q.get('wait')) > 0)) return send(res, 200, stateAnswer()), true
-    hold(P.waiters, q.get('wait'), stateAnswer); return true
+    if (after === null || Number(after) !== P.rev || (epoch !== null && Number(epoch) !== EPOCH) || !(Number(q.get('wait')) > 0)) return send(res, 200, stateAnswer(token)), true
+    hold(P.waiters, q.get('wait'), () => stateAnswer(token)); return true
   }
   if (method === 'GET' && route === 'temperatures') return send(res, 200, { series: [{ id: 'extruder', label: 'Nozzle', temperatures: P.series.extruder, targets: P.series.extruder.map(() => P.nozzleTarget) }, { id: 'heater_bed', label: 'Bed', temperatures: P.series.heater_bed, targets: P.series.heater_bed.map(() => P.bedTarget) }, { id: 'temperature_sensor head', label: 'Head', temperatures: P.series.head }] }), true
   if (method === 'GET' && route === 'macros') {
@@ -291,12 +292,13 @@ function printerRoute(req, res, path, url, body, token) {
   if (method === 'POST' && route === 'controls') {
     if (!PRINTER_CONTROL) return printerError(res, 403, 'CONTROL_OFF', 'Jarvis lets this phone look, not control.'), true
     const on = JSON.parse(body || '{}').on === true
-    P.armedUntil = on ? Date.now() + ARM_MINUTES * 60_000 : 0; bump()
-    return send(res, 200, { arm: arm() }), true
+    if (on) P.armed.set(token, Date.now() + ARM_MINUTES * 60_000); else P.armed.delete(token)
+    bump()
+    return send(res, 200, { arm: armOf(token) }), true
   }
   if (method === 'POST' && route === 'settings') {
     if (!PRINTER_CONTROL) return printerError(res, 403, 'CONTROL_OFF', 'Jarvis lets this phone look, not control.'), true
-    if (!arm().armed) return printerError(res, 409, 'CONTROLS_OFF', 'Turn on Controls first.'), true
+    if (!armOf(token).armed) return printerError(res, 409, 'CONTROLS_OFF', 'Turn on Controls first.'), true
     const b = JSON.parse(body || '{}')
     if (b.presets) presets.splice(0, presets.length, ...(b.presets.length ? b.presets : [{ name: 'PLA', extruder: 220, bed: 60 }]))
     if (b.hiddenMacros) hiddenMacros.splice(0, hiddenMacros.length, ...b.hiddenMacros.map((n) => String(n).toUpperCase()))
@@ -313,10 +315,10 @@ function printerRoute(req, res, path, url, body, token) {
     const checked = check(c)
     if (dry) return send(res, 200, checked), true
     const earlier = P.answers.get(b.requestId); if (earlier) return send(res, earlier.status, earlier.body), true
-    if (via === 'phone' && c.kind !== 'estop' && !arm().armed) return printerError(res, 409, 'CONTROLS_OFF', 'Turn on Controls first.'), true
+    if (via === 'phone' && c.kind !== 'estop' && !armOf(token).armed) return printerError(res, 409, 'CONTROLS_OFF', 'Turn on Controls first.'), true
     if (!checked.allowed) return printerError(res, 422, 'REFUSED', checked.reason), true
     if ((checked.risk === 'confirm' || checked.risk === 'danger') && b.confirmed !== true) return printerError(res, 409, 'CONFIRM_REQUIRED', 'Ask the owner to confirm this first.', { check: checked }), true
-    if (P.armedUntil) P.armedUntil = Date.now() + ARM_MINUTES * 60_000
+    if (armOf(token).armed) P.armed.set(token, Date.now() + ARM_MINUTES * 60_000)   // each accepted command restarts the timer
     const sent = apply(c); bump()
     const answer = { sent, risk: checked.risk }; P.answers.set(b.requestId, { status: 200, body: answer })
     return send(res, 200, answer), true
@@ -328,7 +330,7 @@ function printerRoute(req, res, path, url, body, token) {
   }
   if (method === 'POST' && route === 'files/upload') {
     if (!PRINTER_CONTROL) return printerError(res, 403, 'CONTROL_OFF', 'Jarvis lets this phone look, not control.'), true
-    if (!arm().armed) return printerError(res, 409, 'CONTROLS_OFF', 'Turn on Controls first.'), true
+    if (!armOf(token).armed) return printerError(res, 409, 'CONTROLS_OFF', 'Turn on Controls first.'), true
     const name = q.get('name') ?? ''
     if (!/^[A-Za-z0-9 _.()+-]{1,100}\.(gcode|3mf)$/.test(name)) return printerError(res, 400, 'BAD_REQUEST', 'That file name isn’t allowed.'), true
     if (body.length > 64 * 1024 * 1024) return printerError(res, 413, 'TOO_LARGE', 'That file is over 64 MB.'), true

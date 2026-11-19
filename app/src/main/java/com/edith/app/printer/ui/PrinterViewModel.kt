@@ -48,6 +48,9 @@ internal data class PrinterUi(
         else -> null
     }
 
+    /** The server's answer, for each parameterless command, to whether it can be sent now (`pause`, `home:xyz`, ...). */
+    val quick get() = (screen as? PrinterScreenState.Live)?.data?.quick.orEmpty()
+
     /** The page's cards are drawn: a state is available and a printer is set up. */
     val showsCards: Boolean get() = state?.let { it.connection != Connections.NONE } == true
 
@@ -134,6 +137,12 @@ internal data class PrinterActions(
     val openFile: (String) -> Unit = {},
     val closeFile: () -> Unit = {},
     val chooseCamera: (String) -> Unit = {},
+    // Stage 2: Controls and commands (the server decides; see PrinterControl).
+    val setControls: (Boolean) -> Unit = {},
+    val send: (com.edith.app.printer.feed.PrinterCommand) -> Unit = {},
+    val confirm: () -> Unit = {},
+    val dismissSheet: () -> Unit = {},
+    val messageShown: () -> Unit = {},
 )
 
 /**
@@ -150,6 +159,10 @@ internal class PrinterViewModel(
     /** What the cards read beyond the live state: the chart, history, files, console and camera (lazy, see [PrinterCardData]). */
     val data = PrinterCardData(session, prefs, viewModelScope)
     val cards: StateFlow<CardsUi> = data.ui
+
+    /** Controls, the confirm sheet and pending buttons (stage 2). */
+    val control = PrinterControl(session, clock, viewModelScope)
+    val controls: StateFlow<ControlUi> = control.ui
 
     private val local = MutableStateFlow(Local(clock.now().toEpochMilli()))
     private var ticking: Job? = null
@@ -177,6 +190,7 @@ internal class PrinterViewModel(
         ticking?.cancel()
         ticking = null
         data.detached()
+        control.detached()
         session.detach()
     }
 
