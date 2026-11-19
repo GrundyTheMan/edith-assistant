@@ -57,6 +57,34 @@ internal object PrinterInput {
         return PrinterCommand.Gcode(t)
     }
 
+    /** One preset as typed: its name and the two temperatures. */
+    data class PresetRow(val name: String, val nozzle: String, val bed: String)
+
+    const val MAX_PRESETS = 10
+    private const val MAX_PRESET_NAME = 30
+    private const val MAX_NOZZLE = 300.0
+    private const val MAX_BED = 120.0
+
+    /** Why these presets cannot be saved, in plain words (Jarvis's own rules: at most 10, a name of up to 30 characters, no two alike, 0 to 300 and 0 to 120 °C), or null. */
+    fun presetsProblem(rows: List<PresetRow>): String? {
+        if (rows.size > MAX_PRESETS) return "At most $MAX_PRESETS presets."
+        val seen = HashSet<String>()
+        for (r in rows) {
+            val name = r.name.trim()
+            if (name.isEmpty()) return "Every preset needs a name."
+            if (name.length > MAX_PRESET_NAME) return "A preset's name is at most $MAX_PRESET_NAME characters."
+            if (!seen.add(name.lowercase())) return "There are two presets called $name."
+            if (between(r.nozzle, 0.0, MAX_NOZZLE) == null) return "The nozzle temperature of $name must be from 0 to ${MAX_NOZZLE.toInt()} °C."
+            if (between(r.bed, 0.0, MAX_BED) == null) return "The bed temperature of $name must be from 0 to ${MAX_BED.toInt()} °C."
+        }
+        return null
+    }
+
+    /** The presets to send (whole degrees), or null when [presetsProblem] says no. An empty list is allowed: Jarvis then uses its defaults. */
+    fun presets(rows: List<PresetRow>): List<Preset>? =
+        if (presetsProblem(rows) != null) null
+        else rows.map { Preset(it.name.trim(), Math.round(number(it.nozzle)!!).toInt(), Math.round(number(it.bed)!!).toInt()) }
+
     /** A percentage the slider gives (whole numbers only; the server's range is enforced there). */
     fun percent(value: Float): Double = Math.round(value).toDouble()
 

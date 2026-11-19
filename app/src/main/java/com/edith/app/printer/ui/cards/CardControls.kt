@@ -115,7 +115,12 @@ private fun ReleaseSlider(value: Float, range: ClosedFloatingPointRange<Float>, 
 /** A target for each heater (Set, Off), the presets from Jarvis, and All off. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun TemperatureControls(state: PrinterState, presets: List<Preset>, ctx: ControlsCtx) {
+internal fun TemperatureControls(
+    state: PrinterState, presets: List<Preset>, ctx: ControlsCtx,
+    editor: com.edith.app.printer.ui.PresetsUi = com.edith.app.printer.ui.PresetsUi(), onSavePresets: (List<Preset>) -> Unit = {}, onClearError: () -> Unit = {},
+) {
+    var editing by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(editor.saved) { if (editor.saved > 0) editing = false }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.testTag("temperature-controls")) {
         state.heaters.forEach { h ->
             var text by remember(h.id) { mutableStateOf("") }
@@ -131,8 +136,10 @@ internal fun TemperatureControls(state: PrinterState, presets: List<Preset>, ctx
         }
         Refusal(ctx, *presets.map { "preset:${it.name}" }.toTypedArray())
         CmdButton("All off", PrinterCommand.HeatersOff, ctx, quickKey = "heatersOff")
+        OutlinedButton(onClick = { onClearError(); editing = true }, modifier = Modifier.testTag("edit-presets")) { Text("Edit presets") }
         WhyOff(ctx)
     }
+    if (editing) PresetsDialog(presets, ctx, editor, onSave = onSavePresets, onClose = { editing = false; onClearError() })
 }
 
 // --- Toolhead --------------------------------------------------------------------------------------------------------

@@ -148,6 +148,8 @@ internal data class PrinterActions(
     val setMacroQuery: (String) -> Unit = {},
     val setHiddenMacros: (List<String>) -> Unit = {},
     val rememberConsoleLine: (String) -> Unit = {},
+    val savePresets: (List<com.edith.app.printer.feed.Preset>) -> Unit = {},
+    val clearPresetsError: () -> Unit = {},
 )
 
 /**

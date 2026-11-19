@@ -66,6 +66,9 @@ internal class PrinterSession(
         job = scope.launch { run() }
     }
 
+    /** Jarvis saved new presets (the editor): the page shows them at once; the next visit reads them from Jarvis again. */
+    fun updatePresets(presets: List<Preset>) { _shared.value = _shared.value?.copy(presets = presets) }
+
     /** The page left: stop asking, and turn Controls off if they are on (best effort; Jarvis also ends them on its own timer). */
     @Synchronized fun detach() {
         job?.cancel()
