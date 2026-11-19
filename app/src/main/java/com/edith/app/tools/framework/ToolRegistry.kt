@@ -15,7 +15,7 @@ class ToolRegistry(private val tools: List<Tool>, private val integrations: List
     fun available(model: ModelInfo): List<Tool> {
         if (!model.canUseTools) return emptyList()
         val connected = integrations.filter { it.status.value == IntegrationStatus.Connected }.map { it.id }.toSet()
-        return tools.filter { it.integrationId == null || it.integrationId in connected }
+        return tools.filter { it.offered() && (it.integrationId == null || it.integrationId in connected) }
     }
 
     /**

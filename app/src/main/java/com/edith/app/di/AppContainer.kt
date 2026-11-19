@@ -174,6 +174,8 @@ class AppContainer(val app: Application) {
                 *taskTools(accounts, taskHandles, taskRanker, clock) { settingsRepository.current() }.toTypedArray(),
                 // C25: the smart home (D10, D19)
                 *homeTools(home).toTypedArray(),
+                // C39: the printer through Jarvis, from anywhere: offered only while Jarvis lets this phone control it (D26)
+                com.edith.app.home.PrinterControlTool(printerFeed) { accounts.jarvisConnection()?.printerInfo?.control == true },
             ),
             integrations = listOf(accounts, home),   // C22: offered while at least one account is connected; C25: one home service
         )
