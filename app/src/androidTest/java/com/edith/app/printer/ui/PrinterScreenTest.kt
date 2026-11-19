@@ -1,5 +1,6 @@
 package com.edith.app.printer.ui
 
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -10,6 +11,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.edith.app.printer.PrinterCards
@@ -508,6 +510,73 @@ class PrinterScreenTest {
         compose.setContent { EdithTheme { PrinterContent(richUi(), true, PrinterActions(), CardsUi(), control(may = false)) } }
         scrollTo("console-card")
         compose.onNodeWithTag("console-input").assertDoesNotExist()
+    }
+
+    // --- Stage 2 (E10b): the temperature presets editor ----------------------------------------------------------------
+
+    private fun presetsContent(c: ControlUi, saved: MutableList<List<com.edith.app.printer.feed.Preset>>, editor: PresetsUi = PresetsUi()) =
+        compose.setContent { EdithTheme { PrinterContent(richUi(), true, PrinterActions(savePresets = { saved += it }), CardsUi(presets = editor), c) } }
+    private fun openPresets() { scrollTo("temperature-controls"); compose.onNodeWithTag("edit-presets").performScrollTo().performClick() }
+
+    @Test fun theEditorOpensWithJarvisPresets() {
+        presetsContent(control(armed = true), mutableListOf())
+        openPresets()
+        compose.onNodeWithTag("presets-dialog").assertIsDisplayed()
+        compose.onNodeWithTag("preset-name-0").assert(androidx.compose.ui.test.hasText("PLA"))
+        compose.onNodeWithTag("preset-nozzle-0").assert(androidx.compose.ui.test.hasText("220"))
+        compose.onNodeWithTag("preset-bed-0").assert(androidx.compose.ui.test.hasText("60"))
+    }
+
+    @Test fun editingAndSavingSendsTheList() {
+        val saved = mutableListOf<List<com.edith.app.printer.feed.Preset>>()
+        presetsContent(control(armed = true), saved)
+        openPresets()
+        compose.onNodeWithTag("preset-nozzle-0").performTextClearance()
+        compose.onNodeWithTag("preset-nozzle-0").performTextInput("215")
+        compose.onNodeWithTag("preset-add").performClick()
+        compose.onNodeWithTag("preset-name-1").performTextInput("ASA")
+        compose.onNodeWithTag("preset-nozzle-1").performTextInput("260")
+        compose.onNodeWithTag("preset-bed-1").performTextInput("100")
+        compose.onNodeWithTag("presets-save").assertIsEnabled().performClick()
+        assertEquals(listOf(listOf(com.edith.app.printer.feed.Preset("PLA", 215, 60), com.edith.app.printer.feed.Preset("ASA", 260, 100))), saved)
+    }
+
+    @Test fun aWrongTemperatureSaysWhyAndSaveIsOff() {
+        presetsContent(control(armed = true), mutableListOf())
+        openPresets()
+        compose.onNodeWithTag("preset-nozzle-0").performTextClearance()
+        compose.onNodeWithTag("preset-nozzle-0").performTextInput("999")
+        compose.onNodeWithTag("presets-save").assertIsNotEnabled()
+        compose.onNodeWithText("The nozzle temperature of PLA must be from 0 to 300 °C.").assertIsDisplayed()
+    }
+
+    @Test fun aPresetCanBeRemovedAndNoneIsAllowed() {
+        val saved = mutableListOf<List<com.edith.app.printer.feed.Preset>>()
+        presetsContent(control(armed = true), saved)
+        openPresets()
+        compose.onNodeWithTag("preset-remove-0").performClick()
+        compose.onNodeWithText("With none, Jarvis uses its own presets.").assertIsDisplayed()
+        compose.onNodeWithTag("presets-save").assertIsEnabled().performClick()
+        assertEquals(listOf(emptyList<com.edith.app.printer.feed.Preset>()), saved)
+    }
+
+    @Test fun withControlsOffSavingIsOffAndSaysWhy() {
+        presetsContent(control(armed = false), mutableListOf())
+        openPresets()
+        compose.onNodeWithTag("presets-save").assertIsNotEnabled()
+        compose.onNodeWithTag("presets-problem").assert(androidx.compose.ui.test.hasText("Turn on Controls to use this"))
+    }
+
+    @Test fun jarvisRefusalIsShownInTheEditor() {
+        presetsContent(control(armed = true), mutableListOf(), PresetsUi(error = "Controls turned off. Turn them on to continue."))
+        openPresets()
+        compose.onNodeWithText("Controls turned off. Turn them on to continue.").assertIsDisplayed()
+    }
+
+    @Test fun aLookOnlyPhoneCannotEditPresets() {
+        compose.setContent { EdithTheme { PrinterContent(richUi(), true, PrinterActions(), CardsUi(), control(may = false)) } }
+        scrollTo("temperature-card")
+        compose.onNodeWithTag("edit-presets").assertDoesNotExist()
     }
 
     @Test fun noEmergencyStopWhileJarvisCannotReachThePrinter() {

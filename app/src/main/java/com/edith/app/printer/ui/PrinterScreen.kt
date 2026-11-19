@@ -77,7 +77,7 @@ internal fun PrinterScreen(onBack: () -> Unit, onOpenPairing: () -> Unit, vm: Pr
             cardVisible = vm.data::visible, toggleSeries = vm.data::toggleSeries, moreHistory = vm.data::moreHistory, setHideValues = vm.data::setHideValues,
             clearConsole = vm.data::clearConsole, loadFiles = vm.data::loadFiles, setFileQuery = vm.data::setFileQuery, setPrintedOnly = vm.data::setPrintedOnly,
             openFile = vm.data::openFile, closeFile = vm.data::closeFile, chooseCamera = vm.data::chooseCamera,
-            setMacroQuery = vm.data::setMacroQuery, setHiddenMacros = vm.data::setHiddenMacros, rememberConsoleLine = vm.data::rememberConsoleLine,
+            setMacroQuery = vm.data::setMacroQuery, setHiddenMacros = vm.data::setHiddenMacros, rememberConsoleLine = vm.data::rememberConsoleLine, savePresets = vm.data::savePresets, clearPresetsError = vm.data::clearPresetsError,
             setControls = vm.control::setControls, send = vm.control::send, confirm = vm.control::confirm, dismissSheet = vm.control::dismissSheet, messageShown = vm.control::messageShown,
         ),
         cards, controls,
@@ -186,7 +186,7 @@ private fun Cards(ui: PrinterUi, is24Hour: Boolean, a: PrinterActions, data: Car
                 when (id) {
                     PrinterCards.STATUS -> StatusCard(ui, state, is24Hour, a.dismissAlert, controls, a.send)
                     PrinterCards.CAMERA -> CameraCard(state, data.camera, a.chooseCamera, ctx)
-                    PrinterCards.TEMPERATURES -> TemperatureCard(state, data.chart, data.chartHidden, a.toggleSeries, ctx)
+                    PrinterCards.TEMPERATURES -> TemperatureCard(state, data.chart, data.chartHidden, a.toggleSeries, ctx, data.presets, a.savePresets, a.clearPresetsError)
                     PrinterCards.TOOLHEAD -> ToolheadCard(state, ctx)
                     PrinterCards.FANS -> FansCard(state, ctx)
                     PrinterCards.LIMITS -> LimitsCard(state, ctx = ctx)

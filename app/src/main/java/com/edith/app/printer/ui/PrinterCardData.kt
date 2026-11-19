@@ -57,6 +57,9 @@ internal data class MacrosUi(val answer: com.edith.app.printer.feed.MacrosAnswer
 /** The camera picture: [frame] is the newest JPEG or PNG; [number] changes with each picture so the page redraws even for equal bytes. */
 internal class CameraUi(val cameraId: String? = null, val frame: ByteArray? = null, val number: Int = 0, val offline: Boolean = false)
 
+/** The presets editor: saving, Jarvis's refusal in its words, and a count that goes up when a save worked (the dialog closes on it). */
+internal data class PresetsUi(val saving: Boolean = false, val error: String? = null, val saved: Int = 0)
+
 internal data class CardsUi(
     val chart: List<ChartLine> = emptyList(),
     val chartHidden: Set<String> = emptySet(),
@@ -65,6 +68,7 @@ internal data class CardsUi(
     val console: ConsoleUi = ConsoleUi(),
     val camera: CameraUi = CameraUi(),
     val macros: MacrosUi = MacrosUi(),
+    val presets: PresetsUi = PresetsUi(),
 )
 
 /**
@@ -222,6 +226,26 @@ internal class PrinterCardData(
 
     /** A console line the owner sent is kept for the up arrow. */
     fun rememberConsoleLine(line: String) { scope.launch { prefs.pushConsoleHistory(line) } }
+
+    // --- Presets -------------------------------------------------------------------------------------------------------
+
+    /** Saves the temperature presets in Jarvis (it needs Controls on and checks them again); the page then shows what Jarvis kept. */
+    fun savePresets(presets: List<com.edith.app.printer.feed.Preset>) {
+        val routes = session.routes() ?: return
+        if (_ui.value.presets.saving) return
+        _ui.update { it.copy(presets = it.presets.copy(saving = true, error = null)) }
+        scope.launch {
+            when (val r = routes.settings(presets, null)) {
+                is FeedResult.Ok -> {
+                    session.updatePresets(r.value.presets)
+                    _ui.update { it.copy(presets = PresetsUi(saving = false, error = null, saved = it.presets.saved + 1)) }
+                }
+                else -> _ui.update { it.copy(presets = it.presets.copy(saving = false, error = PrinterWords.forFailure(r))) }
+            }
+        }
+    }
+
+    fun clearPresetsError() = _ui.update { it.copy(presets = it.presets.copy(error = null)) }
 
     // --- Console ---------------------------------------------------------------------------------------------------------
 
