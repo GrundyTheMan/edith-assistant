@@ -204,6 +204,8 @@ class BlinkServiceTest {
         val second = withTimeout(5_000) { feed.video.receive() }
         assertEquals(listOf(listOf(0x47, 1), listOf(0x47, 2)), listOf(first, second).map { c -> c.map { it.toInt() } })
         assertEquals(1, blink.requests.count { it.method == "POST" && it.url.encodedPath == "/rest/api/v6/accounts/4242/networks/5/cameras/1/liveview" })
+        // The server reads the handshake on its own thread: the video can arrive before those bytes are recorded.
+        withTimeout(5_000) { while (got.size() < 24) delay(20) }
         assertTrue("the handshake names the camera", String(got.toByteArray().copyOfRange(8, 24)).startsWith("SN1"))
         assertNull(feed.ended.value)
         feed.stop()

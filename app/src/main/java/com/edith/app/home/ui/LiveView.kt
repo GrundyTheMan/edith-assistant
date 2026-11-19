@@ -110,7 +110,13 @@ data class LiveUi(
 private val DIALOG_PICTURE_HEIGHT = 220.dp
 
 /** How long a picture may take to appear before the player is retried or the viewer is told. */
-private const val PICTURE_WAIT_MS = 10_000L
+private const val PICTURE_WAIT_MS = 6_000L
+
+/** How long Blink may take to send the first video (a sleeping camera wakes first) before the viewer is told it is waiting. */
+private const val CAMERA_WAIT_MS = 10_000L
+
+/** Set once a view needed the software decoder, so later views in this run start on it instead of failing first. */
+@Volatile private var preferSoftware = false
 
 /** Live video from one camera. Closing the dialog stops the stream, so the camera and the phone's radio aren't left running. */
 @Composable
@@ -152,7 +158,8 @@ fun LiveDialog(live: LiveUi, onClose: () -> Unit) {
 internal fun LivePlayer(feed: StreamLiveFeed, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val failure = remember(feed) { mutableStateOf<String?>(null) }
-    val software = remember(feed) { mutableStateOf(false) }
+    val software = remember(feed) { mutableStateOf(preferSoftware) }
+    val opened = remember(feed) { System.nanoTime() }
     val received = remember(feed) { java.util.concurrent.atomic.AtomicLong() }
     val rendered = remember(feed) { mutableStateOf(false) }
     val note = remember(feed) { mutableStateOf<String?>(null) }
@@ -168,10 +175,14 @@ internal fun LivePlayer(feed: StreamLiveFeed, modifier: Modifier = Modifier) {
         ExoPlayer.Builder(context, factory).setLoadControl(load).setMediaSourceFactory(source).build().apply {
             setMediaItem(MediaItem.fromUri("feed://live"))
             addListener(object : Player.Listener {
-                override fun onRenderedFirstFrame() { rendered.value = true; note.value = null }
+                override fun onRenderedFirstFrame() {
+                    if (!rendered.value) Log.i(LogTag.Home, "Live view picture appeared ${(System.nanoTime() - opened) / 1_000_000_000} s after the player opened (${received.get() / 1024} KB received, ${if (software.value) "software" else "hardware"} decoder)")
+                    rendered.value = true; note.value = null
+                }
                 override fun onPlayerError(error: PlaybackException) {
                     if (!software.value && error.errorCode in DECODER_ERRORS) {
                         Log.w(LogTag.Home, "A live view's decoder failed (${error.errorCodeName}); trying a software decoder")
+                        preferSoftware = true
                         software.value = true
                     } else {
                         Log.w(LogTag.Home, "A live view couldn't be played (${error.errorCodeName})")
@@ -186,15 +197,24 @@ internal fun LivePlayer(feed: StreamLiveFeed, modifier: Modifier = Modifier) {
     DisposableEffect(player) { onDispose { player.release() } }
     // A decoder can swallow its own failure and leave a black picture with no error: try the software decoder once, then say what is happening.
     LaunchedEffect(player) {
+        // The picture clock starts when video starts to arrive: a sleeping camera can take 10 s to wake, and that is not the decoder's fault.
+        var waited = 0L
+        while (received.get() == 0L) {
+            kotlinx.coroutines.delay(200)
+            waited += 200
+            if (waited >= CAMERA_WAIT_MS && !rendered.value) note.value = "Waiting for the camera to send video…"
+        }
+        if (!rendered.value && note.value?.startsWith("Waiting") == true) note.value = null
         kotlinx.coroutines.delay(PICTURE_WAIT_MS)
         if (rendered.value) return@LaunchedEffect
         val kb = received.get() / 1024
-        if (kb > 0 && !software.value) {
-            Log.w(LogTag.Home, "A live view has no picture after ${PICTURE_WAIT_MS / 1000} s with $kb KB received; trying a software decoder")
+        if (!software.value) {
+            Log.w(LogTag.Home, "A live view has no picture ${PICTURE_WAIT_MS / 1000} s after video began ($kb KB received); trying a software decoder")
+            preferSoftware = true
             software.value = true
         } else {
-            Log.w(LogTag.Home, "A live view still has no picture after ${PICTURE_WAIT_MS / 1000} s ($kb KB received, ${if (software.value) "software" else "hardware"} decoder, player state ${player.playbackState})")
-            note.value = if (kb == 0L) "Waiting for the camera to send video…" else "No picture yet. Video is arriving (${kb / 1024} MB), but this phone has not shown it. It may need a few more seconds; if not, Close and try again."
+            Log.w(LogTag.Home, "A live view still has no picture ($kb KB received, software decoder, player state ${player.playbackState})")
+            note.value = "No picture yet. Video is arriving (${kb / 1024} MB), but this phone has not shown it. It may need a few more seconds; if not, Close and try again."
         }
     }
     failure.value?.let { Text(it); return }
