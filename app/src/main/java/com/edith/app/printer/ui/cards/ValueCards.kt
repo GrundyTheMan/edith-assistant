@@ -46,7 +46,7 @@ internal fun LabelValue(label: String, value: String, modifier: Modifier = Modif
 
 /** Toolhead (stage 1: where it is, and which axes are homed; the controls come in stage 2). */
 @Composable
-internal fun ToolheadCard(state: PrinterState) {
+internal fun ToolheadCard(state: PrinterState, ctx: ControlsCtx? = null) {
     val t = state.toolhead
     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.testTag("toolhead-card")) {
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -63,24 +63,26 @@ internal fun ToolheadCard(state: PrinterState) {
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (!t.motorsOn) Text("Motors are off", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (ctx?.mayControl == true) ToolheadControls(state, ctx)
     }
 }
 
 /** Fans and light (stage 1: values). A fan the printer runs by itself says "automatic". */
 @Composable
-internal fun FansCard(state: PrinterState) {
+internal fun FansCard(state: PrinterState, ctx: ControlsCtx? = null) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.testTag("fans-card")) {
         state.fans.forEach { f ->
             LabelValue(f.label, PrinterFormat.percent(f.speed) + if (f.settable) "" else " · automatic")
         }
         LabelValue("Light", state.light?.let { if (it <= 0.0) "Off" else PrinterFormat.percent(it) } ?: "No light")
         if (state.fans.isEmpty() && state.light == null) Text("This printer reports no fans.", style = MaterialTheme.typography.bodySmall)
+        if (ctx?.mayControl == true) FanControls(state, ctx)
     }
 }
 
 /** Limits and retraction (stage 1: values). */
 @Composable
-internal fun LimitsCard(state: PrinterState, locale: Locale = Locale.getDefault()) {
+internal fun LimitsCard(state: PrinterState, locale: Locale = Locale.getDefault(), ctx: ControlsCtx? = null) {
     val t = state.toolhead
     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.testTag("limits-card")) {
         LabelValue("Speed", PrinterFormat.factor(t.speedFactor))
@@ -96,12 +98,13 @@ internal fun LimitsCard(state: PrinterState, locale: Locale = Locale.getDefault(
             LabelValue("Extra length", "${PrinterFormat.position(r.extraLength, locale)} mm")
             LabelValue("Unretract speed", "${PrinterFormat.position(r.unretractSpeed, locale)} mm/s")
         }
+        if (ctx?.mayControl == true) LimitControls(state, ctx)
     }
 }
 
 /** Sensors: the printer's temperature sensors, and its filament sensors. A reading that is not a temperature is left out. */
 @Composable
-internal fun SensorsCard(state: PrinterState) {
+internal fun SensorsCard(state: PrinterState, ctx: ControlsCtx? = null) {
     val temps = state.sensors.filter { it.unit.isNotEmpty() }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.testTag("sensors-card")) {
         temps.forEach { LabelValue(it.label, PrinterFormat.temperature(it.value)) }
@@ -109,6 +112,7 @@ internal fun SensorsCard(state: PrinterState) {
             LabelValue(f.label, (if (f.detected) "Filament detected" else "No filament") + " · " + (if (f.enabled) "enabled" else "disabled"))
         }
         if (temps.isEmpty() && state.filamentSensors.isEmpty()) Text("This printer reports no sensors.", style = MaterialTheme.typography.bodySmall)
+        if (ctx?.mayControl == true) SensorControls(state, ctx)
     }
 }
 
@@ -132,19 +136,20 @@ private fun swatch(s: FilamentSlot): Color = runCatching { Color(("#" + s.hex.tr
 
 /** System: what Jarvis says about the connection, the software versions and the printer's own computer. */
 @Composable
-internal fun SystemCard(state: PrinterState) {
+internal fun SystemCard(state: PrinterState, ctx: ControlsCtx? = null) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.testTag("system-card")) {
         state.message?.takeIf { it.isNotBlank() && state.connection != Connections.READY }?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
         state.hostname?.let { LabelValue("Host name", it) }
         state.versions?.moonraker?.let { LabelValue("Moonraker", it) }
         state.versions?.mcu?.let { LabelValue("MCU", it) }
         state.host?.let { LabelValue("Load", String.format(androidx.compose.ui.platform.LocalConfiguration.current.locales[0], "%.2f", it.load)); LabelValue("Memory free", "${(it.memAvailableKb / 1024).toLong()} MB") }
+        if (ctx?.mayControl == true) SystemControls(ctx)
     }
 }
 
 /** Queue: the printer's list of waiting jobs. */
 @Composable
-internal fun QueueCard(state: PrinterState, nowMs: Long, zone: java.time.ZoneId) {
+internal fun QueueCard(state: PrinterState, nowMs: Long, zone: java.time.ZoneId, ctx: ControlsCtx? = null) {
     val q = state.queue ?: return
     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.testTag("queue-card")) {
         Text(
@@ -158,12 +163,13 @@ internal fun QueueCard(state: PrinterState, nowMs: Long, zone: java.time.ZoneId)
         if (q.jobs.isEmpty()) Text("No jobs are waiting.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         q.jobs.forEach { j -> LabelValue(j.title.ifBlank { j.filename }, PrinterFormat.age(j.added, nowMs, zone)) }
         Text("Starting prints from here needs the printer in Local Only mode.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (ctx?.mayControl == true) QueueControls(state, ctx)
     }
 }
 
 /** Objects: the parts of this print on a drawing of the bed (the one being printed in the accent colour, excluded ones crossed out). */
 @Composable
-internal fun ObjectsCard(state: PrinterState) {
+internal fun ObjectsCard(state: PrinterState, ctx: ControlsCtx? = null) {
     val maxX = state.toolhead.max.getOrElse(0) { 0.0 }.takeIf { it > 0 } ?: 220.0
     val maxY = state.toolhead.max.getOrElse(1) { 0.0 }.takeIf { it > 0 } ?: 220.0
     val accent = MaterialTheme.colorScheme.primary
@@ -191,6 +197,7 @@ internal fun ObjectsCard(state: PrinterState) {
         state.objects.forEach { o ->
             LabelValue(o.name, objectNote(o))
         }
+        if (ctx?.mayControl == true) ObjectControls(state, ctx)
     }
 }
 

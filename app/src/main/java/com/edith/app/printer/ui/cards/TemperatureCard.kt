@@ -39,7 +39,7 @@ import com.edith.app.printer.feed.PrinterState
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun TemperatureCard(state: PrinterState, lines: List<ChartLine>, hidden: Set<String>, onToggleLine: (String) -> Unit) {
+internal fun TemperatureCard(state: PrinterState, lines: List<ChartLine>, hidden: Set<String>, onToggleLine: (String) -> Unit, ctx: ControlsCtx? = null) {
     val colors = lineColors()
     Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.testTag("temperature-card")) {
         state.heaters.forEach { h ->
@@ -66,6 +66,7 @@ internal fun TemperatureCard(state: PrinterState, lines: List<ChartLine>, hidden
         } else {
             Text("The chart fills in as the printer reports.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        if (ctx?.mayControl == true) TemperatureControls(state, ctx.ui.presets, ctx)
     }
 }
 

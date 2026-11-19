@@ -71,7 +71,7 @@ private fun rememberDecoded(key: Any?, bytes: () -> ByteArray?): ImageBitmap? {
 /** Camera: a picture about once a second while this card is open. The rotation, flips and shape are the camera's own. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun CameraCard(state: PrinterState, camera: CameraUi, onChoose: (String) -> Unit) {
+internal fun CameraCard(state: PrinterState, camera: CameraUi, onChoose: (String) -> Unit, ctx: ControlsCtx? = null) {
     val cameras = state.cameras
     val chosen: PrinterCamera? = cameras.firstOrNull { it.id == camera.cameraId } ?: cameras.firstOrNull()
     val picture = rememberDecoded(camera.number) { camera.frame }
@@ -104,6 +104,7 @@ internal fun CameraCard(state: PrinterState, camera: CameraUi, onChoose: (String
                         picture == null -> Text("Connecting…", Modifier.testTag("camera-connecting"))
                     }
                 }
+                if (camera.offline && ctx?.mayControl == true) CameraControls(ctx)
             }
         }
     }

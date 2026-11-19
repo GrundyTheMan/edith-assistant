@@ -41,7 +41,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.edith.app.printer.PrinterCards
 import com.edith.app.printer.feed.PrinterScreenState
+import com.edith.app.printer.feed.Connections
 import com.edith.app.printer.ui.cards.CameraCard
+import com.edith.app.printer.ui.cards.ControlsCtx
+import com.edith.app.printer.ui.cards.FirmwareRestartButton
 import com.edith.app.printer.ui.cards.ConsoleCard
 import com.edith.app.printer.ui.cards.FansCard
 import com.edith.app.printer.ui.cards.FilesCard
@@ -158,6 +161,7 @@ private fun FullMessage(message: String, ui: PrinterUi, a: PrinterActions) {
 @Composable
 private fun Cards(ui: PrinterUi, is24Hour: Boolean, a: PrinterActions, data: CardsUi, controls: ControlUi) {
     val state = checkNotNull(ui.state)
+    val ctx = ControlsCtx(ui, controls, a.send)
     LazyColumn(
         Modifier.fillMaxSize().alpha(if (ui.greyed) 0.6f else 1f).then(if (controls.armed) Modifier.border(3.dp, MaterialTheme.colorScheme.primary) else Modifier).testTag("printer-list"),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
@@ -169,6 +173,8 @@ private fun Cards(ui: PrinterUi, is24Hour: Boolean, a: PrinterActions, data: Car
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(banner, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.weight(1f))
                         if (ui.screen is PrinterScreenState.JarvisAway) TextButton(onClick = a.tryAgain) { Text("Try again") }
+                        // When Klipper has stopped, the way out is a firmware restart (Controls may be switched on in that state).
+                        if (ctx.mayControl && (state.connection == Connections.KLIPPY_SHUTDOWN || state.connection == Connections.KLIPPY_ERROR)) FirmwareRestartButton(ctx)
                     }
                 }
             }
@@ -177,20 +183,20 @@ private fun Cards(ui: PrinterUi, is24Hour: Boolean, a: PrinterActions, data: Car
             CardFrame(title(id), id !in ui.collapsed, onToggle = { a.toggleCard(id) }, id = id, onVisible = a.cardVisible) {
                 when (id) {
                     PrinterCards.STATUS -> StatusCard(ui, state, is24Hour, a.dismissAlert, controls, a.send)
-                    PrinterCards.CAMERA -> CameraCard(state, data.camera, a.chooseCamera)
-                    PrinterCards.TEMPERATURES -> TemperatureCard(state, data.chart, data.chartHidden, a.toggleSeries)
-                    PrinterCards.TOOLHEAD -> ToolheadCard(state)
-                    PrinterCards.FANS -> FansCard(state)
-                    PrinterCards.LIMITS -> LimitsCard(state)
-                    PrinterCards.SENSORS -> SensorsCard(state)
+                    PrinterCards.CAMERA -> CameraCard(state, data.camera, a.chooseCamera, ctx)
+                    PrinterCards.TEMPERATURES -> TemperatureCard(state, data.chart, data.chartHidden, a.toggleSeries, ctx)
+                    PrinterCards.TOOLHEAD -> ToolheadCard(state, ctx)
+                    PrinterCards.FANS -> FansCard(state, ctx)
+                    PrinterCards.LIMITS -> LimitsCard(state, ctx = ctx)
+                    PrinterCards.SENSORS -> SensorsCard(state, ctx)
                     PrinterCards.SLOTS -> SlotsCard(state)
                     PrinterCards.FILES -> FilesCard(state, data.files, ui.now, ui.zone, a.loadFiles, a.setFileQuery, a.setPrintedOnly, a.openFile, a.closeFile)
-                    PrinterCards.OBJECTS -> ObjectsCard(state)
-                    PrinterCards.QUEUE -> QueueCard(state, ui.now, ui.zone)
+                    PrinterCards.OBJECTS -> ObjectsCard(state, ctx)
+                    PrinterCards.QUEUE -> QueueCard(state, ui.now, ui.zone, ctx)
                     PrinterCards.HISTORY -> HistoryCard(data.history, ui.now, ui.zone, a.moreHistory)
                     PrinterCards.CONSOLE -> ConsoleCard(data.console, a.setHideValues, a.clearConsole)
                     PrinterCards.MESH -> state.mesh?.let { MeshCard(it) }
-                    PrinterCards.SYSTEM -> SystemCard(state)
+                    PrinterCards.SYSTEM -> SystemCard(state, ctx)
                     else -> Unit
                 }
             }
