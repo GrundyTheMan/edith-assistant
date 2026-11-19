@@ -192,7 +192,7 @@ class BlinkServiceTest {
         return server to got
     }
 
-    private fun liveService(limitMs: Long = 60_000) = BlinkService(secrets, blink.api(), clock, { Socket(it.host, it.port) }, limitMs) { waits += it }
+    private fun liveService(limitMs: Long = 60_000) = BlinkService(secrets, blink.api(), clock, { Socket(it.host, it.port) }, limitMs, 100L) { waits += it }
 
     @Test fun `a live view asks Blink, connects to the stream server with the camera's serial, and passes the video on`() = runBlocking {
         val (server, got) = streamServer(video(0x47, 1), video(0x47, 2))

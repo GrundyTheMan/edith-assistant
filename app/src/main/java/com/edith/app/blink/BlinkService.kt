@@ -55,6 +55,8 @@ class BlinkService(
     private val liveConnect: (BlinkLive.Immis) -> java.net.Socket = BlinkLiveStream::tlsSocket,
     /** How long a live view runs before Edith ends it (Blink ends them itself after a while). */
     private val liveLimitMs: Long = 5 * 60_000L,
+    /** How long a live view waits before asking again after the stream server closed it early; tests shorten it. */
+    private val liveRetryWaitMs: Long = 3_000L,
     /** Waits between polls; tests pass one that does not wait. (A live view always waits in real time.) */
     private val pause: suspend (Long) -> Unit = { kotlinx.coroutines.delay(it) },
 ) : HomeService {
@@ -389,7 +391,7 @@ class BlinkService(
         private suspend fun again(): BlinkLive.Immis? {
             if (finished.get()) return null
             switching = true
-            kotlinx.coroutines.delay(RETRY_WAIT_MS)   // Blink ends the old command about a second after the connection closes; asking sooner met the same drop
+            kotlinx.coroutines.delay(liveRetryWaitMs)   // Blink ends the old command about a second after the connection closes; asking sooner met the same drop
             try {
                 val next = (authed { t, w -> api.requestLive(t, w, camera) } as? Outcome.Success)?.value ?: return null
                 val immis = next.server?.takeIf { it.startsWith("immis://") }?.let { BlinkLive.parseImmis(it) } ?: return null
@@ -446,8 +448,7 @@ class BlinkService(
     companion object {
         const val ID = "blink"
         const val SECRET_KEY = "home/blink"
-        const val NEEDS_SIGN_IN = "it needs signing in again — Settings → Home"
-        private const val RETRY_WAIT_MS = 3_000L
+        const val NEEDS_SIGN_IN = "it needs signing in again — Settings → Home"
         private const val MAX_TRIES = 6
         private const val BUSY_TRIES = 4
         private const val BUSY_WAIT_MS = 3_000L
