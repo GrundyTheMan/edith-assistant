@@ -77,6 +77,8 @@ data class HomeSettingsUi(
     val log: List<LoggedCommand> = emptyList(),
     /** Camera alerts (C33): the services that can alert and are signed in, with their switches. */
     val alerts: List<AlertServiceRow> = emptyList(),
+    /** What the paired Jarvis says about sharing the printer (C39): "Jarvis: sharing the printer (name)", "…not sharing…", "…not paired". */
+    val printerJarvis: String = "",
 )
 
 /** Settings → Home (C25 §7). */
@@ -85,6 +87,7 @@ class HomeSettingsViewModel(
     private val home: Home,
     log: kotlinx.coroutines.flow.Flow<List<LoggedCommand>>,
     private val alertPrefs: AlertPrefs = MemoryAlertPrefs(),
+    private val printerJarvisLine: () -> String = { "" },
 ) : ViewModel() {
     private val services = home.services.flatMapLatest { list ->
         if (list.isEmpty()) flowOf(emptyList())
@@ -99,6 +102,7 @@ class HomeSettingsViewModel(
             hasDemo = home.hasDemo, demo = c.demo,
             hidden = c.hidden.map { it to (c.hiddenNames[it] ?: it.substringAfter(':')) }.sortedBy { it.second.lowercase() },
             log = l,
+            printerJarvis = printerJarvisLine(),
             alerts = s.filter { it.state == ServiceState.Connected && it.id in AlertCatalog.services }
                 .map { r -> AlertServiceRow(r.id, r.name, AlertCatalog.kindsOf(r.id).map { it to a.enabled(r.id, it) }) },
         )
@@ -159,7 +163,14 @@ class HomeSettingsViewModel(
     }
 
     companion object {
-        val Factory = viewModelFactory { c, _ -> HomeSettingsViewModel(c.home, c.homeCommandLog.recent, c.alertPrefs) }
+        /** The status line under the printer: what the paired Jarvis says about sharing it. */
+        internal fun jarvisPrinterLine(connection: com.edith.app.jarvis.JarvisConnection?): String = when {
+            connection == null -> "Jarvis: not paired"
+            connection.printerInfo == null -> "Jarvis: not sharing the printer"
+            else -> "Jarvis: sharing the printer (${connection.printerInfo?.name.orEmpty()})"
+        }
+
+        val Factory = viewModelFactory { c, _ -> HomeSettingsViewModel(c.home, c.homeCommandLog.recent, c.alertPrefs) { jarvisPrinterLine(c.accounts.jarvisConnection()) } }
     }
 }
 
@@ -221,6 +232,13 @@ fun HomeSettingsContent(
                     }
                 }
             }
+        }
+        if (ui.services.any { it.id == "printer" }) {
+            Text(
+                "To see and control the printer away from home, pair Edith with Jarvis (Settings → Accounts → Work) and, in Jarvis, switch on Let paired phones see the printer.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(ui.printerJarvis, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("printer-jarvis-line"))
         }
         if (ui.alerts.isNotEmpty()) {
             Text("Alerts", style = MaterialTheme.typography.labelLarge)

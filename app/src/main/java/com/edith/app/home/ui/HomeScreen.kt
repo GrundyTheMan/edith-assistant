@@ -270,6 +270,7 @@ private fun PrinterTile(d: HomeDevice, ui: HomeUi, a: HomeTabActions) {
                 Column(Modifier.weight(1f)) {
                     Text(d.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(stateLine(d, ui), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (job?.viaJarvis == true) Text("via Jarvis", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("printer-via-jarvis"))
                 }
                 Star(d, ui, a)
             }

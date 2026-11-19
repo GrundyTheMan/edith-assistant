@@ -91,6 +91,8 @@ data class PrintJob(
     val layers: Int? = null,
     /** Klipper's message: an error, or why the printer isn't ready. */
     val message: String? = null,
+    /** The state came through Jarvis on the PC, because the printer did not answer directly (C39). */
+    val viaJarvis: Boolean = false,
 )
 
 /** A heater's reading: [target] is 0 when it is off. */
