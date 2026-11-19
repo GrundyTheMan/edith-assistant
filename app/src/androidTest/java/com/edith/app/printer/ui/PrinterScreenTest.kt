@@ -1,6 +1,8 @@
 package com.edith.app.printer.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -176,5 +178,90 @@ class PrinterScreenTest {
         compose.waitForIdle()
         assertEquals(true, told.contains(PrinterCards.TEMPERATURES to true))
         assertEquals(true, told.contains(PrinterCards.CAMERA to true))
+    }
+
+    // --- Stage 2 (E7): Controls, the confirm sheet, the job buttons, the emergency stop ----------------------------
+
+    private fun control(armed: Boolean = false, may: Boolean = true) = ControlUi(mayControl = may, armed = armed, armUntilMs = if (armed) System.currentTimeMillis() + 103_000 else null)
+    private val quickOk = mapOf("pause" to com.edith.app.printer.feed.QuickCheck(true), "cancel" to com.edith.app.printer.feed.QuickCheck(true))
+    private fun withQuick(state: PrinterState) = PrinterUi(PrinterScreenState.Live(StateAnswer(rev = 1, state = state, quick = quickOk), now, 0), "FlashForge AD5X", emptySet(), null, now, ZoneId.of("UTC"))
+
+    @Test fun theConfirmSheetShowsJarvisWordsAndTwoDifferentButtons() {
+        var yes = 0; var no = 0
+        val sheet = ConfirmUi("Cancel the print of Benchy? It can’t be resumed.", "Cancel print", danger = true, com.edith.app.printer.feed.PrinterCommand.Cancel, "id")
+        compose.setContent { EdithTheme { ConfirmSheet(sheet, onConfirm = { yes++ }, onDismiss = { no++ }) } }
+        compose.onNodeWithTag("confirm-question").assertIsDisplayed()
+        compose.onNodeWithText("Cancel the print of Benchy? It can’t be resumed.").assertIsDisplayed()
+        compose.onNodeWithTag("confirm-yes").assertIsDisplayed()
+        compose.onNodeWithText("Keep printing").assertIsDisplayed()
+        compose.onNodeWithTag("confirm-no").performClick()
+        assertEquals(0, yes); assertEquals(1, no)
+        compose.onNodeWithTag("confirm-yes").performClick()
+        assertEquals(1, yes)
+    }
+
+    @Test fun aLookOnlyPhoneSaysSoAndHasNoControlsSwitch() {
+        compose.setContent { EdithTheme { PrinterContent(withQuick(printing), true, PrinterActions(), CardsUi(), control(may = false)) } }
+        compose.onNodeWithTag("controls-look-only").assertExists()
+        compose.onNodeWithTag("controls-switch").assertDoesNotExist()
+        compose.onNodeWithTag("job-buttons").assertDoesNotExist()
+    }
+
+    @Test fun theControlsSwitchAsksForControlsAndShowsTheCountdown() {
+        val asked = mutableListOf<Boolean>()
+        var c by androidx.compose.runtime.mutableStateOf(control(armed = false))
+        compose.setContent { EdithTheme { PrinterContent(withQuick(printing), true, PrinterActions(setControls = { asked += it }), CardsUi(), c) } }
+        compose.onNodeWithTag("controls-switch").performClick()
+        assertEquals(listOf(true), asked)
+        c = control(armed = true)
+        compose.onNodeWithTag("controls-text").assertExists()
+        compose.onNodeWithText("Controls on", substring = true).assertIsDisplayed()
+    }
+
+    @Test fun withControlsOffTheJobButtonsAreDisabledAndSayWhy() {
+        compose.setContent { EdithTheme { PrinterContent(withQuick(printing), true, PrinterActions(), CardsUi(), control(armed = false)) } }
+        compose.onNodeWithTag("job-main").assertIsNotEnabled()
+        compose.onNodeWithTag("job-cancel").assertIsNotEnabled()
+        compose.onNodeWithText("Turn on Controls to use this").assertIsDisplayed()
+    }
+
+    @Test fun withControlsOnPauseAndCancelSendTheirCommands() {
+        val sent = mutableListOf<com.edith.app.printer.feed.PrinterCommand>()
+        compose.setContent { EdithTheme { PrinterContent(withQuick(printing), true, PrinterActions(send = { sent += it }), CardsUi(), control(armed = true)) } }
+        compose.onNodeWithTag("job-main").assertIsEnabled().performClick()
+        compose.onNodeWithTag("job-cancel").assertIsEnabled().performClick()
+        assertEquals(listOf(com.edith.app.printer.feed.PrinterCommand.Pause, com.edith.app.printer.feed.PrinterCommand.Cancel), sent)
+    }
+
+    @Test fun aPausedPrintOffersResumeAndAPendingButtonIsDisabledWithAProgressIndicator() {
+        val pausedState = printing.copy(print = PrintInfo(PrinterStates.PAUSED, paused = true))
+        val c = control(armed = true).copy(pending = setOf("resume"))
+        compose.setContent { EdithTheme { PrinterContent(withQuick(pausedState), true, PrinterActions(), CardsUi(), c) } }
+        compose.onNodeWithText("Resume").assertExists()
+        compose.onNodeWithTag("job-main").assertIsNotEnabled()
+    }
+
+    @Test fun theServersReasonShowsWhenItWillNotTakeAPause() {
+        val ui = PrinterUi(PrinterScreenState.Live(StateAnswer(rev = 1, state = printing, quick = mapOf("pause" to com.edith.app.printer.feed.QuickCheck(false, "The printer is busy."), "cancel" to com.edith.app.printer.feed.QuickCheck(true))), now, 0), "FlashForge AD5X", emptySet(), null, now, ZoneId.of("UTC"))
+        compose.setContent { EdithTheme { PrinterContent(ui, true, PrinterActions(), CardsUi(), control(armed = true)) } }
+        compose.onNodeWithTag("job-main").assertIsNotEnabled()
+        compose.onNodeWithText("The printer is busy.").assertIsDisplayed()
+    }
+
+    @Test fun theEmergencyStopIsThereWithControlsOffAndAsksThroughSend() {
+        val sent = mutableListOf<com.edith.app.printer.feed.PrinterCommand>()
+        compose.setContent { EdithTheme { PrinterContent(withQuick(printing), true, PrinterActions(send = { sent += it }), CardsUi(), control(armed = false)) } }
+        compose.onNodeWithTag("estop").assertIsDisplayed().performClick()
+        assertEquals(listOf<com.edith.app.printer.feed.PrinterCommand>(com.edith.app.printer.feed.PrinterCommand.EStop), sent)
+    }
+
+    @Test fun theEmergencyStopIsThereOnALookOnlyPhoneButNotWhenThePrinterIsUnreachable() {
+        compose.setContent { EdithTheme { PrinterContent(withQuick(printing), true, PrinterActions(), CardsUi(), control(may = false)) } }
+        compose.onNodeWithTag("estop").assertExists()
+    }
+
+    @Test fun noEmergencyStopWhileJarvisCannotReachThePrinter() {
+        compose.setContent { EdithTheme { PrinterContent(open(PrinterState(connection = Connections.UNREACHABLE)), true, PrinterActions(), CardsUi(), control()) } }
+        compose.onNodeWithTag("estop").assertDoesNotExist()
     }
 }

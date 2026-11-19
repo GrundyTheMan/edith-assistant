@@ -1,5 +1,6 @@
 package com.edith.app.printer.ui
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,6 +62,7 @@ import com.edith.app.printer.ui.cards.ToolheadCard
 internal fun PrinterScreen(onBack: () -> Unit, onOpenPairing: () -> Unit, vm: PrinterViewModel = viewModel(factory = PrinterViewModel.Factory)) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val cards by vm.cards.collectAsStateWithLifecycle()
+    val controls by vm.controls.collectAsStateWithLifecycle()
     LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.attach() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.detach() }
     val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
@@ -71,17 +73,23 @@ internal fun PrinterScreen(onBack: () -> Unit, onOpenPairing: () -> Unit, vm: Pr
             cardVisible = vm.data::visible, toggleSeries = vm.data::toggleSeries, moreHistory = vm.data::moreHistory, setHideValues = vm.data::setHideValues,
             clearConsole = vm.data::clearConsole, loadFiles = vm.data::loadFiles, setFileQuery = vm.data::setFileQuery, setPrintedOnly = vm.data::setPrintedOnly,
             openFile = vm.data::openFile, closeFile = vm.data::closeFile, chooseCamera = vm.data::chooseCamera,
+            setControls = vm.control::setControls, send = vm.control::send, confirm = vm.control::confirm, dismissSheet = vm.control::dismissSheet, messageShown = vm.control::messageShown,
         ),
-        cards,
+        cards, controls,
     )
 }
 
 /** The page without a ViewModel, so a UI test can draw any state. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun PrinterContent(ui: PrinterUi, is24Hour: Boolean, a: PrinterActions, cards: CardsUi = CardsUi()) {
+internal fun PrinterContent(ui: PrinterUi, is24Hour: Boolean, a: PrinterActions, cards: CardsUi = CardsUi(), controls: ControlUi = ControlUi()) {
+    val snackbar = androidx.compose.runtime.remember { androidx.compose.material3.SnackbarHostState() }
+    androidx.compose.runtime.LaunchedEffect(controls.message) { controls.message?.let { snackbar.showSnackbar(it); a.messageShown() } }
+    controls.sheet?.let { ConfirmSheet(it, onConfirm = a.confirm, onDismiss = a.dismissSheet) }
     Scaffold(
+        snackbarHost = { androidx.compose.material3.SnackbarHost(snackbar) },
         topBar = {
+            Column {
             TopAppBar(
                 title = {
                     Column {
@@ -91,7 +99,19 @@ internal fun PrinterContent(ui: PrinterUi, is24Hour: Boolean, a: PrinterActions,
                     }
                 },
                 navigationIcon = { IconButton(onClick = a.back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                actions = {
+                    // The emergency stop works with Controls off, from a look-only phone too; Jarvis decides and the owner confirms first.
+                    if (ui.state?.isReady == true && !ui.greyed) {
+                        Button(
+                            onClick = { a.send(com.edith.app.printer.feed.PrinterCommand.EStop) },
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
+                            modifier = Modifier.padding(end = 8.dp).testTag("estop"),
+                        ) { Text("Emergency stop") }
+                    }
+                },
             )
+            ControlsBar(ui, controls, a.setControls)
+            }
         },
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
@@ -99,7 +119,7 @@ internal fun PrinterContent(ui: PrinterUi, is24Hour: Boolean, a: PrinterActions,
             when {
                 ui.screen is PrinterScreenState.Connecting && ui.state == null -> Connecting()
                 message != null -> FullMessage(message, ui, a)
-                ui.state != null -> Cards(ui, is24Hour, a, cards)
+                ui.state != null -> Cards(ui, is24Hour, a, cards, controls)
                 else -> Connecting()
             }
         }
@@ -136,10 +156,10 @@ private fun FullMessage(message: String, ui: PrinterUi, a: PrinterActions) {
 }
 
 @Composable
-private fun Cards(ui: PrinterUi, is24Hour: Boolean, a: PrinterActions, data: CardsUi) {
+private fun Cards(ui: PrinterUi, is24Hour: Boolean, a: PrinterActions, data: CardsUi, controls: ControlUi) {
     val state = checkNotNull(ui.state)
     LazyColumn(
-        Modifier.fillMaxSize().alpha(if (ui.greyed) 0.6f else 1f).testTag("printer-list"),
+        Modifier.fillMaxSize().alpha(if (ui.greyed) 0.6f else 1f).then(if (controls.armed) Modifier.border(3.dp, MaterialTheme.colorScheme.primary) else Modifier).testTag("printer-list"),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -156,7 +176,7 @@ private fun Cards(ui: PrinterUi, is24Hour: Boolean, a: PrinterActions, data: Car
         items(PrinterCards.ALL.filter { shows(it, state) }, key = { it }) { id ->
             CardFrame(title(id), id !in ui.collapsed, onToggle = { a.toggleCard(id) }, id = id, onVisible = a.cardVisible) {
                 when (id) {
-                    PrinterCards.STATUS -> StatusCard(ui, state, is24Hour, a.dismissAlert)
+                    PrinterCards.STATUS -> StatusCard(ui, state, is24Hour, a.dismissAlert, controls, a.send)
                     PrinterCards.CAMERA -> CameraCard(state, data.camera, a.chooseCamera)
                     PrinterCards.TEMPERATURES -> TemperatureCard(state, data.chart, data.chartHidden, a.toggleSeries)
                     PrinterCards.TOOLHEAD -> ToolheadCard(state)

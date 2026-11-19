@@ -16,7 +16,9 @@ internal class FakePrinterRoutes : PrinterRoutes {
         asked += Asked(after, epoch, waitS, quiet)
         return answers.receive()
     }
-    override suspend fun controls(on: Boolean): FeedResult<ArmState> { controlsCalls += on; return FeedResult.Ok(ArmState(on)) }
+    /** When Controls are switched on, the time (ms) Jarvis says they end. */
+    var armUntil: Long? = 1_000_000_000_000L
+    override suspend fun controls(on: Boolean): FeedResult<ArmState> { controlsCalls += on; return FeedResult.Ok(ArmState(on, if (on) armUntil else null)) }
     // What the other routes answer, and what they were asked: tests set these.
     var temperaturesAnswer: FeedResult<List<TempSeries>> = FeedResult.Ok(emptyList())
     var historyAnswer: (Int) -> FeedResult<HistoryAnswer> = { FeedResult.Ok(HistoryAnswer()) }
@@ -37,7 +39,14 @@ internal class FakePrinterRoutes : PrinterRoutes {
     override suspend fun fileDetail(path: String): FeedResult<PrinterFileDetail> { detailPaths += path; return detailAnswer }
     override suspend fun history(start: Int): FeedResult<HistoryAnswer> { historyStarts += start; return historyAnswer(start) }
     override suspend fun snapshot(cameraId: String): FeedResult<ByteArray> { snapshotIds += cameraId; return snapshotAnswer() }
-    override suspend fun command(command: PrinterCommand, via: String, confirmed: Boolean, dryRun: Boolean, requestId: String?) = error("not used")
+    /** What `command` was asked, and what it answers next (the default is Sent). */
+    class CommandCall(val command: PrinterCommand, val via: String, val confirmed: Boolean, val dryRun: Boolean, val requestId: String?)
+    val commandCalls = mutableListOf<CommandCall>()
+    val commandAnswers = ArrayDeque<CommandAnswer>()
+    override suspend fun command(command: PrinterCommand, via: String, confirmed: Boolean, dryRun: Boolean, requestId: String?): CommandAnswer {
+        commandCalls += CommandCall(command, via, confirmed, dryRun, requestId)
+        return commandAnswers.removeFirstOrNull() ?: CommandAnswer.Sent(command.toString(), Risks.NONE)
+    }
     override suspend fun events(after: Long?, waitS: Int) = error("not used")
     override suspend fun settings(presets: List<Preset>?, hiddenMacros: List<String>?) = error("not used")
     override suspend fun upload(name: String, source: InputStream, size: Long) = error("not used")

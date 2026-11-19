@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -21,7 +22,11 @@ import com.edith.app.printer.feed.PrintInfo
 import com.edith.app.printer.feed.PrinterFormat
 import com.edith.app.printer.feed.PrinterState
 import com.edith.app.printer.feed.PrinterStates
+import com.edith.app.printer.feed.PrinterCommand
+import com.edith.app.printer.ui.ControlUi
 import com.edith.app.printer.ui.PrinterUi
+import com.edith.app.printer.ui.controlKey
+import com.edith.app.printer.ui.disabledReason
 import java.time.Instant
 
 /** What the print state is called on the chip. A state from a newer Jarvis is shown as it came. */
@@ -46,7 +51,7 @@ internal fun statusTitle(print: PrintInfo): String = when {
 /** The Status card (C39 8.4): the job, its progress, and the numbers that matter while it prints. Controls come in stage 2. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun StatusCard(ui: PrinterUi, state: PrinterState, is24Hour: Boolean, onDismissAlert: (Long) -> Unit) {
+internal fun StatusCard(ui: PrinterUi, state: PrinterState, is24Hour: Boolean, onDismissAlert: (Long) -> Unit, controls: ControlUi = ControlUi(), onSend: (PrinterCommand) -> Unit = {}) {
     val p = state.print
     val now = Instant.ofEpochMilli(ui.now)
     Column(Modifier.testTag("status-card"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -69,6 +74,7 @@ internal fun StatusCard(ui: PrinterUi, state: PrinterState, is24Hour: Boolean, o
             Fact("Flow", PrinterFormat.factor(state.toolhead.extrudeFactor))
         }
         p.message?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        if (controls.mayControl && (p.state == PrinterStates.PRINTING || p.state == PrinterStates.PAUSED)) JobButtons(ui, state, controls, onSend)
         ui.alert?.let { alert ->
             Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth().testTag("status-alert")) {
                 Column(Modifier.padding(12.dp)) {
@@ -105,5 +111,32 @@ internal fun StateChip(text: String, state: String) {
     }
     Surface(color = background, contentColor = content, shape = MaterialTheme.shapes.small, modifier = Modifier.testTag("state-chip")) {
         Text(text, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+    }
+}
+
+/** Pause or Resume (whichever the server allows) and Cancel print, with the reason under them when they cannot be used. Cancel always asks first. */
+@Composable
+private fun JobButtons(ui: PrinterUi, state: PrinterState, controls: ControlUi, onSend: (PrinterCommand) -> Unit) {
+    val printing = state.print.state == PrinterStates.PRINTING
+    val main: PrinterCommand = if (printing) PrinterCommand.Pause else PrinterCommand.Resume
+    val mainKey = if (printing) "pause" else "resume"
+    val mainWhy = disabledReason(ui, controls, mainKey)
+    val cancelWhy = disabledReason(ui, controls, "cancel")
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.testTag("job-buttons")) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            androidx.compose.material3.OutlinedButton(onClick = { onSend(main) }, enabled = mainWhy == null && controlKey(main) !in controls.pending, modifier = Modifier.testTag("job-main")) {
+                if (controlKey(main) in controls.pending) androidx.compose.material3.CircularProgressIndicator(Modifier.padding(end = 8.dp).size(16.dp), strokeWidth = 2.dp)
+                Text(if (printing) "Pause" else "Resume")
+            }
+            androidx.compose.material3.OutlinedButton(
+                onClick = { onSend(PrinterCommand.Cancel) }, enabled = cancelWhy == null && "cancel" !in controls.pending,
+                colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                modifier = Modifier.testTag("job-cancel"),
+            ) {
+                if ("cancel" in controls.pending) androidx.compose.material3.CircularProgressIndicator(Modifier.padding(end = 8.dp).size(16.dp), strokeWidth = 2.dp)
+                Text("Cancel print")
+            }
+        }
+        (mainWhy ?: cancelWhy)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("job-why")) }
     }
 }
