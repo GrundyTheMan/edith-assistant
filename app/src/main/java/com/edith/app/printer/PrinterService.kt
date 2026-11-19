@@ -28,6 +28,11 @@ import kotlinx.serialization.json.Json
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
 
+/** What Jarvis says about the printer, as the Home tab shows it: null when Jarvis is not paired, does not share it, or cannot reach it (C39). */
+fun interface JarvisPrinterRead {
+    suspend fun read(): DeviceState?
+}
+
 /**
  * A 3D printer running Klipper with Moonraker (C34, D19), on the home Wi-Fi: the owner types its address (and an API key if it
  * has one), and the printer shows on the Home tab as one device with its job, temperatures and camera. It can pause, resume
@@ -40,6 +45,8 @@ class PrinterService(
     private val secrets: SecretStore,
     private val api: MoonrakerApi,
     private val clock: Clock,
+    /** Asked only when the printer does not answer directly (the PC is on and Jarvis shares the printer): C39. */
+    private val jarvis: JarvisPrinterRead? = null,
 ) : HomeService {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -131,6 +138,9 @@ class PrinterService(
         }
     }
 
+    /** The printer through Jarvis, when it did not answer directly and Jarvis can say how it is (never when direct works). */
+    private suspend fun viaJarvis(): DeviceState? = try { jarvis?.read() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { null }
+
     private suspend fun estimateFor(c: PrinterConn, filename: String): Double? {
         estimates[filename]?.let { return it }
         val path = "/server/files/metadata?filename=${URLEncoder.encode(filename, "UTF-8").replace("+", "%20")}"
@@ -149,8 +159,9 @@ class PrinterService(
         }
     }
 
-    private suspend fun device(c: PrinterConn, online: Boolean, state: DeviceState?): HomeDevice {
-        val hasCamera = (if (online) camerasFor(c) else cameras.orEmpty()).isNotEmpty()
+    private suspend fun device(c: PrinterConn, online: Boolean, state: DeviceState?, viaJarvis: Boolean = false): HomeDevice {
+        // Through Jarvis there is no direct camera to ask for (and asking would wait for another timeout).
+        val hasCamera = (if (online && !viaJarvis) camerasFor(c) else cameras.orEmpty()).isNotEmpty()
         return HomeDevice(
             id = DEVICE_ID, name = NAME, room = null, type = DeviceType.Printer,
             capabilities = setOfNotNull(Capability.PrintControl, Capability.Snapshot.takeIf { hasCamera }),
@@ -173,7 +184,10 @@ class PrinterService(
             return when (val r = read(c)) {
                 is Read.Ok -> Outcome.Success(listOf(device(c, true, r.status.state)))
                 // Not at home is no error: the card says so, and the Home tab shows no banner.
-                Read.Away -> Outcome.Success(listOf(device(c, false, null)))
+                Read.Away -> {
+                    val j = viaJarvis()
+                    Outcome.Success(listOf(if (j != null) device(c, true, j, viaJarvis = true) else device(c, false, null)))
+                }
                 is Read.Failed -> failed(r.why)
             }
         }
@@ -182,7 +196,7 @@ class PrinterService(
             val c = conn ?: return notSignedIn()
             return when (val r = read(c)) {
                 is Read.Ok -> Outcome.Success(r.status.state)
-                Read.Away -> failed(AWAY)
+                Read.Away -> viaJarvis()?.let { Outcome.Success(it) } ?: failed(AWAY)
                 is Read.Failed -> failed(r.why)
             }
         }
@@ -197,7 +211,7 @@ class PrinterService(
             }
             val now = when (val r = read(c)) {
                 is Read.Ok -> r.status
-                Read.Away -> return failed(AWAY)
+                Read.Away -> return failed(awayForCommand())
                 is Read.Failed -> return failed(r.why)
             }
             if (now.klippy != Klippy.Ready) return failed("Klipper isn't ready${now.state.print?.message?.let { ": $it" }.orEmpty()}")
@@ -209,7 +223,7 @@ class PrinterService(
                 else -> if (job != PrintState.Printing && job != PrintState.Paused) return failed("there's no print to cancel")
             }
             when (val r = api.post(c, path)) {
-                PrinterReply.Unreachable -> return failed(AWAY)
+                PrinterReply.Unreachable -> return failed(awayForCommand())
                 is PrinterReply.Failed -> return failed(r.why)
                 is PrinterReply.Ok -> Log.i(LogTag.Home, "Printer command sent (${command::class.simpleName})")
             }
@@ -231,6 +245,9 @@ class PrinterService(
         }
     }
 
+    /** A command needs the printer directly; with Jarvis wired in, the Printer page is where to go instead. */
+    private fun awayForCommand(): String = if (jarvis != null) AWAY_COMMAND else AWAY
+
     private fun <T> failed(why: String): Outcome<T> = Outcome.Failure(AppError.ToolFailed(NAME, why))
     private fun <T> notSignedIn(): Outcome<T> = failed("it isn't connected — Settings → Home")
 
@@ -242,6 +259,7 @@ class PrinterService(
         const val NAME = "3D printer"
         const val DEVICE_ID = "printer"
         const val SECRET_KEY = "home/printer"
+        const val AWAY_COMMAND = "it isn't reachable from here. Open the Printer page to control it through Jarvis"
         const val AWAY = "it isn't reachable: it works on your home Wi-Fi, or it is off"
     }
 }

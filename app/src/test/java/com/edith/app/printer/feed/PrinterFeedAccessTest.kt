@@ -71,6 +71,16 @@ class PrinterFeedAccessTest {
         assertEquals(0, server.requestCount)
     }
 
+    @Test fun `Settings says what the paired Jarvis does about the printer`() = runBlocking {
+        val line = com.edith.app.ui.settings.HomeSettingsViewModel.Companion::jarvisPrinterLine
+        assertEquals("Jarvis: not paired", line(accounts.jarvisConnection()))
+        pair()
+        assertEquals("Jarvis: sharing the printer (FlashForge AD5X)", line(accounts.jarvisConnection()))
+        server.enqueue(json(sharedWithoutPrinter))
+        feed.access()   // looks again; the owner has switched the share off
+        assertEquals("Jarvis: not sharing the printer", line(accounts.jarvisConnection()))
+    }
+
     @Test fun `a paired Jarvis that shares the printer is ready, with what Jarvis said about it`() = runBlocking {
         pair()
         assertNotNull(accounts.jarvisConnection())

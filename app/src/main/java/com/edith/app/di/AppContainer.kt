@@ -432,7 +432,7 @@ class AppContainer(val app: Application) {
     val alexa: AlexaService by lazy { AlexaService(secretStore, AlexaApi(httpClients.secure), clock) }
 
     /** A 3D printer's Moonraker on the home Wi-Fi (C34): its address and API key are kept encrypted in [secretStore]. */
-    val printer: PrinterService by lazy { PrinterService(secretStore, MoonrakerApi(httpClients.plain), clock) }
+    val printer: PrinterService by lazy { PrinterService(secretStore, MoonrakerApi(httpClients.plain), clock, com.edith.app.printer.feed.FeedPrinterRead(printerFeed)) }
 
     val home: Home by lazy {
         Home(

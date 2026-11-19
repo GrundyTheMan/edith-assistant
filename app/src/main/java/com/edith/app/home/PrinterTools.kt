@@ -37,7 +37,14 @@ class PrinterStatusTool(private val home: Home, private val now: () -> Long = Sy
             !d.online -> "${d.name}: not reachable now (it works on the home Wi-Fi). Last reported${at?.let { " ${HomeActions.age(it, now())}" }.orEmpty()}: $last."
             last == null -> "${d.name}: reachable, but it reported no status."
             d.backend in view.stale && at != null -> "${d.name}: $last (last reported ${HomeActions.age(at, now())}; no answer just now)."
-            else -> "${d.name}: $last."
+            else -> "${d.name}: $last${extras(state)}."
         }
+    }
+
+    /** Through Jarvis it says so; and the printer's own latest error line is mentioned even while it is still printing (C39 9.3). */
+    private fun extras(state: DeviceState?): String {
+        val job = state?.print ?: return ""
+        val alert = job.message?.takeIf { it.isNotBlank() && job.state != PrintState.Error && job.state != PrintState.Cancelled }
+        return (if (job.viaJarvis) " (via Jarvis)" else "") + (alert?.let { ". The printer's latest error line: $it" } ?: "")
     }
 }
