@@ -110,6 +110,24 @@ class JarvisConnection internal constructor(
         _state.value = AccountState.NeedsSignIn(JarvisAccounts.NEEDS_PAIRING)
     })
 
+    /** The routes of the feed, for the printer (C39). Its calls keep this connection's pin, token and removed-phone handling. */
+    internal val feedApi: JarvisApi get() = api
+
+    /** What Jarvis last said about the printer: null when it isn't shared (or this Jarvis doesn't know it). */
+    internal val printerInfo: com.edith.app.printer.feed.SharedPrinter? get() = shared?.printer
+
+    /** Whether this phone is paired at all (a saved link), without asking Jarvis. */
+    internal val isPaired: Boolean get() = link != null
+
+    /** Asks Jarvis what it shares again (the page does this once each time it opens). Null when Jarvis can't be asked. */
+    internal suspend fun refreshShared(): com.edith.app.printer.feed.SharedPrinter? {
+        if (link == null) link = secrets.get(AccountSecrets.jarvisLink(id))?.let { runCatching { feedJson.decodeFromString(JarvisLink.serializer(), it) }.getOrNull() }
+        return when (val r = api.get("shared", emptyMap(), Shared.serializer())) {
+            is Outcome.Success -> { shared = r.value; r.value.printer }
+            is Outcome.Failure -> shared?.printer
+        }
+    }
+
     override val capabilities: Capabilities get() = Capabilities(
         calendar = shared?.calendars?.isNotEmpty() == true,
         mail = shared?.mail?.isNotEmpty() == true,

@@ -19,6 +19,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.IOException
@@ -42,6 +43,20 @@ import javax.net.ssl.X509TrustManager
 @Serializable
 internal data class JarvisLink(val base: String, val fingerprint: String, val token: String, val pcName: String = "") {
     override fun toString() = "JarvisLink($base)"   // never the token
+}
+
+/** The bytes of an answer, with its status and type. */
+internal class Raw(val status: Int, val contentType: String?, val body: ByteArray)
+
+/** What a feed call came to (C39 part 5.1). */
+internal sealed interface FeedResult<out T> {
+    data class Ok<T>(val value: T) : FeedResult<T>
+    /** Jarvis answered with an error: its own [code] (null when it sent none) and [message]; [body] is the whole answer, for the fields a code adds. */
+    data class Err(val status: Int, val code: String?, val message: String, val body: String) : FeedResult<Nothing>
+    /** No answer: the PC is off, Jarvis isn't running or the network is away. */
+    data object Unreachable : FeedResult<Nothing>
+    /** Jarvis doesn't know this phone (any more), or there is no pairing. */
+    data object Unauthorized : FeedResult<Nothing>
 }
 
 /** The pure parts of pairing (spec part 6): the address, the fingerprint and the proof. */
@@ -195,6 +210,83 @@ internal class JarvisApi(
         if (outcome is Outcome.Failure && outcome.error == UNAUTHORIZED) onUnauthorized()
         return outcome
     }
+
+    // --- The printer's routes (C39): answers keep their status and the server's own error code and words -----------------
+
+    /**
+     * One request to the feed. [segments] are path segments after `/v1`, each encoded whole (a camera id with odd characters
+     * is never split). A non-2xx answer is an [FeedResult.Err] carrying Jarvis's `code` and `message`; 401 is [FeedResult.Unauthorized]
+     * (and tells the connection this phone was removed); no answer is [FeedResult.Unreachable]. Cancellable like [call]; [readTimeoutS]
+     * and [callTimeoutS] change the limits for this call only, on a copy of the shared client.
+     */
+    internal suspend fun <R> exchange(
+        segments: List<String>,
+        query: Map<String, String> = emptyMap(),
+        body: RequestBody? = null,
+        readTimeoutS: Long? = null,
+        callTimeoutS: Long? = null,
+        parse: (Response) -> R,
+    ): FeedResult<R> {
+        val l = link() ?: return FeedResult.Unauthorized
+        val base = l.base.toHttpUrlOrNull() ?: return FeedResult.Err(0, "BAD_ADDRESS", "The saved address is damaged: pair again.", "")
+        val url = base.newBuilder().apply {
+            addPathSegment("v1")
+            segments.forEach { addPathSegment(it) }
+            query.forEach { (k, v) -> addQueryParameter(k, v) }
+        }.build()
+        val request = Request.Builder().url(url).header("Authorization", "Bearer ${l.token}").apply {
+            if (body != null) post(body) else get()
+        }.build()
+        val result: FeedResult<R> = withContext(dispatchers.io) {
+            try {
+                val shared = clientFor(l.fingerprint)
+                val client = if (readTimeoutS == null && callTimeoutS == null) shared else shared.newBuilder().apply {
+                    readTimeoutS?.let { readTimeout(it, TimeUnit.SECONDS) }
+                    callTimeoutS?.let { callTimeout(it, TimeUnit.SECONDS) }
+                }.build()
+                client.newCall(request).await().use { r ->
+                    if (r.isSuccessful) FeedResult.Ok(parse(r)) else errorOf(r.code, r.body.string())
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: SerializationException) {
+                Log.w(LogTag.Accounts, "Jarvis feed: unreadable answer from ${segments.joinToString("/")}")
+                FeedResult.Err(200, "UNREADABLE", "Jarvis answered something Edith didn't expect.", "")
+            } catch (e: IOException) {
+                val pinFailed = pinMismatch.getAndSet(false) || generateSequence<Throwable>(e) { it.cause }.any { it is CertificateException }
+                Log.w(LogTag.Accounts, "Jarvis feed: ${if (pinFailed) "certificate doesn't match" else "unreachable"} (${e::class.simpleName})")
+                if (pinFailed) FeedResult.Err(0, "CERTIFICATE_CHANGED", MOVED, "") else FeedResult.Unreachable
+            }
+        }
+        if (result is FeedResult.Unauthorized) onUnauthorized()
+        return result
+    }
+
+    private fun errorOf(status: Int, text: String): FeedResult<Nothing> {
+        if (status == 401) return FeedResult.Unauthorized
+        val e = runCatching { feedJson.decodeFromString(FeedErrorReply.serializer(), text).error }.getOrNull()
+        return FeedResult.Err(status, e?.code?.ifBlank { null }, e?.message.orEmpty(), text)
+    }
+
+    /** GET and read the answer as JSON. */
+    internal suspend fun <T> getJson(
+        segments: List<String>,
+        query: Map<String, String> = emptyMap(),
+        serializer: KSerializer<T>,
+        readTimeoutS: Long? = null,
+    ): FeedResult<T> = exchange(segments, query, null, readTimeoutS) { feedJson.decodeFromString(serializer, it.body.string()) }
+
+    /** POST a JSON body and read the answer as JSON. */
+    internal suspend fun <T> postJson(segments: List<String>, body: String, serializer: KSerializer<T>): FeedResult<T> =
+        exchange(segments, emptyMap(), body.toRequestBody(JSON)) { feedJson.decodeFromString(serializer, it.body.string()) }
+
+    /** GET the bytes of an answer (a camera picture). */
+    internal suspend fun getBytes(segments: List<String>, query: Map<String, String> = emptyMap()): FeedResult<Raw> =
+        exchange(segments, query) { Raw(it.code, it.header("Content-Type"), it.body.bytes()) }
+
+    /** POST raw bytes (an upload); the call may take [callTimeoutS], on this call only. The answer's text is returned. */
+    internal suspend fun postBytes(segments: List<String>, query: Map<String, String>, body: RequestBody, callTimeoutS: Long): FeedResult<String> =
+        exchange(segments, query, body, readTimeoutS = callTimeoutS, callTimeoutS = callTimeoutS) { it.body.string() }
 
     /** Runs the call without blocking a thread, and cancels it if the coroutine is cancelled. */
     private suspend fun Call.await(): Response = suspendCancellableCoroutine { c ->

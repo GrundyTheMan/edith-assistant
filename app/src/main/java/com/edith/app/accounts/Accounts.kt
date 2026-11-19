@@ -16,6 +16,7 @@ import com.edith.app.google.GoogleSignIn
 import com.edith.app.google.browser.BrowserOAuth
 import com.edith.app.icloud.ICloudAccounts
 import com.edith.app.jarvis.JarvisAccounts
+import com.edith.app.jarvis.JarvisConnection
 import com.edith.app.microsoft.MicrosoftAccounts
 import com.edith.app.microsoft.MicrosoftOAuth
 import com.edith.app.tools.framework.Integration
@@ -167,6 +168,10 @@ class Accounts(
 
     /** One account's live connection (the debug hook checks each Google account's token with it). */
     fun connection(id: String): AccountConnection? = connections[id]
+
+    /** The paired Jarvis (C38), if there is one: the printer page (C39) talks to the PC through it. */
+    fun jarvisConnection(): JarvisConnection? =
+        list.value.firstOrNull { it.provider == Provider.Jarvis }?.let { connections[it.id] as? JarvisConnection }
 
     /** At startup (after [AccountMigration]): connects every saved account and checks each quietly, in parallel. */
     suspend fun load() {
