@@ -47,6 +47,22 @@ internal data class FilesUi(
     val detail: PrinterFileDetail? = null,
     val detailLoading: Boolean = false,
     val detailError: String? = null,
+    val upload: UploadUi = UploadUi(),
+)
+
+/**
+ * A file being sent to the printer (stage 3). [name] is null when nothing was sent lately. While [active], [sent] of [total] bytes have gone;
+ * afterwards either [done] (the name Jarvis saved it under) or [error] (in plain words) says how it ended. Cancelling clears all of it.
+ */
+internal data class UploadUi(
+    val name: String? = null,
+    val active: Boolean = false,
+    val sent: Long = 0,
+    val total: Long = 0,
+    val done: String? = null,
+    val error: String? = null,
+    /** A file is chosen and waits for Send (Controls must be on then). */
+    val ready: Boolean = false,
 )
 
 internal data class ConsoleUi(val lines: List<ConsoleLine> = emptyList(), val hideValues: Boolean = true, val error: String? = null, val history: List<String> = emptyList())
@@ -81,6 +97,8 @@ internal class PrinterCardData(
     private val session: PrinterSession,
     private val prefs: PrinterPrefs,
     private val scope: CoroutineScope,
+    /** Where a picked file is opened (a disk read); tests give their own. */
+    private val io: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
 ) {
     private val _ui = MutableStateFlow(CardsUi())
     val ui: StateFlow<CardsUi> = _ui.asStateFlow()
@@ -96,6 +114,8 @@ internal class PrinterCardData(
     private var macrosLoaded = false
     private var cameraJob: Job? = null
     private var consoleJob: Job? = null
+    private var uploadJob: Job? = null
+    private var chosen: Chosen? = null
     private var camera = CameraUi()
 
     init {
@@ -110,6 +130,17 @@ internal class PrinterCardData(
 
     /** The page left the screen: nothing is polled, and the next visit reads the chart again (it has a gap now). */
     fun detached() {
+        // An upload cannot go on once the page is gone (the app may have no network in the background): it stops, and says so on return.
+        if (uploadJob?.isActive == true) {
+            val name = _ui.value.files.upload.name
+            uploadJob?.cancel(); uploadJob = null
+            chosen = null
+            setUpload(UploadUi(name = name, error = "The upload stopped because the page was closed. Choose the file and send it again."))
+        } else if (chosen != null) {
+            // A chosen file is not kept past the page: Controls end with it, and the file's permission is only good while it is in use.
+            chosen = null
+            setUpload(UploadUi())
+        }
         cameraJob?.cancel(); cameraJob = null
         chartSeeded = false
         historyLoaded = false
@@ -307,6 +338,82 @@ internal class PrinterCardData(
     }
 
     fun closeFile() = _ui.update { it.copy(files = it.files.copy(detailOf = null, detail = null, detailLoading = false, detailError = null)) }
+
+    /**
+     * A command of the Files sheet was sent (Print, Add to queue or Delete): the sheet has done its job and closes, and a deleted file leaves
+     * the list at once (the list itself is not asked for again: it keeps the printer busy for seconds). Called only when Jarvis accepted it,
+     * so a refusal or a "No" on the confirmation leaves the sheet as it is.
+     */
+    fun commandSent(command: com.edith.app.printer.feed.PrinterCommand) {
+        val path = when (command) {
+            is com.edith.app.printer.feed.PrinterCommand.DeleteFile -> command.path
+            is com.edith.app.printer.feed.PrinterCommand.Start -> command.path
+            is com.edith.app.printer.feed.PrinterCommand.QueueAdd -> command.path
+            else -> return
+        }
+        _ui.update { u ->
+            val f = u.files
+            val list = if (command is com.edith.app.printer.feed.PrinterCommand.DeleteFile) f.files?.filterNot { it.path == path } else f.files
+            u.copy(files = f.copy(files = list, detailOf = null, detail = null, detailLoading = false, detailError = null))
+        }
+    }
+
+    // --- Upload (stage 3) ---------------------------------------------------------------------------------------------------
+
+    private class Chosen(val name: String, val size: Long, val open: () -> java.io.InputStream?)
+
+    /**
+     * The owner picked a file in the system picker. It is checked here with Jarvis's own rules (so a wrong file is told at once) and then
+     * **waits**: nothing is sent until the owner presses Send ([sendUpload]). Two steps, not one, because the picker is another screen: it
+     * takes the Printer page off the screen, and leaving the page switches Controls off on purpose (an emulator check showed a one-step
+     * upload was always refused for that reason). Controls must be on when Send is pressed. [open] opens the file's stream later, once.
+     */
+    fun chooseUpload(name: String, size: Long, open: () -> java.io.InputStream?) {
+        if (uploadJob?.isActive == true) return
+        com.edith.app.printer.feed.PrinterUpload.problem(name, size)?.let { why -> chosen = null; setUpload(UploadUi(name = name, error = why)); return }
+        chosen = Chosen(name, size, open)
+        setUpload(UploadUi(name = name, total = size, ready = true))
+    }
+
+    /**
+     * Sends the chosen file to the printer through Jarvis, streaming it (never held in memory) and showing the progress. One upload at a
+     * time. Jarvis still decides: it needs Controls on, and its refusal is shown in its words (the file stays chosen, so the owner can turn
+     * Controls on and press Send again).
+     */
+    fun sendUpload() {
+        if (uploadJob?.isActive == true) return
+        val file = chosen ?: return
+        val routes = session.routes() ?: return
+        setUpload(UploadUi(name = file.name, active = true, total = file.size))
+        uploadJob = scope.launch {
+            val stream = kotlinx.coroutines.withContext(io) { runCatching(file.open).getOrNull() }
+            if (stream == null) { chosen = null; setUpload(UploadUi(name = file.name, error = com.edith.app.printer.feed.PrinterUpload.UNREADABLE_WORDS)); return@launch }
+            val r = routes.upload(file.name, stream, file.size) { sent -> _ui.update { u -> u.copy(files = u.files.copy(upload = u.files.upload.copy(sent = sent))) } }
+            when (r) {
+                is FeedResult.Ok -> {
+                    chosen = null
+                    setUpload(UploadUi(name = file.name, sent = file.size, total = file.size, done = r.value.ifBlank { file.name }))
+                    // A new file has not been printed before: the default "Printed before" filter would hide it from the list the owner is told to refresh.
+                    _ui.update { it.copy(files = it.files.copy(printedOnly = false)) }
+                }
+                is FeedResult.Err -> if (r.code == "CONTROLS_OFF") setUpload(UploadUi(name = file.name, total = file.size, ready = true, error = PrinterWords.forFailure(r)))
+                    else { chosen = null; setUpload(UploadUi(name = file.name, error = PrinterWords.forFailure(r))) }
+                else -> { chosen = null; setUpload(UploadUi(name = file.name, error = PrinterWords.forFailure(r))) }
+            }
+        }
+    }
+
+    /** Stops the upload in progress, or drops the chosen file; nothing is left on screen about it. (Jarvis throws away a half-received file.) */
+    fun cancelUpload() {
+        uploadJob?.cancel(); uploadJob = null
+        chosen = null
+        setUpload(UploadUi())
+    }
+
+    /** The owner read the result of the last upload. */
+    fun clearUpload() { if (uploadJob?.isActive != true) { chosen = null; setUpload(UploadUi()) } }
+
+    private fun setUpload(u: UploadUi) = _ui.update { it.copy(files = it.files.copy(upload = u)) }
 
     // --- Camera ----------------------------------------------------------------------------------------------------------
 

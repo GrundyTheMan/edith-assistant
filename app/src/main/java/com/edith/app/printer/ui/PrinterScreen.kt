@@ -69,10 +69,19 @@ internal fun PrinterScreen(onBack: () -> Unit, onOpenPairing: () -> Unit, vm: Pr
     val controls by vm.controls.collectAsStateWithLifecycle()
     LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.attach() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.detach() }
-    val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
+    val context = LocalContext.current
+    val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
+    // .gcode has no media type of its own, so the picker shows every file; the name and size are checked after (PrinterUpload.problem).
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val picked = UploadPick.describe(context.contentResolver, uri)
+            vm.data.chooseUpload(picked.name, picked.size) { context.contentResolver.openInputStream(uri) }
+        }
+    }
     PrinterContent(
         ui, is24Hour,
         PrinterActions(
+            pickUpload = { picker.launch(arrayOf("*/*")) }, sendUpload = vm.data::sendUpload, cancelUpload = vm.data::cancelUpload, clearUpload = vm.data::clearUpload,
             back = onBack, tryAgain = vm::tryAgain, openPairing = onOpenPairing, toggleCard = vm::toggleCard, dismissAlert = vm::dismissAlert,
             cardVisible = vm.data::visible, toggleSeries = vm.data::toggleSeries, moreHistory = vm.data::moreHistory, setHideValues = vm.data::setHideValues,
             clearConsole = vm.data::clearConsole, loadFiles = vm.data::loadFiles, setFileQuery = vm.data::setFileQuery, setPrintedOnly = vm.data::setPrintedOnly,
@@ -192,7 +201,7 @@ private fun Cards(ui: PrinterUi, is24Hour: Boolean, a: PrinterActions, data: Car
                     PrinterCards.LIMITS -> LimitsCard(state, ctx = ctx)
                     PrinterCards.SENSORS -> SensorsCard(state, ctx)
                     PrinterCards.SLOTS -> SlotsCard(state)
-                    PrinterCards.FILES -> FilesCard(state, data.files, ui.now, ui.zone, a.loadFiles, a.setFileQuery, a.setPrintedOnly, a.openFile, a.closeFile)
+                    PrinterCards.FILES -> FilesCard(state, data.files, ui.now, ui.zone, a.loadFiles, a.setFileQuery, a.setPrintedOnly, a.openFile, a.closeFile, ctx, a.pickUpload, a.sendUpload, a.cancelUpload, a.clearUpload)
                     PrinterCards.OBJECTS -> ObjectsCard(state, ctx)
                     PrinterCards.QUEUE -> QueueCard(state, ui.now, ui.zone, ctx)
                     PrinterCards.HISTORY -> HistoryCard(data.history, ui.now, ui.zone, a.moreHistory)

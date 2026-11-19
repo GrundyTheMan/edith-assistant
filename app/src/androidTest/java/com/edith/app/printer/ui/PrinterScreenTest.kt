@@ -4,6 +4,8 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -582,5 +584,110 @@ class PrinterScreenTest {
     @Test fun noEmergencyStopWhileJarvisCannotReachThePrinter() {
         compose.setContent { EdithTheme { PrinterContent(open(PrinterState(connection = Connections.UNREACHABLE)), true, PrinterActions(), CardsUi(), control()) } }
         compose.onNodeWithTag("estop").assertDoesNotExist()
+    }
+
+    // --- Stage 3 (E11): upload, and the Files sheet's Print, Add to queue and Delete -----------------------------------------
+
+    private val idle get() = open(everything.copy(print = PrintInfo()))
+    private val benchy = com.edith.app.printer.feed.PrinterFile(path = "benchy.gcode", size = 2_000_000, title = "Benchy")
+    private fun filesCards(upload: UploadUi = UploadUi(), detailOf: String? = null) =
+        CardsUi(files = FilesUi(files = listOf(benchy), upload = upload, detailOf = detailOf, detail = if (detailOf != null) com.edith.app.printer.feed.PrinterFileDetail(path = detailOf) else null))
+
+    @Test fun aLookOnlyPhoneHasNoUploadAndNoFileButtons() {
+        compose.setContent { EdithTheme { PrinterContent(idle, true, PrinterActions(), filesCards(detailOf = "benchy.gcode"), control(may = false)) } }
+        scrollTo("files-card")
+        compose.onNodeWithTag("upload-row").assertDoesNotExist()
+        compose.onNodeWithTag("file-print").assertDoesNotExist()
+        compose.onNodeWithTag("file-queue").assertDoesNotExist()
+        compose.onNodeWithTag("file-delete").assertDoesNotExist()
+    }
+
+    @Test fun withControlsOffAFileCanStillBeChosenBecauseNothingIsSentYet() {
+        var picked = 0
+        compose.setContent { EdithTheme { PrinterContent(idle, true, PrinterActions(pickUpload = { picked++ }), filesCards(), control(armed = false)) } }
+        scrollTo("upload-row")
+        compose.onNodeWithTag("upload-button").assertIsEnabled().performClick()
+        assertEquals(1, picked)
+    }
+
+    @Test fun withControlsOnUploadOpensThePicker() {
+        var picked = 0
+        compose.setContent { EdithTheme { PrinterContent(idle, true, PrinterActions(pickUpload = { picked++ }), filesCards(), control(armed = true)) } }
+        scrollTo("upload-row")
+        compose.onNodeWithTag("upload-button").assertIsEnabled().performClick()
+        assertEquals(1, picked)
+    }
+
+    @Test fun aChosenFileWaitsForSendAndSendNeedsControlsOn() {
+        var sent = 0; var discarded = 0
+        val chosen = UploadUi(name = "benchy.gcode", total = 2_000_000, ready = true)
+        var c by androidx.compose.runtime.mutableStateOf(control(armed = false))
+        compose.setContent { EdithTheme { PrinterContent(idle, true, PrinterActions(sendUpload = { sent++ }, cancelUpload = { discarded++ }), filesCards(chosen), c) } }
+        scrollTo("upload-row")
+        compose.onNodeWithTag("upload-ready").assert(androidx.compose.ui.test.hasText("benchy.gcode · 2.0 MB is ready to send."))
+        compose.onNodeWithTag("upload-button").assertDoesNotExist()
+        compose.onNodeWithTag("upload-send").assertIsNotEnabled()
+        c = control(armed = true)
+        compose.onNodeWithTag("upload-send").assertIsEnabled().performClick()
+        assertEquals(1, sent)
+        compose.onNodeWithTag("upload-discard").performClick()
+        assertEquals(1, discarded)
+    }
+
+    @Test fun aRefusedSendKeepsTheFileReadyAndShowsJarvisWords() {
+        val chosen = UploadUi(name = "benchy.gcode", total = 2_000_000, ready = true, error = "Controls turned off. Turn them on to continue.")
+        compose.setContent { EdithTheme { PrinterContent(idle, true, PrinterActions(), filesCards(chosen), control(armed = false)) } }
+        scrollTo("upload-row")
+        compose.onNodeWithTag("upload-send").assertExists()
+        compose.onNodeWithTag("upload-error").assert(androidx.compose.ui.test.hasText("Controls turned off. Turn them on to continue."))
+    }
+
+    @Test fun aRunningUploadShowsHowMuchHasGoneAndCanBeCancelled() {
+        var cancelled = 0
+        val going = UploadUi(name = "benchy.gcode", active = true, sent = 500_000, total = 2_000_000)
+        compose.setContent { EdithTheme { PrinterContent(idle, true, PrinterActions(cancelUpload = { cancelled++ }), filesCards(going), control(armed = true)) } }
+        scrollTo("upload-row")
+        compose.onNodeWithTag("upload-progress").assertExists()
+        compose.onNodeWithTag("upload-progress-text").assert(androidx.compose.ui.test.hasText("Sending benchy.gcode · 500 KB of 2.0 MB"))
+        compose.onNodeWithTag("upload-button").assertDoesNotExist()   // one upload at a time: the button gives way to Cancel
+        compose.onNodeWithTag("upload-cancel").performClick()
+        assertEquals(1, cancelled)
+    }
+
+    @Test fun aFinishedUploadSaysSentAndAFailedOneSaysWhy() {
+        var cards by androidx.compose.runtime.mutableStateOf(filesCards(UploadUi(name = "benchy.gcode", sent = 10, total = 10, done = "benchy.gcode")))
+        compose.setContent { EdithTheme { PrinterContent(idle, true, PrinterActions(), cards, control(armed = true)) } }
+        scrollTo("upload-row")
+        compose.onNodeWithTag("upload-done").assert(androidx.compose.ui.test.hasText("Sent benchy.gcode. Refresh the list to see it."))
+        cards = filesCards(UploadUi(name = "x.stl", error = "Only .gcode and .3mf files can be sent."))
+        compose.onNodeWithTag("upload-error").assert(androidx.compose.ui.test.hasText("Only .gcode and .3mf files can be sent."))
+        compose.onNodeWithTag("upload-done").assertDoesNotExist()
+    }
+
+    @Test fun theFileSheetOffersPrintQueueAndDeleteAndEachSendsItsCommand() {
+        val sent = mutableListOf<PrinterCommand>()
+        compose.setContent { EdithTheme { PrinterContent(idle, true, PrinterActions(send = { sent += it }), filesCards(detailOf = "benchy.gcode"), control(armed = true)) } }
+        scrollTo("files-card")
+        // All three are wide enough to read (Delete was once squeezed into a vertical strip).
+        for (tag in listOf("file-print", "file-queue", "file-delete")) compose.onNodeWithTag(tag).assertWidthIsAtLeast(64.dp)
+        compose.onNodeWithTag("file-print").assertIsEnabled().performClick()
+        compose.onNodeWithTag("file-queue").performClick()
+        compose.onNodeWithTag("file-delete").performClick()
+        assertEquals(listOf<PrinterCommand>(PrinterCommand.Start("benchy.gcode"), PrinterCommand.QueueAdd("benchy.gcode"), PrinterCommand.DeleteFile("benchy.gcode")), sent)
+    }
+
+    @Test fun withControlsOffTheFileButtonsAreDisabled() {
+        compose.setContent { EdithTheme { PrinterContent(idle, true, PrinterActions(), filesCards(detailOf = "benchy.gcode"), control(armed = false)) } }
+        scrollTo("files-card")
+        compose.onNodeWithTag("file-print").assertIsNotEnabled()
+        compose.onNodeWithTag("file-queue").assertIsNotEnabled()
+        compose.onNodeWithTag("file-delete").assertIsNotEnabled()
+    }
+
+    @Test fun jarvisRefusalOfAPrintIsShownUnderTheFileButtons() {
+        val refused = control(armed = true).copy(refused = mapOf("start" to "Start .3mf files from the printer’s screen."))
+        compose.setContent { EdithTheme { PrinterContent(idle, true, PrinterActions(), filesCards(detailOf = "benchy.gcode"), refused) } }
+        scrollTo("files-card")
+        compose.onNodeWithText("Start .3mf files from the printer’s screen.").assertIsDisplayed()
     }
 }

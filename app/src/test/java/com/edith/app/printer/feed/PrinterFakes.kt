@@ -53,7 +53,19 @@ internal class FakePrinterRoutes : PrinterRoutes {
     var settingsAnswer: FeedResult<SettingsAnswer> = FeedResult.Ok(SettingsAnswer())
     val settingsCalls = mutableListOf<Pair<List<Preset>?, List<String>?>>()
     override suspend fun settings(presets: List<Preset>?, hiddenMacros: List<String>?): FeedResult<SettingsAnswer> { settingsCalls += presets to hiddenMacros; return settingsAnswer }
-    override suspend fun upload(name: String, source: InputStream, size: Long) = error("not used")
+    /** An upload as the fake saw it: the name, the declared size, and the bytes read from the stream. */
+    class UploadCall(val name: String, val size: Long, val bytes: ByteArray)
+    val uploadCalls = mutableListOf<UploadCall>()
+    var uploadAnswer: FeedResult<String> = FeedResult.Ok("")
+    /** When set, an upload reads its stream, reports progress, then waits on this before answering (so a test can cancel it midway). */
+    var uploadGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+    override suspend fun upload(name: String, source: InputStream, size: Long, onProgress: (Long) -> Unit): FeedResult<String> {
+        val bytes = source.readBytes()
+        onProgress(bytes.size.toLong())
+        uploadGate?.await()
+        uploadCalls += UploadCall(name, size, bytes)
+        return uploadAnswer.let { if (it is FeedResult.Ok && it.value.isEmpty()) FeedResult.Ok(name) else it }
+    }
     fun say(answer: StateAnswer) { answers.trySend(FeedResult.Ok(answer)) }
     fun say(rev: Long, epoch: Long = 1, serverTime: Long = 0, armed: Boolean = false) {
         answers.trySend(FeedResult.Ok(StateAnswer(rev = rev, epoch = epoch, serverTime = serverTime, arm = ArmState(armed))))

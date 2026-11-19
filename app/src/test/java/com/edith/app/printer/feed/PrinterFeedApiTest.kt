@@ -204,6 +204,36 @@ class PrinterFeedApiTest {
         assertEquals("benchy.gcode", (r as FeedResult.Ok).value)
     }
 
+    @Test fun `a bigger upload arrives byte for byte and the progress reaches its size`() = runBlocking {
+        server.enqueue(json("""{"path":"big.3mf"}"""))
+        val bytes = ByteArray(2_500_000) { (it * 31 % 253).toByte() }
+        val progress = java.util.Collections.synchronizedList(mutableListOf<Long>())
+        val r = feed().upload("big.3mf", ByteArrayInputStream(bytes), bytes.size.toLong()) { progress += it }
+        val sent = server.takeRequest()
+        assertEquals(bytes.size.toLong(), sent.headers["Content-Length"]?.toLong())
+        assertArrayEquals(bytes, sent.body!!.toByteArray())
+        assertEquals(bytes.size.toLong(), progress.last())
+        assertEquals("big.3mf", (r as FeedResult.Ok).value)
+    }
+
+    @Test fun `an upload Jarvis refuses is answered in words`() = runBlocking {
+        server.enqueue(json("""{"error":{"code":"CONTROLS_OFF","message":"x"}}""", 409))
+        val off = feed().upload("a.gcode", ByteArrayInputStream(ByteArray(10)), 10)
+        assertEquals(PrinterWords.CONTROLS_OFF, PrinterWords.forFailure(off))
+        server.enqueue(json("""{"error":{"code":"TOO_LARGE","message":"x"}}""", 413))
+        val big = feed().upload("a.gcode", ByteArrayInputStream(ByteArray(10)), 10)
+        assertEquals(PrinterWords.TOO_LARGE, PrinterWords.forFailure(big))
+        server.enqueue(json("""{"error":{"code":"BAD_REQUEST","message":"x"}}""", 400))
+        val bad = feed().upload("a.gcode", ByteArrayInputStream(ByteArray(10)), 10)
+        assertEquals(PrinterWords.BAD_REQUEST, PrinterWords.forFailure(bad))
+    }
+
+    @Test fun `an upload with no answer from the PC says Jarvis is away`() = runBlocking {
+        server.close()
+        val r = feed().upload("a.gcode", ByteArrayInputStream(ByteArray(10)), 10)
+        assertEquals(FeedResult.Unreachable, r)
+    }
+
     @Test fun `settings sends only what was given`() = runBlocking {
         server.enqueue(json("""{"presets":[{"name":"PLA","extruder":210,"bed":60}],"hiddenMacros":[]}"""))
         val r = feed().settings(presets = listOf(Preset("PLA", 210, 60)), hiddenMacros = null)

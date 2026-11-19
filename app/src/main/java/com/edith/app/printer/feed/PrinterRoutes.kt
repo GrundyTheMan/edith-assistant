@@ -20,5 +20,6 @@ internal interface PrinterRoutes {
     suspend fun command(command: PrinterCommand, via: String, confirmed: Boolean, dryRun: Boolean, requestId: String?): CommandAnswer
     suspend fun events(after: Long?, waitS: Int): FeedResult<EventsAnswer>
     suspend fun settings(presets: List<Preset>?, hiddenMacros: List<String>?): FeedResult<SettingsAnswer>
-    suspend fun upload(name: String, source: InputStream, size: Long): FeedResult<String>
+    /** Sends a file (stage 3); [onProgress] gets the bytes sent so far. Cancelling the coroutine aborts the request. */
+    suspend fun upload(name: String, source: InputStream, size: Long, onProgress: (Long) -> Unit = {}): FeedResult<String>
 }
