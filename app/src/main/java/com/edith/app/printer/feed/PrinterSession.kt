@@ -41,6 +41,10 @@ internal class PrinterSession(
     private val _state = MutableStateFlow<PrinterScreenState>(PrinterScreenState.Connecting)
     val state: StateFlow<PrinterScreenState> = _state.asStateFlow()
 
+    private val _shared = MutableStateFlow<SharedPrinter?>(null)
+    /** What Jarvis last said about the printer (its name, whether phones may control it, the presets and cameras). */
+    val shared: StateFlow<SharedPrinter?> = _shared.asStateFlow()
+
     /** The last good answer, kept while Jarvis is away and between visits to the page. */
     @Volatile var lastLive: StateAnswer? = null
         private set
@@ -104,6 +108,7 @@ internal class PrinterSession(
                 }
                 is PrinterAccess.Ready -> {
                     routes = a.api
+                    _shared.value = a.shared
                     when (val r = a.api.state(after = rev, epoch = epoch, waitS = if (rev == null) 0 else WAIT_S, quiet = quiet)) {
                         is FeedResult.Ok -> {
                             failures = 0

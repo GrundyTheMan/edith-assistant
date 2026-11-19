@@ -72,6 +72,8 @@ data class HomeUi(
     val clips: ClipsUi? = null,
     /** The live view while it is open (null: closed). */
     val live: LiveUi? = null,
+    /** A Jarvis is paired (C38): the printer tile then says Details, and the Printer page can reach the printer through it. */
+    val jarvisPaired: Boolean = false,
 ) {
     /** The devices the chip shows. Favorites with none starred show everything, with a hint. */
     val shown: List<HomeDevice> get() = view.devices.filter { chip.includes(it, favorites) }
@@ -95,7 +97,7 @@ data class ClipsUi(
 )
 
 /** The Home tab (C25 §5): Jarvis's Home page on the phone. */
-class HomeViewModel(private val home: Home, private val clock: Clock) : ViewModel() {
+class HomeViewModel(private val home: Home, private val clock: Clock, private val jarvisPaired: () -> Boolean = { false }) : ViewModel() {
     private val local = MutableStateFlow(Local())
     private data class Local(
         val stepping: Map<String, Double> = emptyMap(),
@@ -116,7 +118,7 @@ class HomeViewModel(private val home: Home, private val clock: Clock) : ViewMode
             chip = l.chip ?: saved ?: HomeChip.All,   // never switches by itself (starring one mustn't jump to Favorites)
             favorites = choices.favorites, now = l.now, stepping = l.stepping, pending = l.pending,
             picture = l.picture, fetching = l.fetching, message = l.message,
-            hasClips = hasClips, clips = l.clips, live = l.live,
+            hasClips = hasClips, clips = l.clips, live = l.live, jarvisPaired = jarvisPaired(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUi())
 
@@ -333,6 +335,6 @@ class HomeViewModel(private val home: Home, private val clock: Clock) : ViewMode
         const val CLIPS_MAX_DAYS = 60L
         const val CLIPS_WINDOWS_PER_LOAD = 4
         private const val DAY_MS = 86_400_000L
-        val Factory = viewModelFactory { c, _ -> HomeViewModel(c.home, c.clock) }
+        val Factory = viewModelFactory { c, _ -> HomeViewModel(c.home, c.clock) { c.accounts.jarvisConnection() != null } }
     }
 }

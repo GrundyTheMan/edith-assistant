@@ -396,6 +396,7 @@ class AppContainer(val app: Application) {
 
     /** The 3D printer through the paired Jarvis (C39, D26): finds the printer Jarvis shares, and the one session the Printer page uses. */
     internal val printerFeed: com.edith.app.printer.feed.PrinterFeed by lazy { com.edith.app.printer.feed.PrinterFeed { accounts.jarvisConnection() } }
+    internal val printerPrefs: com.edith.app.printer.PrinterPrefs by lazy { com.edith.app.printer.DataStorePrinterPrefs(settingsStore.store) }
     internal val printerSession: com.edith.app.printer.feed.PrinterSession by lazy { com.edith.app.printer.feed.PrinterSession(printerFeed, clock, appScope) }
 
     /**

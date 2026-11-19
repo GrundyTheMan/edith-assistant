@@ -32,11 +32,15 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.edith.app.chat.ui.ChatScreen
 import com.edith.app.home.ui.HomeScreen
+import com.edith.app.printer.ui.PrinterScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.edith.app.ui.components.VoiceBanner
 import com.edith.app.ui.components.VoiceBannerViewModel
 import com.edith.app.ui.settings.SettingsScreen
+
+/** The route of the Printer page (C39). */
+private const val PRINTER_ROUTE = "printer"
 
 private val Destination.icon: ImageVector
     get() = when (this) {
@@ -111,12 +115,27 @@ fun EdithNavHost(banner: @Composable () -> Unit = {}) {
                 })
             }
             composable(Destination.Home.route) {
-                HomeScreen(onOpenSettings = {
-                    navController.navigate(Destination.Settings.route) {
-                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                        launchSingleTop = true
-                    }
-                })
+                HomeScreen(
+                    onOpenSettings = {
+                        navController.navigate(Destination.Settings.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                        }
+                    },
+                    onOpenPrinter = { navController.navigate(PRINTER_ROUTE) { launchSingleTop = true } },
+                )
+            }
+            // The Printer page (C39): reached from the printer tile on Home, not a bottom-bar tab. Back returns to Home.
+            composable(PRINTER_ROUTE) {
+                PrinterScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenPairing = {
+                        navController.navigate(Destination.Settings.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                        }
+                    },
+                )
             }
             composable(Destination.Settings.route) { SettingsScreen() }
         }

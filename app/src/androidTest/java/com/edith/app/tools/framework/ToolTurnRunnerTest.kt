@@ -224,7 +224,7 @@ class ToolTurnRunnerTest {
         var tool = RecordingTool("add_event", confirm = true)
         val seen = mutableListOf<ConfirmationRequest>()
         runner(ollama, tool).run("http://x", model, start).collect { e ->
-            if (e is TurnEvent.NeedsConfirmation) { seen += e.request; confirmations.resolve(e.request.id, approved = true) }
+            if (e is TurnEvent.NeedsConfirmation) { seen += e.request; confirmations.resolve(e.request.id, approved = true, by = ApprovalChannel.Tap) }
         }
         assertEquals(1, tool.calls.size)
         assertEquals("Do add_event?", seen.single().title)
@@ -235,7 +235,7 @@ class ToolTurnRunnerTest {
         ollama = ScriptedToolOllama(ScriptedToolOllama.Calls(listOf("add_event" to "{}")), ScriptedToolOllama.Text("Okay, I won't."))
         tool = RecordingTool("add_event", confirm = true)
         runner(ollama, tool).run("http://x", model, start).collect { e ->
-            if (e is TurnEvent.NeedsConfirmation) confirmations.resolve(e.request.id, approved = false)
+            if (e is TurnEvent.NeedsConfirmation) confirmations.resolve(e.request.id, approved = false, by = ApprovalChannel.Tap)
         }
         assertTrue(tool.calls.isEmpty())
         assertEquals("The user declined: Do add_event?. Don't retry unless they ask.", toolMessages(ollama.requests[1]).single().content)

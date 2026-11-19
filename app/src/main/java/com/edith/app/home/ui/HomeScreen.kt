@@ -94,10 +94,12 @@ data class HomeTabActions(
     val moreClips: () -> Unit = {},
     val playClip: (DeviceClip) -> Unit = {},
     val closePlayer: () -> Unit = {},
+    /** The printer tile's Details button (C39): opens the Printer page. */
+    val openPrinter: () -> Unit = {},
 )
 
 @Composable
-fun HomeScreen(onOpenSettings: () -> Unit, vm: HomeViewModel = viewModel(factory = HomeViewModel.Factory)) {
+fun HomeScreen(onOpenSettings: () -> Unit, onOpenPrinter: () -> Unit = {}, vm: HomeViewModel = viewModel(factory = HomeViewModel.Factory)) {
     val ui by vm.state.collectAsStateWithLifecycle()
     // C33: arriving from a tapped camera alert opens the Clips list.
     val fromAlert by AlertTaps.openClips.collectAsStateWithLifecycle()
@@ -119,7 +121,7 @@ fun HomeScreen(onOpenSettings: () -> Unit, vm: HomeViewModel = viewModel(factory
             refresh = vm::refresh, chip = vm::selectChip, toggle = vm::toggle, send = vm::send, step = vm::step,
             favorite = vm::setFavorite, hide = vm::hide, snapshot = vm::snapshot, startLive = vm::startLive, stopLive = vm::stopLive, confirm = vm::confirm, dismiss = vm::dismiss,
             closePicture = vm::closePicture, messageShown = vm::messageShown, openSettings = onOpenSettings,
-            openClips = vm::openClips, closeClips = vm::closeClips, moreClips = vm::loadMoreClips, playClip = vm::play, closePlayer = vm::closePlayer,
+            openClips = vm::openClips, closeClips = vm::closeClips, moreClips = vm::loadMoreClips, playClip = vm::play, closePlayer = vm::closePlayer, openPrinter = onOpenPrinter,
         ),
     )
 }
@@ -278,6 +280,7 @@ private fun PrinterTile(d: HomeDevice, ui: HomeUi, a: HomeTabActions) {
                 if (printing) TextButton(onClick = { a.send(d, DeviceCommand.Pause) }) { Text("Pause") }
                 if (paused) TextButton(onClick = { a.send(d, DeviceCommand.Resume) }) { Text("Resume") }
                 if (printing || paused) TextButton(onClick = { a.send(d, DeviceCommand.CancelPrint) }) { Text("Cancel print") }
+                TextButton(onClick = a.openPrinter, modifier = Modifier.testTag("printer-details")) { Text(if (ui.jarvisPaired) "Details" else "Printer page") }
                 if (d.has(Capability.Snapshot) && d.online) {
                     if (d.key in ui.fetching) CircularProgressIndicator(Modifier.size(24.dp).padding(end = 4.dp))
                     else TextButton(onClick = { a.snapshot(d) }) { Text("Camera") }
