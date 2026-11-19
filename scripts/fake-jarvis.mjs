@@ -33,7 +33,9 @@ if (!existsSync(certFile)) {
 const cert = readFileSync(certFile, 'utf8')
 const der = Buffer.from(cert.replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''), 'base64')
 const fingerprint = createHash('sha256').update(der).digest('hex')
-const tokens = new Set()
+// Paired phones are kept in a file beside the certificate, so restarting this pretend does not make a paired emulator pair again.
+const tokenFile = join(dir, "tokens.json")
+const tokens = new Set(existsSync(tokenFile) ? JSON.parse(readFileSync(tokenFile, "utf8")) : [])
 const drafts = []
 const now = Date.now()
 const hour = 3_600_000
@@ -225,7 +227,7 @@ setInterval(() => {
 // A small PNG with the time drawn on it (3x5 digits), so a new picture is visibly new.
 const DIGITS = { 0: '111101101101111', 1: '010110010010111', 2: '111001111100111', 3: '111001111001111', 4: '101101111001001', 5: '111100111001111', 6: '111100111101111', 7: '111001001001001', 8: '111101111101111', 9: '111101111001111', ':': '000010000010000' }
 function picture(label) {
-  const W = 160, H = 120, S = 6; const raw = Buffer.alloc((W * 3 + 1) * H)
+  const W = 200, H = 120, S = 6; const raw = Buffer.alloc((W * 3 + 1) * H)
   for (let y = 0; y < H; y++) { raw[y * (W * 3 + 1)] = 0; for (let x = 0; x < W; x++) { const o = y * (W * 3 + 1) + 1 + x * 3; raw[o] = 30 + y; raw[o + 1] = 60 + (x >> 1); raw[o + 2] = 110 } }
   let cx = 8
   for (const ch of label) { const g = DIGITS[ch]; if (g) for (let gy = 0; gy < 5; gy++) for (let gx = 0; gx < 3; gx++) if (g[gy * 3 + gx] === '1') for (let dy = 0; dy < S; dy++) for (let dx = 0; dx < S; dx++) { const o = (50 + gy * S + dy) * (W * 3 + 1) + 1 + (cx + gx * S + dx) * 3; raw[o] = raw[o + 1] = raw[o + 2] = 255 } cx += 4 * S - 2 }
@@ -352,6 +354,7 @@ createServer({ key: readFileSync(keyFile), cert }, (req, res) => {
       if (JSON.parse(body || '{}').proof !== want) return err(res, 403, 'PAIRING_REFUSED', 'That pairing code wasn’t accepted.')
       const token = randomBytes(32).toString('base64url')
       tokens.add(token)
+      writeFileSync(tokenFile, JSON.stringify([...tokens]))
       return send(res, 200, { token, deviceId: 'fake-device', pcName: 'FAKE-PC', version: 1 })
     }
     const auth = (req.headers.authorization ?? '').replace(/^Bearer /, '')

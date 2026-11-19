@@ -11,6 +11,7 @@ import com.edith.app.printer.feed.PrinterFormat
 import com.edith.app.printer.feed.PrinterScreenState
 import com.edith.app.printer.feed.PrinterSession
 import com.edith.app.printer.feed.PrinterState
+import com.edith.app.printer.feed.PrinterWords
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -57,7 +58,8 @@ internal data class PrinterUi(
     val chip: ConnectionChip get() {
         val st = state
         return when {
-            screen is PrinterScreenState.JarvisAway -> ConnectionChip("Jarvis not reachable", Tone.Bad)
+            screen is PrinterScreenState.JarvisAway ->
+                ConnectionChip(if (screen.why == PrinterWords.UNAUTHORIZED) "Jarvis removed this phone" else "Jarvis not reachable", Tone.Bad)
             screen is PrinterScreenState.Connecting -> ConnectionChip("Connecting…", Tone.Muted)
             st == null -> ConnectionChip("", Tone.Muted)
             else -> when (st.connection) {
@@ -120,6 +122,18 @@ internal data class PrinterActions(
     val openPairing: () -> Unit = {},
     val toggleCard: (String) -> Unit = {},
     val dismissAlert: (Long) -> Unit = {},
+    /** A card was opened or folded (or left the screen): the page tells the data layer, which loads lazily. */
+    val cardVisible: (String, Boolean) -> Unit = { _, _ -> },
+    val toggleSeries: (String) -> Unit = {},
+    val moreHistory: () -> Unit = {},
+    val setHideValues: (Boolean) -> Unit = {},
+    val clearConsole: () -> Unit = {},
+    val loadFiles: (Boolean) -> Unit = {},
+    val setFileQuery: (String) -> Unit = {},
+    val setPrintedOnly: (Boolean) -> Unit = {},
+    val openFile: (String) -> Unit = {},
+    val closeFile: () -> Unit = {},
+    val chooseCamera: (String) -> Unit = {},
 )
 
 /**
@@ -133,6 +147,10 @@ internal class PrinterViewModel(
 ) : ViewModel() {
     private data class Local(val now: Long, val dismissedAlert: Long? = null)
 
+    /** What the cards read beyond the live state: the chart, history, files, console and camera (lazy, see [PrinterCardData]). */
+    val data = PrinterCardData(session, prefs, viewModelScope)
+    val cards: StateFlow<CardsUi> = data.ui
+
     private val local = MutableStateFlow(Local(clock.now().toEpochMilli()))
     private var ticking: Job? = null
 
@@ -144,6 +162,7 @@ internal class PrinterViewModel(
     fun attach() {
         local.update { it.copy(now = clock.now().toEpochMilli(), dismissedAlert = null) }
         session.attach()
+        data.attached()
         ticking?.cancel()
         ticking = viewModelScope.launch {
             while (isActive) {
@@ -157,6 +176,7 @@ internal class PrinterViewModel(
     fun detach() {
         ticking?.cancel()
         ticking = null
+        data.detached()
         session.detach()
     }
 
