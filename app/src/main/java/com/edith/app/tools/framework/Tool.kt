@@ -37,6 +37,11 @@ interface Tool {
     /** Integration this tool belongs to (null = built in). Tools of disconnected integrations aren't offered. */
     val integrationId: String? get() = null
     /**
+     * Whether this tool is offered to the model right now, apart from its integration (C39: `printer_control` only while the paired Jarvis lets this phone
+     * control the printer, so the model is never told it can do what it cannot). Read each time the tool list is made.
+     */
+    fun offered(): Boolean = true
+    /**
      * Non-null when the call changes something outside the app and needs the owner's OK first (D11). Null when it
      * doesn't, or when [execute] will only explain why it can't go ahead (C22: "ask the owner which account").
      * Suspends because the answer may need a read first (C22: which account has a calendar of that name).
