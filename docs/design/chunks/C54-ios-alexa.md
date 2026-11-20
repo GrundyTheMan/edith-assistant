@@ -72,6 +72,10 @@ Both parts are in one PR. Where the code differs from the specification above, t
 - **Commands** are Android's: on/off, brightness and speed as fractions, colour and white by name, thermostat setpoint (account scale) and mode, lock and unlock; the unlock card is C46's.
   Amazon answers 200 to a refusal, so `controlProblem` reads the answer and a refusal is a failure in words.
 - **The API checks every address** (HTTPS, and under an Amazon site) and follows redirects itself to keep the cookies set along the way; a redirect to Amazon's sign-in page means the cookies are no good.
+- **Found on the owner's iPhone (2026-11-20): the first load worked, every later one said "Alexa gave no csrf token".** iOS keeps Amazon's cookies itself after the first sign-in, so Amazon no longer
+  sends the `csrf` cookie, and Edith never saw it. **Fix:** the csrf token is remembered (in the Keychain value, with the refresh token) and reused when Amazon doesn't send it, and every Amazon request is
+  made with `credentials: 'omit'` so the platform's shared cookie store neither hides `Set-Cookie` nor sends cookies of its own. This also shows that `Set-Cookie` is visible to the app on iOS.
+  Tests: a pretend Amazon that sends the cookie only the first time. Whether Alexa accepts a reused csrf token for new cookies is still unconfirmed.
 - **Not verified, and it matters a lot:**
   - **Nothing has run against the real Amazon.** Everything is from the libraries' source, Android's port and a pretend Amazon that checks the PKCE proof, the cookies and the csrf token.
   - **Cookies on iOS.** The csrf token arrives as a `Set-Cookie` header. Whether `expo/fetch` shows that header to the app on iOS, and whether `redirect: 'manual'` is honoured, is unknown. If the

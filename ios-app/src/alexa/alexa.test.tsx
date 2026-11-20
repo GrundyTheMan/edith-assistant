@@ -213,6 +213,10 @@ interface Amazon {
   exchangeCount: number;
   controls: Record<string, unknown>[];
   mergedDeviceStates: boolean;
+  /** Send the csrf cookie only the first time, as Amazon does to a browser that already holds it. */
+  csrfOnce: boolean;
+  languageCalls: number;
+  credentials: (string | undefined)[];
 }
 const LAMP = { id: 'E1', friendlyName: 'Living room lamp', displayCategories: { primary: { value: 'LIGHT' } }, manufacturer: { value: { text: 'Hue' } }, legacyAppliance: { entityId: 'ENT-LAMP', applianceId: 'APP-LAMP', actions: ['turnOn', 'turnOff', 'setBrightness'], capabilities: [{ interfaceName: 'Alexa.PowerController', properties: { retrievable: true, supported: [{ name: 'powerState' }] } }, { interfaceName: 'Alexa.BrightnessController', properties: { retrievable: true, supported: [{ name: 'brightness' }] } }] } };
 const LOCK = { id: 'E2', friendlyName: 'Front door lock', displayCategories: { primary: { value: 'SMARTLOCK' } }, manufacturer: { value: { text: 'August' } }, legacyAppliance: { entityId: 'ENT-LOCK', applianceId: 'APP-LOCK', actions: ['lockAction'], capabilities: [{ interfaceName: 'Alexa.LockController', properties: { retrievable: true, supported: [{ name: 'lockState' }] } }] } };
@@ -230,10 +234,14 @@ function pretendAmazon(): Amazon {
     exchangeCount: 0,
     controls: [],
     mergedDeviceStates: false,
+    csrfOnce: false,
+    languageCalls: 0,
+    credentials: [],
     stateAnswer: undefined,
     controlAnswer: { controlResponses: [{ code: 'SUCCESS' }] },
     fetch: async (url, init) => {
       a.calls.push({ method: init.method, url });
+      a.credentials.push(init.credentials);
       const json = (body: unknown, status = 200, headers: Record<string, string> = {}): HttpResponse => ({ ok: status < 300, status, headers: { get: (n) => headers[n.toLowerCase()] ?? null }, text: async () => JSON.stringify(body), body: null });
       const h = init.headers ?? {};
       if (url === 'https://api.amazon.com/auth/register') {
@@ -248,7 +256,11 @@ function pretendAmazon(): Amazon {
         if (!a.refreshValid || !init.body?.includes(`source_token=${REFRESH}`)) return json({}, 400);
         return json({ response: { tokens: { cookies: { '.amazon.com': [{ Name: 'session-id', Value: 'S1' }, { Name: 'at-main', Value: `T${a.exchangeCount}` }] } } } });
       }
-      if (url.startsWith('https://alexa.amazon.com/api/language')) return json({}, 200, { 'set-cookie': 'csrf=CSRF-9; Path=/; Secure, other=1; Path=/' });
+      if (url.startsWith('https://alexa.amazon.com/api/language')) {
+        a.languageCalls++;
+        if (a.csrfOnce && a.languageCalls > 1) return json({}, 200); // already holds it: Amazon says nothing
+        return json({}, 200, { 'set-cookie': 'csrf=CSRF-9; Path=/; Secure, other=1; Path=/' });
+      }
       // Alexa's own web API: needs the cookies and the csrf token from the session.
       if (!a.cookiesValid || !String(h.Cookie).includes('csrf=CSRF-9') || h.csrf !== 'CSRF-9') return json({}, 401);
       if (url.endsWith('/nexus/v1/graphql')) return json({ data: { endpoints: { items: [LAMP, LOCK, GARAGE] } } });
@@ -426,6 +438,38 @@ describe('devices and states', () => {
     expect(scaleOf(US)).toBe('FAHRENHEIT');
     expect(scaleOf(AMAZON_SITES[2])).toBe('CELSIUS');
     expect(STATE_BATCH).toBe(5);
+  });
+});
+
+describe('the csrf token across sessions (found on the owner phone)', () => {
+  it('a later session works though Amazon no longer sends the csrf cookie: it reuses the token it saw', async () => {
+    const { home, amazon, secrets } = await signedIn((a) => (a.csrfOnce = true));
+    expect((await home.refresh()).problems).toEqual([]); // the first session sees the cookie
+    expect(JSON.parse(secrets.dump()['home.alexa']).csrf).toBe('CSRF-9'); // and keeps it
+    // A new run of the app: no session in memory, and Amazon now stays silent about csrf.
+    const api = new AlexaApi({ fetch: amazon.fetch, randomBytes: (n) => new Uint8Array(randomBytes(n)) });
+    const again = new AlexaService({ secrets, api, now: () => 1_000_000 });
+    await again.restore();
+    const home2 = new Home({ store: memoryStore() as never, now: () => 1_000_000, setTimer: () => 0 });
+    home2.registerService(again);
+    const r = await home2.refresh();
+    expect(r.problems).toEqual([]);
+    expect(home2.cached().map((d) => d.name)).toContain('Living room lamp');
+    expect(amazon.languageCalls).toBeGreaterThan(1);
+  });
+  it('with nothing known and nothing sent, it still says there is no csrf token', async () => {
+    const a = pretendAmazon();
+    a.csrfOnce = true;
+    a.languageCalls = 1; // as if it had been seen before this run
+    const api = new AlexaApi({ fetch: a.fetch, randomBytes: (n) => new Uint8Array(randomBytes(n)) });
+    expect(await api.session(US, REFRESH)).toEqual({ kind: 'failed', why: 'Alexa gave no csrf token' });
+    expect(await api.session(US, REFRESH, 'KNOWN-1')).toMatchObject({ kind: 'ok', value: { csrf: 'KNOWN-1', cookie: expect.stringContaining('csrf=KNOWN-1') } });
+  });
+  it('never lets the platform keep or send cookies of its own', async () => {
+    const { home, amazon } = await signedIn();
+    await home.refresh();
+    expect(amazon.credentials.length).toBeGreaterThan(3);
+    expect(amazon.credentials.every((c) => c === 'omit')).toBe(true);
   });
 });
 
