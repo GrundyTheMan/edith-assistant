@@ -30,7 +30,7 @@ export class ToolRegistry {
     return this.tools;
   }
   available(model: ModelInfo): Tool[] {
-    return canUseTools(model) ? this.tools : [];
+    return canUseTools(model) ? this.tools.filter((t) => t.enabled?.() ?? true) : [];
   }
   displayName(toolName: string): string {
     return this.tools.find((t) => t.spec.name === toolName)?.displayName ?? toolName;

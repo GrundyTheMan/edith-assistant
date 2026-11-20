@@ -1,5 +1,8 @@
 import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { AttachmentStore } from '../attachments/attachments';
+import { DemoBackend } from '../home/demoBackend';
+import { Home } from '../home/home';
+import { homeControlTool, homeDevicesTool } from '../home/homeTools';
 import { ExpoRecorder, expoAudioFiles } from '../voice/expoRecorder';
 import { OllamaTranscriber, VoiceMemos } from '../voice/voiceMemos';
 import { ChatEngine } from '../chat/engine';
@@ -37,6 +40,7 @@ export interface Services {
   tools: ToolRegistry;
   attachments: AttachmentStore;
   voice: VoiceMemos;
+  home: Home;
 }
 
 /** Wires the app together once, at startup: the database, settings, engine, titler and speech (C06, C06b, C13). */
@@ -47,7 +51,19 @@ export async function createServices(): Promise<Services> {
   const repo = new ChatRepository(db, systemClock);
   const catalog = new ModelCatalog(ollamaClient);
   const selection = new ModelSelection(settings, catalog);
-  const tools = new ToolRegistry([currentTimeTool, weatherTool({ client: new OpenMeteoClient({ fetch: httpFetch }), location: deviceLocation }),
+  const home = new Home({ store: kvStore });
+  await home.load();
+  // The Demo home is for trying things with no service; development builds only (Expo Go is one).
+  const applyBackends = () => home.setBackends(__DEV__ && home.demoOn ? [new DemoBackend()] : []);
+  applyBackends();
+  let demoWas = home.demoOn;
+  home.version.subscribe(() => {
+    if (home.demoOn !== demoWas) {
+      demoWas = home.demoOn;
+      applyBackends();
+    }
+  });
+  const tools = new ToolRegistry([currentTimeTool, homeDevicesTool(home), homeControlTool(home), weatherTool({ client: new OpenMeteoClient({ fetch: httpFetch }), location: deviceLocation }),
     searchWebTool(new DuckDuckGoSearch(httpFetch)),
     readWebPageTool(new PageReader(httpFetch)),
   ]);
@@ -84,7 +100,7 @@ export async function createServices(): Promise<Services> {
     if (speakWas && !s.speakReplies) speech.stop();
     speakWas = s.speakReplies;
   });
-  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments, voice };
+  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments, voice, home };
 }
 
 const ServicesContext = createContext<Services | null>(null);

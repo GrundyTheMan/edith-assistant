@@ -74,7 +74,7 @@ let confirmationCounter = 0;
 async function approve(tool: Tool, args: ToolArgs, input: TurnInput): Promise<true | ToolResult> {
   let spec;
   try {
-    spec = tool.confirmation?.(args, input.toolContext) ?? null;
+    spec = (await tool.confirmation?.(args, input.toolContext)) ?? null;
   } catch (e) {
     if (e instanceof ArgumentError) return { ok: false, text: `Error: missing ${e.argName} for ${tool.spec.name}.` };
     log.warn('Tools', `${tool.spec.name} confirmation threw`);

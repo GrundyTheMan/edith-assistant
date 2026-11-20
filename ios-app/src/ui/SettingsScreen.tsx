@@ -10,6 +10,7 @@ import type { ModelInfo } from '../ollama/types';
 import { capabilityLine } from '../ollama/catalog';
 import { normalizeServerUrl } from '../settings/serverUrl';
 import type { Settings } from '../settings/settings';
+import { HomeSettings } from './HomeSettings';
 import { useTheme } from './theme';
 
 type Connection = { state: 'idle' } | { state: 'testing' } | { state: 'ok'; text: string } | { state: 'failed'; text: string };
@@ -157,6 +158,10 @@ export function SettingsScreen() {
             accessibilityLabel="Speech speed"
           />
           <Button label="Test voice" onPress={() => speech.test()} theme={theme} />
+        </Section>
+
+        <Section title="Home" theme={theme}>
+          <HomeSettings theme={theme} />
         </Section>
 
         <Section title="About" theme={theme}>
