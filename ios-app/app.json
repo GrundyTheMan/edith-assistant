@@ -20,6 +20,12 @@
         {
           "locationWhenInUsePermission": "Edith uses your approximate location only when you ask for things like the weather here."
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Edith shows the photos you choose to attach to a message to the model on your PC."
+        }
       ]
     ],
     "experiments": {

@@ -21,6 +21,26 @@ export interface StoredMessage {
   toolsUsed: string[];
   errorMessage: string | null;
 }
+export interface StoredAttachment {
+  id: number;
+  messageId: number;
+  /** The number the model sees in "[Attachment 3: name (image)]"; unique across all chats. */
+  number: number;
+  direction: 'from_user' | 'from_edith';
+  kind: 'image' | 'audio';
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: number;
+  removedAt: number | null;
+}
+export interface NewAttachment {
+  kind: 'image' | 'audio';
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 export interface Conversation {
   id: number;
   title: string;
@@ -47,6 +67,31 @@ interface MessageRow {
   tools_used: string | null;
   error_message: string | null;
 }
+interface AttachmentRow {
+  id: number;
+  message_id: number;
+  number: number;
+  direction: StoredAttachment['direction'];
+  kind: StoredAttachment['kind'];
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  created_at: number;
+  removed_at: number | null;
+}
+const toAttachment = (r: AttachmentRow): StoredAttachment => ({
+  id: r.id,
+  messageId: r.message_id,
+  number: r.number,
+  direction: r.direction,
+  kind: r.kind,
+  fileName: r.file_name,
+  mimeType: r.mime_type,
+  sizeBytes: r.size_bytes,
+  createdAt: r.created_at,
+  removedAt: r.removed_at,
+});
+
 interface ConversationRow {
   id: number;
   title: string;
@@ -203,8 +248,23 @@ export class ChatRepository {
   }
 
   /** Returns the new id, or null when the conversation was deleted meanwhile (nothing is stored). */
-  async addUserMessage(conversationId: number, text: string, source: MessageSource = 'typed'): Promise<number | null> {
-    return this.insert(conversationId, 'user', text, 'complete', source, null, [], null, true);
+  async addUserMessage(
+    conversationId: number,
+    text: string,
+    source: MessageSource = 'typed',
+    attachments: NewAttachment[] = [],
+  ): Promise<number | null> {
+    return this.insert(conversationId, 'user', text, 'complete', source, null, [], null, true, attachments);
+  }
+
+  /** The attachments of a conversation's messages, oldest first (C15). */
+  async attachments(conversationId: number): Promise<StoredAttachment[]> {
+    const rows = await this.db.all<AttachmentRow>(
+      `SELECT a.* FROM attachments a JOIN messages m ON m.id = a.message_id
+       WHERE m.conversation_id = ? ORDER BY a.id`,
+      [conversationId],
+    );
+    return rows.map(toAttachment);
   }
 
   async addAssistantMessage(conversationId: number, text: string, model: string, toolsUsed: string[] = []) {
@@ -241,6 +301,7 @@ export class ChatRepository {
     toolsUsed: string[],
     errorMessage: string | null,
     autoTitle: boolean,
+    attachments: NewAttachment[] = [],
   ): Promise<number | null> {
     const now = this.clock.now();
     try {
@@ -258,6 +319,14 @@ export class ChatRepository {
             firstMessageTitle(content),
             conversationId,
           ]);
+        }
+        for (const a of attachments) {
+          const next = await this.db.first<{ n: number }>('SELECT COALESCE(MAX(number), 0) + 1 AS n FROM attachments');
+          await this.db.run(
+            `INSERT INTO attachments (message_id, number, direction, kind, file_name, mime_type, size_bytes, created_at)
+             VALUES (?, ?, 'from_user', ?, ?, ?, ?, ?)`,
+            [res.lastInsertRowId, next?.n ?? 1, a.kind, a.fileName, a.mimeType, a.sizeBytes, now],
+          );
         }
         return res.lastInsertRowId;
       });

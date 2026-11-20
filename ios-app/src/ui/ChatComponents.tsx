@@ -1,7 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import type { PendingAttachment } from '../attachments/attachments';
 import type { StoredMessage } from '../data/chatRepository';
+import { BubbleAttachments, PendingChips, type BubbleAttachment } from './AttachmentViews';
 import { MarkdownText } from './MarkdownText';
 import { messageTime } from './messageTimes';
 import type { Theme } from './theme';
@@ -68,10 +70,14 @@ export function MessageBubble({
   actions,
   onRetry,
   toolNames = [],
+  attachments = [],
+  onOpenImage,
 }: {
   message: StoredMessage;
   /** Display names of the tools used for this reply ("weather"), shown as "Used: …". */
   toolNames?: string[];
+  attachments?: BubbleAttachment[];
+  onOpenImage?: (base64: string) => void;
   theme: Theme;
   now: number;
   actions: Omit<ActionRowProps, 'message' | 'theme'> | null;
@@ -85,9 +91,12 @@ export function MessageBubble({
     return (
       <View style={styles.rowEnd}>
         <View style={[styles.bubble, styles.userBubble, { backgroundColor: theme.primary, maxWidth }]}>
-          <Text selectable style={[styles.userText, { color: theme.onPrimary }]}>
-            {message.content}
-          </Text>
+          <BubbleAttachments items={attachments} onOpen={(b) => onOpenImage?.(b)} theme={theme} />
+          {message.content ? (
+            <Text selectable style={[styles.userText, { color: theme.onPrimary }]}>
+              {message.content}
+            </Text>
+          ) : null}
         </View>
         {time}
       </View>
@@ -168,7 +177,13 @@ export function InputRow({
   hint,
   onSend,
   theme,
+  pending = [],
+  onAttach,
+  onRemove,
 }: {
+  pending?: PendingAttachment[];
+  onAttach?: () => void;
+  onRemove?: (localId: string) => void;
   value: string;
   onChange: (t: string) => void;
   canSend: boolean;
@@ -179,7 +194,13 @@ export function InputRow({
   return (
     <View style={[styles.inputWrap, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
       {hint ? <Text style={[styles.hint, { color: theme.textMuted }]}>{hint}</Text> : null}
+      <PendingChips items={pending} onRemove={(id) => onRemove?.(id)} theme={theme} />
       <View style={styles.inputRow}>
+        {onAttach ? (
+          <Pressable onPress={onAttach} accessibilityRole="button" accessibilityLabel="Attach a photo" style={styles.attach} hitSlop={6}>
+            <Ionicons name="attach" size={26} color={theme.textMuted} />
+          </Pressable>
+        ) : null}
         <TextInput
           style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface }]}
           value={value}
@@ -222,5 +243,6 @@ const styles = StyleSheet.create({
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   hint: { fontSize: 13, paddingBottom: 6, paddingHorizontal: 6 },
   input: { flex: 1, borderWidth: 1, borderRadius: 22, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10, fontSize: 16, maxHeight: 120 },
+  attach: { width: 36, height: 40, alignItems: 'center', justifyContent: 'center' },
   send: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
 });
