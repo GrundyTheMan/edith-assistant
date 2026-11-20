@@ -66,7 +66,7 @@ export function ImageViewer({ base64, onClose }: { base64: string | null; onClos
     <Modal visible={base64 !== null} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <View style={styles.viewer}>
         {base64 ? (
-          <Pressable style={styles.viewerPress} onPress={onClose} accessibilityLabel="Close picture">
+          <Pressable style={styles.viewerPress} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close picture">
             <Image source={{ uri: dataUri(base64) }} style={styles.viewerImage} resizeMode="contain" />
           </Pressable>
         ) : null}

@@ -29,7 +29,7 @@ export function ConversationSettings({ theme }: { theme: Theme }) {
           <Text style={{ color: theme.text, fontSize: 16 }}>Speak replies during conversation</Text>
           <Text style={[styles.note, { color: theme.textMuted }]}>If speaking is off, it is turned on while a conversation lasts</Text>
         </View>
-        <Switch value={saved.speakDuringConversation} onValueChange={(v) => void settings.update((s) => ({ ...s, speakDuringConversation: v }))} />
+        <Switch value={saved.speakDuringConversation} onValueChange={(v) => void settings.update((s) => ({ ...s, speakDuringConversation: v }))} accessibilityLabel="Speak replies during conversation" />
       </View>
 
       <Text style={{ color: theme.text }}>Follow-up window: {follow === 0 ? 'none (ends after each reply)' : `${follow} s`}</Text>
