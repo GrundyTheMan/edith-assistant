@@ -131,7 +131,12 @@ export function confirmationFor(d: HomeDevice, c: DeviceCommand): ConfirmationSp
 /** "On, 60%", "Locked", "Heat to 70°F, now 68°F" ... */
 export function stateWords(d: HomeDevice): string {
   if (d.type === 'printer') return printerWords(d);
-  if (!d.online) return 'Not responding';
+  if (!d.online) {
+    // A device that works only on the home Wi-Fi keeps its last report and says why it isn't live (C50); others are just silent.
+    if (!d.state.homeOnly) return 'Not responding';
+    const last = stateWords({ ...d, online: true, state: { ...d.state, homeOnly: false } });
+    return last === 'No state reported' ? 'Not reachable. It works on your home Wi-Fi.' : `Not reachable. It works on your home Wi-Fi. Last: ${last}.`;
+  }
   const s: DeviceState = d.state;
   const parts: string[] = [];
   if (s.lock) parts.push(s.lock[0].toUpperCase() + s.lock.slice(1));

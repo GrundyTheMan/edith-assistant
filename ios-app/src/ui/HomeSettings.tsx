@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { useServices, useStore } from '../core/services';
-import { stateText, type HomeService } from '../home/service';
+import { stateText, type HomeService, type ServiceAction } from '../home/service';
 import { PageSignInModal } from './PageSignInModal';
 import { ServiceSignIn } from './ServiceSignIn';
 import type { Theme } from './theme';
@@ -11,7 +11,22 @@ export function ServiceRow({ service, theme, onSignIn, ask = askToDisconnect }: 
   const state = useStore(service.state);
   const needsAgain = state.kind === 'needs_sign_in';
   const signedOut = state.kind === 'signed_out';
+  const [said, setSaid] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const actions: ServiceAction[] = state.kind === 'connected' ? (service.actions?.() ?? []) : [];
+  const run = async (a: ServiceAction) => {
+    setBusy(a.id);
+    setSaid(null);
+    try {
+      setSaid(await a.run());
+    } catch {
+      setSaid("That didn't work.");
+    } finally {
+      setBusy(null);
+    }
+  };
   return (
+    <View style={{ gap: 6 }}>
     <View style={styles.row}>
       <View style={styles.flex}>
         <Text style={{ color: theme.text, fontSize: 16 }}>{service.name}</Text>
@@ -27,6 +42,13 @@ export function ServiceRow({ service, theme, onSignIn, ask = askToDisconnect }: 
           <Text style={{ color: theme.error, fontWeight: '600' }}>Disconnect</Text>
         </Pressable>
       ) : null}
+    </View>
+    {actions.map((a) => (
+      <Pressable key={a.id} onPress={() => void run(a)} disabled={busy !== null} accessibilityRole="button" accessibilityLabel={a.label}>
+        <Text style={{ color: theme.primary, fontWeight: '600' }}>{busy === a.id ? `${a.label}…` : a.label}</Text>
+      </Pressable>
+    ))}
+    {said ? <Text style={{ color: theme.textMuted, fontSize: 13 }}>{said}</Text> : null}
     </View>
   );
 }
