@@ -4,20 +4,67 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useServices, useStore } from '../../core/services';
+import type { CardsUi } from '../../printer/feed/cards';
 import { phoneUses24Hour } from '../../printer/feed/format';
 import { CARD_IDS } from '../../printer/feed/prefs';
 import { Connections } from '../../printer/feed/wire';
 import { CONNECTING, bannerOf, chipOf, isGreyed, messageOf, showsCards, stateOf, type PrinterUi, type Tone } from '../../printer/feed/page';
 import type { PrinterScreenState } from '../../printer/feed/session';
+import type { PrinterState } from '../../printer/feed/wire';
 import { useTheme, type Theme } from '../theme';
+import { CameraCard, ConsoleCard, FansCard, FilesCard, HistoryCard, LimitsCard, MeshCard, ObjectsCard, QueueCard, SensorsCard, SlotsCard, SystemCard, TemperatureCard, ToolheadCard, type CardActions } from './Cards';
 import { StatusCard, type LastPrint } from './StatusCard';
 
-/** The cards that exist so far (E4: Status; the rest come in E5 and later). They are drawn in the order of `CARD_IDS`. */
-export const BUILT_CARDS: readonly string[] = ['status'];
+/** The cards that exist so far (E4 Status; E5 all the read-only ones; Macros comes in E9). They are drawn in the order of `CARD_IDS`. */
+export const BUILT_CARDS: readonly string[] = CARD_IDS.filter((id) => id !== 'macros');
 
 const TITLES: Record<string, string> = { status: 'Status', camera: 'Camera', temperatures: 'Temperatures', toolhead: 'Toolhead', fans: 'Fans and light', limits: 'Limits and retraction', sensors: 'Sensors', slots: 'Filament slots', macros: 'Macros', files: 'Files', objects: 'Objects', queue: 'Queue', history: 'History', console: 'Console', mesh: 'Bed mesh', system: 'System' };
 
 const toneColor = (tone: Tone, theme: Theme) => (tone === 'good' ? theme.primary : tone === 'bad' ? theme.error : tone === 'warn' ? '#B26A00' : theme.textMuted);
+
+/** A card with nothing to show is left out: no queue, no mesh. */
+function cardShown(id: string, state: PrinterState): boolean {
+  if (id === 'queue') return state.queue !== null;
+  if (id === 'mesh') return state.mesh !== null;
+  return true;
+}
+
+function CardBody({ id, ui, state, theme, is24Hour, lastPrint, cards, actions, onDismissAlert }: { id: string; ui: PrinterUi; state: PrinterState; theme: Theme; is24Hour: boolean; lastPrint: LastPrint | null; cards: CardsUi; actions: CardActions; onDismissAlert: (time: number) => void }) {
+  switch (id) {
+    case 'status':
+      return <StatusCard ui={ui} theme={theme} is24Hour={is24Hour} lastPrint={lastPrint} onDismissAlert={onDismissAlert} />;
+    case 'camera':
+      return <CameraCard state={state} camera={cards.camera} actions={actions} theme={theme} />;
+    case 'temperatures':
+      return <TemperatureCard state={state} cards={cards} actions={actions} theme={theme} />;
+    case 'toolhead':
+      return <ToolheadCard state={state} theme={theme} />;
+    case 'fans':
+      return <FansCard state={state} theme={theme} />;
+    case 'limits':
+      return <LimitsCard state={state} theme={theme} />;
+    case 'sensors':
+      return <SensorsCard state={state} theme={theme} />;
+    case 'slots':
+      return <SlotsCard state={state} theme={theme} />;
+    case 'files':
+      return <FilesCard state={state} cards={cards} now={ui.now} actions={actions} theme={theme} />;
+    case 'objects':
+      return <ObjectsCard state={state} theme={theme} />;
+    case 'queue':
+      return <QueueCard state={state} now={ui.now} theme={theme} />;
+    case 'history':
+      return <HistoryCard cards={cards} now={ui.now} actions={actions} theme={theme} />;
+    case 'console':
+      return <ConsoleCard cards={cards} actions={actions} theme={theme} />;
+    case 'mesh':
+      return state.mesh ? <MeshCard mesh={state.mesh} theme={theme} /> : null;
+    case 'system':
+      return <SystemCard state={state} theme={theme} />;
+    default:
+      return null;
+  }
+}
 
 /** The Printer page without the session, so a test can draw any state (C39 §8). */
 export function PrinterPage({
@@ -25,6 +72,8 @@ export function PrinterPage({
   theme,
   is24Hour,
   lastPrint,
+  cards,
+  actions,
   directConnected,
   onBack,
   onTryAgain,
@@ -36,6 +85,8 @@ export function PrinterPage({
   theme: Theme;
   is24Hour: boolean;
   lastPrint: LastPrint | null;
+  cards: CardsUi;
+  actions: CardActions;
   /** The direct printer (home Wi-Fi) is connected: the "no Jarvis" page says its tile still works. */
   directConnected: boolean;
   onBack: () => void;
@@ -106,7 +157,7 @@ export function PrinterPage({
               ) : null}
             </View>
           ) : null}
-          {CARD_IDS.filter((id) => BUILT_CARDS.includes(id)).map((id) => {
+          {CARD_IDS.filter((id) => BUILT_CARDS.includes(id) && cardShown(id, state)).map((id) => {
             const open = !ui.collapsed.has(id);
             return (
               <View key={id} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]} testID={`card-${id}`}>
@@ -114,7 +165,7 @@ export function PrinterPage({
                   <Text style={[styles.cardTitle, { color: theme.text }]}>{TITLES[id]}</Text>
                   <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={20} color={theme.textMuted} />
                 </Pressable>
-                {open && id === 'status' ? <StatusCard ui={ui} theme={theme} is24Hour={is24Hour} lastPrint={lastPrint} onDismissAlert={onDismissAlert} /> : null}
+                {open ? <CardBody id={id} ui={ui} state={state} theme={theme} is24Hour={is24Hour} lastPrint={lastPrint} cards={cards} actions={actions} onDismissAlert={onDismissAlert} /> : null}
               </View>
             );
           })}
@@ -131,10 +182,11 @@ export function PrinterPage({
 /** The Printer page (C39 §8, C67 E4): a stack screen over the Home tab. It asks Jarvis only while it is on screen and Edith is in front. */
 export function PrinterScreen() {
   const theme = useTheme();
-  const { printerSession: session, printerPrefs: prefs, home } = useServices();
+  const { printerSession: session, printerPrefs: prefs, printerCards: data, home } = useServices();
   const screen = useStore(session.state);
   const shared = useStore(session.shared);
   const collapsed = useStore(prefs.collapsed);
+  const cards = useStore(data.ui);
   const [dismissed, setDismissed] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [lastPrint, setLastPrint] = useState<LastPrint | null>(null);
@@ -147,12 +199,16 @@ export function PrinterScreen() {
         setDismissed(null);
         setNow(Date.now());
         session.attach();
+        data.attached();
       };
       start();
       const sub = AppState.addEventListener('change', (s) => {
         if (!focused) return;
         if (s === 'active') start();
-        else session.detach();
+        else {
+          session.detach();
+          data.detached();
+        }
       });
       const tick = setInterval(() => setNow(Date.now()), 30_000);
       return () => {
@@ -160,9 +216,21 @@ export function PrinterScreen() {
         sub.remove();
         clearInterval(tick);
         session.detach();
+        data.detached();
       };
-    }, [session]),
+    }, [session, data]),
   );
+
+  // Which cards are open is told to the card data, which reads only what is on screen (the camera runs only while its card is open).
+  const showing = screen.kind === 'live' || screen.kind === 'away';
+  useEffect(() => {
+    for (const id of BUILT_CARDS) data.visible(id, showing && !collapsed.has(id));
+  }, [data, collapsed, showing]);
+  // Jarvis became reachable after the cards were opened: they load now.
+  const isLive = screen.kind === 'live';
+  useEffect(() => {
+    if (isLive) data.attached();
+  }, [isLive, data]);
 
   // "Last print" is read once, only while the printer is idle and the page is showing it.
   const idle = screen.kind === 'live' && screen.data.state.connection === Connections.ready && screen.data.state.print.state === 'standby';
@@ -190,6 +258,8 @@ export function PrinterScreen() {
       theme={theme}
       is24Hour={phoneUses24Hour()}
       lastPrint={lastPrint}
+      cards={cards}
+      actions={data}
       directConnected={directConnected}
       onBack={() => router.back()}
       onTryAgain={() => session.attach()}
