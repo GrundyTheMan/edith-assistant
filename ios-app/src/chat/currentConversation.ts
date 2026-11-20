@@ -12,6 +12,8 @@ export class CurrentConversation {
     private readonly repo: ChatRepository,
     private readonly settings: SettingsRepository,
     private readonly engine: ChatEngine,
+    /** Called with the attachment ids of a deleted chat so their picture files go too (C16 §2). */
+    private readonly onAttachmentsDeleted?: (ids: number[]) => Promise<void>,
   ) {}
 
   /** At startup: the saved chat if it still exists, else the most recently updated, else a new one. Prunes empty chats. */
@@ -42,7 +44,10 @@ export class CurrentConversation {
   /** Stops a reply running there first, deletes, then opens the most recent remaining chat (or a new one). */
   async delete(id: number): Promise<void> {
     await this.engine.cancelAndJoin(id);
+    // Pictures held on the phone go with their conversation: the rows cascade, the files wouldn't.
+    const ids = (await this.repo.attachments(id)).map((a) => a.id);
     await this.repo.deleteConversation(id);
+    if (ids.length > 0) await this.onAttachmentsDeleted?.(ids);
     if (this.id.get() === id) {
       const next = (await this.repo.conversations())[0]?.id ?? (await this.repo.createConversation());
       await this.set(next);

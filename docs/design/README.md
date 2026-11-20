@@ -76,6 +76,7 @@ design in the same PR, or ask the owner.
 | [C44](chunks/C44-ios-voice-memos.md) | Voice memos on iOS: record a WAV, transcribe with the model, send as a message | 9 iOS (Expo) | C40, C43, C12 (as spec) | Built (Expo Go); the owner's iPhone check is open |
 | [C45](chunks/C45-ios-confirmations.md) | Confirmations on iOS: the approve / cancel card before a tool changes something | 9 iOS (Expo) | C41, C08 §6 (as spec) | Built (Expo Go); nothing asks yet |
 | [C46](chunks/C46-ios-home.md) | Smart home core on iOS: devices, tools, Home tab, Demo home | 9 iOS (Expo) | C41, C45, C25 (as spec) | Built (Expo Go, Demo home only); the owner's iPhone check is open |
+| [C47](chunks/C47-ios-photo-storage.md) | Keeping the owner's photos on iOS across restarts, with retention (default 10) | 9 iOS (Expo) | C43, C16 (as spec) | Built (Expo Go); the owner's iPhone check is open |
 
 ### State of the build (written at the 2026-10-29 handoff, kept up to date since)
 - `master` has the design and the C01 skeleton with its build/deploy tooling (`05-environment.md` §2, §6). Tag

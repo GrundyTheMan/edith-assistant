@@ -26,9 +26,9 @@ describe('SettingsRepository', () => {
     const store = memoryStore();
     const repo = new SettingsRepository(store);
     expect(await repo.current()).toEqual(DEFAULT_SETTINGS);
-    await repo.update(() => ({ serverUrl: 'http://x:1', model: 'm', speakReplies: false, speechRate: 1.4, currentConversationId: 7 }));
+    await repo.update(() => ({ serverUrl: 'http://x:1', model: 'm', speakReplies: false, speechRate: 1.4, currentConversationId: 7, keepRecentAttachments: 10 }));
     const again = new SettingsRepository(store);
-    expect(await again.current()).toEqual({ serverUrl: 'http://x:1', model: 'm', speakReplies: false, speechRate: 1.4, currentConversationId: 7 });
+    expect(await again.current()).toEqual({ serverUrl: 'http://x:1', model: 'm', speakReplies: false, speechRate: 1.4, currentConversationId: 7, keepRecentAttachments: 10 });
     await again.update((s) => ({ ...s, model: null }));
     expect(await store.getItem('model')).toBeNull();
     expect((await new SettingsRepository(store).current()).model).toBeNull();

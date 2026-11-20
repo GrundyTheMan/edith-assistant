@@ -76,18 +76,68 @@ export async function prepareImage(picked: PickedImage, processor: ImageProcesso
   };
 }
 
+/** Pictures on disk (C16); a fake in tests. Ids are attachment row ids. */
+export interface AttachmentFiles {
+  write(id: number, base64: string): Promise<void>;
+  read(id: number): Promise<string | null>;
+  delete(id: number): Promise<void>;
+  list(): Promise<number[]>;
+}
+
 /**
- * The picture bytes of attachments sent in this run of the app. Like Android before C16 they are not kept across a
- * restart: afterwards the chat shows "<name> — no longer available" and the model gets only the label.
+ * The picture bytes of the owner's attachments (C16 §1). They are held in memory for drawing and sending, and written
+ * to files so they survive a restart; retention (retention.ts) decides how many files are kept. Without `files` (tests,
+ * or a failing disk) pictures last only for this run of the app, as in C43.
  */
 export class AttachmentStore {
   private readonly images = new Map<number, string>();
-  /** Changes whenever a picture is added, so screens redraw. */
+  /** Changes whenever a picture is added or removed, so screens redraw. */
   readonly version = new Store<number>(0);
 
-  put(attachmentId: number, base64: string) {
+  constructor(private readonly files?: AttachmentFiles) {}
+
+  /** Holds the picture now and writes it to disk; a write that fails leaves it in memory only. */
+  async put(attachmentId: number, base64: string): Promise<void> {
     this.images.set(attachmentId, base64);
     this.version.set(this.version.get() + 1);
+    try {
+      await this.files?.write(attachmentId, base64);
+    } catch {
+      // kept for this run only
+    }
+  }
+
+  /** Loads pictures that are on disk but not in memory (after a restart). */
+  async hydrate(ids: number[]): Promise<void> {
+    if (!this.files) return;
+    let changed = false;
+    for (const id of ids) {
+      if (this.images.has(id)) continue;
+      const b64 = await this.files.read(id);
+      if (b64) {
+        this.images.set(id, b64);
+        changed = true;
+      }
+    }
+    if (changed) this.version.set(this.version.get() + 1);
+  }
+
+  /** Drops pictures from memory and disk. */
+  async forget(ids: number[]): Promise<void> {
+    for (const id of ids) {
+      this.images.delete(id);
+      try {
+        await this.files?.delete(id);
+      } catch {
+        // already gone
+      }
+    }
+    if (ids.length > 0) this.version.set(this.version.get() + 1);
+  }
+
+  /** Ids of the files on disk. */
+  async listFiles(): Promise<number[]> {
+    return (await this.files?.list()) ?? [];
   }
   image(attachmentId: number): string | null {
     return this.images.get(attachmentId) ?? null;

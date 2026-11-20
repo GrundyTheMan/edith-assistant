@@ -6,7 +6,7 @@
 | Status | **Built** in Expo Go; see "As built" at the end. The owner's iPhone check is open |
 | Depends on | C40 (chat in `ios-app/`) |
 | Ports | C15 (attachments in: photos), the pictures part; the "memory only until C16" behaviour |
-| Not here | Audio files (C15's WAV conversion has no Expo Go equivalent; it needs a development build), the camera, storage across restarts and Edith's own files (C16), voice memos (C12) |
+| Not here (kept across restarts: C47) | Audio files (C15's WAV conversion has no Expo Go equivalent; it needs a development build), the camera, storage across restarts and Edith's own files (C16), voice memos (C12) |
 
 ## Why
 The Android chat lets the owner attach photos so a vision model can read a list or a receipt. This is the same on the

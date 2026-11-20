@@ -10,6 +10,7 @@ import type { ModelInfo } from '../ollama/types';
 import { capabilityLine } from '../ollama/catalog';
 import { normalizeServerUrl } from '../settings/serverUrl';
 import type { Settings } from '../settings/settings';
+import { AttachmentsSettings } from './AttachmentsSettings';
 import { HomeSettings } from './HomeSettings';
 import { useTheme } from './theme';
 
@@ -158,6 +159,10 @@ export function SettingsScreen() {
             accessibilityLabel="Speech speed"
           />
           <Button label="Test voice" onPress={() => speech.test()} theme={theme} />
+        </Section>
+
+        <Section title="Attachments" theme={theme}>
+          <AttachmentsSettings theme={theme} />
         </Section>
 
         <Section title="Home" theme={theme}>

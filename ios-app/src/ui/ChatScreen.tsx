@@ -38,6 +38,10 @@ export function ChatScreen() {
   const conversations = useRepoQuery(repo, () => repo.conversations(), [], []);
   const stored = useRepoQuery(repo, () => (conversationId === null ? Promise.resolve([]) : repo.attachments(conversationId)), [conversationId], []);
   useStore(store.version); // redraw when a sent picture's bytes arrive
+  // After a restart the pictures are on disk: load the ones this chat shows.
+  useEffect(() => {
+    void store.hydrate(stored.filter((a) => a.kind === 'image' && !a.removedAt).map((a) => a.id));
+  }, [stored, store]);
   const [pending, setPending] = useState<PendingAttachment[]>([]);
   const [viewing, setViewing] = useState<string | null>(null);
   const title = conversations.find((c) => c.id === conversationId)?.title || 'New chat';
