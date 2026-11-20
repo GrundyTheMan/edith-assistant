@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo), Wave B |
-| Status | **Design — do not start without the owner's explicit yes** (security-sensitive, unofficial) |
+| Status | **Not needed — do not build.** The owner confirmed on 2026-11-20 that the lock, linked to Alexa, locks and unlocks from the Home tab (C54). Decision D38. |
 | Depends on | C48 (services), C46 (the lock model and card rules), C45 |
 | Unblocks | — |
 | Runs in | Expo Go if the cloud API is plain HTTPS (likely); verify |
@@ -43,3 +43,6 @@ Signing vectors; state parsing from made-up responses; lock goes through without
 
 ## Not in this chunk
 August locks (no partner key: C21; consider Matter/HomeKit in a separate chunk if the owner's model supports it), the Philips video features.
+
+## Outcome (2026-11-20)
+The owner answered the questions above: the lock has the Philips Wi-Fi gateway and they would share it to a second account; they would accept an unlock path behind a card; **and the lock is linked to Alexa, where it works** (lock and unlock from the Home tab). Question 4 above decided it: Alexa covers the need, so this chunk's unofficial signing key and second account are not needed. The unlock rules stay as C46 and C54 built them (a card every time; conversation mode never approves). If Alexa stops covering the lock, reopen this chunk and start from the answers above.

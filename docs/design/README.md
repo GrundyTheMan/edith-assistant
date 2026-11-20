@@ -105,7 +105,7 @@ design in the same PR, or ask the owner.
 | [C71](chunks/C71-ios-live-view.md) | Live camera view on iOS (Ring WebRTC, Blink stream) and the camera wall | 9 iOS (Expo) | C51, C52, C58 | Design (spikes first) |
 | [C72](chunks/C72-ios-camera-alerts.md) | Camera alerts on iOS under iOS rules | 9 iOS (Expo) | C53, C58 | Option A built (Expo Go): alerts while open + a catch-up; option B (Jarvis push) and the background task are not; the owner's check is open |
 | [C73](chunks/C73-ios-resideo.md) | Honeywell/Resideo thermostat on iOS | 9 iOS (Expo) | C48, C58 | Design |
-| [C74](chunks/C74-ios-philips-lock.md) | Philips lock on iOS | 9 iOS (Expo) | C48 | Design (owner must say yes) |
+| [C74](chunks/C74-ios-philips-lock.md) | Philips lock on iOS | 9 iOS (Expo) | C48 | Not needed: the lock works through Alexa (C54), confirmed by the owner 2026-11-20 (D38) |
 | [C75](chunks/C75-ios-standalone-builds.md) | **Stage 3: standalone builds, TestFlight, OTA updates** on iOS | 9 iOS (Expo) | C58 | Design |
 | [C76](chunks/C76-ios-parity-audit.md) | Parity audit and polish on iOS | 9 iOS (Expo) | all | Pass 1 done (parity table, code audit); the owner's walk and the device checks are open |
 

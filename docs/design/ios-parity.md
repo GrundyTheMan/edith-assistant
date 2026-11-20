@@ -87,7 +87,7 @@ the docs never mention may be missing from this table. Add it when found.
 | 3D printer card (Moonraker, on the home Wi-Fi) | Built — *owner check open* | | C55 |
 | Printer page, Controls, macros, console, `printer_control` through Jarvis | Blocked | Needs the Jarvis connection. | C67 |
 | Honeywell/Resideo thermostat | Blocked | | C73 |
-| Philips lock | **Not built.** The lock is also in Alexa: try that route first (C74). | | C74 |
+| Philips lock | **Built through Alexa** (lock and unlock from the Home tab; unlock asks on a card, never by voice) | The owner confirmed 2026-11-20 that it works. C74's own unofficial path is not needed (D38). | C54 |
 
 ## Settings
 
