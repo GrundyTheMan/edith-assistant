@@ -133,6 +133,13 @@ export function stateWords(d: HomeDevice): string {
   return parts.length ? parts.join(', ') : 'No state reported';
 }
 
+/** "moved 17 h ago" for a door or lock that reports when it last moved (C26's "moved … ago"); empty when it doesn't. */
+export function movedWords(changedAt: number | undefined, now: number): string {
+  if (changedAt === undefined) return '';
+  const age = ageWords(changedAt, now);
+  return age ? `moved ${age}` : '';
+}
+
 /** "3 min ago" for the tile, from the time the state was reported. */
 export function ageWords(stateAt: number | null, now: number): string {
   if (stateAt === null) return '';

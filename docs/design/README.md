@@ -79,7 +79,7 @@ design in the same PR, or ask the owner.
 | [C45](chunks/C45-ios-confirmations.md) | Confirmations on iOS: the approve / cancel card before a tool changes something | 9 iOS (Expo) | C41, C08 §6 (as spec) | Built (Expo Go); nothing asks yet |
 | [C46](chunks/C46-ios-home.md) | Smart home core on iOS: devices, tools, Home tab, Demo home | 9 iOS (Expo) | C41, C45, C25 (as spec) | Built (Expo Go, Demo home only); the owner's iPhone check is open |
 | [C47](chunks/C47-ios-photo-storage.md) | Keeping the owner's photos on iOS across restarts, with retention (default 10) | 9 iOS (Expo) | C43, C16 (as spec) | Built (Expo Go); the owner's iPhone check is open |
-| [C48](chunks/C48-ios-home-services.md) | Home services framework on iOS: SecretStore, HomeService, Settings → Home rows and sign-in form, secureFetch | 9 iOS (Expo) | C46 | Design |
+| [C48](chunks/C48-ios-home-services.md) | Home services framework on iOS: SecretStore, HomeService, Settings → Home rows and sign-in form, secureFetch | 9 iOS (Expo) | C46 | Built (Expo Go); the owner's iPhone check is open |
 | [C49](chunks/C49-ios-edith-attachments.md) | Edith's attachments on iOS: stored pictures from tools, per-direction retention, `camera_snapshot` | 9 iOS (Expo) | C46, C47 | Design |
 | [C50](chunks/C50-ios-meross.md) | Meross garage door openers on iOS (sign-in, devices, control on the home Wi-Fi) | 9 iOS (Expo) | C48 | Design |
 | [C51](chunks/C51-ios-ring.md) | Ring on iOS: sign-in with 2FA, devices, snapshots, events | 9 iOS (Expo) | C48, C49 | Design |

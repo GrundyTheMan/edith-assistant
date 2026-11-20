@@ -28,6 +28,7 @@ import { SpeechOutput } from '../speech/speechOutput';
 import { expoTts } from '../speech/expoTts';
 import { systemClock } from './clock';
 import { kvStore } from './kv';
+import { keychainSecrets, type SecretStore } from './secrets';
 import { httpFetch, ollamaClient } from './network';
 import type { Store } from './store';
 
@@ -45,6 +46,8 @@ export interface Services {
   retention: RetentionDeps;
   voice: VoiceMemos;
   home: Home;
+  /** Tokens and keys (the Keychain); services take it as a dependency (C48). */
+  secrets: SecretStore;
 }
 
 /** Wires the app together once, at startup: the database, settings, engine, titler and speech (C06, C06b, C13). */
@@ -57,6 +60,10 @@ export async function createServices(): Promise<Services> {
   const selection = new ModelSelection(settings, catalog);
   const home = new Home({ store: kvStore });
   await home.load();
+  const secrets = keychainSecrets;
+  // Real services register here as their chunks land (C50 onward): `home.registerService(merossService({ secrets, ... }))`.
+  // Each is restored at startup; one failing never stops the app.
+  await home.restoreServices();
   // The Demo home is for trying things with no service; development builds only (Expo Go is one).
   const applyBackends = () => home.setBackends(__DEV__ && home.demoOn ? [new DemoBackend()] : []);
   applyBackends();
@@ -111,7 +118,7 @@ export async function createServices(): Promise<Services> {
     if (speakWas && !s.speakReplies) speech.stop();
     speakWas = s.speakReplies;
   });
-  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments, retention, voice, home };
+  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments, retention, voice, home, secrets };
 }
 
 const ServicesContext = createContext<Services | null>(null);

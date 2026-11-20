@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useServices, useStore } from '../core/services';
-import { ageWords, buildCommand, confirmationFor, stateWords } from '../home/actions';
+import { ageWords, buildCommand, confirmationFor, movedWords, stateWords } from '../home/actions';
 import type { Home } from '../home/home';
 import type { DeviceCommand, HomeDevice } from '../home/model';
 import { useNow } from './useNow';
@@ -66,7 +66,7 @@ export function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const chip = (CHIPS as readonly string[]).includes(home.selectedChip) ? (home.selectedChip as Chip) : 'favorites';
-  const loadedOnce = useRef(false);
+  const loadedOnce = useRef('');
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -76,12 +76,14 @@ export function HomeScreen() {
       setRefreshing(false);
     }
   }, [home]);
+  // Read when the first service connects, and again whenever a different set of services is being read.
+  const backendKey = home.backendKey();
   useEffect(() => {
-    if (home.connected && !loadedOnce.current) {
-      loadedOnce.current = true;
+    if (backendKey && loadedOnce.current !== backendKey) {
+      loadedOnce.current = backendKey;
       void refresh();
     }
-  });
+  }, [backendKey, refresh]);
 
   const devices = home.visible();
   const shown = useMemo(() => devices.filter((d) => inChip(d, chip, home.isFavourite(d.id))), [devices, chip, home]);
@@ -159,6 +161,7 @@ function Tile({ d, home, theme, now, expanded, onOpen }: { d: HomeDevice; home: 
           <Text style={{ color: d.online ? theme.textMuted : theme.error, fontSize: 13 }}>
             {stateWords(d)}
             {d.online && age ? ` · ${age}` : ''}
+            {d.online && movedWords(d.state.changedAt, now) ? ` · ${movedWords(d.state.changedAt, now)}` : ''}
           </Text>
         </Pressable>
         {toggles(d) && d.online ? (
@@ -295,6 +298,7 @@ function SecureTile({ d, home, theme, now }: { d: HomeDevice; home: Home; theme:
           <Text style={{ color: d.online ? theme.textMuted : theme.error, fontSize: 13 }}>
             {stateWords(d)}
             {d.online && age ? ` · ${age}` : ''}
+            {d.online && movedWords(d.state.changedAt, now) ? ` · ${movedWords(d.state.changedAt, now)}` : ''}
           </Text>
         </View>
         {d.online

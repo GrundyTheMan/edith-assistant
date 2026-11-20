@@ -23,7 +23,7 @@ export interface HttpResponse {
 }
 export type HttpFetch = (
   url: string,
-  init: { method: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal },
+  init: { method: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal; redirect?: 'follow' | 'manual' },
 ) => Promise<HttpResponse>;
 
 export interface ClientOptions {
