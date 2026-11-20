@@ -307,6 +307,25 @@ Settings sections in order: Server & model · Voice · Hands-free · Attachments
 | Scrolling a 500-message history | no dropped frames in the Compose layout inspector |
 | Voice memo: stop → transcript shown | < 4 s for a 10 s memo |
 
+## 11b. The iOS app (C40, D27)
+
+A separate project in `ios-app/`: **TypeScript on Expo (React Native), SDK 58, Expo Router** — it shares these design
+documents with the Android app, not code, and `app/` is untouched. It is built from the specifications, so what the owner
+sees behaves the same.
+
+| Android (Kotlin) | iOS (`ios-app/src/`) |
+|---|---|
+| OkHttp, kotlinx-serialization | `ollama/`: `expo/fetch` streaming, a stream-aware UTF-8 decoder, NDJSON lines; no HTTP library |
+| Room (`edith.db`, schema v2) | `data/`: `expo-sqlite`, the same schema v2 migrated by `PRAGMA user_version` (a fresh install runs 0→1→2) |
+| DataStore | `settings/`: `expo-sqlite/kv-store`, the same key names; secrets (none yet) would go in `expo-secure-store` |
+| `ChatEngine`, `PromptBuilder`, `ContextBuilder`, `CurrentConversation`, titler | `chat/`: the same rules and the same persona text; the engine is app-wide, not a screen's |
+| Compose, bottom bar | `ui/` and `app/` (Expo Router): tabs **Chat | Settings**; the conversation list is a modal screen, not a drawer |
+| `TextToSpeech`, `SentenceChunker` | `speech/`: `expo-speech` (the iPhone's own voices), the same chunker and cleaning |
+| `AppContainer` | `core/services.tsx`: built once at startup and given to screens through React context |
+
+Tests are Jest (and React Native Testing Library) next to the code; SQLite tests run on Node's real `node:sqlite`. EAS builds
+the app in the cloud (D27); nothing here is built by CI beyond type check, lint and tests.
+
 ## 12. Extension points
 
 - **Tools:** implement `Tool` (C08) and register it in `AppContainer`. A tool declares its JSON schema,

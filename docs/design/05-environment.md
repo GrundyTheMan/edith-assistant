@@ -188,6 +188,26 @@ adb -s emulator-5560 logcat -b crash -d   # must be empty
 adb -s emulator-5560 emu kill
 ```
 
+### iOS app (Expo, C40)
+The iOS app is in `ios-app/` (TypeScript, Expo SDK 58). It needs **Node.js 24** (LTS) on the PC; the tests use Node's built-in `node:sqlite`.
+
+```bash
+scripts/ios-check.sh                 # npm ci, type check, ESLint, Jest — same as the ios-app CI workflow
+scripts/ios-check.sh --bundle        # also exports the iOS bundle (proves Metro can build it)
+cd ios-app && npx expo start --lan   # the dev server; scan its QR code with the iPhone's Camera app
+```
+- **Stage 1: Expo Go, free, no Apple account.** Install **Expo Go** from the App Store (it supports only the newest SDK, so the
+  project's SDK must match). The iPhone and the PC must be on the **same Wi-Fi**; Windows Firewall must allow Node.js on the
+  **private network** (Metro listens on port 8081); NordVPN's LAN setting can block it. The iPhone reaches Ollama on the PC at
+  the address set in the app's Settings (`http://192.168.4.82:11434` today); plain HTTP to it works in Expo Go (checked
+  2026-11-19). The app runs from the PC's dev server, so the PC must be on.
+- **No login is needed for Stage 1.** Apple and Expo passwords and two-factor codes are the owner's to type, never in chat or files.
+- **Stage 2 (EAS builds) is not started.** It needs the paid Apple Developer Program (the owner's membership expired in May 2026):
+  then `npx eas-cli login`, `eas device:create` (opened on the iPhone), `eas build --profile development --platform ios`
+  interactively, and `npx expo start --dev-client`. **Ask the owner before every EAS build** (the free plan has about 15 iOS builds a month).
+
 ### CI
 `.github/workflows/ci.yml` runs `scripts/check.sh` (JDK 17, Ubuntu) on every pull request and every push to
 `master`; on failure the lint/test reports are uploaded as a build artifact. A PR is mergeable only with CI green.
+`.github/workflows/ios-app.yml` (C40) runs the same checks as `scripts/ios-check.sh` on Ubuntu, only for changes under
+`ios-app/` (no macOS runner, no EAS).
