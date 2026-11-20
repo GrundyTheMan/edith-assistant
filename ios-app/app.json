@@ -14,7 +14,13 @@
       "expo-router",
       "expo-sqlite",
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Edith uses your approximate location only when you ask for things like the weather here."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

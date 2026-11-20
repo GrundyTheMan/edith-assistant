@@ -67,8 +67,11 @@ export function MessageBubble({
   now,
   actions,
   onRetry,
+  toolNames = [],
 }: {
   message: StoredMessage;
+  /** Display names of the tools used for this reply ("weather"), shown as "Used: …". */
+  toolNames?: string[];
   theme: Theme;
   now: number;
   actions: Omit<ActionRowProps, 'message' | 'theme'> | null;
@@ -115,6 +118,7 @@ export function MessageBubble({
         <MarkdownText text={message.content} color={theme.onEdithBubble} theme={theme} />
         {stopped ? <Text style={[styles.time, { color: theme.textMuted }]}>(stopped)</Text> : null}
       </View>
+      {toolNames.length > 0 ? <Text style={[styles.time, { color: theme.textMuted }]}>Used: {toolNames.join(', ')}</Text> : null}
       {actions ? <ActionRow message={message} theme={theme} {...actions} /> : null}
       {time}
     </View>

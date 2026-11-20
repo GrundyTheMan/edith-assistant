@@ -106,6 +106,11 @@ describe('chat components', () => {
     expect(screen.getByText('(stopped)')).toBeTruthy();
   });
 
+  it('names the tools used for a reply', async () => {
+    await render(<MessageBubble message={stored({ content: 'Sunny.', toolsUsed: ['get_weather'] })} theme={theme} now={NOW} onRetry={jest.fn()} actions={null} toolNames={['weather', 'time']} />);
+    expect(screen.getByText('Used: weather, time')).toBeTruthy();
+  });
+
   it("the owner's message is a user bubble with its time", async () => {
     await render(<MessageBubble message={stored({ role: 'user', content: 'Hi Edith' })} theme={theme} now={NOW} onRetry={jest.fn()} actions={null} />);
     expect(screen.getByText('Hi Edith')).toBeTruthy();
