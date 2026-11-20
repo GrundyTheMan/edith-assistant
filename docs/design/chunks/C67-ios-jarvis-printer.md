@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo), Wave B |
-| Status | **In progress** — ten work packages, one PR each (E1–E10): E1–E4 built (see "As built"); E5–E10 to do |
+| Status | **In progress** — ten work packages, one PR each (E1–E10): E1–E5 built (see "As built"); E6–E10 to do |
 | Depends on | **C66a** (the Jarvis connection: pairing and the client), C55 (the direct printer card and `printer_status`), C45 (cards) |
 | Unblocks | stages 3–4 on iOS (upload/start/delete/queue-add, alerts, recordings, live camera): **not designed yet because Android has not built them** (`C39-printer-parity.md` §12 E11–E14); add chunks C77+ when Android does |
 | Runs in | **Expo Go** (decision D39: ordinary HTTPS to Jarvis's Tailscale name; `react-native-svg` is in Expo Go); it waits for the Jarvis change, not for a development build |
@@ -95,3 +95,9 @@ Work packages land as separate PRs; each adds its own lines here. Nothing below 
 - `ui/printer/StatusCard.tsx`: title, state chip, progress, time left with its source note, elapsed, total, ETA, filament, layer, speed, flow, the job message, "Last print" (read once, only while idle) and the printer's alert with Dismiss.
 - The Home printer tile has a Details button ("Printer page" until Jarvis is paired) that opens the page.
 - Not verified: the page has not been seen against a real Jarvis (none exists yet); only the pretend one.
+
+### E5 — The read-only cards (built)
+- `printer/feed/cards.ts`: the pure rules ported from Android's `PrinterData.kt` (`ChartBuffer`, `ChartMath`, `FileList`, `ConsoleView`, `MeshColors`) and `PrinterCardData`, which reads what the cards need beyond the live state. It is lazy: the chart is seeded when Temperatures opens (and gets a point per live answer), history and console when they open, **the file list only when Load files is pressed**, the camera about every 700 ms only while its card is open (two failures in a row say "Camera offline"). Leaving the page stops all of it; a reply that arrives after leaving is dropped. New console lines are fetched only after the last one we have, when the live answer's `consoleSeq` is higher.
+- `ui/printer/Cards.tsx`: Camera, Temperatures (chart drawn from plain Views: `react-native-svg` is not a dependency and Expo Go does not need it for this; at most 120 points per line; dashed means the target), Toolhead, Fans and light, Limits and retraction, Sensors, Filament slots (no slot is called empty when the printer does not report them), System, Queue and Bed mesh (left out when Jarvis sends none), Objects (bed drawing), History (totals, More), Console (read; "// value" lines hidden by default; Clear), Files (Load files, search, Printed before, details). Macros comes in E9; every control comes in E7–E9.
+- Not built here: the chosen camera is not remembered across visits (Android remembers it); the file details are shown in the card, not in a sheet.
+- Not verified: a real Jarvis (none exists yet), the look on the phone, the camera rate against the real 120-requests-a-minute limit.

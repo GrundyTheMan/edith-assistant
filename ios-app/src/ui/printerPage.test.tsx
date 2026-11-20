@@ -1,4 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
+import type { CardsUi } from '../printer/feed/cards';
+import type { CardActions } from './printer/Cards';
 import { COLLAPSED_AT_FIRST } from '../printer/feed/prefs';
 import type { PrinterUi } from '../printer/feed/page';
 import type { PrinterScreenState } from '../printer/feed/session';
@@ -11,6 +13,8 @@ import { themes } from './theme';
 
 jest.mock('../core/services', () => ({ useServices: jest.fn(), useStore: jest.fn() }));
 
+const noActions = new Proxy({}, { get: () => () => {} }) as CardActions;
+const cardsUi = (): CardsUi => ({ chart: [], chartHidden: new Set(), history: { jobs: [], totals: null, loading: false, more: false, error: null }, files: { files: null, cachedAt: 0, loading: false, error: null, query: '', printedOnly: true, detailOf: null, detail: null, detailLoading: false, detailError: null }, terminal: { lines: [], hideValues: true, error: null }, camera: { cameraId: null, frame: null, number: 0, offline: false } });
 const NOW = 1_763_400_000_000;
 const answer = (name: string) => parseStateAnswer(fixture(name));
 const live = (name: string): PrinterScreenState => ({ kind: 'live', data: answer(name), receivedAt: NOW, offsetMs: 0, stale: false });
@@ -24,6 +28,8 @@ async function show(u: PrinterUi, over: Partial<Parameters<typeof PrinterPage>[0
       theme={themes.light}
       is24Hour
       lastPrint={null}
+      cards={cardsUi()}
+      actions={noActions}
       directConnected={false}
       onBack={() => calls.back++}
       onTryAgain={() => calls.again++}
@@ -47,7 +53,7 @@ describe('the Printer page', () => {
     const c = await show(ui({ kind: 'noJarvis' }), { directConnected: true });
     expect(screen.getByTestId('printer-message')).toHaveTextContent(/Pair Edith with Jarvis/);
     expect(screen.getByText('At home, the printer tile on Home still works.')).toBeTruthy();
-    fireEvent.press(screen.getByLabelText('Pair with Jarvis'));
+    await fireEvent.press(screen.getByLabelText('Pair with Jarvis'));
     expect(c.pair).toBe(1);
   });
 
@@ -67,12 +73,13 @@ describe('the Printer page', () => {
     expect(screen.getByText('Time left')).toBeTruthy();
     expect(screen.getByText('ETA')).toBeTruthy();
     expect(screen.getByLabelText('Fold Status')).toBeTruthy();
-    expect(screen.queryByTestId('card-camera')).toBeNull(); // E5
+    expect(screen.getByTestId('card-camera')).toBeTruthy();
+    expect(screen.getByTestId('card-temperatures')).toBeTruthy();
   });
 
   it('folding a card asks the caller to toggle it; a folded one shows only its title', async () => {
     const c = await show(ui(live('state-printing')));
-    fireEvent.press(screen.getByLabelText('Fold Status'));
+    await fireEvent.press(screen.getByLabelText('Fold Status'));
     expect(c.toggled).toEqual(['status']);
   });
 
@@ -85,7 +92,7 @@ describe('the Printer page', () => {
   it('an alert can be dismissed', async () => {
     const c = await show(ui(live('state-alert')));
     expect(screen.getByText('The printer said: Filament runout detected')).toBeTruthy();
-    fireEvent.press(screen.getByLabelText('Dismiss'));
+    await fireEvent.press(screen.getByLabelText('Dismiss'));
     expect(c.dismissed).toHaveLength(1);
   });
 
@@ -98,14 +105,14 @@ describe('the Printer page', () => {
   it('Jarvis away with a last page shows a banner and Try again; with none, the reason alone', async () => {
     const c = await show(ui({ kind: 'away', last: answer('state-printing'), why: PrinterWords.UNREACHABLE }));
     expect(screen.getByTestId('banner')).toHaveTextContent(new RegExp(PrinterWords.UNREACHABLE.replace(/[.*+?^${}()|[]\]/g, "\$&")));
-    fireEvent.press(screen.getByLabelText('Try again'));
+    await fireEvent.press(screen.getByLabelText('Try again'));
     expect(c.again).toBe(1);
   });
 
   it('Jarvis away with nothing to show is the reason with Try again', async () => {
     const c = await show(ui({ kind: 'away', last: null, why: PrinterWords.UNREACHABLE }));
     expect(screen.getByTestId('printer-message')).toHaveTextContent(new RegExp(PrinterWords.UNREACHABLE.replace(/[.*+?^${}()|[]\]/g, "\$&")));
-    fireEvent.press(screen.getByLabelText('Try again'));
+    await fireEvent.press(screen.getByLabelText('Try again'));
     expect(c.again).toBe(1);
   });
 
@@ -116,7 +123,7 @@ describe('the Printer page', () => {
 
   it('Back goes back', async () => {
     const c = await show(ui({ kind: 'noJarvis' }));
-    fireEvent.press(screen.getByLabelText('Back'));
+    await fireEvent.press(screen.getByLabelText('Back'));
     expect(c.back).toBe(1);
   });
 });

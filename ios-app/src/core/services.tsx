@@ -14,6 +14,7 @@ import { RingApi } from '../ring/api';
 import { RingService } from '../ring/service';
 import { JarvisApi } from '../jarvis/api';
 import { PrinterFeed } from '../printer/feed/feed';
+import { PrinterCardData } from '../printer/feed/cards';
 import { PrinterPrefs } from '../printer/feed/prefs';
 import { PrinterSession } from '../printer/feed/session';
 import { JarvisService } from '../jarvis/service';
@@ -74,6 +75,7 @@ export interface Services {
   /** The Printer page through Jarvis (C67): what it shows, and what the owner folded. */
   printerSession: PrinterSession;
   printerPrefs: PrinterPrefs;
+  printerCards: PrinterCardData;
   /** Camera alerts while the app is open, and the catch-up when the owner returns (C72). */
   alerts: { prefs: AlertPrefs; loop: AlertLoop; notifier: Notifier; demoRing: () => void };
   home: Home;
@@ -125,6 +127,7 @@ export async function createServices(): Promise<Services> {
   const printerPrefs = new PrinterPrefs(kvStore);
   await printerPrefs.load();
   const printerSession = new PrinterSession({ feed: new PrinterFeed(jarvis) });
+  const printerCards = new PrinterCardData({ session: printerSession });
   // Each is restored at startup; one failing never stops the app.
   await home.restoreServices();
   // The Demo home is for trying things with no service; development builds only (Expo Go is one).
@@ -211,7 +214,7 @@ export async function createServices(): Promise<Services> {
   });
   alertLoop.start();
   const alerts = { prefs: alertPrefs, loop: alertLoop, notifier: expoNotifier, demoRing: () => demo?.ring() };
-  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments, retention, voice, conversation, alerts, printerSession, printerPrefs, home, secrets };
+  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments, retention, voice, conversation, alerts, printerSession, printerPrefs, printerCards, home, secrets };
 }
 
 const ServicesContext = createContext<Services | null>(null);
