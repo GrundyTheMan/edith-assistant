@@ -26,6 +26,8 @@ export interface JarvisClient {
   bytes(path: string, opts?: CallOptions): Promise<FeedResult<Uint8Array>>;
   /** What Jarvis shares with this phone, as last read (null before the first answer). */
   sharedNow(): Shared | null;
+  /** Asks Jarvis what it shares right now (not throttled) and remembers the answer. */
+  readShared(): Promise<FeedResult<Shared>>;
 }
 
 /**
@@ -172,12 +174,18 @@ export class JarvisService implements HomeService, JarvisClient {
   private async refreshShared(force = false): Promise<void> {
     if (!this.link) return;
     if (!force && this.now() - this.sharedAt < SHARED_EVERY_MS) return;
+    await this.readShared();
+  }
+
+  /** `GET /v1/shared` now: the answer is remembered (and shown in the row) and returned, for callers that need it (the printer page). */
+  async readShared(): Promise<FeedResult<Shared>> {
     this.sharedAt = this.now();
     const r = await this.call('GET', '/v1/shared', parseShared, { timeoutMs: 10_000 });
     if (r.kind === 'ok') {
       this.shared = r.value;
       this.connected();
     }
+    return r;
   }
 
   /** No devices yet; Home's refresh is the moment to look at what Jarvis shares again (at most once a minute). */

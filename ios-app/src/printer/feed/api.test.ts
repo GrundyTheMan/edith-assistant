@@ -10,10 +10,10 @@ async function setup(over?: (f: FakeFeed) => void) {
 describe('PrinterFeedApi (every route against the pretend feed; the same cases as Android\'s PrinterFeedApiTest)', () => {
   it('state asks with the revision, epoch, wait and quiet, signed with the token', async () => {
     const { api, feed } = await setup();
-    const r = await api.state(57, 1763400000, 20, { quiet: true });
+    const r = await api.state(56, 1763400000, 20, { quiet: true }); // an older revision than Jarvis has: answered at once
     expect(r).toMatchObject({ kind: 'ok', value: { rev: 57 } });
     const q = feed.requests.at(-1)!;
-    expect(q).toMatchObject({ method: 'GET', path: '/v1/printer/state', query: { after: '57', epoch: '1763400000', wait: '20', quiet: '1' }, auth: `Bearer ${FEED_TOKEN}` });
+    expect(q).toMatchObject({ method: 'GET', path: '/v1/printer/state', query: { after: '56', epoch: '1763400000', wait: '20', quiet: '1' }, auth: `Bearer ${FEED_TOKEN}` });
   });
 
   it('the first state question sends no revision and does not wait', async () => {

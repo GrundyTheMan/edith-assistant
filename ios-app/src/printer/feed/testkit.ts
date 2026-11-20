@@ -36,8 +36,8 @@ export class FakeFeed {
   answer: Record<string, unknown> = fixture('state-printing');
   tokens = new Set<string>([FEED_TOKEN]);
   down = false;
-  /** When true, a state request that already has the current `rev` waits until `release()` or `setState()`. */
-  hold = false;
+  /** When true (as the real Jarvis does), a state request that already has the current `rev` waits until `release()` or `setState()`. */
+  hold = true;
   private held: ((r: HttpResponse) => void)[] = [];
   shared: Record<string, unknown> = fixture('shared-with-printer');
   /** `command` answers; return undefined to use the default behaviour. */
@@ -46,6 +46,8 @@ export class FakeFeed {
   armed = false;
   /** The kinds whose check says "confirm" or "danger" (dry runs show it; a real send without `confirmed` is refused). */
   risks: Record<string, 'confirm' | 'danger'> = { cancel: 'danger', home: 'confirm', estop: 'danger' };
+  /** When set, the state route answers this instead (an error body, a 429, ...). */
+  stateReply: (() => HttpResponse) | null = null;
   snapshotBytes: Uint8Array = JPEG;
   snapshotStatus = 200;
 
@@ -88,6 +90,7 @@ export class FakeFeed {
       case 'GET /v1/shared':
         return ok(this.shared);
       case 'GET /v1/printer/state': {
+        if (this.stateReply) return this.stateReply();
         if (this.hold && req.query.after !== undefined && Number(req.query.after) === this.rev()) {
           return new Promise<HttpResponse>((resolve, reject) => {
             this.held.push(resolve);
