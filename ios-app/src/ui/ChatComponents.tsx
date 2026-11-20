@@ -5,6 +5,7 @@ import type { PendingAttachment } from '../attachments/attachments';
 import type { StoredMessage } from '../data/chatRepository';
 import { BubbleAttachments, PendingChips, type BubbleAttachment } from './AttachmentViews';
 import { MarkdownText } from './MarkdownText';
+import type { ConfirmationRequest } from '../tools/framework/tool';
 import { messageTime } from './messageTimes';
 import type { Theme } from './theme';
 
@@ -135,24 +136,63 @@ export function MessageBubble({
 }
 
 /** The reply being written: its text so far, or a spinner and the status label. A Stop button ends it. */
+/** "Add to your calendar?" with its details and Cancel / Confirm (C08 §6). */
+export function ConfirmationCard({ request, onAnswer, theme }: { request: ConfirmationRequest; onAnswer: (approved: boolean) => void; theme: Theme }) {
+  return (
+    <View style={{ gap: 8 }}>
+      <Text style={{ color: theme.onEdithBubble, fontSize: 16, fontWeight: '600' }}>{request.title}</Text>
+      {request.details.map(([k, v]) => (
+        <View key={k} style={{ flexDirection: 'row', gap: 8 }}>
+          <Text style={{ color: theme.textMuted, fontSize: 14, width: 72 }}>{k}</Text>
+          <Text style={{ color: theme.onEdithBubble, fontSize: 14, flex: 1 }}>{v}</Text>
+        </View>
+      ))}
+      <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+        <Pressable
+          onPress={() => onAnswer(false)}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel action"
+          style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, borderWidth: 1, borderColor: theme.border }}
+        >
+          <Text style={{ color: theme.onEdithBubble }}>{request.denyLabel}</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => onAnswer(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Confirm action"
+          style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, backgroundColor: theme.primary }}
+        >
+          <Text style={{ color: theme.onPrimary, fontWeight: '600' }}>{request.confirmLabel}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 export function InFlightBubble({
   text,
   label,
   canStop,
   onStop,
   theme,
+  confirmation,
+  onAnswer,
 }: {
   text: string;
   label: string;
   canStop: boolean;
   onStop: () => void;
   theme: Theme;
+  confirmation?: ConfirmationRequest;
+  onAnswer?: (approved: boolean) => void;
 }) {
   const maxWidth = useMaxBubbleWidth();
   return (
     <View style={styles.rowStart}>
       <View style={[styles.bubble, styles.edithBubble, { backgroundColor: theme.edithBubble, maxWidth }]}>
-        {text ? (
+        {confirmation && onAnswer ? (
+          <ConfirmationCard request={confirmation} onAnswer={onAnswer} theme={theme} />
+        ) : text ? (
           <MarkdownText text={text} color={theme.onEdithBubble} theme={theme} />
         ) : (
           <View style={styles.errorRow}>
