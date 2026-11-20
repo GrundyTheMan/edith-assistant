@@ -12,6 +12,7 @@ import { OllamaTranscriber, VoiceMemos } from '../voice/voiceMemos';
 import { ChatEngine } from '../chat/engine';
 import { CurrentConversation } from '../chat/currentConversation';
 import { PromptBuilder, attachmentsSection, dateTimeSection } from '../chat/promptBuilder';
+import { edithFilesSection } from '../chat/replyFormat';
 import { ConversationTitler } from '../chat/titler';
 import { ChatRepository } from '../data/chatRepository';
 import { openDatabase } from '../data/expoDb';
@@ -103,7 +104,7 @@ export async function createServices(): Promise<Services> {
     searchWebTool(new DuckDuckGoSearch(httpFetch)),
     readWebPageTool(new PageReader(httpFetch)),
   ]);
-  const prompts = new PromptBuilder(systemClock, () => [dateTimeSection, toolGuidanceSection(tools), attachmentsSection]);
+  const prompts = new PromptBuilder(systemClock, () => [dateTimeSection, toolGuidanceSection(tools), attachmentsSection, edithFilesSection]);
   const titler = new ConversationTitler(repo, ollamaClient, settings);
   let openId: number | null = null;
   const speech = new SpeechOutput(expoTts, settings, (id) => id === openId);

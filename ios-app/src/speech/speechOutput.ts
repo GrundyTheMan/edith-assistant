@@ -2,6 +2,7 @@ import { Store } from '../core/store';
 import type { ReplyListener } from '../chat/engine';
 import type { SettingsRepository } from '../settings/settings';
 import { cleanForSpeech } from './cleanForSpeech';
+import { SpeechFilter } from '../chat/replyFormat';
 import { SentenceChunker } from './sentenceChunker';
 
 /** The phone's voice (expo-speech in the app, a fake in tests). Utterances queue in the order they're spoken. */
@@ -24,6 +25,8 @@ export const TEST_VOICE = -2;
 interface Live {
   conversationId: number;
   chunker: SentenceChunker;
+  /** Drops file blocks and tags as the reply streams (C56). */
+  filter: SpeechFilter;
   /** Stopped, or speech is off: the rest of this reply is not spoken. */
   quiet: boolean;
 }
@@ -52,12 +55,12 @@ export class SpeechOutput implements SpeechController, ReplyListener {
     if (!this.live || this.live.conversationId !== conversationId) {
       this.beginGeneration();
       const on = this.settings.snapshot().speakReplies;
-      this.live = { conversationId, chunker: new SentenceChunker(), quiet: !on };
+      this.live = { conversationId, chunker: new SentenceChunker(), filter: new SpeechFilter(), quiet: !on };
       if (on && this.isOpen(conversationId)) this.speakingMessageId.set(LIVE_REPLY);
     }
     const live = this.live;
     if (live.quiet || !this.isOpen(conversationId)) return;
-    for (const s of live.chunker.push(text)) this.enqueue(s);
+    for (const s of live.chunker.push(live.filter.push(text))) this.enqueue(s);
   }
 
   onFinished(conversationId: number, _text: string, messageId: number | null): void {
@@ -65,7 +68,10 @@ export class SpeechOutput implements SpeechController, ReplyListener {
     if (!live || live.conversationId !== conversationId) return;
     this.live = null;
     if (live.quiet) return;
-    if (this.isOpen(conversationId)) for (const s of live.chunker.flush()) this.enqueue(s);
+    if (this.isOpen(conversationId)) {
+      for (const s of live.chunker.push(live.filter.flush())) this.enqueue(s);
+      for (const s of live.chunker.flush()) this.enqueue(s);
+    }
     if (this.pending > 0 && messageId !== null) this.speakingMessageId.set(messageId);
     else if (this.pending === 0) this.speakingMessageId.set(null);
   }

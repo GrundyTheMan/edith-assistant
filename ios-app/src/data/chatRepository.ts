@@ -27,17 +27,21 @@ export interface StoredAttachment {
   /** The number the model sees in "[Attachment 3: name (image)]"; unique across all chats. */
   number: number;
   direction: 'from_user' | 'from_edith';
-  kind: 'image' | 'audio';
+  kind: 'image' | 'audio' | 'file';
   fileName: string;
   mimeType: string;
   sizeBytes: number;
   createdAt: number;
   removedAt: number | null;
+  /** For a resend (C56): the attachment it shows again. It has no file of its own. */
+  resendOf: number | null;
 }
 export interface NewAttachment {
   /** Who produced it. Default: the owner. */
   direction?: 'from_user' | 'from_edith';
-  kind: 'image' | 'audio';
+  /** Shows an earlier attachment again (C56): no file of its own, not counted by retention. */
+  resendOf?: number;
+  kind: 'image' | 'audio' | 'file';
   fileName: string;
   mimeType: string;
   sizeBytes: number;
@@ -80,6 +84,7 @@ interface AttachmentRow {
   size_bytes: number;
   created_at: number;
   removed_at: number | null;
+  resend_of: number | null;
 }
 const toAttachment = (r: AttachmentRow): StoredAttachment => ({
   id: r.id,
@@ -92,6 +97,7 @@ const toAttachment = (r: AttachmentRow): StoredAttachment => ({
   sizeBytes: r.size_bytes,
   createdAt: r.created_at,
   removedAt: r.removed_at,
+  resendOf: r.resend_of ?? null,
 });
 
 interface ConversationRow {
@@ -269,6 +275,12 @@ export class ChatRepository {
     return rows.map(toAttachment);
   }
 
+  /** An attachment by the number the model sees in its label (unique across all chats); a resend is never the answer (C56). */
+  async attachmentByNumber(n: number): Promise<StoredAttachment | null> {
+    const r = await this.db.first<AttachmentRow>('SELECT * FROM attachments WHERE number = ? AND resend_of IS NULL', [n]);
+    return r ? toAttachment(r) : null;
+  }
+
   /** Attachments still on the phone for one direction, newest first (C16 §2). */
   async keptAttachments(direction: StoredAttachment['direction']): Promise<StoredAttachment[]> {
     const rows = await this.db.all<AttachmentRow>(
@@ -349,9 +361,9 @@ export class ChatRepository {
         for (const a of attachments) {
           const next = await this.db.first<{ n: number }>('SELECT COALESCE(MAX(number), 0) + 1 AS n FROM attachments');
           await this.db.run(
-            `INSERT INTO attachments (message_id, number, direction, kind, file_name, mime_type, size_bytes, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [res.lastInsertRowId, next?.n ?? 1, a.direction ?? 'from_user', a.kind, a.fileName, a.mimeType, a.sizeBytes, now],
+            `INSERT INTO attachments (message_id, number, direction, kind, file_name, mime_type, size_bytes, created_at, resend_of)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [res.lastInsertRowId, next?.n ?? 1, a.direction ?? 'from_user', a.kind, a.fileName, a.mimeType, a.sizeBytes, now, a.resendOf ?? null],
           );
         }
         return res.lastInsertRowId;
