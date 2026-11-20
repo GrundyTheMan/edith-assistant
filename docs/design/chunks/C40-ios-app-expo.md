@@ -1,19 +1,25 @@
-# C40 — Edith for iOS on Expo: the project, EAS builds, and chat
+# C40 — Edith for iOS on Expo: the project, chat in Expo Go, then EAS builds
 
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo) |
 | Depends on | C03, C04, C05, C06, C06b, C07, C13 as **specifications** (no Kotlin code is reused); C37 (plain HTTP to Ollama is the one exception) |
 | Unblocks | Every later iOS chunk (tools, voice memos, accounts, …) |
-| Size | Large (a new project, the build pipeline, and chat) |
+| Size | Large (a new project, chat, and the build pipeline) |
 | Read first | 06-decisions **D27**; 00-product; 03-ollama-reference; C03, C04, C05, C06, C06b, C07, C13 (spec **and** As built); 02-standards; 04-lessons L23, L27, L29 |
 
 ## Why
 
 On 2026-11-19 the owner asked whether Edith can also be an iOS project, looked at two routes (Kotlin Multiplatform and
-Expo), and chose **Expo, with EAS doing the iOS builds** (D27). The owner's PC is Windows, and they have an Apple
-developer account. Expo lets them work from Windows and see changes on the real iPhone, and EAS builds the iOS
-app in the cloud.
+Expo), and chose **Expo, with EAS doing the iOS builds** (D27). Their PC is Windows.
+
+The owner then found that their **paid Apple Developer membership expired in May 2026**, so today they have only a
+free Apple ID. That splits the work into two stages:
+- **Stage 1: Expo Go. Free, and no Apple account at all.** The owner installs Expo Go from the App Store and the app
+  runs on the real iPhone from the PC's dev server. Everything in this chunk's chat can be built and tried this way.
+- **Stage 2: EAS builds on the iPhone.** These need the **paid Apple Developer Program**, which the owner has to
+  renew first (their decision and their money). It gives a standalone app that runs without the PC, and control over
+  the iPhone's Info.plist.
 
 This is a **new app written in TypeScript**, not a port of the Kotlin code. **Android stays the Kotlin app.** The
 two share the design documents (and, where it helps, Jarvis's TypeScript), not code. Edith keeps running on the
@@ -22,25 +28,32 @@ iPhone inside Andarium until this app can replace it.
 ## Facts checked 2026-11-19 (re-verify; Expo changes quickly)
 
 - **Expo SDK:** Expo's docs list SDKs up to 57. SDK 55 (February 2026) dropped support for the old React Native
-  architecture. Use the **latest stable** SDK and pin exact versions.
-  (<https://expo.dev/changelog/sdk-55>)
+  architecture. Use the **latest stable** SDK and pin exact versions. **Expo Go in the App Store supports only the
+  newest SDK**, so the project must match it. (<https://expo.dev/changelog/sdk-55>)
 - **Streaming:** `expo/fetch` has a documented "Streaming fetch" example that reads `response.body.getReader()`
   (it arrived in SDK 52). In newer SDKs it is also the global `fetch`. React Native's own fetch historically could
   not stream.
-- **Expo Go isn't enough.** Custom native code and Info.plist keys are applied **at build time**, so they don't show
-  in Expo Go. Edith needs a **development build** from EAS.
-  (<https://expo.dev/blog/expo-go-vs-development-builds.md>)
-- **Installing on the owner's iPhone** (internal distribution, ad hoc): `eas device:create` gives a link, which the
-  owner opens **on the iPhone** to install a profile. Then an **interactive** `eas build` signs in to Apple to update
-  the ad hoc provisioning profile. `--non-interactive` can't add devices.
+- **Free Apple ID versus the paid Program.** Every EAS build that runs on an iPhone is signed with a distribution
+  certificate and an ad hoc profile, which **need the paid Apple Developer Program** (about $99 a year). Only
+  simulator builds are free, and they are no use on an iPhone. A free Apple ID can install only through Xcode on a Mac
+  (7-day expiry, 3 apps), and the owner has no Mac.
+  (<https://docs.expo.dev/tutorial/eas/ios-development-build-for-devices.md>,
+  <https://expo.dev/blog/apple-developer-program-explained-free-vs-paid>)
+- **Expo Go needs no Apple account**, but it can't carry custom native code or custom Info.plist keys (those are
+  applied **at build time**). A **development build** from EAS can. (<https://expo.dev/blog/expo-go-vs-development-builds.md>)
+- **Plain HTTP to Ollama on the LAN:**
+  - In Expo Go this is **unverified**. Apple's App Transport Security note says connections to raw IP addresses are
+    generally exempt, but `.local` names aren't. Test it on the iPhone.
+  - In a development build, set it in `expo.ios.infoPlist`: `NSLocalNetworkUsageDescription` (one forum report says
+    iOS 18.1 requires it) and an ATS exception, most likely `NSAppTransportSecurity` → `NSAllowsLocalNetworking`. **The
+    exact structure is unverified.**
+- **Installing on the owner's iPhone from EAS** (Stage 2, internal distribution): `eas device:create` gives a link,
+  which the owner opens **on the iPhone** to install a profile. Then an **interactive** `eas build` signs in to Apple
+  to update the ad hoc provisioning profile. `--non-interactive` can't add devices.
   (<https://docs.expo.dev/build/internal-distribution/>)
 - **The EAS free plan:** about 15 iOS builds a month, in a low-priority queue that can wait 90 minutes or more at
   peak. Expo has temporarily disabled free iOS builds under load. Re-check the pricing page.
   (<https://expo.dev/changelog/2023-08-01-eas-free-plan-limits>)
-- **Plain HTTP to Ollama on the LAN:** in `expo.ios.infoPlist`, set `NSLocalNetworkUsageDescription` (one forum
-  report says iOS 18.1 requires it) and an App Transport Security exception, most likely
-  `NSAppTransportSecurity` → `NSAllowsLocalNetworking`. **The exact structure is unverified; test it in the
-  development build.**
 - **iOS limits, from the agent's knowledge and not re-checked:** third-party apps can't keep listening for a wake
   word in the background, and there are no foreground services. Hands-free and camera alerts are out of this chunk
   and will be limited later.
@@ -64,6 +77,9 @@ Compared from the vendors' own pages and a few third-party listings (re-check; a
 <https://support.circleci.com/en/articles/15091231-are-free-credits-available-for-macos-open-source-projects>,
 <https://circleci.com/docs/ios-codesigning/>)
 
+**All of them need the paid Apple Developer Program to put a build on a real iPhone.** With a free Apple ID, only
+Expo Go works (Stage 1).
+
 **Why EAS first.** It's built for Expo: the development client, config plugins, SDK versions and Apple credentials all
 fit it, and it runs from the owner's Windows PC with no Mac. Registering the iPhone and installing the build are
 handled with a link. The other services are general CI with a real Mac, so the signing certificates, provisioning
@@ -83,23 +99,31 @@ would cost effort for nothing.
 ## Before you start — owner setup
 
 **The owner does all of these. The agent never handles Apple or Expo passwords, or two-factor codes, and doesn't
-create accounts.**
-1. **Confirm the Apple account is the paid Apple Developer Program** (ad hoc installs on an iPhone need it). The
-   agent assumes so from "I already have a developer account".
-2. **An Expo account** (expo.dev; the free plan is enough to start), then `npx eas-cli login` on the PC.
-3. **The iOS bundle identifier.** It must be unique across all of Apple. Don't reuse the Android `com.edith.app`
+create accounts or pay for anything.**
+
+**Stage 1 (Expo Go): free, and no Apple account**
+1. **Expo Go** installed from the App Store on the iPhone.
+2. **Node.js LTS** on the PC (the agent adds the steps to 05-environment).
+3. The PC and the iPhone on the **same Wi-Fi**, and Windows' firewall allowing Metro's port (8081) on the private
+   network. NordVPN's LAN settings can block it.
+
+**Stage 2 (EAS builds): needs the paid Apple Developer Program. Stage 2 waits until this is done.**
+4. **Renew the Apple Developer Program membership** (about $99 a year). It expired in May 2026. The owner renews it
+   from the Apple Developer app or developer.apple.com. Check Apple's rules for a membership that has lapsed for
+   months. Only the owner can do this.
+5. **An Expo account** (the free plan is enough), then `npx eas-cli login` on the PC.
+6. **The iOS bundle identifier.** It must be unique across all of Apple. Don't reuse the Android `com.edith.app`
    unless the owner knows it's free. The owner picks it (for example `com.<their name>.edith`).
-4. **Developer Mode on the iPhone** (Settings → Privacy & Security → Developer Mode; iOS 16 and later; check).
-5. **Node.js LTS** on the PC (the agent adds the steps to 05-environment).
-6. **An EAS build budget.** The free plan has about 15 iOS builds a month. **The agent asks before every EAS
+7. **Developer Mode on the iPhone** (Settings → Privacy & Security → Developer Mode; iOS 16 and later; check).
+8. **An EAS build budget.** The free plan has about 15 iOS builds a month. **The agent asks before every EAS
    build.**
 
 ## Specification
 
 ### 1. The project (`ios-app/`)
-- A new Expo project in `ios-app/` of this repo. TypeScript in strict mode, the latest stable SDK, the New
-  Architecture (the default). Choose and record: Expo Router or React Navigation, and the Markdown and state
-  libraries. Prefer Expo's own packages where they fit.
+- A new Expo project in `ios-app/` of this repo. TypeScript in strict mode, the SDK that Expo Go in the App Store
+  supports (the latest stable), and the New Architecture (the default). Choose and record: Expo Router or React
+  Navigation, and the Markdown and state libraries. Prefer Expo's own packages where they fit.
 - Layout, mirroring the Kotlin app in spirit: `src/ollama/`, `src/chat/` (engine), `src/data/` (SQLite),
   `src/settings/`, `src/ui/`, `src/core/` (errors, logging, secrets). Tests sit next to the code.
 - **Rebuild from the specifications**, not from the Kotlin code: C03, C05, C06, C06b, C07, C13 and their **As built**
@@ -107,28 +131,36 @@ create accounts.**
   owner sees must behave the same.
 
 ### 2. The first proof: "Hello Ollama on the iPhone" (do this before anything else)
-In order. Stop and report at the first failure.
+
+**Stage 1 — in Expo Go (free).** In order. Stop and report at the first failure.
 1. Create the project with one screen; Jest runs.
-2. EAS: `eas build:configure`. `eas.json` has `development` (development client, internal distribution), `preview`
-   (internal distribution) and `production` (unused for now), with `appVersionSource: remote` and
-   `autoIncrement`.
-3. Register the iPhone (`eas device:create`, installed **on the phone** by the owner). Then
-   `eas build --profile development --platform ios` **interactively, with the owner at the keyboard** for the Apple
-   sign-in. Record the queue wait and the build time.
-4. The owner installs the build on the iPhone. `npx expo start --dev-client` on the PC; the iPhone connects over the
-   same Wi-Fi. (Windows' firewall must allow Metro's port, 8081, on the private network. NordVPN's LAN settings
-   can block it.)
-5. The screen sends a prompt to the owner's Ollama and **streams the reply token by token** with `expo/fetch`.
+2. `npx expo start` on the PC. The owner scans the QR code with Expo Go on the iPhone, and the screen appears.
+3. The screen sends a prompt to the owner's Ollama and **streams the reply token by token** with `expo/fetch`.
    - The server address is a **setting** (`http://192.168.4.82:11434` today), never hard-coded.
-   - `ios.infoPlist` carries the local-network description and the ATS exception. iOS shows its Local Network
-     permission prompt on first use.
    - Record the time to the first token, and whether chunks arrive **incrementally** rather than all at once.
-6. If streaming doesn't stream: try `XMLHttpRequest` progress events, then a streaming-fetch library. Record which
+   - **Whether iOS allows plain HTTP to the LAN address in Expo Go is unverified.** If it blocks it, record the exact
+     error. That is the first thing that needs a development build (Stage 2). Don't loosen anything in the repo to
+     work around it.
+4. If streaming doesn't stream: try `XMLHttpRequest` progress events, then a streaming-fetch library. Record which
    works.
 
-**Done when** the owner sees a reply streamed from their own Ollama, on their iPhone, in a build that EAS made.
+**Done when** the owner sees a reply streamed from their own Ollama, on their iPhone, in Expo Go.
 
-### 3. Chat (the rest of the chunk)
+**Stage 2 — an EAS development build (after the owner has renewed the membership).** In order.
+1. `eas build:configure`. `eas.json` has `development` (development client, internal distribution), `preview`
+   (internal distribution) and `production` (unused for now), with `appVersionSource: remote` and
+   `autoIncrement`.
+2. Register the iPhone (`eas device:create`, installed **on the phone** by the owner). Then
+   `eas build --profile development --platform ios` **interactively, with the owner at the keyboard** for the Apple
+   sign-in. Record the queue wait and the build time.
+3. The owner installs the build. `npx expo start --dev-client` on the PC; the iPhone connects over the same Wi-Fi.
+4. `ios.infoPlist` carries the local-network description and the ATS exception. iOS shows its Local Network permission
+   prompt on first use. Verify that plain HTTP to the LAN address now works, and record the exact settings that did.
+
+**Done when** the development build streams a reply from the owner's Ollama with the Local Network permission
+accepted.
+
+### 3. Chat (the rest of the chunk; Expo Go is enough for all of it)
 - **Ollama client:** the model list (`/api/tags`), a model's capabilities (`/api/show`: tools, vision, audio,
   thinking), and streaming chat (`/api/chat`, NDJSON). Cancel with `AbortController`, timeouts, and plain error
   messages. A **stream-aware UTF-8 decoder** (`TextDecoder` with `{stream: true}`), because a chunk can end in the
@@ -150,9 +182,11 @@ In order. Stop and report at the first failure.
   Google, Microsoft or iCloud accounts, smart home, Jarvis's feeds.
 
 ### 4. Builds and releases
-- **Day to day:** `npx expo start --dev-client` on the PC. JavaScript changes reload on the iPhone with **no
-  build**. An EAS build is needed only when native code changes: a new native module, an `app.json` plugin or
-  `infoPlist` change, or an SDK upgrade. **Batch those changes**, and **ask before starting any EAS build.**
+- **Until the membership is renewed there are no EAS device builds.** Work in Expo Go: the app runs from the PC's dev
+  server, so it needs the PC on the same Wi-Fi.
+- **After renewal, day to day:** `npx expo start --dev-client` on the PC. JavaScript changes reload on the iPhone
+  with **no build**. An EAS build is needed only when native code changes: a new native module, an `app.json` plugin
+  or `infoPlist` change, or an SDK upgrade. **Batch those changes**, and **ask before starting any EAS build.**
 - **A standalone build** (the `preview` profile, internal distribution) runs without the PC, installed from a link
   on the iPhone.
 - **Not in this chunk:** TestFlight, the App Store, push notifications and background tasks.
@@ -178,25 +212,33 @@ In order. Stop and report at the first failure.
 - On the iPhone, by hand: the acceptance list below.
 
 ## Acceptance criteria
-- [ ] The owner's setup is done: the Apple Developer Program confirmed, an Expo account, a bundle identifier, the
-      iPhone registered, and Developer Mode on.
-- [ ] An EAS development build installs on the iPhone and connects to `expo start` on the PC.
-- [ ] **Hello Ollama:** a prompt streams a reply from the owner's Ollama, incrementally, with the first-token time
-      recorded. The Local Network prompt appeared and was accepted. The address comes from Settings.
+
+**Stage 1 — Expo Go (free; no Apple account)**
+- [ ] The owner's setup items 1–3 are done (Expo Go, Node, the same Wi-Fi and firewall).
+- [ ] **Hello Ollama:** a prompt streams a reply from the owner's Ollama in Expo Go, incrementally, with the
+      first-token time recorded. The address comes from Settings. If iOS blocks plain HTTP in Expo Go, the exact
+      error is recorded and the item is moved to Stage 2.
 - [ ] Chat works end to end on the iPhone: several conversations, streaming, stop, regenerate, titles, the model
       picker, Markdown, light and dark.
 - [ ] Spoken replies: sentence by sentence while streaming, Play and Stop, speed.
 - [ ] Conversations survive an app restart, and a database-migration test passes.
 - [ ] `scripts/ios-check.sh` and the new CI job pass. The Android CI and `scripts/check.sh` are unchanged and green.
+
+**Stage 2 — EAS builds (after the owner renews the Apple Developer Program)**
+- [ ] The owner's setup items 4–8 are done.
+- [ ] An EAS development build installs on the iPhone and connects to `expo start` on the PC. The Local Network
+      prompt appeared and was accepted, and plain HTTP to the owner's Ollama works with the recorded Info.plist
+      settings.
 - [ ] A `preview` (standalone) build runs without the PC.
-- [ ] As built records: the SDK version, the navigation choice, the number of EAS builds used and their queue and
-      build times, the first-token latency, and anything that didn't work.
+- [ ] As built records: the SDK version, the navigation choice, the first-token latency, the number of EAS builds
+      used and their queue and build times, and anything that didn't work.
 
 ## Implementation notes (traps)
-1. **Expo Go can't test the Info.plist keys.** Test the local-network and ATS settings in the development build.
+1. **Expo Go can't test the Info.plist keys.** Test the local-network and ATS settings in the development build. And
+   the SDK in the project must match the Expo Go in the App Store.
 2. **Never log conversation text in release builds** (as on Android).
 3. **Apple credentials and two-factor codes are the owner's** to type, and never go in chat or files. EAS stores
-   the certificates.
+   the certificates. The membership renewal and its payment are the owner's alone.
 4. **The Windows firewall and the VPN** are the usual reasons the iPhone can't reach Metro or Ollama. Same Wi-Fi,
    private network.
 5. **EAS free-plan queues:** plan the builds, and expect waits. Free iOS builds are sometimes disabled for a while.
@@ -204,15 +246,17 @@ In order. Stop and report at the first failure.
    purpose.
 7. **Docs to update in this PR:**
    - README (chunk status), and 01-architecture (a short "iOS app" section: stack, folders, how it differs)
-   - 05-environment (Node, `eas login`, `device:create`, the dev client, running, the firewall)
+   - 05-environment (Node, Expo Go, running, the firewall; and for Stage 2: `eas login`, `device:create`, the dev
+     client)
    - 00-product §3, and AGENTS.md (the iOS commands, and the "ask before an EAS build" rule)
 
 ## Roadmap (not designed; the owner picks the order)
 After C40 the iOS app grows chunk by chunk, toward what the owner uses on the phone: tools (time, weather, web,
 location), then accounts (Google and Microsoft through `expo-auth-session`, which needs iOS OAuth client types),
 calendar, mail and to-dos, voice memos and dictation, attachments, the smart home, and Jarvis's feeds (C38, C39).
-Hands-free is limited by iOS. Full parity with the Android app probably isn't worth it, so the owner decides what
-matters on iOS. Andarium covers whatever isn't native yet.
+Several of these need a development build, so the paid membership. Hands-free is limited by iOS. Full parity with the
+Android app probably isn't worth it, so the owner decides what matters on iOS. Andarium covers whatever isn't native
+yet.
 
 ## Not in scope
 - Changes to the Android app, Kotlin Multiplatform, a Swift rewrite.
