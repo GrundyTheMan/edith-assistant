@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { AttachmentStore } from '../attachments/attachments';
+import { ExpoRecorder, expoAudioFiles } from '../voice/expoRecorder';
+import { OllamaTranscriber, VoiceMemos } from '../voice/voiceMemos';
 import { ChatEngine } from '../chat/engine';
 import { CurrentConversation } from '../chat/currentConversation';
 import { PromptBuilder, attachmentsSection, dateTimeSection } from '../chat/promptBuilder';
@@ -34,6 +36,7 @@ export interface Services {
   speech: SpeechOutput;
   tools: ToolRegistry;
   attachments: AttachmentStore;
+  voice: VoiceMemos;
 }
 
 /** Wires the app together once, at startup: the database, settings, engine, titler and speech (C06, C06b, C13). */
@@ -63,6 +66,13 @@ export async function createServices(): Promise<Services> {
     tools,
     attachments,
   });
+  const voice = new VoiceMemos({
+    recorder: new ExpoRecorder(),
+    files: expoAudioFiles,
+    transcriber: new OllamaTranscriber(ollamaClient, settings, selection),
+    engine,
+    stopSpeaking: () => speech.stop(),
+  });
   const current = new CurrentConversation(repo, settings, engine);
   current.id.subscribe(() => {
     openId = current.id.get();
@@ -74,7 +84,7 @@ export async function createServices(): Promise<Services> {
     if (speakWas && !s.speakReplies) speech.stop();
     speakWas = s.speakReplies;
   });
-  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments };
+  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments, voice };
 }
 
 const ServicesContext = createContext<Services | null>(null);

@@ -26,6 +26,12 @@
         {
           "photosPermission": "Edith shows the photos you choose to attach to a message to the model on your PC."
         }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Edith records your voice memos so the model on your PC can turn them into messages."
+        }
       ]
     ],
     "experiments": {
