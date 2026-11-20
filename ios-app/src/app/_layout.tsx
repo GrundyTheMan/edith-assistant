@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { ServicesProvider } from '../core/services';
+import { AlertsHost } from '../ui/AlertsHost';
 
 function Loading({ error }: { error: string | null }) {
   return (
@@ -13,6 +14,7 @@ function Loading({ error }: { error: string | null }) {
 export default function RootLayout() {
   return (
       <ServicesProvider fallback={(error) => <Loading error={error} />}>
+        <AlertsHost />
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="conversations" options={{ presentation: 'modal' }} />

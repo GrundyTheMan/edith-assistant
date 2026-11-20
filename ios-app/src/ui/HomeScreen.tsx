@@ -8,6 +8,7 @@ import { ageWords, buildCommand, confirmationFor, movedWords, stateWords } from 
 import type { Home } from '../home/home';
 import type { DeviceCommand, HomeDevice } from '../home/model';
 import { ImageViewer } from './AttachmentViews';
+import { CatchUpBanner } from './CatchUpBanner';
 import { ClipsScreen } from './ClipsScreen';
 import { PrinterCard } from './PrinterCard';
 import { useNow } from './useNow';
@@ -67,8 +68,11 @@ function alertAsk(title: string, ok: string, go: () => void) {
 /** The Home tab (C25 §5): chips, tiles by room, controls under a tile's name, locks in their own section. */
 export function HomeScreen() {
   const theme = useTheme();
-  const { home } = useServices();
+  const { home, alerts } = useServices();
   useStore(home.version);
+  // A tapped alert asks for the Clips list (C72): open it when the request count goes up, not for the count it already had.
+  const clipsAsked = useStore(home.clipsRequest);
+  const seenAsk = useRef(clipsAsked);
   const now = useNow();
   const [refreshing, setRefreshing] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
@@ -77,6 +81,12 @@ export function HomeScreen() {
   const [photo, setPhoto] = useState<string | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [clipsOpen, setClipsOpen] = useState(false);
+  useEffect(() => {
+    if (clipsAsked !== seenAsk.current) {
+      seenAsk.current = clipsAsked;
+      setClipsOpen(true);
+    }
+  }, [clipsAsked]);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -122,6 +132,7 @@ export function HomeScreen() {
   return (
     <SafeAreaView edges={['top']} style={[styles.screen, { backgroundColor: theme.background }]}>
       <Text style={[styles.title, { color: theme.text }]}>Home</Text>
+      {alerts ? <CatchUpBanner store={alerts.loop.catchUp} onOpen={() => setClipsOpen(true)} onDismiss={() => alerts.loop.dismissCatchUp()} theme={theme} /> : null}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} style={styles.chipBar}>
         {CHIPS.map((c) => (
           <Pressable

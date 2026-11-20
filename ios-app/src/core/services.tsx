@@ -2,6 +2,11 @@ import { createContext, useContext, useEffect, useState, useSyncExternalStore, t
 import { AttachmentStore } from '../attachments/attachments';
 import { expoAttachmentFiles } from '../attachments/expoAttachmentFiles';
 import { applyRetention, removeOrphans, type RetentionDeps } from '../attachments/retention';
+import { expoNotifier } from '../alerts/expoNotifier';
+import { AlertLoop } from '../alerts/loop';
+import type { Notifier } from '../alerts/notifications';
+import { AlertPrefs } from '../alerts/prefs';
+import { AlertWatcher } from '../alerts/watcher';
 import { DemoBackend } from '../home/demoBackend';
 import { Home } from '../home/home';
 import { cameraSnapshotTool, homeControlTool, homeDevicesTool, recentEventsTool } from '../home/homeTools';
@@ -61,6 +66,8 @@ export interface Services {
   retention: RetentionDeps;
   voice: VoiceMemos;
   conversation: Conversation;
+  /** Camera alerts while the app is open, and the catch-up when the owner returns (C72). */
+  alerts: { prefs: AlertPrefs; loop: AlertLoop; notifier: Notifier; demoRing: () => void };
   home: Home;
   /** Tokens and keys (the Keychain); services take it as a dependency (C48). */
   secrets: SecretStore;
@@ -106,7 +113,8 @@ export async function createServices(): Promise<Services> {
   // Each is restored at startup; one failing never stops the app.
   await home.restoreServices();
   // The Demo home is for trying things with no service; development builds only (Expo Go is one).
-  const applyBackends = () => home.setBackends(__DEV__ && home.demoOn ? [new DemoBackend()] : []);
+  let demo: DemoBackend | null = null;
+  const applyBackends = () => home.setBackends(__DEV__ && home.demoOn ? [(demo = new DemoBackend())] : []);
   applyBackends();
   let demoWas = home.demoOn;
   home.version.subscribe(() => {
@@ -174,7 +182,21 @@ export async function createServices(): Promise<Services> {
     if (speakWas && !s.speakReplies) speech.stop();
     speakWas = s.speakReplies;
   });
-  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments, retention, voice, conversation, home, secrets };
+  // Camera alerts (C72): looked for only while Edith is open; nothing runs in the background (iOS has no foreground services).
+  const alertPrefs = new AlertPrefs(kvStore);
+  await alertPrefs.load();
+  const alertLoop = new AlertLoop({
+    watcher: new AlertWatcher(home),
+    choices: alertPrefs.choices,
+    notifier: expoNotifier,
+    photo: async (alert) => {
+      const camera = await home.alertCamera(alert.backend, alert.device);
+      return camera ? (await home.snapshot(camera)).jpegBase64 : null;
+    },
+  });
+  alertLoop.start();
+  const alerts = { prefs: alertPrefs, loop: alertLoop, notifier: expoNotifier, demoRing: () => demo?.ring() };
+  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments, retention, voice, conversation, alerts, home, secrets };
 }
 
 const ServicesContext = createContext<Services | null>(null);

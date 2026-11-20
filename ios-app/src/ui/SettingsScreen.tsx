@@ -10,6 +10,7 @@ import type { ModelInfo } from '../ollama/types';
 import { capabilityLine } from '../ollama/catalog';
 import { normalizeServerUrl } from '../settings/serverUrl';
 import type { Settings } from '../settings/settings';
+import { AlertsSettings } from './AlertsSettings';
 import { AttachmentsSettings } from './AttachmentsSettings';
 import { ConversationSettings } from './ConversationSettings';
 import { HomeSettings } from './HomeSettings';
@@ -172,6 +173,7 @@ export function SettingsScreen() {
 
         <Section title="Home" theme={theme}>
           <HomeSettings theme={theme} />
+          <AlertsSettings theme={theme} />
         </Section>
 
         <Section title="About" theme={theme}>
