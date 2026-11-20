@@ -31,6 +31,10 @@ import { expoTts } from '../speech/expoTts';
 import { systemClock } from './clock';
 import { kvStore } from './kv';
 import { keychainSecrets, type SecretStore } from './secrets';
+import * as Network from 'expo-network';
+import * as Crypto from 'expo-crypto';
+import { MerossService } from '../meross/service';
+import { secureFetch } from './secureFetch';
 import { httpFetch, ollamaClient } from './network';
 import type { Store } from './store';
 
@@ -66,6 +70,23 @@ export async function createServices(): Promise<Services> {
   // Real services register here as their chunks land: `home.registerService(...)`.
   // The 3D printer talks plain HTTP to its LAN address (Moonraker has no TLS): `httpFetch`, deliberately (AGENTS.md).
   home.registerService(new PrinterService({ secrets, fetch: httpFetch }));
+  // Meross: HTTPS to Meross's cloud only; plain HTTP to the doors on the LAN (they have no TLS), deliberately.
+  home.registerService(
+    new MerossService({
+      secrets,
+      store: kvStore,
+      cloudFetch: secureFetch(httpFetch, { allowHosts: ['meross.com'] }),
+      lanFetch: httpFetch,
+      phoneIp: async () => {
+        try {
+          return await Network.getIpAddressAsync();
+        } catch {
+          return null;
+        }
+      },
+      uuid: () => Crypto.randomUUID(),
+    }),
+  );
   // Each is restored at startup; one failing never stops the app.
   await home.restoreServices();
   // The Demo home is for trying things with no service; development builds only (Expo Go is one).

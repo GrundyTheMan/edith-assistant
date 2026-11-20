@@ -20,6 +20,8 @@ export interface DeviceState {
   battery?: number;
   /** When the device last moved (a door, a lock), ms since the epoch: "moved 17 h ago". */
   changedAt?: number;
+  /** A device that can only be reached on the home Wi-Fi and isn't right now: it shows its last report and says so (C50). */
+  homeOnly?: boolean;
   /** A 3D printer's job (C55). */
   print?: PrintJob;
   /** A 3D printer's nozzle and bed (C55). */

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo), Wave A |
-| Status | **Design** |
+| Status | **Built** in Expo Go; see "As built" at the end. The owner's check with the real doors is open |
 | Depends on | C48 (services framework), C46 |
 | Unblocks | C70 (cloud control away from home) |
 | Runs in | Expo Go |
@@ -74,3 +74,25 @@ Signing vectors; sign-in with and without MFA; a wrong password; a region redire
 
 ## Not in this chunk
 Cloud MQTT (C70), Meross plugs and lights (Android lists garage openers only), 2FA live test.
+
+## As built (2026-11-20)
+Built by an AI agent; Android is untouched. Where the code differs from the specification above, the code is right.
+- **Files:** `core/md5.ts` (MD5 and UTF-8 in plain TypeScript; tested against RFC 1321 and Node's own MD5), `meross/protocol.ts` (signing, device messages, trust checks), `meross/api.ts`
+  (sign-in, device list, sign-out), `meross/lan.ts` (signed calls to a door, the /24 scan), `meross/service.ts` (`MerossService`); changes in `home/service.ts` (`ServiceAction`: extra buttons
+  on a service's row), `ui/HomeSettings.tsx` ("Find on my Wi-Fi"), `home/model.ts` (`DeviceState.homeOnly`), `home/actions.ts` (words for a door that is away),
+  `core/services.tsx` (the service is registered: HTTPS to Meross through `secureFetch` with `allowHosts: ['meross.com']`, plain HTTP to the doors), `package.json` (`expo-network`, `expo-crypto`).
+- **Sign-in** is Android's: the password goes as its MD5 (Meross's rule) and is never kept; the saved value (Keychain key `home.meross`) is the token, key, user id and region addresses.
+  A region redirect is followed once and only to `https://…meross.com`; a sign-in that names any other API or MQTT address is stopped, the token is handed back and nothing is kept
+  (C26's review change, enforced twice: by `secureFetch` and by `isTrustedDomain`). A second sign-in returns the token it replaces; Disconnect returns it too.
+- **Doors are found by asking every address of the phone's /24** (20 at a time, 1.5 s each, stopping when all are found), on first use, and again at most every 5 minutes on its own when a
+  door has no known address or stopped answering; the Settings button **Find on my Wi-Fi** scans at once and says how many it found. Addresses are kept in the key-value store
+  (`meross_lan_ips`, not secret). **No per-door manual address field yet** (the specification's fallback): the scan is the only way. If it can't find a door, a manual field is the next change.
+- **State and commands** are the signed local messages from the specification: `GET Appliance.System.All` → `digest.garageDoor[{channel, open, lmTime}]`, `SET Appliance.GarageDoor.State`.
+  Every answer's `sign` and `messageId` are checked. A silent door is asked twice before "not reachable". Asking for what is already so sends nothing. Open and close always show the C46 card.
+  The Home tab's "moved … ago" comes from `lmTime`; a door without one shows none.
+- **Away from home** a door keeps its last report with "Not reachable. It works on your home Wi-Fi. Last: Open.", is not online (so no Open/Close buttons), and raises **no problem line**.
+- **Not verified, and it matters:**
+  - **The local HTTP protocol on the owner's doors.** The path (`POST http://<ip>/config`), the `from` value, the signing rule and the `messageId` echo are the community's reading of Meross
+    devices, tested here only against a pretend door that follows the same reading. If the doors don't answer, the chunk still gives sign-in and listing, and control waits for C70.
+  - Everything against the real Meross cloud (only the Android build has talked to it, and it did), iOS's Local Network prompt in Expo Go for ~250 probes, and whether the scan is throttled.
+  - Meross plugs and lights are not listed (garage openers only, as on Android); multi-channel openers are named "<name> 1, 2…" from what a door reports.

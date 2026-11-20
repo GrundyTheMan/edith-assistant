@@ -31,6 +31,13 @@ export type SignInResult =
   | { kind: 'needs_code'; form: SignInForm }
   | { kind: 'failed'; message: string };
 
+/** A button a connected service adds to its Settings row ("Find on my Wi-Fi"); `run` answers with the words to show. */
+export interface ServiceAction {
+  id: string;
+  label: string;
+  run(): Promise<string>;
+}
+
 /** A service that signs in on a web page (Alexa): the WebView shows `startUrl()` until `isFinish` recognises the end. */
 export interface PageSignIn {
   startUrl(): string;
@@ -49,6 +56,8 @@ export interface HomeService {
   state: Store<ServiceState>;
   /** The form for "Sign in" / "Sign in again". Values are the answers; never logged or stored by the UI. */
   signInForm(): SignInForm;
+  /** Extra buttons for the connected service's row (C50). */
+  actions?(): ServiceAction[];
   /** When present the Settings row opens the page flow instead of the form. */
   pageSignIn?: PageSignIn;
   signIn(values: Record<string, string>): Promise<SignInResult>;
