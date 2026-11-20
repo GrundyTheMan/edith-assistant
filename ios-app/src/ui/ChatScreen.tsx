@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, KeyboardAvoidingView, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, AppState, FlatList, KeyboardAvoidingView, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MAX_ATTACHMENTS, prepareImage, type PendingAttachment } from '../attachments/attachments';
 import { expoImageProcessor } from '../attachments/expoImageProcessor';
@@ -12,6 +12,7 @@ import { useRepoQuery } from '../core/useRepoQuery';
 import type { StoredMessage } from '../data/chatRepository';
 import { ImageViewer, type BubbleAttachment } from './AttachmentViews';
 import { InFlightBubble, InputRow, MessageBubble } from './ChatComponents';
+import { RecordingRow, VoiceNoticeBar } from './VoiceViews';
 import { useTheme } from './theme';
 import { useNow } from './useNow';
 
@@ -23,7 +24,9 @@ type Item = { key: string; kind: 'message'; message: StoredMessage } | { key: st
 export function ChatScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { repo, engine, current, speech, tools, attachments: store } = useServices();
+  const { repo, engine, current, speech, tools, attachments: store, voice } = useServices();
+  const voiceState = useStore(voice.state);
+  const voiceNotice = useStore(voice.notice);
   const conversationId = useStore(current.id);
   const engineState = useStore(engine.state);
   const speaking = useStore(speech.speakingMessageId);
@@ -69,7 +72,15 @@ export function ChatScreen() {
 
   const now = useNow();
   const latestAssistantId = useMemo(() => [...messages].reverse().find((m) => m.role === 'assistant')?.id, [messages]);
-  const idle = engineState.kind !== 'working';
+  const idle = engineState.kind !== 'working' && voiceState.kind === 'idle';
+
+  // Leaving the app mid-recording releases the microphone and drops the memo (C12 As built).
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s !== 'active') void voice.leftTheApp();
+    });
+    return () => sub.remove();
+  }, [voice]);
 
   const items: Item[] = [];
   if (workingHere && engineState.kind === 'working') {
@@ -173,17 +184,23 @@ export function ChatScreen() {
             )
           }
         />
-        <InputRow
-          value={draft}
-          onChange={changeDraft}
-          canSend={canSend}
-          hint={hint}
-          onSend={send}
-          theme={theme}
-          pending={pending}
-          onAttach={pending.length < MAX_ATTACHMENTS ? () => void attach() : undefined}
-          onRemove={(id) => setPending((cur) => cur.filter((p) => p.localId !== id))}
-        />
+        {voiceNotice && voiceState.kind === 'idle' ? <VoiceNoticeBar notice={voiceNotice} onDismiss={() => voice.dismiss()} theme={theme} /> : null}
+        {voiceState.kind !== 'idle' ? (
+          <RecordingRow state={voiceState} level={() => voice.level()} onCancel={() => void voice.cancel()} onStop={() => void voice.stop()} theme={theme} />
+        ) : (
+          <InputRow
+            value={draft}
+            onChange={changeDraft}
+            canSend={canSend}
+            hint={hint}
+            onSend={send}
+            theme={theme}
+            pending={pending}
+            onAttach={pending.length < MAX_ATTACHMENTS ? () => void attach() : undefined}
+            onRemove={(id) => setPending((cur) => cur.filter((p) => p.localId !== id))}
+            onRecord={idle && conversationId !== null ? () => void voice.start(conversationId) : undefined}
+          />
+        )}
         <ImageViewer base64={viewing} onClose={() => setViewing(null)} />
       </KeyboardAvoidingView>
     </SafeAreaView>

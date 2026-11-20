@@ -180,7 +180,9 @@ export function InputRow({
   pending = [],
   onAttach,
   onRemove,
+  onRecord,
 }: {
+  onRecord?: () => void;
   pending?: PendingAttachment[];
   onAttach?: () => void;
   onRemove?: (localId: string) => void;
@@ -212,6 +214,11 @@ export function InputRow({
           accessibilityLabel="Message Edith"
           submitBehavior="newline"
         />
+        {onRecord && !canSend ? (
+          <Pressable onPress={onRecord} accessibilityRole="button" accessibilityLabel="Record audio" style={styles.attach} hitSlop={6}>
+            <Ionicons name="mic-outline" size={24} color={theme.textMuted} />
+          </Pressable>
+        ) : null}
         <Pressable
           onPress={onSend}
           disabled={!canSend}
