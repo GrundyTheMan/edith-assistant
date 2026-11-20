@@ -7,6 +7,9 @@ import type { ModelSelection } from '../settings/modelSelection';
 import type { SettingsRepository } from '../settings/settings';
 import { buildContext } from './contextBuilder';
 import type { PromptBuilder } from './promptBuilder';
+import { systemClock, type Clock } from '../core/clock';
+import { ToolRegistry } from '../tools/framework/toolRegistry';
+import { runToolTurn } from '../tools/framework/toolRunner';
 
 export type EngineState =
   | { kind: 'idle' }
@@ -17,6 +20,8 @@ export type EngineState =
 export interface ReplyListener {
   onDelta?(conversationId: number, text: string): void;
   onFinished?(conversationId: number, text: string, messageId: number | null): void;
+  /** Text said before a tool call was dropped; it is not part of the reply. */
+  onTextReset?(conversationId: number): void;
   onCancelled?(conversationId: number): void;
   onFailed?(conversationId: number): void;
 }
@@ -28,6 +33,9 @@ export interface EngineDeps {
   client: OllamaClient;
   prompts: PromptBuilder;
   listeners: ReplyListener[];
+  /** What Edith can do (C41). Empty or missing: a plain chat. */
+  tools?: ToolRegistry;
+  clock?: Clock;
   /** Minimum time between UI-facing updates while text streams (~30/s). 0 in tests. */
   throttleMs?: number;
   now?: () => number;
@@ -155,6 +163,7 @@ export class ChatEngine {
     const { repo, listeners } = this.deps;
     let modelName: string | null = null;
     let partial = '';
+    let label = 'Edith is thinking…';
     try {
       this.state.set({ kind: 'working', conversationId, label: 'Edith is thinking…', partialText: '' });
       if (regenerate && replaceId !== undefined) await repo.deleteMessage(replaceId);
@@ -168,23 +177,35 @@ export class ChatEngine {
       const history = await repo.recent(conversationId, 200);
       const messages = buildContext(history, this.deps.prompts.system(model));
 
-      let finalText = '';
-      for await (const e of this.deps.client.chatStream(
-        settings.serverUrl,
-        { model: model.name, messages },
-        { signal: this.abort?.signal },
-      )) {
-        if (e.type === 'delta') {
-          partial += e.text;
-          this.publishWorking(conversationId, 'Edith is thinking…', partial);
-          listeners.forEach((l) => l.onDelta?.(conversationId, e.text));
-        } else if (e.type === 'done') {
-          finalText = partial;
-        }
-      }
-      const text = finalText.trim();
+      const turn = await runToolTurn({
+        client: this.deps.client,
+        baseUrl: settings.serverUrl,
+        model,
+        messages,
+        registry: this.deps.tools ?? new ToolRegistry([]),
+        toolContext: { clock: this.deps.clock ?? systemClock, signal: this.abort?.signal },
+        signal: this.abort?.signal,
+        hooks: {
+          onDelta: (text) => {
+            partial += text;
+            this.publishWorking(conversationId, label, partial);
+            listeners.forEach((l) => l.onDelta?.(conversationId, text));
+          },
+          // Words said before a tool call are not the answer: clear them, and the listeners (speech) drop them too.
+          onTextReset: () => {
+            partial = '';
+            this.publishWorking(conversationId, label, '');
+            listeners.forEach((l) => l.onTextReset?.(conversationId));
+          },
+          onStatus: (next) => {
+            label = next;
+            this.publishWorking(conversationId, label, partial);
+          },
+        },
+      });
+      const text = turn.text.trim();
       if (!text) throw AppError.emptyReply();
-      const messageId = await repo.addAssistantMessage(conversationId, text, model.name);
+      const messageId = await repo.addAssistantMessage(conversationId, text, model.name, turn.toolsUsed);
       this.finish();
       listeners.forEach((l) => l.onFinished?.(conversationId, text, messageId));
     } catch (e) {

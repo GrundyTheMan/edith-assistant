@@ -32,15 +32,17 @@ export function formatOffset(offsetMinutes: number): string {
  * "Current date and time: Thursday, October 29, 2026, 2:30 PM (America/Detroit, UTC-04:00)." (C06, with C18's offset:
  * without it gemma4 guessed -04:00 the day after daylight saving ended, 04-lessons L29.)
  */
+export function describeMoment(now: number, zone: string, offsetMinutes: number): string {
+  const local = new Date(now + offsetMinutes * 60_000);
+  const h24 = local.getUTCHours();
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  const minutes = String(local.getUTCMinutes()).padStart(2, '0');
+  const date = `${DAYS[local.getUTCDay()]}, ${MONTHS[local.getUTCMonth()]} ${local.getUTCDate()}, ${local.getUTCFullYear()}`;
+  return `${date}, ${h12}:${minutes} ${h24 < 12 ? 'AM' : 'PM'} (${zone}, ${formatOffset(offsetMinutes)})`;
+}
+
 export const dateTimeSection: PromptSection = {
-  text(ctx) {
-    const local = new Date(ctx.now + ctx.offsetMinutes * 60_000);
-    const h24 = local.getUTCHours();
-    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-    const minutes = String(local.getUTCMinutes()).padStart(2, '0');
-    const date = `${DAYS[local.getUTCDay()]}, ${MONTHS[local.getUTCMonth()]} ${local.getUTCDate()}, ${local.getUTCFullYear()}`;
-    return `Current date and time: ${date}, ${h12}:${minutes} ${h24 < 12 ? 'AM' : 'PM'} (${ctx.zone}, ${formatOffset(ctx.offsetMinutes)}).`;
-  },
+  text: (ctx) => `Current date and time: ${describeMoment(ctx.now, ctx.zone, ctx.offsetMinutes)}.`,
 };
 
 /** This chunk has no tools, so the model is told so, rather than left to pretend. */

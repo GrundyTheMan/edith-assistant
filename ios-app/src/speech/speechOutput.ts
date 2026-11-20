@@ -70,6 +70,12 @@ export class SpeechOutput implements SpeechController, ReplyListener {
     else if (this.pending === 0) this.speakingMessageId.set(null);
   }
 
+  /** Words said before a tool call aren't the answer: silence them, and the next round starts a fresh reply. */
+  onTextReset(): void {
+    this.stop();
+    this.live = null;
+  }
+
   onCancelled(): void {
     this.stop();
     this.live = null;

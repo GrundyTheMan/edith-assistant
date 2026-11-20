@@ -19,7 +19,7 @@ type Item = { key: string; kind: 'message'; message: StoredMessage } | { key: st
 export function ChatScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { repo, engine, current, speech } = useServices();
+  const { repo, engine, current, speech, tools } = useServices();
   const conversationId = useStore(current.id);
   const engineState = useStore(engine.state);
   const speaking = useStore(speech.speakingMessageId);
@@ -131,6 +131,7 @@ export function ChatScreen() {
                 theme={theme}
                 now={now}
                 onRetry={regenerate}
+                toolNames={item.message.toolsUsed.map((n) => tools.displayName(n))}
                 actions={
                   item.message.role === 'assistant' && item.message.status !== 'failed'
                     ? {

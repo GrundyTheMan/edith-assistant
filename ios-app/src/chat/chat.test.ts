@@ -155,7 +155,7 @@ async function fixture(chat: (req: RecordedRequest, signal?: AbortSignal) => Htt
   const client = new OllamaClient({ fetch });
   const catalog = new ModelCatalog(client);
   const selection = new ModelSelection(settings, catalog);
-  const listener = { onDelta: jest.fn(), onFinished: jest.fn(), onCancelled: jest.fn(), onFailed: jest.fn() };
+  const listener = { onDelta: jest.fn(), onFinished: jest.fn(), onTextReset: jest.fn(), onCancelled: jest.fn(), onFailed: jest.fn() };
   const engine = new ChatEngine({
     repo,
     settings,
