@@ -85,7 +85,7 @@ design in the same PR, or ask the owner.
 | [C51](chunks/C51-ios-ring.md) | Ring on iOS: sign-in with 2FA, devices, snapshots, events | 9 iOS (Expo) | C48, C49 | Design |
 | [C52](chunks/C52-ios-blink.md) | Blink on iOS: sign-in with a code, cameras, snapshots, events | 9 iOS (Expo) | C48, C49 | Design |
 | [C53](chunks/C53-ios-camera-clips.md) | Camera clips on iOS: the Clips chip, list and player | 9 iOS (Expo) | C51 or C52 | Design |
-| [C54](chunks/C54-ios-alexa.md) | Alexa devices on iOS: WebView sign-in, devices, state, commands | 9 iOS (Expo) | C48 | Design |
+| [C54](chunks/C54-ios-alexa.md) | Alexa devices on iOS: WebView sign-in, devices, state, commands | 9 iOS (Expo) | C48 | Built (Expo Go); the owner's first sign-in and live commands are open |
 | [C55](chunks/C55-ios-printer-direct.md) | The 3D printer card on iOS, direct on the home Wi-Fi (Moonraker) | 9 iOS (Expo) | C48 | Built (Expo Go); the owner's check against the real printer is open |
 | [C56](chunks/C56-ios-edith-files.md) | Edith's files and resending attachments on iOS | 9 iOS (Expo) | C49 | Built (Expo Go); the owner's iPhone check is open |
 | [C57](chunks/C57-ios-conversation-mode.md) | Conversation mode on iOS: hands-free without a wake word | 9 iOS (Expo) | C44 | Design |
