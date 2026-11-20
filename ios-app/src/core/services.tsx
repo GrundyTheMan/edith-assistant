@@ -5,6 +5,8 @@ import { applyRetention, removeOrphans, type RetentionDeps } from '../attachment
 import { DemoBackend } from '../home/demoBackend';
 import { Home } from '../home/home';
 import { cameraSnapshotTool, homeControlTool, homeDevicesTool } from '../home/homeTools';
+import { PrinterService } from '../printer/service';
+import { printerStatusTool } from '../printer/tools';
 import { ExpoRecorder, expoAudioFiles } from '../voice/expoRecorder';
 import { OllamaTranscriber, VoiceMemos } from '../voice/voiceMemos';
 import { ChatEngine } from '../chat/engine';
@@ -61,7 +63,9 @@ export async function createServices(): Promise<Services> {
   const home = new Home({ store: kvStore });
   await home.load();
   const secrets = keychainSecrets;
-  // Real services register here as their chunks land (C50 onward): `home.registerService(merossService({ secrets, ... }))`.
+  // Real services register here as their chunks land: `home.registerService(...)`.
+  // The 3D printer talks plain HTTP to its LAN address (Moonraker has no TLS): `httpFetch`, deliberately (AGENTS.md).
+  home.registerService(new PrinterService({ secrets, fetch: httpFetch }));
   // Each is restored at startup; one failing never stops the app.
   await home.restoreServices();
   // The Demo home is for trying things with no service; development builds only (Expo Go is one).
@@ -74,7 +78,7 @@ export async function createServices(): Promise<Services> {
       applyBackends();
     }
   });
-  const tools = new ToolRegistry([currentTimeTool, homeDevicesTool(home), homeControlTool(home), cameraSnapshotTool(home), weatherTool({ client: new OpenMeteoClient({ fetch: httpFetch }), location: deviceLocation }),
+  const tools = new ToolRegistry([currentTimeTool, homeDevicesTool(home), homeControlTool(home), cameraSnapshotTool(home), printerStatusTool(home), weatherTool({ client: new OpenMeteoClient({ fetch: httpFetch }), location: deviceLocation }),
     searchWebTool(new DuckDuckGoSearch(httpFetch)),
     readWebPageTool(new PageReader(httpFetch)),
   ]);

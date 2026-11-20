@@ -107,6 +107,8 @@ export class DemoBackend implements HomeBackend {
         return { door: 'open' };
       case 'close':
         return { door: 'closed' };
+      default:
+        return {}; // the Demo home has no printer
     }
   }
 }

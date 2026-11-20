@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo), Wave A |
-| Status | **Design** |
+| Status | **Built** in Expo Go; see "As built" at the end. The owner's iPhone check, against the real printer, is open |
 | Depends on | C48 (services, optional sign-in fields), C46 |
 | Unblocks | C67 (the full printer features through Jarvis build on the same card) |
 | Runs in | Expo Go |
@@ -56,3 +56,23 @@ Port C34's 59 against a pretend Moonraker: parsing (addresses, progress by M73, 
 
 ## Not in this chunk
 Uploading or starting prints, macros, G-code, the console, recordings, alerts (C67).
+
+## As built (2026-11-20)
+Built by an AI agent; Android is untouched. Where the code differs from the specification above, the code is right.
+- **Files:** `printer/parse.ts` (ported from Jarvis's `shared/printer.ts`: `parseStatus`, `timeLeft`, `fileTitle`, `formatDuration`, plus webcam and address helpers),
+  `printer/api.ts` (`MoonrakerApi`, `PrinterError`), `printer/service.ts` (`PrinterService`), `printer/tools.ts` (`printer_status`), `ui/PrinterCard.tsx`,
+  `core/bytes.ts` (`bytesToBase64`, `readBytes`); changes in `home/model.ts` (`PrintJob`, `HeaterReading`, `DeviceState.print/heaters`, `pause`/`resume`/`cancel_print`),
+  `home/actions.ts` (the actions `pause`, `resume`, `cancel`; the cancel card; `printerWords`), `ui/HomeScreen.tsx` (the Printer chip, the card, the camera viewer, a 5 s refresh
+  while a print is going and the tab is focused), `core/services.tsx` (the service and the tool are registered).
+- **One device, one card:** the printer is a `HomeDevice` (`type: 'printer'`, room "Workshop") with capabilities `print_control` and, when Moonraker lists a webcam, `snapshot`. So
+  "show me the printer camera" also works through C49's `camera_snapshot`.
+- **Cancel** shows "Cancel the print: 3D printer?" with the buttons **Cancel print** and **Keep printing**, and the file's name as a detail. Pause and Resume ask nothing. Commands are
+  checked first against a fresh reading and send nothing when already so; "isn't printing / isn't paused / no print to cancel" are plain failures.
+- **Away from home** is a device that is not online with the last report kept ("Not reachable. It works on your home Wi-Fi."), **no problem line, no banner**. A wrong key
+  (401/403) is a problem line and turns the service to "Sign in again"; an address that isn't Moonraker is refused at sign-in.
+- **Deviation:** the slicer estimate comes from Moonraker's `/server/files/metadata` (`estimated_time`) only, not from reading the G-code header as Jarvis also does (ZMOD files
+  without metadata then use the pace). Asked once per file.
+- **Plain HTTP:** the service uses `httpFetch` (not `secureFetch`) on purpose: Moonraker has no TLS and lives at a LAN IP (AGENTS.md exception). The form says to use the numbered
+  address, because iOS only allows plain HTTP to raw IPs.
+- **Not verified:** everything on the real printer and the iPhone: whether iOS shows its Local Network prompt and allows the calls in Expo Go (Ollama on the same network already
+  works), the ZMOD progress/estimate and webcam address, a printer that wants an API key, and how the card looks.
