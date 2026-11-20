@@ -83,7 +83,7 @@ design in the same PR, or ask the owner.
 | [C49](chunks/C49-ios-edith-attachments.md) | Edith's attachments on iOS: stored pictures from tools, per-direction retention, `camera_snapshot` | 9 iOS (Expo) | C46, C47 | Built (Expo Go); the owner's iPhone check is open |
 | [C50](chunks/C50-ios-meross.md) | Meross garage door openers on iOS (sign-in, devices, control on the home Wi-Fi) | 9 iOS (Expo) | C48 | Built (Expo Go); the owner's check with the real doors is open |
 | [C51](chunks/C51-ios-ring.md) | Ring on iOS: sign-in with 2FA, devices, snapshots, events | 9 iOS (Expo) | C48, C49 | Built (Expo Go); the owner's sign-in and check with the real Ring are open |
-| [C52](chunks/C52-ios-blink.md) | Blink on iOS: sign-in with a code, cameras, snapshots, events | 9 iOS (Expo) | C48, C49 | Design |
+| [C52](chunks/C52-ios-blink.md) | Blink on iOS: sign-in with a code, cameras, snapshots, events | 9 iOS (Expo) | C48, C49 | Built (Expo Go); the owner's sign-in (VPN off) and check with the real Blink are open |
 | [C53](chunks/C53-ios-camera-clips.md) | Camera clips on iOS: the Clips chip, list and player | 9 iOS (Expo) | C51 or C52 | Design |
 | [C54](chunks/C54-ios-alexa.md) | Alexa devices on iOS: WebView sign-in, devices, state, commands | 9 iOS (Expo) | C48 | Built (Expo Go); the owner's first sign-in and live commands are open |
 | [C55](chunks/C55-ios-printer-direct.md) | The 3D printer card on iOS, direct on the home Wi-Fi (Moonraker) | 9 iOS (Expo) | C48 | Built (Expo Go); the owner's check against the real printer is open |
