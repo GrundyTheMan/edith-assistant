@@ -104,6 +104,7 @@ export function MessageBubble({
       <View style={styles.rowEnd}>
         <View style={[styles.bubble, styles.userBubble, { backgroundColor: theme.primary, maxWidth }]}>
           <BubbleAttachments items={attachments} onOpen={(b) => onOpenImage?.(b)} theme={theme} />
+          {message.source === 'hands_free' ? <Ionicons name="ear" size={14} color={theme.onPrimary} accessibilityLabel="Said in conversation mode" style={{ alignSelf: 'flex-end', opacity: 0.8 }} /> : null}
           {message.content ? (
             <Text selectable style={[styles.userText, { color: theme.onPrimary }]}>
               {message.content}

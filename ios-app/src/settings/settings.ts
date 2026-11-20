@@ -9,6 +9,14 @@ export interface Settings {
   currentConversationId: number | null;
   /** How many of the owner's recent attachments are kept on the phone (C16 §2; 0 to 50). */
   keepRecentAttachments: number;
+  /** Conversation mode (C57): how long Edith listens for a follow-up after speaking, 0 to 15 seconds (0: the conversation ends after each reply). */
+  followUpSeconds: number;
+  /** 0..1: higher hears quieter speech. */
+  conversationSensitivity: number;
+  /** Silence that ends what the owner said, 700 to 2000 ms. */
+  conversationPauseMs: number;
+  /** Turn speaking on for the length of a conversation when it is off. */
+  speakDuringConversation: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -18,6 +26,10 @@ export const DEFAULT_SETTINGS: Settings = {
   speechRate: 1.0,
   currentConversationId: null,
   keepRecentAttachments: 10,
+  followUpSeconds: 8,
+  conversationSensitivity: 0.5,
+  conversationPauseMs: 1100,
+  speakDuringConversation: true,
 };
 
 /** Async string key-value storage. The app uses `expo-sqlite/kv-store`; tests use a Map. */
@@ -34,6 +46,15 @@ const KEYS: Record<keyof Settings, string> = {
   speechRate: 'speech_rate',
   currentConversationId: 'current_conversation_id',
   keepRecentAttachments: 'keep_recent_attachments',
+  followUpSeconds: 'follow_up_seconds',
+  conversationSensitivity: 'conversation_sensitivity',
+  conversationPauseMs: 'conversation_pause_ms',
+  speakDuringConversation: 'speak_during_conversation',
+};
+
+const clampNumber = (raw: string | null, min: number, max: number, fallback: number): number => {
+  const n = raw === null || raw.trim() === '' ? NaN : Number(raw);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
 };
 
 export class SettingsRepository {
@@ -50,13 +71,17 @@ export class SettingsRepository {
   async current(): Promise<Settings> {
     if (this.cache) return this.cache;
     const read = async (k: keyof Settings) => this.store.getItem(KEYS[k]);
-    const [serverUrl, model, speak, rate, conv, keep] = await Promise.all([
+    const [serverUrl, model, speak, rate, conv, keep, followUp, sensitivity, pause, speakDuring] = await Promise.all([
       read('serverUrl'),
       read('model'),
       read('speakReplies'),
       read('speechRate'),
       read('currentConversationId'),
       read('keepRecentAttachments'),
+      read('followUpSeconds'),
+      read('conversationSensitivity'),
+      read('conversationPauseMs'),
+      read('speakDuringConversation'),
     ]);
     const keepNum = keep === null ? NaN : Number(keep);
     const rateNum = rate === null ? NaN : Number(rate);
@@ -68,6 +93,10 @@ export class SettingsRepository {
       speechRate: Number.isFinite(rateNum) ? rateNum : DEFAULT_SETTINGS.speechRate,
       currentConversationId: Number.isFinite(convNum) ? convNum : null,
       keepRecentAttachments: Number.isFinite(keepNum) ? Math.min(50, Math.max(0, Math.round(keepNum))) : DEFAULT_SETTINGS.keepRecentAttachments,
+      followUpSeconds: Math.round(clampNumber(followUp, 0, 15, DEFAULT_SETTINGS.followUpSeconds)),
+      conversationSensitivity: clampNumber(sensitivity, 0, 1, DEFAULT_SETTINGS.conversationSensitivity),
+      conversationPauseMs: Math.round(clampNumber(pause, 700, 2000, DEFAULT_SETTINGS.conversationPauseMs)),
+      speakDuringConversation: speakDuring === null ? DEFAULT_SETTINGS.speakDuringConversation : speakDuring === 'true',
     };
     return this.cache;
   }

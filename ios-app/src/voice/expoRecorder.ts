@@ -74,6 +74,14 @@ export class ExpoRecorder implements Recorder {
     if (target) await expoAudioFiles.delete(target).catch(() => {});
   }
 
+  isRecording(): boolean {
+    try {
+      return this.recorder?.getStatus().isRecording ?? false;
+    } catch {
+      return false;
+    }
+  }
+
   level(): number {
     try {
       return levelFromDb(this.recorder?.getStatus().metering);

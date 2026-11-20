@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, AppState, FlatList, KeyboardAvoidingView, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MAX_ATTACHMENTS, prepareImage, type PendingAttachment } from '../attachments/attachments';
@@ -17,6 +17,7 @@ import { displayPartial } from '../chat/replyFormat';
 import { ImageViewer, type BubbleAttachment } from './AttachmentViews';
 import { FileViewer, type BubbleFile } from './FileCards';
 import { InFlightBubble, InputRow, MessageBubble } from './ChatComponents';
+import { ConversationBanner, ConversationButton } from './ConversationViews';
 import { RecordingRow, VoiceNoticeBar } from './VoiceViews';
 import { useTheme } from './theme';
 import { useNow } from './useNow';
@@ -31,7 +32,9 @@ type Item =
 export function ChatScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { repo, engine, current, speech, tools, attachments: store, voice } = useServices();
+  const { repo, engine, current, speech, tools, attachments: store, voice, conversation } = useServices();
+  const talk = useStore(conversation.state);
+  const talkNotice = useStore(conversation.notice);
   const voiceState = useStore(voice.state);
   const voiceNotice = useStore(voice.notice);
   const conversationId = useStore(current.id);
@@ -84,15 +87,22 @@ export function ChatScreen() {
 
   const now = useNow();
   const latestAssistantId = useMemo(() => [...messages].reverse().find((m) => m.role === 'assistant')?.id, [messages]);
-  const idle = engineState.kind !== 'working' && voiceState.kind === 'idle';
+  const idle = engineState.kind !== 'working' && voiceState.kind === 'idle' && talk.kind === 'off';
 
   // Leaving the app mid-recording releases the microphone and drops the memo (C12 As built).
   useEffect(() => {
     const sub = AppState.addEventListener('change', (s) => {
-      if (s !== 'active') void voice.leftTheApp();
+      if (s !== 'active') {
+        void voice.leftTheApp();
+        void conversation.leftTheApp(); // no background audio in Expo Go: the mode ends (C57 §3)
+      }
     });
     return () => sub.remove();
-  }, [voice]);
+  }, [voice, conversation]);
+  // The microphone is only live while the banner shows: leaving this tab ends the mode.
+  useFocusEffect(
+    useCallback(() => () => void conversation.stop('Conversation stopped when you left the chat.'), [conversation]),
+  );
 
   const items: Item[] = [];
   if (workingHere && engineState.kind === 'working') {
@@ -156,6 +166,12 @@ export function ChatScreen() {
             {title}
           </Text>
         </Pressable>
+        <ConversationButton
+          on={talk.kind !== 'off'}
+          disabled={conversationId === null || (talk.kind === 'off' && (engineState.kind === 'working' || voiceState.kind !== 'idle'))}
+          onPress={() => (talk.kind === 'off' ? void conversation.start(conversationId ?? 0) : void conversation.stop())}
+          theme={theme}
+        />
         <Pressable onPress={() => void current.newChat()} accessibilityRole="button" accessibilityLabel="New chat" hitSlop={8}>
           <Ionicons name="create-outline" size={24} color={theme.text} />
         </Pressable>
@@ -218,7 +234,10 @@ export function ChatScreen() {
           }
         />
         {voiceNotice && voiceState.kind === 'idle' ? <VoiceNoticeBar notice={voiceNotice} onDismiss={() => voice.dismiss()} theme={theme} /> : null}
-        {voiceState.kind !== 'idle' ? (
+        {talkNotice ? <VoiceNoticeBar notice={talkNotice} onDismiss={() => conversation.dismiss()} theme={theme} /> : null}
+        {talk.kind !== 'off' ? (
+          <ConversationBanner kind={talk.kind} level={() => conversation.level()} onEnd={() => void conversation.stop()} onStopSpeaking={() => speech.stop()} theme={theme} />
+        ) : voiceState.kind !== 'idle' ? (
           <RecordingRow state={voiceState} level={() => voice.level()} onCancel={() => void voice.cancel()} onStop={() => void voice.stop()} theme={theme} />
         ) : (
           <InputRow
