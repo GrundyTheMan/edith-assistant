@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo), Wave B |
-| Status | **Design** — a very large chunk: **build it as the ten work packages below, one PR each** (E1–E10) |
+| Status | **In progress** — ten work packages, one PR each (E1–E10): E1 and E2 built (see "As built"); E3–E10 to do |
 | Depends on | **C66a** (the Jarvis connection: pairing and the client), C55 (the direct printer card and `printer_status`), C45 (cards) |
 | Unblocks | stages 3–4 on iOS (upload/start/delete/queue-add, alerts, recordings, live camera): **not designed yet because Android has not built them** (`C39-printer-parity.md` §12 E11–E14); add chunks C77+ when Android does |
 | Runs in | **Expo Go** (decision D39: ordinary HTTPS to Jarvis's Tailscale name; `react-native-svg` is in Expo Go); it waits for the Jarvis change, not for a development build |
@@ -70,3 +70,16 @@ As C39 §11.2 and §12 list per package, translated: `wire`/`commands` literal-J
 
 ## Not in this chunk
 Stages 3–4 (upload, start, delete, add-to-queue, alerts, recordings, live camera, screen taps).
+
+## As built
+Work packages land as separate PRs; each adds its own lines here. Nothing below has met a real Jarvis or printer (the Jarvis side of the connection is `jarvis-tailscale-listener-spec.md`, not built yet).
+
+### E1 — Wire, commands, fixtures, pretend feed (built)
+- `printer/feed/wire.ts`: the printer feed's data shapes (`PrinterState`, `StateAnswer`, `Check`, `SharedPrinter`, files, history, console, temperatures, macros), ported from Android's `PrinterFeedWire.kt` including the later Jarvis-review fields (`epoch`, `consoleSeq`, `features`, `schema`, `hidden` macros). **Every parser is total**: a missing field takes its default, a wrong-typed value is ignored, a state string from a newer Jarvis is shown rather than thrown on.
+- `printer/feed/commands.ts`: all 33 commands as a typed union with `serializeCommand`, which writes the literal JSON Jarvis's validator reads (the kind first, fields in the declared order, unset optionals and an empty macro `params` left out). A table test lists every kind against its literal JSON and fails if a kind is missing. JavaScript writes `220.0` as `220`: the same JSON value.
+- `printer/feed/fixtures/`: the 15 Android fixtures, copied unchanged. `printer/feed/testkit.ts`: **the pretend feed** for tests (not the Node script: that one serves a self-signed certificate, which Expo Go cannot use). It answers every route from the fixtures, records requests, can hold a long poll, and implements the Controls and confirmation behaviour; `connectedFeed()` gives a paired `JarvisService` talking to it. Test code only.
+
+### E2 — The client (built)
+- `printer/feed/api.ts`: `PrinterFeedApi` (one function per route over C66a's authenticated client; the `PrinterRoutes` interface is what the session and page take), the `CommandAnswer` mapping (`sent`, `checked`, `needsConfirm`, `refused`, `controlsOff`, `failed`) and `printer/feed/words.ts` (C39 §7.5's sentences, verbatim). Wait is capped at 25 s with a transport timeout of wait + 15 s; every value in a query is encoded; a dry run sends no request id; a retried send keeps its request id; a long poll is cancelled at once by its signal.
+- Changes in C66a's client: failures now carry Jarvis's `code`, the HTTP `status` and the parsed `body` (a refused command's `check` is in it); an unreadable answer has the code `UNREADABLE`; `bytes()` answers camera pictures (3 MB cap, cancellable); `JarvisService.bytes()` and `sharedNow()`; `parseShared` carries the printer's share (`printerShare`).
+- Tests: `wire.test.ts` (the Android assertions on the Android fixtures, plus "total" cases), `commands.test.ts`, `api.test.ts` (every route and every error mapping against the pretend feed). **Mutation-checked:** nine deliberate breaks (wait not capped, a request id on a dry run, a path glued into the URL, a confirmation not mapped, Controls-off not told apart, the kind not first, an empty `params` sent, a wrong field name, a default dropped) were each caught.

@@ -1,6 +1,8 @@
+import { readBytes } from '../core/bytes';
 import { hmacSha256Hex } from '../core/hmac';
 import { log } from '../core/log';
 import type { HttpFetch, HttpResponse } from '../ollama/client';
+import { parseSharedPrinter, type SharedPrinter } from '../printer/feed/wire';
 import { JarvisLink } from './link';
 
 /** What an authenticated call to Jarvis answers (the feed spec's error codes, part 7). Never thrown. */
@@ -15,7 +17,8 @@ export type FeedResult<T> =
   | { kind: 'timeout' }
   /** Nothing answered: the PC is off, Jarvis isn't running, or Tailscale is off on this phone. */
   | { kind: 'unreachable' }
-  | { kind: 'failed'; message: string };
+  /** Anything else Jarvis answered: its own code, the HTTP status and the parsed body (a refused command's `check` is in it). */
+  | { kind: 'failed'; message: string; code?: string; status?: number; body?: unknown };
 
 export type PairResult = { kind: 'ok'; link: JarvisLink } | { kind: 'refused' } | { kind: 'slowDown' } | { kind: 'notJarvis'; message: string } | { kind: 'unreachable' } | { kind: 'failed'; message: string };
 
@@ -101,6 +104,36 @@ export class JarvisApi {
     return { kind: 'ok', link: new JarvisLink(host, port, pcName, token) };
   }
 
+  /** An authenticated GET that answers bytes (a camera picture). Errors come back as in `call`. */
+  async bytes(link: JarvisLink, path: string, opts: CallOptions = {}): Promise<FeedResult<Uint8Array>> {
+    const ctl = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      ctl.abort();
+    }, opts.timeoutMs ?? 15_000);
+    const onAbort = () => ctl.abort();
+    opts.signal?.addEventListener('abort', onAbort);
+    try {
+      const res = await this.deps.fetch(`${link.base}${path}`, { method: 'GET', headers: { Authorization: link.bearer(), Accept: 'image/*' }, signal: ctl.signal, credentials: 'omit' });
+      log.info('jarvis', `GET ${path.split('?')[0]} ${res.status}`);
+      if (res.status === 401) return { kind: 'unauthorized' };
+      if (res.status < 200 || res.status >= 300) {
+        const json = parseJson(await res.text());
+        const code = obj(obj(json).error).code;
+        if (code === 'NOT_SHARED') return { kind: 'notShared' };
+        return { kind: 'failed', message: errorText(obj(json)) ?? `Jarvis answered HTTP ${res.status}.`, code: typeof code === 'string' ? code : undefined, status: res.status, body: json };
+      }
+      const bytes = await readBytes(res.body, MAX_BYTES);
+      return bytes.length === 0 ? { kind: 'failed', message: 'Jarvis sent an empty picture.' } : { kind: 'ok', value: bytes };
+    } catch {
+      return timedOut ? { kind: 'timeout' } : { kind: 'unreachable' };
+    } finally {
+      clearTimeout(timer);
+      opts.signal?.removeEventListener('abort', onAbort);
+    }
+  }
+
   /** An authenticated call. `parse` turns the JSON answer into the caller's type (null = not what was expected). */
   async call<T>(link: JarvisLink, method: 'GET' | 'POST', path: string, parse: (json: unknown) => T | null, opts: CallOptions & { body?: unknown } = {}): Promise<FeedResult<T>> {
     const r = await this.send(
@@ -119,7 +152,7 @@ export class JarvisApi {
     if (r.res.status === 401) return { kind: 'unauthorized' };
     if (r.res.status >= 200 && r.res.status < 300) {
       const value = parse(json);
-      return value === null ? { kind: 'failed', message: "Jarvis's answer wasn't what Edith expected." } : { kind: 'ok', value };
+      return value === null ? { kind: 'failed', message: "Jarvis's answer wasn't what Edith expected.", code: 'UNREADABLE' } : { kind: 'ok', value };
     }
     const code = obj(obj(json).error).code;
     const message = errorText(obj(json));
@@ -135,10 +168,13 @@ export class JarvisApi {
       case 'OUTLOOK_UNAVAILABLE':
         return { kind: 'unavailable', message: message ?? "Outlook isn't answering on the PC." };
       default:
-        return r.res.status === 429 ? { kind: 'busy' } : { kind: 'failed', message: message ?? `Jarvis answered HTTP ${r.res.status}.` };
+        return r.res.status === 429 ? { kind: 'busy' } : { kind: 'failed', message: message ?? `Jarvis answered HTTP ${r.res.status}.`, code: typeof code === 'string' ? code : undefined, status: r.res.status, body: json };
     }
   }
 }
+
+/** The most a camera picture may be (Jarvis sends a JPEG or PNG of one frame). */
+const MAX_BYTES = 3_000_000;
 
 /** Jarvis's own one-sentence message, shortened (the feed's messages are generic by design: part 7). */
 function errorText(body: Record<string, unknown>): string | null {
@@ -148,6 +184,8 @@ function errorText(body: Record<string, unknown>): string | null {
 
 /** What `GET /v1/shared` says Jarvis shares with this phone (only the parts C66a shows; the printer entry is C67's). */
 export interface Shared {
+  /** What Jarvis shares for the printer, or null when it does not (C67). */
+  printerShare: SharedPrinter | null;
   pcName: string | null;
   mail: number;
   calendars: number;
@@ -158,5 +196,5 @@ export function parseShared(json: unknown): Shared | null {
   const o = obj(json);
   const count = (v: unknown) => (Array.isArray(v) ? v.length : 0);
   if (!('mail' in o) && !('calendars' in o) && !('tasks' in o) && !('printer' in o)) return null;
-  return { pcName: typeof o.pcName === 'string' ? o.pcName : null, mail: count(o.mail), calendars: count(o.calendars), tasks: count(o.tasks), printer: !!o.printer };
+  return { pcName: typeof o.pcName === 'string' ? o.pcName : null, mail: count(o.mail), calendars: count(o.calendars), tasks: count(o.tasks), printer: !!o.printer, printerShare: parseSharedPrinter(o.printer) };
 }
