@@ -1,6 +1,7 @@
 import { MEDIA_WINDOW } from '../attachments/attachments';
 import type { StoredAttachment, StoredMessage } from '../data/chatRepository';
 import { stripToolCalls } from '../data/chatRepository';
+import { filePlaceholder } from './replyFormat';
 import type { OllamaMessage } from '../ollama/types';
 
 /** Leaves room within num_ctx 16384 for tools, media and the reply (C06 §2). */
@@ -24,6 +25,8 @@ export interface MediaContext {
   attachments: StoredAttachment[];
   /** The picture's Base64 if it is still held in this run of the app. */
   image(attachmentId: number): string | null;
+  /** The text of a file Edith wrote, while it is held (C56). */
+  fileText?(attachmentId: number): string | null;
   /** The current model has the "vision" capability. */
   canSee: boolean;
 }
@@ -68,16 +71,25 @@ export function buildContext(
     if (m.attachments.length === 0) return { role: m.role, content: m.content };
     const inWindow = index >= windowStart;
     const images: string[] = [];
-    const labels = m.attachments.map((a) => {
-      const data = inWindow && media?.canSee && a.kind === 'image' && !a.removedAt ? media.image(a.id) : null;
-      if (data) {
-        images.push(data);
-        return labelFor(a, true);
-      }
-      const held = !a.removedAt && !!media?.image(a.id);
-      return labelFor(a, held);
-    });
-    const content = [m.content.trim(), ...labels].filter(Boolean).join('\n');
+    let body = m.content.trim();
+    // A file Edith wrote is back in her message as she wrote it, within the media window and while kept; otherwise its placeholder stays (C16 §5).
+    for (const a of m.attachments.filter((x) => x.kind === 'file')) {
+      const text = inWindow && !a.removedAt ? (media?.fileText?.(a.id) ?? null) : null;
+      if (text !== null) body = body.replace(filePlaceholder(a.fileName), `<file name="${a.fileName}">\n${text}\n</file>`);
+    }
+    const labels = m.attachments
+      .filter((a) => a.kind !== 'file')
+      .map((a) => {
+        const source = a.resendOf ?? a.id; // a resend shows the original's bytes
+        const data = inWindow && media?.canSee && a.kind === 'image' && !a.removedAt ? media.image(source) : null;
+        if (data) {
+          images.push(data);
+          return labelFor(a, true);
+        }
+        const held = !a.removedAt && !!media?.image(source);
+        return labelFor(a, held);
+      });
+    const content = [body, ...labels].filter(Boolean).join('\n');
     return images.length > 0 ? { role: m.role, content, images } : { role: m.role, content };
   };
   const costOf = (m: Usable) => estimateTokens(m.content) + m.attachments.length * 20;

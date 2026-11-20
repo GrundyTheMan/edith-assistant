@@ -1,4 +1,7 @@
 import { base64Bytes, type AttachmentStore, type PendingAttachment } from '../attachments/attachments';
+import { utf8Bytes } from '../core/md5';
+import type { NewAttachment } from '../data/chatRepository';
+import { filePlaceholder, mimeForName, parseReply, plainReply } from './replyFormat';
 import { AppError, isAbortError, toAppError } from '../core/errors';
 import { log } from '../core/log';
 import { Store } from '../core/store';
@@ -241,7 +244,7 @@ export class ChatEngine {
       const stored = await repo.attachments(conversationId);
       const store = this.deps.attachments;
       // After a restart the pictures are on disk, not in memory: load the ones the context window can use.
-      await store?.hydrate(stored.filter((a) => a.kind === 'image' && !a.removedAt).slice(-20).map((a) => a.id));
+      await store?.hydrate([...new Set(stored.filter((a) => !a.removedAt).slice(-20).map((a) => a.resendOf ?? a.id))]);
       // Pictures to a model that can't see them: don't call it (C15 §3). Only the newest message is checked.
       const newest = [...history].reverse().find((m) => m.role === 'user');
       if (newest && stored.some((a) => a.messageId === newest.id && a.kind === 'image' && !a.removedAt) && !canSee(model)) {
@@ -250,6 +253,7 @@ export class ChatEngine {
       const messages = buildContext(history, this.deps.prompts.system(model), undefined, {
         attachments: stored,
         image: (id) => store?.image(id) ?? null,
+        fileText: (id) => store?.fileText(id) ?? null,
         canSee: canSee(model),
       });
 
@@ -280,26 +284,49 @@ export class ChatEngine {
           },
         },
       });
-      const text = turn.text.trim();
-      if (!text) throw AppError.emptyReply();
-      const messageId = await repo.addAssistantMessage(
-        conversationId,
-        text,
-        model.name,
-        turn.toolsUsed,
-        turn.images.map((i) => ({ kind: 'image' as const, fileName: i.fileName, mimeType: i.mimeType, sizeBytes: base64Bytes(i.base64) })),
-      );
-      if (messageId !== null && turn.images.length > 0) {
-        // The pictures were numbered with the message: hand each to the store under its row id (as for the owner's), then retention.
-        const rows = (await repo.attachments(conversationId)).filter((r) => r.messageId === messageId);
-        await Promise.all(rows.map((row, i) => this.deps.attachments?.put(row.id, turn.images[i].base64)));
+      // Her reply may hold files she wrote and attachments she sends back (C16 §3, C56): turn them into rows, and the text into placeholders.
+      let text = '';
+      const files: { name: string; content: string }[] = [];
+      const resends: NewAttachment[] = [];
+      for (const part of parseReply(turn.text)) {
+        if (part.kind === 'text') text += part.text;
+        else if (part.kind === 'file') {
+          files.push({ name: part.name, content: part.content });
+          text += filePlaceholder(part.name);
+        } else {
+          const original = await repo.attachmentByNumber(part.number);
+          if (original && !original.removedAt) {
+            resends.push({ kind: original.kind, fileName: original.fileName, mimeType: original.mimeType, sizeBytes: original.sizeBytes, resendOf: original.id });
+          } else {
+            text += `Attachment ${part.number} isn't available.`;
+          }
+        }
+      }
+      text = text.replace(/\n{3,}/g, '\n\n').trim();
+      if (!text && files.length === 0 && resends.length === 0 && turn.images.length === 0) throw AppError.emptyReply();
+      const rows: NewAttachment[] = [
+        ...turn.images.map((i) => ({ kind: 'image' as const, fileName: i.fileName, mimeType: i.mimeType, sizeBytes: base64Bytes(i.base64) })),
+        ...files.map((f) => ({ kind: 'file' as const, fileName: f.name, mimeType: mimeForName(f.name), sizeBytes: utf8Bytes(f.content).length })),
+        ...resends,
+      ];
+      const messageId = await repo.addAssistantMessage(conversationId, text, model.name, turn.toolsUsed, rows);
+      if (messageId !== null && rows.length > 0) {
+        // The rows were numbered in order: hand each one's bytes to the store under its row id (a resend has none), then retention.
+        const stored = (await repo.attachments(conversationId)).filter((r) => r.messageId === messageId);
+        await Promise.all(
+          stored.map((row, i) => {
+            if (i < turn.images.length) return this.deps.attachments?.put(row.id, turn.images[i].base64);
+            const f = files[i - turn.images.length];
+            return f ? this.deps.attachments?.putFile(row.id, f.content) : undefined;
+          }),
+        );
         await this.deps.afterAttachmentsSent?.().catch(() => {});
       }
       this.finish();
       listeners.forEach((l) => l.onFinished?.(conversationId, text, messageId));
     } catch (e) {
       if (this.cancelling || isAbortError(e)) {
-        if (partial.trim()) await repo.addCancelledAssistantMessage(conversationId, partial, modelName);
+        if (partial.trim()) await repo.addCancelledAssistantMessage(conversationId, plainReply(partial) || partial, modelName);
         this.finish();
         listeners.forEach((l) => l.onCancelled?.(conversationId));
         return;

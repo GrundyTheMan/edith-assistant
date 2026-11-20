@@ -188,8 +188,8 @@ describe('settings and text', () => {
     expect(repo.snapshot().keepRecentAttachments).toBe(4);
   });
   it('writes the usage line', () => {
-    expect(usageText(0, 0)).toBe('No photos kept');
-    expect(usageText(1, 3)).toBe('1 photo, <0.1 MB');
-    expect(usageText(12, 8_400_000)).toBe('12 photos, 8.4 MB');
+    expect(usageText(0, 0)).toBe('Nothing kept');
+    expect(usageText(1, 3)).toBe('1 attachment, <0.1 MB');
+    expect(usageText(12, 8_400_000)).toBe('12 attachments, 8.4 MB');
   });
 });

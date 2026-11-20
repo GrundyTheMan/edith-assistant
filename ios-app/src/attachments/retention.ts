@@ -65,9 +65,9 @@ export async function removeOrphans(deps: RetentionDeps): Promise<number> {
 
 export const MAX_KEEP = 50;
 
-/** "12 photos, 8.4 MB" */
+/** "12 attachments, 8.4 MB" (pictures and files) */
 export function usageText(count: number, bytes: number): string {
-  if (count === 0) return 'No photos kept';
+  if (count === 0) return 'Nothing kept';
   const mb = bytes / 1_000_000;
-  return `${count} photo${count === 1 ? '' : 's'}, ${mb < 0.1 ? '<0.1' : mb.toFixed(1)} MB`;
+  return `${count} attachment${count === 1 ? '' : 's'}, ${mb < 0.1 ? '<0.1' : mb.toFixed(1)} MB`;
 }

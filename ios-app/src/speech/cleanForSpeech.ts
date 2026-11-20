@@ -23,7 +23,8 @@ function stripEmoji(text: string): string {
  * (keeping the sentence's full stop), emoji, bullets and `_emphasis_` removed, whitespace collapsed.
  */
 export function cleanForSpeech(text: string): string {
-  let s = text;
+  // A stored reply says [Attached file: name] where a file was: not read aloud (C56).
+  let s = text.replace(/\[Attached file: [^\]\n]*\]/g, '');
   s = s.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1');
   s = s.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
   s = s.replace(/(?:https?:\/\/|www\.)[^\s)>\]]*[^\s)>\].,;:!?]/g, 'a link');

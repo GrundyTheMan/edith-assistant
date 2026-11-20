@@ -87,7 +87,7 @@ design in the same PR, or ask the owner.
 | [C53](chunks/C53-ios-camera-clips.md) | Camera clips on iOS: the Clips chip, list and player | 9 iOS (Expo) | C51 or C52 | Design |
 | [C54](chunks/C54-ios-alexa.md) | Alexa devices on iOS: WebView sign-in, devices, state, commands | 9 iOS (Expo) | C48 | Design |
 | [C55](chunks/C55-ios-printer-direct.md) | The 3D printer card on iOS, direct on the home Wi-Fi (Moonraker) | 9 iOS (Expo) | C48 | Built (Expo Go); the owner's check against the real printer is open |
-| [C56](chunks/C56-ios-edith-files.md) | Edith's files and resending attachments on iOS | 9 iOS (Expo) | C49 | Design |
+| [C56](chunks/C56-ios-edith-files.md) | Edith's files and resending attachments on iOS | 9 iOS (Expo) | C49 | Built (Expo Go); the owner's iPhone check is open |
 | [C57](chunks/C57-ios-conversation-mode.md) | Conversation mode on iOS: hands-free without a wake word | 9 iOS (Expo) | C44 | Design |
 | [C58](chunks/C58-ios-development-build.md) | **Stage 2: the EAS development build** (needs the Apple Developer membership) | 9 iOS (Expo) | C40 | Design, blocked on the owner |
 | [C59](chunks/C59-ios-accounts-google-sign-in.md) | Accounts core and Google sign-in on iOS | 9 iOS (Expo) | C58, C48 | Design |

@@ -4,6 +4,8 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, useWin
 import type { PendingAttachment } from '../attachments/attachments';
 import type { StoredMessage } from '../data/chatRepository';
 import { BubbleAttachments, PendingChips, type BubbleAttachment } from './AttachmentViews';
+import { stripPlaceholders } from '../chat/replyFormat';
+import { FileCards, type BubbleFile } from './FileCards';
 import { MarkdownText } from './MarkdownText';
 import type { ConfirmationRequest } from '../tools/framework/tool';
 import { messageTime } from './messageTimes';
@@ -73,7 +75,16 @@ export function MessageBubble({
   toolNames = [],
   attachments = [],
   onOpenImage,
+  files = [],
+  onViewFile,
+  onCopyFile,
+  onShareFile,
 }: {
+  /** Files Edith wrote in this reply (C56). */
+  files?: BubbleFile[];
+  onViewFile?: (f: BubbleFile) => void;
+  onCopyFile?: (f: BubbleFile) => void;
+  onShareFile?: (f: BubbleFile) => void;
   message: StoredMessage;
   /** Display names of the tools used for this reply ("weather"), shown as "Used: …". */
   toolNames?: string[];
@@ -126,7 +137,10 @@ export function MessageBubble({
     <View style={styles.rowStart}>
       <View style={[styles.bubble, styles.edithBubble, { backgroundColor: theme.edithBubble, maxWidth }, stopped && { opacity: 0.7 }]}>
         <BubbleAttachments items={attachments} onOpen={(b) => onOpenImage?.(b)} theme={theme} tone="edith" />
-        <MarkdownText text={message.content} color={theme.onEdithBubble} theme={theme} />
+        <FileCards items={files} theme={theme} onView={(f) => onViewFile?.(f)} onCopy={(f) => onCopyFile?.(f)} onShare={(f) => onShareFile?.(f)} />
+        {(files.length > 0 ? stripPlaceholders(message.content) : message.content) ? (
+          <MarkdownText text={files.length > 0 ? stripPlaceholders(message.content) : message.content} color={theme.onEdithBubble} theme={theme} />
+        ) : null}
         {stopped ? <Text style={[styles.time, { color: theme.textMuted }]}>(stopped)</Text> : null}
       </View>
       {toolNames.length > 0 ? <Text style={[styles.time, { color: theme.textMuted }]}>Used: {toolNames.join(', ')}</Text> : null}

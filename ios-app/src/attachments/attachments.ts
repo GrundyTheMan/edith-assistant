@@ -1,5 +1,7 @@
 /** Photos the owner attaches (C15 on iOS): picked, shrunk, sent to the model, shown in the bubble. */
 
+import { base64ToBytes, bytesToBase64, utf8Text } from '../core/bytes';
+import { utf8Bytes } from '../core/md5';
 import { Store } from '../core/store';
 
 export const MAX_IMAGE_SIDE = 1536;
@@ -105,6 +107,16 @@ export class AttachmentStore {
     } catch {
       // kept for this run only
     }
+  }
+
+  /** A text file Edith wrote (C56): held and stored like a picture, as the Base64 of its UTF-8 bytes. */
+  putFile(attachmentId: number, text: string): Promise<void> {
+    return this.put(attachmentId, bytesToBase64(utf8Bytes(text)));
+  }
+  /** The text of a file Edith wrote, while it is held; null once it is gone. */
+  fileText(attachmentId: number): string | null {
+    const b64 = this.images.get(attachmentId);
+    return b64 === undefined ? null : utf8Text(base64ToBytes(b64));
   }
 
   /** Loads pictures that are on disk but not in memory (after a restart). */

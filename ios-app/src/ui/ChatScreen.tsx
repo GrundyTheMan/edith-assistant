@@ -11,7 +11,11 @@ import { Store } from '../core/store';
 import { useRepoQuery } from '../core/useRepoQuery';
 import type { ConfirmationRequest } from '../tools/framework/tool';
 import type { StoredMessage } from '../data/chatRepository';
+import * as Clipboard from 'expo-clipboard';
+import { shareTextFile } from '../attachments/shareFile';
+import { displayPartial } from '../chat/replyFormat';
 import { ImageViewer, type BubbleAttachment } from './AttachmentViews';
+import { FileViewer, type BubbleFile } from './FileCards';
 import { InFlightBubble, InputRow, MessageBubble } from './ChatComponents';
 import { RecordingRow, VoiceNoticeBar } from './VoiceViews';
 import { useTheme } from './theme';
@@ -40,10 +44,11 @@ export function ChatScreen() {
   useStore(store.version); // redraw when a sent picture's bytes arrive
   // After a restart the pictures are on disk: load the ones this chat shows.
   useEffect(() => {
-    void store.hydrate(stored.filter((a) => a.kind === 'image' && !a.removedAt).map((a) => a.id));
+    void store.hydrate([...new Set(stored.filter((a) => !a.removedAt).map((a) => a.resendOf ?? a.id))]);
   }, [stored, store]);
   const [pending, setPending] = useState<PendingAttachment[]>([]);
   const [viewing, setViewing] = useState<string | null>(null);
+  const [viewingFile, setViewingFile] = useState<BubbleFile | null>(null);
   const title = conversations.find((c) => c.id === conversationId)?.title || 'New chat';
 
   const allDrafts = useStore(drafts);
@@ -91,9 +96,9 @@ export function ChatScreen() {
 
   const items: Item[] = [];
   if (workingHere && engineState.kind === 'working') {
-    items.push({ key: 'inflight', kind: 'inflight', text: engineState.partialText, label: engineState.label, canStop: true, confirmation: engineState.confirmation });
+    items.push({ key: 'inflight', kind: 'inflight', text: displayPartial(engineState.partialText), label: engineState.label, canStop: true, confirmation: engineState.confirmation });
   } else if (lingering && linger) {
-    items.push({ key: 'inflight', kind: 'inflight', text: linger.text, label: '', canStop: false });
+    items.push({ key: 'inflight', kind: 'inflight', text: displayPartial(linger.text), label: '', canStop: false });
   }
   for (let i = messages.length - 1; i >= 0; i--) items.push({ key: `m${messages[i].id}`, kind: 'message', message: messages[i] });
 
@@ -122,7 +127,16 @@ export function ChatScreen() {
   const bubbleAttachments = (messageId: number): BubbleAttachment[] =>
     stored
       .filter((a) => a.messageId === messageId && a.kind === 'image')
-      .map((a) => ({ id: a.id, fileName: a.fileName, base64: a.removedAt ? null : store.image(a.id) }));
+      // A resend shows the original's picture (C56): gone when that is.
+      .map((a) => ({ id: a.id, fileName: a.fileName, base64: a.removedAt ? null : store.image(a.resendOf ?? a.id) }));
+  const fileCards = (messageId: number): BubbleFile[] =>
+    stored.filter((a) => a.messageId === messageId && a.kind === 'file').map((a) => ({ id: a.id, name: a.fileName, text: a.removedAt ? null : store.fileText(a.id) }));
+  const shareFile = (f: BubbleFile) => {
+    if (f.text !== null) void shareTextFile(f.name, f.text).catch(() => Alert.alert("Couldn't share that", 'Try again.'));
+  };
+  const copyFile = (f: BubbleFile) => {
+    if (f.text !== null) void Clipboard.setStringAsync(f.text);
+  };
   const regenerate = () => {
     if (conversationId !== null) void engine.regenerateLast(conversationId);
   };
@@ -184,6 +198,10 @@ export function ChatScreen() {
                 toolNames={item.message.toolsUsed.map((n) => tools.displayName(n))}
                 attachments={bubbleAttachments(item.message.id)}
                 onOpenImage={setViewing}
+                files={fileCards(item.message.id)}
+                onViewFile={setViewingFile}
+                onCopyFile={copyFile}
+                onShareFile={shareFile}
                 actions={
                   item.message.role === 'assistant' && item.message.status !== 'failed'
                     ? {
@@ -217,6 +235,7 @@ export function ChatScreen() {
           />
         )}
         <ImageViewer base64={viewing} onClose={() => setViewing(null)} />
+        <FileViewer file={viewingFile} theme={theme} onClose={() => setViewingFile(null)} />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

@@ -85,6 +85,7 @@ const att = (over: Partial<StoredAttachment>): StoredAttachment => ({
   sizeBytes: 10,
   createdAt: 1,
   removedAt: null,
+  resendOf: null,
   ...over,
 });
 const media = (attachments: StoredAttachment[], held: Record<number, string>, canSee = true): MediaContext => ({

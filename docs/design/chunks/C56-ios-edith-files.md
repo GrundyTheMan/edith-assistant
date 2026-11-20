@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo), Wave A |
-| Status | **Design** |
+| Status | **Built** in Expo Go; see "As built" at the end. The owner's iPhone check is open |
 | Depends on | C49 (Edith's attachments foundation), C47 |
 | Unblocks | — |
 | Runs in | Expo Go |
@@ -65,3 +65,23 @@ The usage line now counts files and pictures per direction; Delete all removes b
 
 ## Not in this chunk
 Editing files, folders, other kinds (PDF, images Edith generates), sharing pictures from the viewer (a small addition if the owner asks).
+
+## As built (2026-11-20)
+Built by an AI agent; Android is untouched. Where the code differs from the specification above, the code is right.
+- **Files:** `chat/replyFormat.ts` (`parseReply`, `sanitizeFileName`, `mimeForName`, `filePlaceholder`, `stripPlaceholders`, `plainReply`, `displayPartial`, `SpeechFilter`,
+  `edithFilesSection`), `attachments/shareFile.ts`, `ui/FileCards.tsx` (`FileCards`, `FileViewer`); changes in `core/bytes.ts` (`base64ToBytes`, `utf8Text`),
+  `attachments/attachments.ts` (`putFile`, `fileText`), `attachments/expoAttachmentFiles.ts`, `attachments/retention.ts` (the usage line counts attachments), `data/chatRepository.ts`
+  (`kind: 'file'`, `resendOf`, `attachmentByNumber`), `chat/engine.ts`, `chat/contextBuilder.ts`, `speech/speechOutput.ts`, `speech/cleanForSpeech.ts`, `ui/ChatComponents.tsx`,
+  `ui/ChatScreen.tsx`, `core/services.tsx` (the prompt section), `package.json` (`expo-sharing`).
+- **Storing a file:** the bytes go through the same store as pictures, as the Base64 of the text's UTF-8 bytes. **Files on disk are now `attachments/<id>.bin`** (a picture or a text file);
+  C47's `.jpg` files are still read, deleted and counted as strays. The text of a file is never in the database, only its row.
+- **Showing it:** a card in her bubble (the first 3 lines in a monospace face, **View**, **Copy**, **Share**), the full text in a selectable sheet, and "name — no longer kept" when
+  retention took it. The stored text's `[Attached file: name]` placeholder is hidden while the card shows. **Save is the share sheet's "Save to Files"**: there is no separate save dialog in
+  Expo Go. While a reply streams, an open block reads "Writing name…".
+- **A file in the model's context:** within the newest 10 messages and while kept, the placeholder is replaced by the file as she wrote it (`<file name="…">…</file>`), so "add a hat to that
+  list" works; otherwise the placeholder stays. Files get no `[Attachment N: …]` label line.
+- **A resend** is a row with `resend_of` set and no file of its own: the bubble and the model use the original's bytes, and it is not counted by retention. An unknown or removed number
+  becomes the sentence "Attachment N isn't available." in her message. A reply of only a resend tag is kept (empty text).
+- **Spoken replies** never read a file or its tags, even when a tag arrives in two pieces (`SpeechFilter`); Play on a stored message skips the placeholder.
+- **Not verified:** everything on a real iPhone: how `gemma4:12b` follows the convention (it may put a file in a code fence instead; the parser only reads the tags), the share sheet with a
+  `.md` file and its "Save to Files", and how the card looks. A sentence after a file is kept as written; the text around a file is not trimmed beyond collapsing blank lines.
