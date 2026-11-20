@@ -9,6 +9,7 @@ import { pickPhotos } from '../attachments/pickPhotos';
 import { useServices, useStore } from '../core/services';
 import { Store } from '../core/store';
 import { useRepoQuery } from '../core/useRepoQuery';
+import type { ConfirmationRequest } from '../tools/framework/tool';
 import type { StoredMessage } from '../data/chatRepository';
 import { ImageViewer, type BubbleAttachment } from './AttachmentViews';
 import { InFlightBubble, InputRow, MessageBubble } from './ChatComponents';
@@ -19,7 +20,9 @@ import { useNow } from './useNow';
 /** Each conversation keeps its own unsent draft while the app runs. */
 const drafts = new Store<ReadonlyMap<number, string>>(new Map());
 
-type Item = { key: string; kind: 'message'; message: StoredMessage } | { key: string; kind: 'inflight'; text: string; label: string; canStop: boolean };
+type Item =
+  | { key: string; kind: 'message'; message: StoredMessage }
+  | { key: string; kind: 'inflight'; text: string; label: string; canStop: boolean; confirmation?: ConfirmationRequest };
 
 export function ChatScreen() {
   const theme = useTheme();
@@ -84,7 +87,7 @@ export function ChatScreen() {
 
   const items: Item[] = [];
   if (workingHere && engineState.kind === 'working') {
-    items.push({ key: 'inflight', kind: 'inflight', text: engineState.partialText, label: engineState.label, canStop: true });
+    items.push({ key: 'inflight', kind: 'inflight', text: engineState.partialText, label: engineState.label, canStop: true, confirmation: engineState.confirmation });
   } else if (lingering && linger) {
     items.push({ key: 'inflight', kind: 'inflight', text: linger.text, label: '', canStop: false });
   }
@@ -159,7 +162,15 @@ export function ChatScreen() {
           }
           renderItem={({ item }) =>
             item.kind === 'inflight' ? (
-              <InFlightBubble text={item.text} label={item.label} canStop={item.canStop} onStop={() => engine.cancel()} theme={theme} />
+              <InFlightBubble
+                text={item.text}
+                label={item.label}
+                canStop={item.canStop}
+                onStop={() => engine.cancel()}
+                theme={theme}
+                confirmation={item.confirmation}
+                onAnswer={(approved) => item.confirmation && engine.resolveConfirmation(item.confirmation.id, approved)}
+              />
             ) : (
               <MessageBubble
                 message={item.message}

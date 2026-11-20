@@ -23,6 +23,22 @@ export type ToolResult = { ok: true; text: string } | { ok: false; text: string 
 export const ok = (text: string): ToolResult => ({ ok: true, text });
 export const failed = (text: string): ToolResult => ({ ok: false, text });
 
+/** What the owner is asked to approve before a tool changes something outside the app (C08 §6, D11). */
+export interface ConfirmationSpec {
+  /** "Add to your calendar?" */
+  title: string;
+  /** Label and value rows, e.g. ["When", "Fri Oct 30, 12:00–1:00 PM"]. */
+  details: [string, string][];
+  confirmLabel?: string;
+  denyLabel?: string;
+}
+export interface ConfirmationRequest extends ConfirmationSpec {
+  id: string;
+  toolName: string;
+  confirmLabel: string;
+  denyLabel: string;
+}
+
 export interface ToolContext {
   clock: Clock;
   signal?: AbortSignal;
@@ -37,6 +53,8 @@ export interface Tool {
   displayName: string;
   /** Longest result text sent to the model (default 2,000). */
   maxResultChars?: number;
+  /** Something to approve before `execute` runs, or null when this call needs none (reads, small changes). */
+  confirmation?(args: ToolArgs, ctx: ToolContext): ConfirmationSpec | null;
   execute(args: ToolArgs, ctx: ToolContext): Promise<ToolResult>;
 }
 export const DEFAULT_MAX_RESULT_CHARS = 2000;

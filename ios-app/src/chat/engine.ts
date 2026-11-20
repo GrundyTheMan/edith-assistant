@@ -11,11 +11,12 @@ import { buildContext } from './contextBuilder';
 import type { PromptBuilder } from './promptBuilder';
 import { systemClock, type Clock } from '../core/clock';
 import { ToolRegistry } from '../tools/framework/toolRegistry';
+import type { ConfirmationRequest } from '../tools/framework/tool';
 import { runToolTurn } from '../tools/framework/toolRunner';
 
 export type EngineState =
   | { kind: 'idle' }
-  | { kind: 'working'; conversationId: number; label: string; partialText: string }
+  | { kind: 'working'; conversationId: number; label: string; partialText: string; confirmation?: ConfirmationRequest }
   | { kind: 'failed'; conversationId: number; error: AppError };
 
 /** Hears a reply as it streams (spoken replies, titles). Every callback names its conversation. */
@@ -62,6 +63,8 @@ export class ChatEngine {
   private readonly now: () => number;
   private lastPublish = 0;
   private pending: (() => void) | null = null;
+  /** The approval the turn is waiting for, if any (C08 §6). */
+  private awaiting: { request: ConfirmationRequest; settle: (approved: boolean) => void } | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly deps: EngineDeps) {
@@ -97,6 +100,37 @@ export class ChatEngine {
     return this.turn;
   }
 
+  /** The owner's answer to the card in the reply bubble; ignored when no such request is waiting. */
+  resolveConfirmation(id: string, approved: boolean): void {
+    const a = this.awaiting;
+    if (!a || a.request.id !== id) return;
+    this.awaiting = null;
+    a.settle(approved);
+  }
+
+  /** Waits for the owner; a cancelled turn rejects, so nothing is run. */
+  private askOwner(conversationId: number, label: () => string, partial: () => string, request: ConfirmationRequest): Promise<boolean> {
+    const signal = this.abort?.signal;
+    return new Promise<boolean>((resolve, reject) => {
+      const cleanup = () => signal?.removeEventListener('abort', onAbort);
+      const onAbort = () => {
+        this.awaiting = null;
+        reject(Object.assign(new Error('Aborted'), { name: 'AbortError' }));
+      };
+      if (signal?.aborted) return onAbort();
+      signal?.addEventListener('abort', onAbort);
+      this.awaiting = {
+        request,
+        settle: (approved) => {
+          cleanup();
+          this.publishWorking(conversationId, label(), partial());
+          resolve(approved);
+        },
+      };
+      this.publishWorking(conversationId, label(), partial());
+    });
+  }
+
   /** Stops the running reply (and Ollama's generation); partial text is kept as a "stopped" message. */
   cancel(): void {
     if (!this.busy || !this.abort) return;
@@ -122,6 +156,7 @@ export class ChatEngine {
   /** The turn is released *before* Idle/Failed is published, so a send made the moment a reply ends is accepted. */
   private finish(next: EngineState = { kind: 'idle' }) {
     this.busy = false;
+    this.awaiting = null;
     this.activeId = null;
     this.abort = null;
     this.flush();
@@ -129,7 +164,14 @@ export class ChatEngine {
   }
 
   private publishWorking(conversationId: number, label: string, partialText: string) {
-    const publish = () => this.state.set({ kind: 'working', conversationId, label, partialText });
+    const publish = () =>
+      this.state.set({
+        kind: 'working',
+        conversationId,
+        label,
+        partialText,
+        ...(this.awaiting ? { confirmation: this.awaiting.request } : {}),
+      });
     const elapsed = this.now() - this.lastPublish;
     if (this.throttleMs === 0 || elapsed >= this.throttleMs) {
       this.flush();
@@ -211,6 +253,7 @@ export class ChatEngine {
         registry: this.deps.tools ?? new ToolRegistry([]),
         toolContext: { clock: this.deps.clock ?? systemClock, signal: this.abort?.signal },
         signal: this.abort?.signal,
+        confirm: (request) => this.askOwner(conversationId, () => label, () => partial, request),
         hooks: {
           onDelta: (text) => {
             partial += text;

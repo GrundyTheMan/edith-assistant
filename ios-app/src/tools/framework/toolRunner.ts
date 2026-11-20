@@ -1,7 +1,7 @@
 import { log } from '../../core/log';
 import type { OllamaClient } from '../../ollama/client';
 import type { OllamaMessage, OllamaTool } from '../../ollama/types';
-import { DEFAULT_MAX_RESULT_CHARS, toOllama, type Tool, type ToolContext, type ToolResult } from './tool';
+import { DEFAULT_MAX_RESULT_CHARS, toOllama, type ConfirmationRequest, type Tool, type ToolContext, type ToolResult } from './tool';
 import { ArgumentError, ToolArgs } from './toolArgs';
 import type { ToolRegistry } from './toolRegistry';
 
@@ -26,6 +26,11 @@ export interface TurnInput {
   hooks: TurnHooks;
   signal?: AbortSignal;
   timeoutMs?: number;
+  /**
+   * Asks the owner to approve an action; resolves true (confirm) or false (cancel), and rejects when the turn is
+   * cancelled while waiting (nothing runs). Missing: a tool that needs approval is not run.
+   */
+  confirm?: (request: ConfirmationRequest) => Promise<boolean>;
 }
 export interface TurnOutput {
   /** The last round's text only: "Let me check…" before a tool call is not kept. */
@@ -58,6 +63,37 @@ async function runTool(tool: Tool, args: ToolArgs, ctx: ToolContext, timeoutMs: 
     clearTimeout(timer);
     ctx.signal?.removeEventListener('abort', onAbort);
   }
+}
+
+let confirmationCounter = 0;
+
+/**
+ * Asks for approval when the tool wants it. `true`: go ahead; otherwise the result to send the model instead of running
+ * the tool. A declined call is an ordinary result, not an error (C08 As built). A cancelled turn throws.
+ */
+async function approve(tool: Tool, args: ToolArgs, input: TurnInput): Promise<true | ToolResult> {
+  let spec;
+  try {
+    spec = tool.confirmation?.(args, input.toolContext) ?? null;
+  } catch (e) {
+    if (e instanceof ArgumentError) return { ok: false, text: `Error: missing ${e.argName} for ${tool.spec.name}.` };
+    log.warn('Tools', `${tool.spec.name} confirmation threw`);
+    return { ok: false, text: `The ${tool.displayName} tool failed unexpectedly.` };
+  }
+  if (!spec) return true;
+  if (!input.confirm) return { ok: false, text: `${tool.displayName} needs the owner's approval, which isn't available here, so it was not done.` };
+  confirmationCounter += 1;
+  const request: ConfirmationRequest = {
+    ...spec,
+    id: `c${confirmationCounter}`,
+    toolName: tool.spec.name,
+    confirmLabel: spec.confirmLabel ?? 'Confirm',
+    denyLabel: spec.denyLabel ?? 'Cancel',
+  };
+  input.hooks.onStatus('Waiting for your OK…');
+  const yes = await input.confirm(request);
+  if (yes) return true;
+  return { ok: true, text: `The user declined: ${spec.title} Don't retry unless they ask.` };
 }
 
 /**
@@ -102,9 +138,14 @@ export async function runToolTurn(input: TurnInput): Promise<TurnOutput> {
       if (!tool) {
         result = { ok: false, text: `Error: there's no tool called '${rawName}'. Available: ${offered.map((t) => t.spec.name).join(', ')}.` };
       } else {
-        hooks.onStatus(tool.statusLabel);
-        result = await runTool(tool, new ToolArgs(call.function.arguments, tool.spec), input.toolContext, timeoutMs);
-        if (!toolsUsed.includes(tool.spec.name)) toolsUsed.push(tool.spec.name);
+        const approved = await approve(tool, new ToolArgs(call.function.arguments, tool.spec), input);
+        if (approved === true) {
+          hooks.onStatus(tool.statusLabel);
+          result = await runTool(tool, new ToolArgs(call.function.arguments, tool.spec), input.toolContext, timeoutMs);
+          if (!toolsUsed.includes(tool.spec.name)) toolsUsed.push(tool.spec.name);
+        } else {
+          result = approved;
+        }
       }
       log.info('Tools', `${tool?.spec.name ?? 'unknown tool'} -> ${result.ok ? 'ok' : 'error'}`);
       log.sensitive('Tools', `${rawName}(${JSON.stringify(call.function.arguments)}) -> ${result.text.slice(0, 120)}`);

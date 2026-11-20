@@ -74,6 +74,7 @@ design in the same PR, or ask the owner.
 | [C42](chunks/C42-ios-web.md) | Web search (DuckDuckGo) and page reading on iOS | 9 iOS (Expo) | C41, C10 (as spec) | Built (Expo Go); the owner's iPhone check is open |
 | [C43](chunks/C43-ios-photos.md) | Photo attachments on iOS: pick, shrink, send to a vision model, show in the chat | 9 iOS (Expo) | C40, C15 (as spec) | Built (Expo Go); the owner's iPhone check is open |
 | [C44](chunks/C44-ios-voice-memos.md) | Voice memos on iOS: record a WAV, transcribe with the model, send as a message | 9 iOS (Expo) | C40, C43, C12 (as spec) | Built (Expo Go); the owner's iPhone check is open |
+| [C45](chunks/C45-ios-confirmations.md) | Confirmations on iOS: the approve / cancel card before a tool changes something | 9 iOS (Expo) | C41, C08 §6 (as spec) | Built (Expo Go); nothing asks yet |
 
 ### State of the build (written at the 2026-10-29 handoff, kept up to date since)
 - `master` has the design and the C01 skeleton with its build/deploy tooling (`05-environment.md` §2, §6). Tag
