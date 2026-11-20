@@ -54,7 +54,9 @@ export interface Tool {
   /** Longest result text sent to the model (default 2,000). */
   maxResultChars?: number;
   /** Something to approve before `execute` runs, or null when this call needs none (reads, small changes). */
-  confirmation?(args: ToolArgs, ctx: ToolContext): ConfirmationSpec | null;
+  confirmation?(args: ToolArgs, ctx: ToolContext): ConfirmationSpec | null | Promise<ConfirmationSpec | null>;
+  /** A tool that has nothing to work with (no home service connected) is not offered to the model (L6). */
+  enabled?(): boolean;
   execute(args: ToolArgs, ctx: ToolContext): Promise<ToolResult>;
 }
 export const DEFAULT_MAX_RESULT_CHARS = 2000;

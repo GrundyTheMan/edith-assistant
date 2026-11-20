@@ -1,0 +1,232 @@
+import { toAppError } from '../core/errors';
+import { Store } from '../core/store';
+import type { KeyValueStore } from '../settings/settings';
+import { stateWords } from './actions';
+import type { DeviceCommand, HomeBackend, HomeDevice } from './model';
+
+export const READ_TIMEOUT_MS = 10_000;
+/** The device is asked again after a command; clouds lag, so thermostats and locks are asked again later too (C25 §6). */
+export const RECHECK_MS = [3_000];
+export const RECHECK_SLOW_MS = [3_000, 10_000, 30_000];
+export const LOG_LIMIT = 500;
+
+export interface LogEntry {
+  at: number;
+  device: string;
+  action: string;
+  ok: boolean;
+  result: string;
+  source: 'chat' | 'home';
+}
+
+export interface HomeSnapshot {
+  devices: HomeDevice[];
+  /** One line per backend that didn't answer. */
+  problems: string[];
+}
+
+const KEYS = { favourites: 'home_favourites', hidden: 'home_hidden', chip: 'home_chip', demo: 'home_demo', log: 'home_command_log' };
+
+const sameDevice = (a: HomeDevice, b: HomeDevice) => a.name.trim().toLowerCase() === b.name.trim().toLowerCase() && a.type === b.type;
+
+interface Deps {
+  store: KeyValueStore;
+  now?: () => number;
+  setTimer?: (fn: () => void, ms: number) => unknown;
+  readTimeoutMs?: number;
+}
+
+/**
+ * Every connected service in one place (C25 §2): reads them in parallel (one slow or broken service is a problem line,
+ * never an empty home), merges a hub's copy of a device away when a direct service answers, keeps favourites and hidden
+ * devices, runs commands, and logs them.
+ */
+export class Home {
+  private backends: HomeBackend[] = [];
+  private last = new Map<string, HomeDevice>();
+  private lastProblems: string[] = [];
+  /** Bumps whenever devices, preferences or the log change, so screens redraw. */
+  readonly version = new Store<number>(0);
+  private favourites = new Set<string>();
+  private hidden = new Set<string>();
+  private chip = 'favorites';
+  private demo = false;
+  private log: LogEntry[] = [];
+  private loaded = false;
+  private readonly now: () => number;
+  private readonly setTimer: (fn: () => void, ms: number) => unknown;
+
+  constructor(private readonly deps: Deps) {
+    this.now = deps.now ?? Date.now;
+    this.setTimer = deps.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
+  }
+
+  private bump() {
+    this.version.set(this.version.get() + 1);
+  }
+
+  async load(): Promise<void> {
+    if (this.loaded) return;
+    const read = async (k: string) => {
+      try {
+        return JSON.parse((await this.deps.store.getItem(k)) ?? 'null') as unknown;
+      } catch {
+        return null;
+      }
+    };
+    this.favourites = new Set(((await read(KEYS.favourites)) as string[] | null) ?? []);
+    this.hidden = new Set(((await read(KEYS.hidden)) as string[] | null) ?? []);
+    this.chip = ((await read(KEYS.chip)) as string | null) ?? 'favorites';
+    this.demo = ((await read(KEYS.demo)) as boolean | null) ?? false;
+    this.log = ((await read(KEYS.log)) as LogEntry[] | null) ?? [];
+    this.loaded = true;
+    this.bump();
+  }
+  private save(key: string, value: unknown) {
+    void this.deps.store.setItem(key, JSON.stringify(value)).catch(() => {});
+  }
+
+  // --- backends ---------------------------------------------------------------------------------------------
+  setBackends(backends: HomeBackend[]) {
+    this.backends = backends;
+    this.last.clear();
+    this.bump();
+  }
+  get connected(): boolean {
+    return this.backends.length > 0;
+  }
+  get demoOn(): boolean {
+    return this.demo;
+  }
+  setDemo(on: boolean) {
+    this.demo = on;
+    this.save(KEYS.demo, on);
+    this.bump();
+  }
+
+  // --- reading ----------------------------------------------------------------------------------------------
+  /** Asks every service; a service that fails or takes over 10 s keeps its last known devices and adds a problem line. */
+  async refresh(): Promise<HomeSnapshot> {
+    const timeout = this.deps.readTimeoutMs ?? READ_TIMEOUT_MS;
+    const results = await Promise.all(
+      this.backends.map(async (b) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const devices = await Promise.race([
+            b.devices(),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(() => reject(new Error('took too long')), timeout);
+            }),
+          ]);
+          return { b, devices, error: null as string | null };
+        } catch (e) {
+          return { b, devices: null, error: toAppError(e).message.replace(/^Something went wrong: /, '') };
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      }),
+    );
+    const problems: string[] = [];
+    const answered: HomeDevice[][] = [];
+    for (const r of results) {
+      if (r.devices) answered.push(r.devices.map((d) => ({ ...d, backend: r.b.id })));
+      else {
+        problems.push(`${r.b.name}: ${r.error}`);
+        answered.push([...this.last.values()].filter((d) => d.backend === r.b.id));
+      }
+    }
+    // A hub's copy of a device a direct service also reports is dropped (D19).
+    const direct = results.flatMap((r, i) => (r.b.isHub ? [] : answered[i]));
+    const merged = results.flatMap((r, i) => (r.b.isHub ? answered[i].filter((d) => !direct.some((x) => sameDevice(x, d))) : answered[i]));
+    this.last = new Map(merged.map((d) => [d.id, d]));
+    this.lastProblems = problems;
+    this.bump();
+    return { devices: merged, problems };
+  }
+
+  /** The devices as last read, without a network call. */
+  cached(): HomeDevice[] {
+    return [...this.last.values()];
+  }
+  get problems(): string[] {
+    return this.lastProblems;
+  }
+  /** What tools and the chat see: last read, with hidden devices left out. */
+  visible(): HomeDevice[] {
+    return this.cached().filter((d) => !this.hidden.has(d.id));
+  }
+  hiddenDevices(): HomeDevice[] {
+    return this.cached().filter((d) => this.hidden.has(d.id));
+  }
+
+  // --- preferences ------------------------------------------------------------------------------------------
+  isFavourite(id: string) {
+    return this.favourites.has(id);
+  }
+  toggleFavourite(id: string) {
+    if (!this.favourites.delete(id)) this.favourites.add(id);
+    this.save(KEYS.favourites, [...this.favourites]);
+    this.bump();
+  }
+  isHidden(id: string) {
+    return this.hidden.has(id);
+  }
+  setHidden(id: string, hide: boolean) {
+    if (hide) this.hidden.add(id);
+    else this.hidden.delete(id);
+    this.save(KEYS.hidden, [...this.hidden]);
+    this.bump();
+  }
+  get selectedChip() {
+    return this.chip;
+  }
+  setChip(chip: string) {
+    this.chip = chip;
+    this.save(KEYS.chip, chip);
+    this.bump();
+  }
+
+  // --- commands ---------------------------------------------------------------------------------------------
+  commandLog(): LogEntry[] {
+    return this.log;
+  }
+  private record(entry: LogEntry) {
+    this.log = [entry, ...this.log].slice(0, LOG_LIMIT);
+    this.save(KEYS.log, this.log);
+    this.bump();
+  }
+  private label(c: DeviceCommand): string {
+    return 'value' in c ? `${c.type} ${c.value}` : c.type;
+  }
+
+  /** Sends a command and says what the device reports afterwards; asks again later for slow devices. */
+  async command(device: HomeDevice, command: DeviceCommand, source: 'chat' | 'home'): Promise<{ ok: boolean; text: string }> {
+    const backend = this.backends.find((b) => b.id === device.backend);
+    if (!backend) return { ok: false, text: `${device.name}'s service isn't connected.` };
+    try {
+      await backend.command(device.id, command);
+    } catch (e) {
+      const text = `Couldn't ${this.label(command).replace(/_/g, ' ')} ${device.name}: ${toAppError(e).message.replace(/^Something went wrong: /, '')}`;
+      this.record({ at: this.now(), device: device.name, action: this.label(command), ok: false, result: text, source });
+      return { ok: false, text };
+    }
+    const updated = await this.recheck(backend, device);
+    const slow = device.type === 'thermostat' || device.type === 'lock' || device.type === 'garage_door';
+    const text = `${device.name}: ${stateWords(updated)}${slow ? ' (this device can take a few seconds to report the change)' : ''}.`;
+    this.record({ at: this.now(), device: device.name, action: this.label(command), ok: true, result: stateWords(updated), source });
+    for (const ms of slow ? RECHECK_SLOW_MS : RECHECK_MS) this.setTimer(() => void this.recheck(backend, device), ms);
+    return { ok: true, text };
+  }
+
+  private async recheck(backend: HomeBackend, device: HomeDevice): Promise<HomeDevice> {
+    try {
+      const state = await backend.state(device.id);
+      const updated = { ...(this.last.get(device.id) ?? device), state, stateAt: this.now(), online: true };
+      this.last.set(device.id, updated);
+      this.bump();
+      return updated;
+    } catch {
+      return this.last.get(device.id) ?? device;
+    }
+  }
+}
