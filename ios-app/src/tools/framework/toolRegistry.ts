@@ -57,10 +57,13 @@ export function toolGuidanceSection(registry: ToolRegistry): PromptSection {
         return "You can't look things up right now; if asked for current information, say so briefly.";
       }
       const list = offered.map((t) => `${t.spec.name} (${t.spec.description})`).join(', ');
+      const web = offered.some((t) => t.spec.name === 'search_web')
+        ? ' For questions about current events, sports, prices or anything that changes, search first; read a page if the snippets aren\'t enough; mention the source site.'
+        : '';
       return (
         `You can use these tools when they help: ${list}.\n` +
-        "Use a tool instead of guessing whenever the answer depends on current or personal information. " +
-        "After using tools, answer in your own words and mention where information came from when it's from the web."
+        'Use a tool instead of guessing whenever the answer depends on current or personal information. ' +
+        `After using tools, answer in your own words and mention where information came from when it's from the web.${web}`
       );
     },
   };
