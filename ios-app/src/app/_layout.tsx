@@ -19,6 +19,7 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="conversations" options={{ presentation: 'modal' }} />
           <Stack.Screen name="hello" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="printer" />
         </Stack>
       </ServicesProvider>
   );

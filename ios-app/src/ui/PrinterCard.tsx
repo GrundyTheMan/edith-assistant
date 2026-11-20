@@ -15,6 +15,8 @@ export function PrinterCard({
   onCommand,
   onCamera,
   cameraError,
+  onDetails,
+  detailsLabel = 'Details',
 }: {
   d: HomeDevice;
   theme: Theme;
@@ -22,6 +24,9 @@ export function PrinterCard({
   onCommand: (type: 'pause' | 'resume' | 'cancel_print') => void;
   onCamera: () => void;
   cameraError?: string | null;
+  /** Opens the Printer page (C67). Always shown: with no Jarvis paired it is "Printer page" and the page explains. */
+  onDetails?: () => void;
+  detailsLabel?: string;
 }) {
   const p = d.state.print;
   const heat = d.state.heaters;
@@ -73,6 +78,7 @@ export function PrinterCard({
         {live && paused ? button('Resume', () => onCommand('resume')) : null}
         {live && (printing || paused) ? button('Cancel print', () => onCommand('cancel_print'), true) : null}
         {d.capabilities.includes('snapshot') ? button('Camera', onCamera) : null}
+        {onDetails ? button(detailsLabel, onDetails) : null}
       </View>
     </View>
   );
