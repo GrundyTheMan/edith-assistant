@@ -336,7 +336,7 @@ export class ChatEngine {
       try {
         await repo.addFailedAssistantMessage(conversationId, modelName, error);
       } catch (storeError) {
-        log.warn('Engine', `Couldn't store the failed reply: ${String(storeError)}`);
+        log.warn('Engine', `Couldn't store the failed reply (${storeError instanceof Error ? storeError.name : 'error'})`);
       }
       this.finish({ kind: 'failed', conversationId, error });
       listeners.forEach((l) => l.onFailed?.(conversationId));

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { Store } from '../core/store';
 import { memoryStore } from '../settings/settings';
 import { HomeSettings, ServiceRow } from '../ui/HomeSettings';
@@ -185,8 +185,9 @@ describe('Settings → Home services', () => {
     await fireEvent.changeText(screen.getByLabelText('Email'), 'me@example.com');
     await fireEvent.changeText(screen.getByLabelText('Password'), 'hunter2');
     await fireEvent.press(screen.getByLabelText('Sign in'));
+    // The sign-in resolves a moment later: wait for it instead of hoping it already has (this test failed once under load).
+    await waitFor(() => expect(screen.queryByText('Type your Fake Cloud login.')).toBeNull()); // the form closed
     expect(svc.signedInWith).toEqual([{ email: 'me@example.com', password: 'hunter2' }]);
-    expect(screen.queryByText('Type your Fake Cloud login.')).toBeNull(); // the form closed
   });
 });
 

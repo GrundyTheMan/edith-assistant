@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo), the last chunk |
-| Status | **Design** — run it after the chunks the owner actually wants are built |
+| Status | **Pass 1 done** (the table `ios-parity.md` and the code-level audit; see "As built — pass 1"); the owner's walk, the device checks and the week of use are open |
 | Depends on | everything the owner wants from C48–C75 |
 | Unblocks | the owner retiring Andarium |
 | Runs in | the best build available (standalone if C75 is done, else development) |
@@ -56,3 +56,17 @@ When the owner agrees the iOS app replaces Android-in-Andarium: update `README`,
 
 ## Not in this chunk
 New features beyond §4, Android changes.
+
+## As built — pass 1 (2026-11-20): the part that needs no phone
+**This chunk is not done.** What could be done without the owner or a device was done; the rest stays open and each part says so.
+- **§1 Parity table: written** (`docs/design/ios-parity.md`), from the docs and a read of the Android source. **The Android emulator was not clicked through**: a feature the docs never mention may be missing. The "not planned" rows are **proposals**; the owner has accepted none yet (the crash-report banner, Edith's own voice, Google-through-the-browser, live dictation as a keyboard feature, web search with no key).
+- **§2 The owner's checklist walk: not done.** It needs the owner and the phone. Every built chunk from C41 on still has an open owner check; nothing in C50–C57 or C72 has been tried on the iPhone.
+- **§3 Quality pass, the parts a repository can answer:**
+  - **VoiceOver:** every control in `src/**/*.tsx` was checked by script (a name VoiceOver can read, and a role for each Pressable). Found and fixed: two switches with no name (Speak Edith's replies; Speak replies during conversation) and the picture viewer's close area with no role. The check is now a standing test (`src/audit.test.ts`).
+  - **Dynamic Type:** nothing in the app turns font scaling off (standing test). **Not checked at the largest sizes**: that needs the phone.
+  - **Privacy:** all 43 `log.info`/`log.warn` calls read; none prints conversation text, a token, a cookie or a payload. One printed a stringified storage error: now only the error's name. Standing tests: no `.message`, `String(...)`, `JSON.stringify` or response body in a log call; conversation text only through `log.sensitive` (development builds); `console` only in `core/log.ts`; the key-value store is never given a token, key, password, cookie or csrf value (secrets go to the Keychain); the database has no BLOB or base64 column. **Not done:** reading a real release build's log for secrets.
+  - **Errors:** accepted, not changed: a few messages shown on screen are a service's or the video player's own words (no secrets; not always plain). A wording pass belongs with the owner's walk.
+  - **App name, icon, splash:** the name is "Edith" and `icon.png` and `splash-icon.png` exist; **the bundle identifier is not set** (decision D34, waiting for C58).
+  - **Not done (need the phone or more work):** dark mode and contrast on every screen, the safe areas and the keyboard on every text field, performance (a 500-message chat, 60 devices, cold-start time), the strings and tone pass, the PrinterCard charts.
+- **§4 Optional features, §5 retiring the old setup: not done** (the owner asks; nothing to retire yet).
+- **Acceptance:** the owner has not used the app for a week. This chunk stays open until they have and the table's rows are all settled.

@@ -107,7 +107,7 @@ design in the same PR, or ask the owner.
 | [C73](chunks/C73-ios-resideo.md) | Honeywell/Resideo thermostat on iOS | 9 iOS (Expo) | C48, C58 | Design |
 | [C74](chunks/C74-ios-philips-lock.md) | Philips lock on iOS | 9 iOS (Expo) | C48 | Design (owner must say yes) |
 | [C75](chunks/C75-ios-standalone-builds.md) | **Stage 3: standalone builds, TestFlight, OTA updates** on iOS | 9 iOS (Expo) | C58 | Design |
-| [C76](chunks/C76-ios-parity-audit.md) | Parity audit and polish on iOS | 9 iOS (Expo) | all | Design |
+| [C76](chunks/C76-ios-parity-audit.md) | Parity audit and polish on iOS | 9 iOS (Expo) | all | Pass 1 done (parity table, code audit); the owner's walk and the device checks are open |
 
 ### State of the build (written at the 2026-10-29 handoff, kept up to date since)
 - `master` has the design and the C01 skeleton with its build/deploy tooling (`05-environment.md` §2, §6). Tag

@@ -148,7 +148,7 @@ export function SettingsScreen() {
               <Text style={{ color: theme.text, fontSize: 16 }}>Speak Edith&apos;s replies</Text>
               <Text style={[styles.note, { color: theme.textMuted }]}>Reads each new reply aloud with the iPhone&apos;s voice</Text>
             </View>
-            <Switch value={saved.speakReplies} onValueChange={(v) => void settings.update((s) => ({ ...s, speakReplies: v }))} />
+            <Switch value={saved.speakReplies} onValueChange={(v) => void settings.update((s) => ({ ...s, speakReplies: v }))} accessibilityLabel="Speak Edith's replies" />
           </View>
           <Text style={{ color: theme.text }}>Speech speed: {rate.toFixed(1)}×</Text>
           <Slider
