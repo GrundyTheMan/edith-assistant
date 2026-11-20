@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo), Wave A |
-| Status | **Design** |
+| Status | **Built** in Expo Go; see "As built" at the end. The owner's sign-in (VPN off, with the PIN) and check with the real Blink are open |
 | Depends on | C48 (services), C49 (pictures from tools) |
 | Unblocks | C53 (clips), C71 (live view), C72 (alerts) |
 | Runs in | Expo Go |
@@ -65,3 +65,16 @@ Port C29's 30: parsing (homescreen of three camera kinds, offline, snapshot addr
 
 ## Not in this chunk
 Clips player (C53), live view (C71), arming, alerts (C72).
+
+## As built
+Built in one PR. Where the code differs from the specification above, the code is right.
+- **Files:** `blink/parse.ts` (homescreen, snapshot and thumbnail addresses, media, times, the code and CSRF token), `blink/api.ts` (`BlinkApi`; every app-specific value — client id, versions, user agents, endpoints — is a constant at its top), `blink/service.ts` (`BlinkService`), tests `blink/blink.test.tsx` (27, against a pretend Blink that checks cookies, the CSRF token, the PKCE verifier against the challenge, a UUID hardware id, the one-time code and rotating refresh tokens). Changed: `core/services.tsx` (registered). `BlinkApi` reuses `CookieJar` and `splitSetCookie` from `alexa/api.ts`.
+- **Sign-in** is blinkpy's form flow as specified: authorize page (PKCE S256, `client_id=ios`, the UUID `hardware_id`), `/oauth/v2/signin` page (CSRF token from `oauth-args`), POST password, **412 or a 202 listing code methods** = `needs_code`, POST `/2fa/verify`, GET `/oauth/v2/authorize` without following redirects, `code` from its `Location`, trade at `/oauth/token` with the verifier, then `tier_info`. The cookies, CSRF token and verifier of a sign-in waiting for its code are in memory only; if the app was closed meanwhile, typing the code starts a new sign-in and tries it on that.
+- **Cookies and redirects (the two probes the design asked for):** the api sends every request with `credentials: 'omit'` and `redirect: 'manual'` and keeps its own cookie jar from `Set-Cookie`, as Alexa's does (C54 found on the owner's iPhone that `Set-Cookie` is visible then). It checks every address itself (HTTPS, `blink.com` or `immedia-semi.com`) instead of using `secureFetch`, because the sign-in's last redirect goes to the app's own address (`immedia-blink://…`), which must be read and never requested. **Not verified against the real Blink:** that `expo/fetch` honours `redirect: 'manual'` for these pages and shows their `Set-Cookie`.
+- **406 / VPN:** a 406 on either page fails at once, naming the step and who answered, with "If you use a VPN, turn it off and try again"; no retry (JavaScript cannot force IPv4, and C29 found the IPv4 retry was not the cause anyway). The form's intro says to turn the VPN off.
+- **What is kept** (Keychain `home.blink`): refresh token, hardware id (an upper-case UUID, made once), tier, account id. Rotation as C51: the new refresh token is saved before the access token it came with is used; refreshes share one in-flight promise; a refused token is "Sign in again" once; an unreachable Blink is not a sign-out. **Logging:** each sign-in step's status code only ("signin 412", "verify 201", "token 200").
+- **Devices:** ids `blink:<id>`, no room, `snapshot` and `events`, offline when the sync module or the camera says so; no battery percentage and no arming. No commands.
+- **Snapshots** (45 s limit): POST the kind's own thumbnail address, poll the command (up to 20 × 1 s), re-read the homescreen (up to 5 × 2 s) until the thumbnail changes, fetch it with the bearer token and check it is an image. A 409 is asked again 3 s later, four tries in all; a 409 that says offline fails at once and names the sync module.
+- **Events:** the media list from `since`, paged while pages are full of clips inside the period (at most 5 pages); a camera's recordings are its events (`motion`; `ring` for a doorbell source). `recent_events` (C51) answers for Blink too. Clips (C53) are not built: `mediaPath` is parsed and kept for it.
+- **Mutation-checked:** eight deliberate breaks (challenge = verifier, no cookie jar, wrong CSRF field name, a hardware id that is not a UUID, rotated token not saved, busy never retried, an offline 409 read as busy, the old picture returned) were each caught by a test, and the code restored.
+- **Not verified, and it matters:** nothing has run against the real Blink; every step is from blinkpy's flow as C29 ported it (read 2026-11-15) and a pretend Blink. I did not re-read blinkpy for this chunk, so a Blink change since then would show first on the owner's phone. Whether Blink answers 406 to iOS network stacks the way it did to the owner's VPN path is unknown.

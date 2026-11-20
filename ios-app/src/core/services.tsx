@@ -7,6 +7,8 @@ import { Home } from '../home/home';
 import { cameraSnapshotTool, homeControlTool, homeDevicesTool, recentEventsTool } from '../home/homeTools';
 import { RingApi } from '../ring/api';
 import { RingService } from '../ring/service';
+import { BlinkApi } from '../blink/api';
+import { BlinkService } from '../blink/service';
 import { PrinterService } from '../printer/service';
 import { printerStatusTool } from '../printer/tools';
 import { ExpoRecorder, expoAudioFiles } from '../voice/expoRecorder';
@@ -96,6 +98,8 @@ export async function createServices(): Promise<Services> {
   );
   // Ring: HTTPS to ring.com only. The sign-in rotates its refresh token, so each new one is saved to the Keychain before it is used.
   home.registerService(new RingService({ secrets, api: new RingApi({ fetch: secureFetch(httpFetch, { allowHosts: ['ring.com'] }) }), uuid: () => Crypto.randomUUID() }));
+  // Blink: HTTPS to blink.com and immedia-semi.com only (the api checks every address itself: it follows redirects by hand to keep the sign-in's cookies).
+  home.registerService(new BlinkService({ secrets, api: new BlinkApi({ fetch: httpFetch, randomBytes: (n) => Crypto.getRandomBytes(n) }), uuid: () => Crypto.randomUUID() }));
   // Each is restored at startup; one failing never stops the app.
   await home.restoreServices();
   // The Demo home is for trying things with no service; development builds only (Expo Go is one).
