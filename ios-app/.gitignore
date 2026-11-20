@@ -1,0 +1,14 @@
+node_modules/
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+*.log
+.DS_Store
+# Never commit credentials (C40 §4)
+credentials.json
+*.p12
+*.p8
+*.mobileprovision
+.env*
+.claude/

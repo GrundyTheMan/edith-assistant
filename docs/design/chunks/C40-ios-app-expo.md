@@ -3,6 +3,7 @@
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo) |
+| Status | **Stage 1 built** (Expo Go); see "As built (Stage 1)" at the end. The owner's iPhone checks of chat and speech are open. Stage 2 (EAS) is not started: it waits for the Apple Developer membership |
 | Depends on | C03, C04, C05, C06, C06b, C07, C13 as **specifications** (no Kotlin code is reused); C37 (plain HTTP to Ollama is the one exception) |
 | Unblocks | Every later iOS chunk (tools, voice memos, accounts, …) |
 | Size | Large (a new project, chat, and the build pipeline) |
@@ -214,8 +215,8 @@ accepted.
 ## Acceptance criteria
 
 **Stage 1 — Expo Go (free; no Apple account)**
-- [ ] The owner's setup items 1–3 are done (Expo Go, Node, the same Wi-Fi and firewall).
-- [ ] **Hello Ollama:** a prompt streams a reply from the owner's Ollama in Expo Go, incrementally, with the
+- [x] The owner's setup items 1–3 are done (Expo Go, Node, the same Wi-Fi and firewall).
+- [x] **Hello Ollama:** a prompt streams a reply from the owner's Ollama in Expo Go, incrementally, with the
       first-token time recorded. The address comes from Settings. If iOS blocks plain HTTP in Expo Go, the exact
       error is recorded and the item is moved to Stage 2.
 - [ ] Chat works end to end on the iPhone: several conversations, streaming, stop, regenerate, titles, the model
@@ -262,3 +263,52 @@ yet.
 - Changes to the Android app, Kotlin Multiplatform, a Swift rewrite.
 - TestFlight and the App Store; push notifications; background work.
 - Any tool, attachment, voice input, account or smart-home feature.
+
+## As built (Stage 1, 2026-11-19)
+
+Built by an AI agent in `ios-app/`. Android (`app/`) is untouched. Where the code differs from the specification above, the code is right.
+
+**Stack and choices**
+- **Expo SDK 58** (the latest stable on 2026-11-19; `expo-doctor`: 20/20), React Native 0.88, React 19.3, TypeScript 6 in strict mode, the New Architecture. The text above said "up to 57"; npm's `latest` was 58.0.26 and the owner's Expo Go opened it.
+- **Navigation: Expo Router** (file routes in `src/app/`), tabs **Chat | Settings**. The conversation list is a **modal screen** (`/conversations`), not a drawer: a drawer needs `react-native-gesture-handler` and `react-native-reanimated`, which this chunk doesn't otherwise need. Rename uses iOS's `Alert.prompt` (iOS only).
+- **No state or Markdown library.** State is plain React plus a tiny observable `Store` (`core/store.ts`) read with `useSyncExternalStore`. The Markdown renderer is about 100 lines of our own (`ui/markdown.ts`, `MarkdownText.tsx`), like the Kotlin one, written without regex lookbehind (Hermes support isn't something to rely on; L25).
+- **Layout:** `src/ollama/` (client, UTF-8 decoder, catalog, think policy, the probe), `src/chat/` (persona, prompt, context, engine, titler, current conversation), `src/data/` (SQLite, migrations, repository), `src/settings/`, `src/speech/`, `src/ui/`, `src/core/`. Tests sit next to the code; `src/testing/` holds the fakes.
+- **Packages:** `expo-router`, `expo-sqlite` (database and key-value settings), `expo-speech`, `expo-clipboard`, `@react-native-community/slider`, `@expo/vector-icons` (with `expo-asset` and `expo-font`), and `react-dom` pinned to 19.3.0 (a peer of Expo Router). `react-native-keyboard-controller` was tried and removed: it needs Reanimated. The chat uses React Native's `KeyboardAvoidingView`.
+
+**Hello Ollama (the first proof)**, run by the owner on their iPhone in Expo Go, server `http://192.168.4.82:11434`:
+- **iOS allows plain HTTP to the LAN address in Expo Go.** No error, and no Info.plist change was needed. (A raw IP address is exempt from App Transport Security, as Apple's note says. A `.local` name was not tested.) Nothing moved to Stage 2 for this.
+- **`expo/fetch` streams.** 27 network chunks for 26 tokens, spread over 438 ms: **incremental**. The XHR and streaming-library fallbacks weren't needed.
+- **First token 17.0 s** (first network chunk 17.0 s, whole reply 17.5 s) on the first request. That is Ollama loading the model cold, like the Kotlin app's 18.5 s cold figure (C06 As built), not the network. A warm figure isn't recorded yet.
+- The proof screen stays in the app as the `/hello` route (not linked from the tabs).
+
+**Differences from the specification**
+- **A UTF-8 decoder of our own** (`ollama/utf8.ts`), not `TextDecoder` with `{stream: true}`: whether Hermes' `TextDecoder` supports `stream` isn't something to rely on, and ours is tested at every split point of multi-byte characters.
+- **Timeouts.** React Native's fetch has no separate connect timeout, so a chat waits up to 180 s for the first byte (a cold model load) and 180 s of silence between chunks. The quick calls (models, show, version) give up after 8 s with "Can't reach your Ollama server".
+- **Drafts** are kept per conversation while the app runs, not across a restart (iOS has no `SavedStateHandle`). There is **no "New" button** for scrolled-up readers: the list is bottom-up, and a reply grows in view. The chat bridges the moment between "reply finished" and "stored reply arrives" so the text doesn't flicker (as C07 As built).
+- **The date line** is formatted by hand in English, with the zone and UTC offset (`Current date and time: Thursday, October 29, 2026, 2:30 PM (America/Detroit, UTC-04:00).`), so it is the same on every device and testable.
+- **Tools:** none. A prompt section tells the model it has none, so it doesn't pretend.
+- **Settings:** `serverUrl` defaults to `http://192.168.4.82:11434` as a first-run starting value and is saved with **Save**, as in the Kotlin Settings. There is **Test connection**, the model list (capability lines, Retry), speak replies, speech speed, Test voice and About.
+- **Database:** `edith.db`, schema v2 by `PRAGMA user_version`. A fresh install runs the v1 step, then the v2 step (`ALTER TABLE … ADD COLUMN`, never a rebuild). A new conversation takes SQLite's next id, which may reuse the id of a deleted newest one (as C06b).
+- **No Android-only parts:** no local-network permission code (iOS asks by itself when needed; in Expo Go it didn't), and no reply foreground service.
+
+**Verified**
+- `scripts/ios-check.sh` from a clean `npm ci`: `tsc` clean, ESLint clean, **107 Jest tests** in 7 suites (log: `build-logs/2026-11-19_20-39-47_ios-check.log`). `expo export --platform ios` bundles, and `expo-doctor` passes 20/20.
+- The tests port the Kotlin cases:
+  - the client against a fake `fetch`: the request body (`think:false`, `num_ctx` 16384, tools only when given, no `keep_alive`, `gpt-oss` gets `"low"`), a text stream, a tool call, a thinking block, an error line, lines and a UTF-8 character split across chunks, model-not-found, a refused connection, a malformed line, a stream cut short, cancel and timeout
+  - the migration of a real v1 file on Node's real SQLite (messages and attachments kept, `foreign_key_check` clean)
+  - the repository: separate chats, `updated_at`, title rules, an insert into a deleted chat, enum strings, `<tool_call>` stripping
+  - the prompt (persona verbatim, date line, UTC offsets, L29) and the context builder (failed and cancelled excluded, the 10,000-token budget, middle truncation, no leading assistant message)
+  - the engine: send, growing text, a failure then the next send, cancel, regenerate, retry, a blank reply, a send the moment a reply ends, a turn finishing in its own chat after a switch, `cancelAndJoin` then delete
+  - model selection (L21), the titler and `CurrentConversation`
+  - the sentence chunker, speech cleaning and `SpeechOutput` with a fake voice
+  - Markdown, times and the chat components (React Native Testing Library)
+- **Not verified (the owner's, on the iPhone):**
+  - chat end to end: several conversations, stop, regenerate, titles, the model picker, Markdown, light and dark, keyboard and safe areas
+  - spoken replies by ear (sentence by sentence, Play and Stop, speed), and **how the ring/silent switch affects `expo-speech`** (unknown; to be recorded here)
+  - that conversations survive an app restart
+  - a warm first-token time
+
+  The agent never saw the layout or the keyboard behaviour.
+- The ios-app CI workflow's first run is on the PR.
+
+**Not started:** Stage 2 (EAS builds, the development build, the `infoPlist` settings and the Local Network prompt), which needs the owner's Apple Developer membership. Plain HTTP already works in Expo Go; whether it still does in a build is for Stage 2 to record.

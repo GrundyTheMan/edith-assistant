@@ -30,6 +30,15 @@ scripts/run.sh              # build, install and launch the debug app on the emu
   On Android 17 the app also needs the runtime permission `ACCESS_LOCAL_NETWORK`, or every request times out
   (04-lessons L23). Live check against the real server: see C03 "As built".
 
+## iOS app (C40, `ios-app/`; separate from `app/`)
+```bash
+scripts/ios-check.sh            # npm ci, tsc, ESLint, Jest — same as the ios-app CI workflow (needs Node 24)
+cd ios-app && npx expo start --lan   # dev server for Expo Go on the owner's iPhone
+```
+- **Ask the owner before any EAS build** (free plan: about 15 iOS builds a month), and never handle Apple or Expo passwords or
+  two-factor codes: the owner types them. No secrets in the repo or in `EXPO_PUBLIC_*` variables. Never log conversation text
+  in release builds (`core/log.ts`). Stage 2 (EAS) waits for the owner to renew the Apple Developer membership.
+
 ## Layout
 - `app/` — the single Android module, package `com.edith.app` (layout planned in `01-architecture.md` §2).
 - `gradle/libs.versions.toml` — every library version; app version in `gradle.properties`.

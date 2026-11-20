@@ -1,0 +1,53 @@
+# C40: the iOS app (ios-app/, Expo). Linux only: type check, ESLint and Jest — the same checks as scripts/ios-check.sh.
+# No macOS runner and no EAS here: EAS builds are started by hand, after asking the owner (05-environment.md).
+# The Android workflow (ci.yml) and scripts/check.sh are unchanged.
+name: iOS app
+
+on:
+  pull_request:
+    paths:
+      - 'ios-app/**'
+      - '.github/workflows/ios-app.yml'
+      - 'scripts/ios-check.sh'
+  push:
+    branches: [master]
+    paths:
+      - 'ios-app/**'
+      - '.github/workflows/ios-app.yml'
+      - 'scripts/ios-check.sh'
+
+concurrency:
+  group: ios-app-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ios-app
+    steps:
+      - uses: actions/checkout@v7
+
+      # Node 24: the tests use Node's built-in `node:sqlite` for the real-SQLite migration and repository tests.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ios-app/package-lock.json
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test -- --ci

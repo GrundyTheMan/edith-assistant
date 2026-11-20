@@ -52,10 +52,11 @@ Fowlerville?").
 | 5 | Real Google Calendar and Gmail | C17–C19 |
 | 6 | Smart-home **design**: how each service connects (decided in D10: directly from the phone, no bridge) | C20–C21 |
 | 7 | **Accounts and the iPhone:** several Google accounts, Microsoft (Outlook) and iCloud (mail and calendar), to-dos (Google Tasks), Google sign-in through the browser for phones with no Play services (Andarium), Edith's own voice | C17b, C22–C24, C35, C36 |
+| 9 | **Edith on iOS (Expo, D27):** a separate TypeScript app in `ios-app/` that shares these design documents, not code. Chat with Ollama and spoken replies first, in Expo Go; the rest grows chunk by chunk, as the owner picks | C40 |
 | 8 | **Smart home.** Decision A8 first deferred it to v2; D10 and D19 brought it in. A Home tab and tools with Jarvis's features, then each service: the Meross garage door opener is built (C26), and Ring, Resideo, Blink, Alexa, the Philips lock, camera views and alerts, and the 3D printer are designed | C25–C34 |
 
 **Non-goals for v1:** multiple *users* (several accounts of the one owner are in scope, phase 7); a cloud backend;
-a native iOS app (the owner's iPhone runs Edith inside Andarium; C40 builds an iOS app on Expo, D27); image generation; server-side text-to-speech
+a native iOS app **in the Android app** (the owner's iPhone runs Edith inside Andarium; C40 builds a separate iOS app on Expo, D27); image generation; server-side text-to-speech
 (see §4.2); sending email, unlocking a door or opening the garage without the owner's tap on the screen.
 
 ## 4. Owner decisions (binding)
