@@ -4,7 +4,9 @@ import { expoAttachmentFiles } from '../attachments/expoAttachmentFiles';
 import { applyRetention, removeOrphans, type RetentionDeps } from '../attachments/retention';
 import { DemoBackend } from '../home/demoBackend';
 import { Home } from '../home/home';
-import { cameraSnapshotTool, homeControlTool, homeDevicesTool } from '../home/homeTools';
+import { cameraSnapshotTool, homeControlTool, homeDevicesTool, recentEventsTool } from '../home/homeTools';
+import { RingApi } from '../ring/api';
+import { RingService } from '../ring/service';
 import { PrinterService } from '../printer/service';
 import { printerStatusTool } from '../printer/tools';
 import { ExpoRecorder, expoAudioFiles } from '../voice/expoRecorder';
@@ -92,6 +94,8 @@ export async function createServices(): Promise<Services> {
       uuid: () => Crypto.randomUUID(),
     }),
   );
+  // Ring: HTTPS to ring.com only. The sign-in rotates its refresh token, so each new one is saved to the Keychain before it is used.
+  home.registerService(new RingService({ secrets, api: new RingApi({ fetch: secureFetch(httpFetch, { allowHosts: ['ring.com'] }) }), uuid: () => Crypto.randomUUID() }));
   // Each is restored at startup; one failing never stops the app.
   await home.restoreServices();
   // The Demo home is for trying things with no service; development builds only (Expo Go is one).
@@ -104,7 +108,7 @@ export async function createServices(): Promise<Services> {
       applyBackends();
     }
   });
-  const tools = new ToolRegistry([currentTimeTool, homeDevicesTool(home), homeControlTool(home), cameraSnapshotTool(home), printerStatusTool(home), weatherTool({ client: new OpenMeteoClient({ fetch: httpFetch }), location: deviceLocation }),
+  const tools = new ToolRegistry([currentTimeTool, homeDevicesTool(home), homeControlTool(home), cameraSnapshotTool(home), recentEventsTool(home), printerStatusTool(home), weatherTool({ client: new OpenMeteoClient({ fetch: httpFetch }), location: deviceLocation }),
     searchWebTool(new DuckDuckGoSearch(httpFetch)),
     readWebPageTool(new PageReader(httpFetch)),
   ]);

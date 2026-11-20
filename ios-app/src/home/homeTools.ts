@@ -81,6 +81,53 @@ export function cameraSnapshotTool(home: Home, now: () => number = Date.now): To
   };
 }
 
+const hasEvents = (d: HomeDevice) => d.capabilities.includes('events');
+const MAX_EVENTS = 20;
+const KIND_WORDS = { ring: 'Ring', motion: 'Motion', person: 'Person', live: 'Live view', other: 'Event' } as const;
+
+/** "Thu 3:42 PM", in the phone's own time zone. */
+export function eventTime(at: number): string {
+  const d = new Date(at);
+  const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
+  const h = d.getHours() % 12 || 12;
+  return `${day} ${h}:${String(d.getMinutes()).padStart(2, '0')} ${d.getHours() < 12 ? 'AM' : 'PM'}`;
+}
+
+/** `recent_events`: what doorbells and cameras noticed lately ("Did anyone ring today?"). Read-only: no card (C51 §5). */
+export function recentEventsTool(home: Home, now: () => number = Date.now): Tool {
+  return {
+    spec: {
+      name: 'recent_events',
+      description: 'Lists what the doorbells and cameras noticed lately: rings, motion, people. Use it for "did anyone ring today?" or "what happened at the front door?".',
+      parameters: [
+        { name: 'device', type: 'string', description: 'Optional: one camera or doorbell name; leave out for all', aliases: ['name', 'camera'] },
+        { name: 'hours', type: 'number', description: 'How far back, 1 to 72 hours (default 24)', aliases: ['since_hours'] },
+      ],
+    },
+    statusLabel: 'Checking the doorbell history…',
+    displayName: 'Camera',
+    enabled: () => home.visible().some(hasEvents),
+    async execute(args) {
+      const cameras = home.visible().filter(hasEvents);
+      const hours = Math.max(1, Math.min(72, Math.round(args.number('hours') ?? 24)));
+      const named = args.string('device')?.trim() ?? '';
+      let device: HomeDevice | null = null;
+      if (named) {
+        const m = matchDevice(cameras, named);
+        if (m.kind === 'none') return failed(`No camera called "${named}". Cameras: ${cameras.map((d) => d.name).join(', ') || 'none'}.`);
+        if (m.kind === 'ambiguous') return failed(ambiguous(m));
+        device = m.device;
+      }
+      const { events, problems } = await home.events(device, now() - hours * 3_600_000);
+      const shown = events.filter((e) => !home.isHidden(e.deviceId)).slice(0, MAX_EVENTS);
+      const lines = shown.map((e) => `${eventTime(e.at)} — ${e.deviceName} — ${KIND_WORDS[e.kind]}`);
+      if (lines.length === 0 && problems.length === 0) lines.push(`No events in the last ${hours === 1 ? 'hour' : `${hours} hours`}.`);
+      for (const p of problems) lines.push(`Didn't answer: ${p}`);
+      return ok(lines.join('\n'));
+    },
+  };
+}
+
 /** `home_control`: do something to one device. Unlock, open, close and mode changes ask first (C25 §4). */
 export function homeControlTool(home: Home): Tool {
   const resolve = async (device: string): Promise<Match> => {
