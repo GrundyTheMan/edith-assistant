@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo), Wave A |
-| Status | **Design** |
+| Status | **Built** in Expo Go; see "As built" at the end. The owner's sign-in with the 2FA code and check with the real Ring are open |
 | Depends on | C48 (services), C49 (pictures from tools; `camera_snapshot`) |
 | Unblocks | C53 (clips), C71 (live view), C72 (alerts) |
 | Runs in | Expo Go |
@@ -63,3 +63,17 @@ New: `ring/api.ts`, `ring/parse.ts` (pure: devices, events), `ring/service.ts`, 
 
 ## Not in this chunk
 Clips (C53), live view (C71), alerts (C72), chimes and sensors.
+
+## As built
+Built in one PR. Where the code differs from the specification above, the code is right.
+- **Files:** `ring/parse.ts` (cameras, battery as the library, events and their kinds), `ring/api.ts` (`RingApi`: OAuth with the `2fa-code` header, the refresh grant, session, device list, snapshot, events; all answers are tagged unions, never thrown), `ring/service.ts` (`RingService`), tests `ring/ring.test.tsx` (25 tests against a pretend Ring that rotates its refresh tokens and records every request's hardware id). Changed: `home/home.ts` (`Home.events`: asks every service that has events, one that fails is named in `problems`), `home/homeTools.ts` (`recent_events`), `core/services.tsx` (registered; `secureFetch` with `allowHosts: ['ring.com']`).
+- **Sign-in:** the form asks for email and password; Ring's 412 gives the second step (code, number keyboard) and the first answers stay **in memory only** until it works. A wrong code keeps them for the next try; a wrong password forgets them. The same `hardware_id` (a UUID made once, held in memory until the sign-in completes, then saved with the token) is sent on every request, including a later sign-in again. Saved in the Keychain as `home.ring`: `{refreshToken, hardwareId}`; never the email or password.
+- **Rotating token:** the new refresh token is saved before the access token it came with is used; refreshes share one in-flight promise (six parallel calls: one refresh); a refresh Ring refuses (400/401) is `needs_sign_in` once, an unreachable Ring is only an error. A 401 refreshes once more and asks again; a 404 naming the hardware id starts the session again.
+- **Devices:** ids are `ring:<ringId>` (the spec's `:<kind>` suffix added nothing); room is empty (the Home tab's "No room"); `snapshot` and `events` capabilities; battery is the lower of the two batteries, absent for wired cameras. **No commands:** a command says pictures and events only.
+- **Snapshots:** always `extras=force`; offline and motion-detection-off cameras say so in words before Ring is asked; `snapshotTimeoutMs = 35_000` (Home's limit, "Front door didn't answer in 35 seconds."). The session is started for `os: "android"` as the library sends (there is no iOS value in it); the user agent is `android:com.ringapp` as on Android.
+- **`recent_events`:** `device?` and `hours?` (1–72, default 24); lines `Thu 3:42 PM — Front door — Ring`, newest first, at most 20; hidden cameras left out; "No events in the last 24 hours."; a failing service is added as "Didn't answer: …". Enabled while a visible device has `events`.
+- **Not verified, and it matters:**
+  - **Nothing has run against the real Ring.** Everything is from the library's source, the Android port and a pretend Ring. The Android build's endpoints and client id were confirmed live on 2026-11-14; I did not re-read `ring-client-api` for this chunk, so a change since v14.3.0 is possible.
+  - **Ring may ask for extra verification** because this is a new "device" (a new hardware id and an Android user agent from an iPhone). If the owner sees anything beyond the code, record it here.
+  - **Whether Edith is listed under Control Center** after signing in is unconfirmed; the form says "may stay listed".
+  - In Expo Go the Keychain items belong to Expo Go: deleting Expo Go signs Ring out.

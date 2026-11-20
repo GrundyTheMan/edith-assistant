@@ -2,7 +2,7 @@ import { toAppError } from '../core/errors';
 import { Store } from '../core/store';
 import type { KeyValueStore } from '../settings/settings';
 import { stateWords } from './actions';
-import type { DeviceCommand, HomeBackend, HomeDevice } from './model';
+import type { DeviceCommand, DeviceEvent, HomeBackend, HomeDevice } from './model';
 import { isConnected, type HomeService } from './service';
 
 export const READ_TIMEOUT_MS = 10_000;
@@ -271,6 +271,34 @@ export class Home {
       if (timer) clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);
     }
+  }
+
+  /**
+   * What cameras and doorbells noticed since `sinceMs`, newest first (C51). `device` null: every service that has events, each with its own
+   * time limit; one that fails is named in `problems` and never empties the rest.
+   */
+  async events(device: HomeDevice | null, sinceMs: number): Promise<{ events: DeviceEvent[]; problems: string[] }> {
+    const asked = this.backends.filter((b) => b.events && (!device || b.id === device.backend));
+    const problems: string[] = [];
+    const lists = await Promise.all(
+      asked.map(async (b) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          return await Promise.race([
+            b.events!(device?.id ?? null, sinceMs),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(() => reject(new Error("didn't answer in time")), (b.timeoutMs ?? 10_000) * 2);
+            }),
+          ]);
+        } catch (e) {
+          problems.push(`${b.name}: ${toAppError(e).message.replace(/^Something went wrong: /, '')}`);
+          return [] as DeviceEvent[];
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      }),
+    );
+    return { events: lists.flat().sort((a, b) => b.at - a.at), problems };
   }
 
   private async recheck(backend: HomeBackend, device: HomeDevice): Promise<HomeDevice> {
