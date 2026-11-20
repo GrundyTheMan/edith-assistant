@@ -24,6 +24,8 @@ different applications, can each implement one chunk independently** and hand th
 If something in a chunk is wrong or impossible, don't silently diverge: explain it in the PR and update the
 design in the same PR, or ask the owner.
 
+> **Working on the iOS app (`ios-app/`)?** Read [`ios-roadmap.md`](ios-roadmap.md) first: it holds the rules for iOS agents, a guide to the code, what Expo Go can and cannot do, the build order and the owner decisions D28–D37. Chunks C40–C47 are built; C48–C76 are designed.
+
 ## Chunks
 
 | ID | Chunk | Phase | Depends on | Status |
@@ -77,6 +79,35 @@ design in the same PR, or ask the owner.
 | [C45](chunks/C45-ios-confirmations.md) | Confirmations on iOS: the approve / cancel card before a tool changes something | 9 iOS (Expo) | C41, C08 §6 (as spec) | Built (Expo Go); nothing asks yet |
 | [C46](chunks/C46-ios-home.md) | Smart home core on iOS: devices, tools, Home tab, Demo home | 9 iOS (Expo) | C41, C45, C25 (as spec) | Built (Expo Go, Demo home only); the owner's iPhone check is open |
 | [C47](chunks/C47-ios-photo-storage.md) | Keeping the owner's photos on iOS across restarts, with retention (default 10) | 9 iOS (Expo) | C43, C16 (as spec) | Built (Expo Go); the owner's iPhone check is open |
+| [C48](chunks/C48-ios-home-services.md) | Home services framework on iOS: SecretStore, HomeService, Settings → Home rows and sign-in form, secureFetch | 9 iOS (Expo) | C46 | Design |
+| [C49](chunks/C49-ios-edith-attachments.md) | Edith's attachments on iOS: stored pictures from tools, per-direction retention, `camera_snapshot` | 9 iOS (Expo) | C46, C47 | Design |
+| [C50](chunks/C50-ios-meross.md) | Meross garage door openers on iOS (sign-in, devices, control on the home Wi-Fi) | 9 iOS (Expo) | C48 | Design |
+| [C51](chunks/C51-ios-ring.md) | Ring on iOS: sign-in with 2FA, devices, snapshots, events | 9 iOS (Expo) | C48, C49 | Design |
+| [C52](chunks/C52-ios-blink.md) | Blink on iOS: sign-in with a code, cameras, snapshots, events | 9 iOS (Expo) | C48, C49 | Design |
+| [C53](chunks/C53-ios-camera-clips.md) | Camera clips on iOS: the Clips chip, list and player | 9 iOS (Expo) | C51 or C52 | Design |
+| [C54](chunks/C54-ios-alexa.md) | Alexa devices on iOS: WebView sign-in, devices, state, commands | 9 iOS (Expo) | C48 | Design |
+| [C55](chunks/C55-ios-printer-direct.md) | The 3D printer card on iOS, direct on the home Wi-Fi (Moonraker) | 9 iOS (Expo) | C48 | Design |
+| [C56](chunks/C56-ios-edith-files.md) | Edith's files and resending attachments on iOS | 9 iOS (Expo) | C49 | Design |
+| [C57](chunks/C57-ios-conversation-mode.md) | Conversation mode on iOS: hands-free without a wake word | 9 iOS (Expo) | C44 | Design |
+| [C58](chunks/C58-ios-development-build.md) | **Stage 2: the EAS development build** (needs the Apple Developer membership) | 9 iOS (Expo) | C40 | Design, blocked on the owner |
+| [C59](chunks/C59-ios-accounts-google-sign-in.md) | Accounts core and Google sign-in on iOS | 9 iOS (Expo) | C58, C48 | Design |
+| [C60](chunks/C60-ios-google-calendar.md) | Calendar tools across accounts and the Calendar tab on iOS | 9 iOS (Expo) | C59 | Design |
+| [C61](chunks/C61-ios-gmail.md) | Mail tools and Gmail on iOS | 9 iOS (Expo) | C59 | Design |
+| [C62](chunks/C62-ios-todos.md) | To-dos (Google Tasks) on iOS | 9 iOS (Expo) | C60 | Design |
+| [C63](chunks/C63-ios-microsoft.md) | Microsoft account on iOS (Outlook mail and calendar) | 9 iOS (Expo) | C60, C61 | Design |
+| [C64](chunks/C64-ios-icloud-calendar.md) | iCloud on iOS, part 1: calendar over CalDAV | 9 iOS (Expo) | C60 | Design |
+| [C65](chunks/C65-ios-icloud-mail.md) | iCloud on iOS, part 2: mail over IMAP/SMTP (sockets) | 9 iOS (Expo) | C61, C64 | Design |
+| [C66](chunks/C66-ios-jarvis-work-account.md) | Work account through Jarvis on iOS (pinned TLS, pairing) | 9 iOS (Expo) | C58, C60–C62 | Design |
+| [C67](chunks/C67-ios-jarvis-printer.md) | The 3D printer through Jarvis on iOS (Printer page, Controls, chat) | 9 iOS (Expo) | C66, C55 | Design |
+| [C68](chunks/C68-ios-audio-attachments.md) | Audio files as attachments on iOS | 9 iOS (Expo) | C58 | Design |
+| [C69](chunks/C69-ios-wake-word.md) | "Hey Edith" on iOS while the app is open | 9 iOS (Expo) | C57, C58 | Design (spike first) |
+| [C70](chunks/C70-ios-meross-cloud.md) | Meross cloud control on iOS (MQTT over TLS) | 9 iOS (Expo) | C50, C58 | Design |
+| [C71](chunks/C71-ios-live-view.md) | Live camera view on iOS (Ring WebRTC, Blink stream) and the camera wall | 9 iOS (Expo) | C51, C52, C58 | Design (spikes first) |
+| [C72](chunks/C72-ios-camera-alerts.md) | Camera alerts on iOS under iOS rules | 9 iOS (Expo) | C53, C58 | Design |
+| [C73](chunks/C73-ios-resideo.md) | Honeywell/Resideo thermostat on iOS | 9 iOS (Expo) | C48, C58 | Design |
+| [C74](chunks/C74-ios-philips-lock.md) | Philips lock on iOS | 9 iOS (Expo) | C48 | Design (owner must say yes) |
+| [C75](chunks/C75-ios-standalone-builds.md) | **Stage 3: standalone builds, TestFlight, OTA updates** on iOS | 9 iOS (Expo) | C58 | Design |
+| [C76](chunks/C76-ios-parity-audit.md) | Parity audit and polish on iOS | 9 iOS (Expo) | all | Design |
 
 ### State of the build (written at the 2026-10-29 handoff, kept up to date since)
 - `master` has the design and the C01 skeleton with its build/deploy tooling (`05-environment.md` §2, §6). Tag
