@@ -7,7 +7,7 @@ import { useServices, useStore } from '../core/services';
 import { ageWords, buildCommand, confirmationFor, movedWords, stateWords } from '../home/actions';
 import type { Home } from '../home/home';
 import type { DeviceCommand, HomeDevice } from '../home/model';
-import { ImageViewer } from './AttachmentViews';
+import { LiveCamera } from './LiveCamera';
 import { CatchUpBanner } from './CatchUpBanner';
 import { ClipsScreen } from './ClipsScreen';
 import { PrinterCard } from './PrinterCard';
@@ -85,8 +85,8 @@ export function HomeScreen() {
   const [open, setOpen] = useState<string | null>(null);
   const chip = (CHIPS as readonly string[]).includes(home.selectedChip) ? (home.selectedChip as Chip) : 'favorites';
   const loadedOnce = useRef('');
-  const [photo, setPhoto] = useState<string | null>(null);
-  const [cameraError, setCameraError] = useState<string | null>(null);
+  // The printer's camera, open: it keeps updating while the window is up (C55).
+  const [liveCam, setLiveCam] = useState<HomeDevice | null>(null);
   const [clipsOpen, setClipsOpen] = useState(false);
   useEffect(() => {
     if (clipsAsked !== seenAsk.current) {
@@ -121,14 +121,6 @@ export function HomeScreen() {
       return () => clearInterval(t);
     }, [printing, home]),
   );
-  const camera = async (d: HomeDevice) => {
-    setCameraError(null);
-    try {
-      setPhoto((await home.snapshot(d)).jpegBase64);
-    } catch (e) {
-      setCameraError(e instanceof Error ? e.message : "Couldn't get a picture.");
-    }
-  };
 
   const devices = home.visible();
   const shown = useMemo(() => devices.filter((d) => inChip(d, chip, home.isFavourite(d.id))), [devices, chip, home]);
@@ -199,8 +191,7 @@ export function HomeScreen() {
                     theme={theme}
                     now={now}
                     onCommand={(type) => runFromScreen(home, d, { type })}
-                    onCamera={() => void camera(d)}
-                    cameraError={cameraError}
+                    onCamera={() => setLiveCam(d)}
                   />
                 ) : (
                   <Tile key={d.id} d={d} home={home} theme={theme} now={now} expanded={open === d.id} onOpen={() => setOpen(open === d.id ? null : d.id)} />
@@ -209,7 +200,7 @@ export function HomeScreen() {
           </View>
         ))}
       </ScrollView>
-      <ImageViewer base64={photo} onClose={() => setPhoto(null)} />
+      <LiveCamera visible={liveCam !== null} name={liveCam?.name ?? ''} next={(signal) => (liveCam ? home.snapshot(liveCam, signal) : Promise.reject(new Error('No camera.')))} onClose={() => setLiveCam(null)} />
       {home.hasClips || clipsOpen ? <ClipsScreen visible={clipsOpen} onClose={() => setClipsOpen(false)} home={home} theme={theme} /> : null}
     </SafeAreaView>
   );
