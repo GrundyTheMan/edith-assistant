@@ -12,7 +12,9 @@ import { BlinkService } from '../blink/service';
 import { PrinterService } from '../printer/service';
 import { printerStatusTool } from '../printer/tools';
 import { ExpoRecorder, expoAudioFiles } from '../voice/expoRecorder';
+import { Conversation } from '../voice/conversation';
 import { OllamaTranscriber, VoiceMemos } from '../voice/voiceMemos';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { ChatEngine } from '../chat/engine';
 import { CurrentConversation } from '../chat/currentConversation';
 import { PromptBuilder, attachmentsSection, dateTimeSection } from '../chat/promptBuilder';
@@ -58,6 +60,7 @@ export interface Services {
   /** What retention needs (C16): the Settings screen applies it when the number changes. */
   retention: RetentionDeps;
   voice: VoiceMemos;
+  conversation: Conversation;
   home: Home;
   /** Tokens and keys (the Keychain); services take it as a dependency (C48). */
   secrets: SecretStore;
@@ -133,13 +136,28 @@ export async function createServices(): Promise<Services> {
     attachments,
     afterAttachmentsSent: async () => void (await applyRetention(retention, settings.snapshot().keepRecentAttachments)),
   });
+  // One microphone: a memo and a conversation never run together (each refuses while the other is on).
+  const gate = { conversationOn: () => false };
+  const recorder = new ExpoRecorder();
   const voice = new VoiceMemos({
-    recorder: new ExpoRecorder(),
+    recorder,
+    blocked: () => gate.conversationOn(),
     files: expoAudioFiles,
     transcriber: new OllamaTranscriber(ollamaClient, settings, selection),
     engine,
     stopSpeaking: () => speech.stop(),
   });
+  const conversation = new Conversation({
+    recorder,
+    files: expoAudioFiles,
+    transcriber: new OllamaTranscriber(ollamaClient, settings, selection),
+    engine,
+    speech,
+    settings,
+    memoBusy: () => voice.busy,
+    keepAwake: { on: () => void activateKeepAwakeAsync('conversation'), off: () => deactivateKeepAwake('conversation') },
+  });
+  gate.conversationOn = () => conversation.on;
   const current = new CurrentConversation(repo, settings, engine, (ids) => attachments.forget(ids));
   current.id.subscribe(() => {
     openId = current.id.get();
@@ -156,7 +174,7 @@ export async function createServices(): Promise<Services> {
     if (speakWas && !s.speakReplies) speech.stop();
     speakWas = s.speakReplies;
   });
-  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments, retention, voice, home, secrets };
+  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments, retention, voice, conversation, home, secrets };
 }
 
 const ServicesContext = createContext<Services | null>(null);

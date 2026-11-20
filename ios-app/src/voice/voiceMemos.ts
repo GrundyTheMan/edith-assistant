@@ -34,6 +34,8 @@ export interface Recorder {
   cancel(): Promise<void>;
   /** 0..1, for the level meter. */
   level(): number;
+  /** False when the recording stopped by itself (a call or another app took the microphone). Conversation mode polls it (C57 §3). */
+  isRecording?(): boolean;
 }
 
 /** The recording file on disk (expo-file-system); a fake in tests. */
@@ -91,6 +93,8 @@ export interface VoiceDeps {
   files: AudioFiles;
   transcriber: Transcriber;
   engine: Pick<ChatEngine, 'send' | 'isBusy'>;
+  /** Another feature has the microphone (conversation mode, C57): a memo can't start. */
+  blocked?: () => boolean;
   /** Called when recording starts so Edith's voice isn't recorded (C13). */
   stopSpeaking: () => void;
   now?: () => number;
@@ -130,7 +134,7 @@ export class VoiceMemos {
 
   /** Starts recording for `conversationId`. Does nothing while a memo or a reply is already going on. */
   async start(conversationId: number): Promise<void> {
-    if (this.busy || this.deps.engine.isBusy) return;
+    if (this.busy || this.deps.engine.isBusy || this.deps.blocked?.()) return;
     this.notice.set(null);
     // Claim the slot now so a double tap can't start two recordings while the permission dialog is up.
     this.state.set({ kind: 'transcribing', conversationId });

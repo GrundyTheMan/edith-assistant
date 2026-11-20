@@ -26,12 +26,21 @@ describe('SettingsRepository', () => {
     const store = memoryStore();
     const repo = new SettingsRepository(store);
     expect(await repo.current()).toEqual(DEFAULT_SETTINGS);
-    await repo.update(() => ({ serverUrl: 'http://x:1', model: 'm', speakReplies: false, speechRate: 1.4, currentConversationId: 7, keepRecentAttachments: 10 }));
+    const all = { serverUrl: 'http://x:1', model: 'm', speakReplies: false, speechRate: 1.4, currentConversationId: 7, keepRecentAttachments: 10, followUpSeconds: 12, conversationSensitivity: 0.7, conversationPauseMs: 1500, speakDuringConversation: false };
+    await repo.update(() => all);
     const again = new SettingsRepository(store);
-    expect(await again.current()).toEqual({ serverUrl: 'http://x:1', model: 'm', speakReplies: false, speechRate: 1.4, currentConversationId: 7, keepRecentAttachments: 10 });
+    expect(await again.current()).toEqual(all);
     await again.update((s) => ({ ...s, model: null }));
     expect(await store.getItem('model')).toBeNull();
     expect((await new SettingsRepository(store).current()).model).toBeNull();
+  });
+
+  it('keeps the conversation settings inside their ranges (C57)', async () => {
+    const store = memoryStore({ follow_up_seconds: '99', conversation_sensitivity: '-3', conversation_pause_ms: '50', speak_during_conversation: 'false' });
+    const s = await new SettingsRepository(store).current();
+    expect([s.followUpSeconds, s.conversationSensitivity, s.conversationPauseMs, s.speakDuringConversation]).toEqual([15, 0, 700, false]);
+    const junk = await new SettingsRepository(memoryStore({ follow_up_seconds: 'x', conversation_pause_ms: '' })).current();
+    expect([junk.followUpSeconds, junk.conversationPauseMs]).toEqual([8, 1100]);
   });
 
   it('uses the Kotlin key names, tells subscribers, and the snapshot is sync', async () => {

@@ -112,6 +112,11 @@ export class SpeechOutput implements SpeechController, ReplyListener {
     this.speakingMessageId.set(null);
   }
 
+  /** Says a short notice aloud without touching what is being spoken (conversation mode's "Tap Confirm on the screen"; C57 §6). */
+  announce(text: string): void {
+    this.enqueue(text);
+  }
+
   /** Settings → Test voice. */
   test(): void {
     this.play(TEST_VOICE, "Hi, I'm Edith.");

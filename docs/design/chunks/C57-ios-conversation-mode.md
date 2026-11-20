@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo), Wave A |
-| Status | **Design** (decision D30: conversation mode first, the wake word later in C69) |
+| Status | **Built** in Expo Go (D30: conversation mode first, the wake word later in C69); see "As built" at the end. The owner's real-microphone check is open |
 | Depends on | C44 (voice memos: recorder, transcriber, `VoiceMemos`), C40 (speech output), C45 |
 | Unblocks | C69 (the wake word plugs into the same state machine) |
 | Runs in | Expo Go |
@@ -78,3 +78,14 @@ New: `voice/conversation.ts` (state machine), `voice/vad.ts`, `ui/ConversationVi
 
 ## Not in this chunk
 The wake word, background listening, barge-in, Bluetooth headset routing (verify but don't promise), a lock-screen widget.
+
+## As built
+Built in one PR. Where the code differs from the specification above, the code is right.
+- **Files:** `voice/vad.ts` (`SpeechDetector`, every number in `VAD`), `voice/conversation.ts` (`Conversation`, the state machine), `ui/ConversationViews.tsx` (header button, banner), `ui/ConversationSettings.tsx` (Settings → Conversation); tests `voice/vad.test.ts` (11), `voice/conversation.test.ts` (24), `ui/conversation.test.tsx` (13) and one settings test. Changed: `voice/voiceMemos.ts` (`Recorder.isRecording?`, `VoiceDeps.blocked`), `voice/expoRecorder.ts` (`isRecording()`), `speech/speechOutput.ts` (`announce`), `settings/settings.ts` (`followUpSeconds` 8, `conversationSensitivity` 0.5, `conversationPauseMs` 1100, `speakDuringConversation` true; read inside their ranges), `core/services.tsx` (`conversation`, one `ExpoRecorder` shared with memos, `expo-keep-awake`), `ui/ChatScreen.tsx`, `ui/ChatComponents.tsx` (ear on the owner's hands-free messages), `ui/SettingsScreen.tsx`, `package.json` (`expo-keep-awake`).
+- **No `UtteranceCapture` was extracted** (the design suggested one): `Conversation` uses the same `Recorder`, `AudioFiles` and `Transcriber` interfaces as `VoiceMemos` directly, and repeats the few lines that read, transcribe and delete. Memos and conversation never run together: each refuses while the other is on.
+- **The loop** is as designed: listening, capturing, transcribing, thinking, speaking, follow-up, and **waiting for your tap**. The microphone is closed from the moment an utterance ends until the follow-up window opens. One recording per listening period (started when listening starts, stopped when speech ends), so the file holds the quiet before the words: at most 30 s, up to about 1 MB, sent whole to the model.
+- **Additions to the design:** (1) the first listening period ends after **30 s of nobody speaking** ("The conversation ended."), so the microphone is never left open for ever; (2) the mode **ends when the Chat tab loses focus** (the banner is the only sign the microphone is live) as well as when the app leaves the screen; (3) a failed reply (the engine's `failed` state) counts as one of the three errors; (4) Settings → Conversation has **Test microphone** (15 s, a live meter and "✓ Heard you", nothing recorded or kept).
+- **Approvals:** a card waiting sets the state to "Waiting for your tap" and says "Tap Confirm on the screen." **once per card**; the loop never listens for a spoken yes.
+- **Speaking:** if "Speak Edith's replies" is off, conversation turns it on for the session, says so in a notice, and puts it back when the mode ends (unless "Speak replies during conversation" is off, in which case the replies stay text).
+- **Mutation-checked:** eleven deliberate breaks (messages sent as typed; the tap prompt said every time; the file kept after a failed transcription; three errors never ending it; leaving the app doing nothing; the speaking setting not put back; not waiting for speech to finish; an interrupted microphone not noticed; a cough starting speech; false starts becoming utterances; no adaptive floor) were each caught, and the code restored.
+- **Not verified, and it matters:** **nothing here has been heard by a real microphone.** (a) Whether the metering VAD works in the owner's rooms: the thresholds are guesses (it is a heuristic; a TV or fan will confuse it), and the three Settings knobs exist for tuning. (b) Whether `expo-audio`'s metering updates fast enough while recording to a file on iOS. (c) Whether Edith's speech after recording comes from the loudspeaker and not the earpiece, and whether the silent switch mutes her (C44's open item, still open). (d) Whether `isRecording` turns false when a call or Siri takes the microphone. (e) Whether `expo-keep-awake` keeps the screen on in Expo Go. (f) The ~100–300 ms gap each time the microphone is reopened could clip the first word of a follow-up. Tune the defaults with the owner.
