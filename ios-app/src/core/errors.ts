@@ -8,6 +8,7 @@ export type AppErrorKind =
   | 'http'
   | 'malformed'
   | 'invalid_url'
+  | 'model_lacks_capability'
   | 'unknown';
 
 export class AppError extends Error {
@@ -49,6 +50,11 @@ export class AppError extends Error {
   }
   static invalidUrl(message: string) {
     return new AppError('invalid_url', message);
+  }
+  static lacksCapability(model: string, what: 'images' | 'audio') {
+    const verb = what === 'images' ? 'see images' : 'hear audio';
+    const badge = what === 'images' ? 'Sees images' : 'Hears audio';
+    return new AppError('model_lacks_capability', `${model} can't ${verb} — pick a model marked "${badge}" in Settings.`);
   }
   static unknown(cause: unknown) {
     const text = cause instanceof Error ? cause.message || cause.name : String(cause);

@@ -67,3 +67,11 @@ export class PromptBuilder {
     return active.length === 0 ? PERSONA : `${PERSONA}\n\n${active.join('\n')}`;
   }
 }
+
+/** C15: for a model that can see, say how the owner's pictures reach it. */
+export const attachmentsSection: PromptSection = {
+  text: (ctx) =>
+    ctx.model.capabilities.includes('vision')
+      ? 'The user can attach images; they appear as labels like [Attachment 3: receipt.jpg (image)].'
+      : null,
+};

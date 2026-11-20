@@ -1,3 +1,4 @@
+import type { AttachmentStore, PendingAttachment } from '../attachments/attachments';
 import { AppError, isAbortError, toAppError } from '../core/errors';
 import { log } from '../core/log';
 import { Store } from '../core/store';
@@ -5,6 +6,7 @@ import type { ChatRepository, MessageSource } from '../data/chatRepository';
 import type { OllamaClient } from '../ollama/client';
 import type { ModelSelection } from '../settings/modelSelection';
 import type { SettingsRepository } from '../settings/settings';
+import { canSee } from '../ollama/types';
 import { buildContext } from './contextBuilder';
 import type { PromptBuilder } from './promptBuilder';
 import { systemClock, type Clock } from '../core/clock';
@@ -35,6 +37,8 @@ export interface EngineDeps {
   listeners: ReplyListener[];
   /** What Edith can do (C41). Empty or missing: a plain chat. */
   tools?: ToolRegistry;
+  /** Where sent pictures are held for this run of the app (C15). */
+  attachments?: AttachmentStore;
   clock?: Clock;
   /** Minimum time between UI-facing updates while text streams (~30/s). 0 in tests. */
   throttleMs?: number;
@@ -73,10 +77,10 @@ export class ChatEngine {
   }
 
   /** Sends the owner's message and runs the turn. The returned promise resolves when the turn has ended. */
-  send(conversationId: number, text: string, source: MessageSource = 'typed'): Promise<void> {
-    if (!text.trim() || this.busy) return Promise.resolve();
+  send(conversationId: number, text: string, source: MessageSource = 'typed', attachments: PendingAttachment[] = []): Promise<void> {
+    if ((!text.trim() && attachments.length === 0) || this.busy) return Promise.resolve();
     this.begin(conversationId);
-    this.turn = this.run(conversationId, text, source, false);
+    this.turn = this.run(conversationId, text, source, false, undefined, attachments);
     return this.turn;
   }
 
@@ -159,6 +163,7 @@ export class ChatEngine {
     source: MessageSource,
     regenerate: boolean,
     replaceId?: number,
+    attachments: PendingAttachment[] = [],
   ): Promise<void> {
     const { repo, listeners } = this.deps;
     let modelName: string | null = null;
@@ -168,14 +173,35 @@ export class ChatEngine {
       this.state.set({ kind: 'working', conversationId, label: 'Edith is thinking…', partialText: '' });
       if (regenerate && replaceId !== undefined) await repo.deleteMessage(replaceId);
       if (userText !== null) {
-        const id = await repo.addUserMessage(conversationId, userText, source);
+        const id = await repo.addUserMessage(
+          conversationId,
+          userText,
+          source,
+          attachments.map((a) => ({ kind: a.kind, fileName: a.fileName, mimeType: a.mimeType, sizeBytes: a.sizeBytes })),
+        );
         if (id === null) return this.finish(); // the conversation was deleted
+        if (attachments.length > 0) {
+          // The rows were numbered in order; hand each picture to the store under its row id.
+          const rows = (await repo.attachments(conversationId)).filter((r) => r.messageId === id);
+          rows.forEach((row, i) => this.deps.attachments?.put(row.id, attachments[i].base64));
+        }
       }
       const model = await this.deps.selection.ensureModel();
       modelName = model.name;
       const settings = await this.deps.settings.current();
       const history = await repo.recent(conversationId, 200);
-      const messages = buildContext(history, this.deps.prompts.system(model));
+      const stored = await repo.attachments(conversationId);
+      const store = this.deps.attachments;
+      // Pictures to a model that can't see them: don't call it (C15 §3). Only the newest message is checked.
+      const newest = [...history].reverse().find((m) => m.role === 'user');
+      if (newest && stored.some((a) => a.messageId === newest.id && a.kind === 'image' && !a.removedAt) && !canSee(model)) {
+        throw AppError.lacksCapability(model.name, 'images');
+      }
+      const messages = buildContext(history, this.deps.prompts.system(model), undefined, {
+        attachments: stored,
+        image: (id) => store?.image(id) ?? null,
+        canSee: canSee(model),
+      });
 
       const turn = await runToolTurn({
         client: this.deps.client,

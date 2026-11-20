@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { AttachmentStore } from '../attachments/attachments';
 import { ChatEngine } from '../chat/engine';
 import { CurrentConversation } from '../chat/currentConversation';
-import { PromptBuilder, dateTimeSection } from '../chat/promptBuilder';
+import { PromptBuilder, attachmentsSection, dateTimeSection } from '../chat/promptBuilder';
 import { ConversationTitler } from '../chat/titler';
 import { ChatRepository } from '../data/chatRepository';
 import { openDatabase } from '../data/expoDb';
@@ -32,6 +33,7 @@ export interface Services {
   current: CurrentConversation;
   speech: SpeechOutput;
   tools: ToolRegistry;
+  attachments: AttachmentStore;
 }
 
 /** Wires the app together once, at startup: the database, settings, engine, titler and speech (C06, C06b, C13). */
@@ -46,10 +48,11 @@ export async function createServices(): Promise<Services> {
     searchWebTool(new DuckDuckGoSearch(httpFetch)),
     readWebPageTool(new PageReader(httpFetch)),
   ]);
-  const prompts = new PromptBuilder(systemClock, () => [dateTimeSection, toolGuidanceSection(tools)]);
+  const prompts = new PromptBuilder(systemClock, () => [dateTimeSection, toolGuidanceSection(tools), attachmentsSection]);
   const titler = new ConversationTitler(repo, ollamaClient, settings);
   let openId: number | null = null;
   const speech = new SpeechOutput(expoTts, settings, (id) => id === openId);
+  const attachments = new AttachmentStore();
   const engine = new ChatEngine({
     repo,
     settings,
@@ -58,6 +61,7 @@ export async function createServices(): Promise<Services> {
     prompts,
     listeners: [speech, titler],
     tools,
+    attachments,
   });
   const current = new CurrentConversation(repo, settings, engine);
   current.id.subscribe(() => {
@@ -70,7 +74,7 @@ export async function createServices(): Promise<Services> {
     if (speakWas && !s.speakReplies) speech.stop();
     speakWas = s.speakReplies;
   });
-  return { settings, repo, catalog, selection, engine, current, speech, tools };
+  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments };
 }
 
 const ServicesContext = createContext<Services | null>(null);

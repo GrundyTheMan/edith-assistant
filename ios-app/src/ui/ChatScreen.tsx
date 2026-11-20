@@ -3,10 +3,14 @@ import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, KeyboardAvoidingView, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { MAX_ATTACHMENTS, prepareImage, type PendingAttachment } from '../attachments/attachments';
+import { expoImageProcessor } from '../attachments/expoImageProcessor';
+import { pickPhotos } from '../attachments/pickPhotos';
 import { useServices, useStore } from '../core/services';
 import { Store } from '../core/store';
 import { useRepoQuery } from '../core/useRepoQuery';
 import type { StoredMessage } from '../data/chatRepository';
+import { ImageViewer, type BubbleAttachment } from './AttachmentViews';
 import { InFlightBubble, InputRow, MessageBubble } from './ChatComponents';
 import { useTheme } from './theme';
 import { useNow } from './useNow';
@@ -19,13 +23,17 @@ type Item = { key: string; kind: 'message'; message: StoredMessage } | { key: st
 export function ChatScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { repo, engine, current, speech, tools } = useServices();
+  const { repo, engine, current, speech, tools, attachments: store } = useServices();
   const conversationId = useStore(current.id);
   const engineState = useStore(engine.state);
   const speaking = useStore(speech.speakingMessageId);
 
   const messages = useRepoQuery(repo, () => (conversationId === null ? Promise.resolve([]) : repo.messages(conversationId)), [conversationId], [] as StoredMessage[]);
   const conversations = useRepoQuery(repo, () => repo.conversations(), [], []);
+  const stored = useRepoQuery(repo, () => (conversationId === null ? Promise.resolve([]) : repo.attachments(conversationId)), [conversationId], []);
+  useStore(store.version); // redraw when a sent picture's bytes arrive
+  const [pending, setPending] = useState<PendingAttachment[]>([]);
+  const [viewing, setViewing] = useState<string | null>(null);
   const title = conversations.find((c) => c.id === conversationId)?.title || 'New chat';
 
   const allDrafts = useStore(drafts);
@@ -71,16 +79,32 @@ export function ChatScreen() {
   }
   for (let i = messages.length - 1; i >= 0; i--) items.push({ key: `m${messages[i].id}`, kind: 'message', message: messages[i] });
 
-  const canSend = conversationId !== null && idle && draft.trim().length > 0;
+  const canSend = conversationId !== null && idle && (draft.trim().length > 0 || pending.length > 0);
   const hint = busyElsewhere ? 'Edith is replying in another chat' : null;
 
   const send = () => {
     if (!canSend || conversationId === null) return;
     const text = draft.trim();
+    const photos = pending;
     speech.stop(); // silence when the owner sends a message
     changeDraft('');
-    void engine.send(conversationId, text, 'typed');
+    setPending([]);
+    void engine.send(conversationId, text, 'typed', photos);
   };
+  const attach = async () => {
+    try {
+      const picked = await pickPhotos(MAX_ATTACHMENTS - pending.length);
+      const prepared: PendingAttachment[] = [];
+      for (const p of picked) prepared.push(await prepareImage(p, expoImageProcessor, pending.length + prepared.length + 1));
+      if (prepared.length > 0) setPending((cur) => [...cur, ...prepared].slice(0, MAX_ATTACHMENTS));
+    } catch {
+      Alert.alert("Couldn't attach that", "That photo couldn't be read. Try another.");
+    }
+  };
+  const bubbleAttachments = (messageId: number): BubbleAttachment[] =>
+    stored
+      .filter((a) => a.messageId === messageId && a.direction === 'from_user' && a.kind === 'image')
+      .map((a) => ({ id: a.id, fileName: a.fileName, base64: a.removedAt ? null : store.image(a.id) }));
   const regenerate = () => {
     if (conversationId !== null) void engine.regenerateLast(conversationId);
   };
@@ -132,6 +156,8 @@ export function ChatScreen() {
                 now={now}
                 onRetry={regenerate}
                 toolNames={item.message.toolsUsed.map((n) => tools.displayName(n))}
+                attachments={bubbleAttachments(item.message.id)}
+                onOpenImage={setViewing}
                 actions={
                   item.message.role === 'assistant' && item.message.status !== 'failed'
                     ? {
@@ -147,7 +173,18 @@ export function ChatScreen() {
             )
           }
         />
-        <InputRow value={draft} onChange={changeDraft} canSend={canSend} hint={hint} onSend={send} theme={theme} />
+        <InputRow
+          value={draft}
+          onChange={changeDraft}
+          canSend={canSend}
+          hint={hint}
+          onSend={send}
+          theme={theme}
+          pending={pending}
+          onAttach={pending.length < MAX_ATTACHMENTS ? () => void attach() : undefined}
+          onRemove={(id) => setPending((cur) => cur.filter((p) => p.localId !== id))}
+        />
+        <ImageViewer base64={viewing} onClose={() => setViewing(null)} />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
