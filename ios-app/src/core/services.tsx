@@ -13,6 +13,9 @@ import { cameraSnapshotTool, homeControlTool, homeDevicesTool, recentEventsTool 
 import { RingApi } from '../ring/api';
 import { RingService } from '../ring/service';
 import { JarvisApi } from '../jarvis/api';
+import { PrinterFeed } from '../printer/feed/feed';
+import { PrinterPrefs } from '../printer/feed/prefs';
+import { PrinterSession } from '../printer/feed/session';
 import { JarvisService } from '../jarvis/service';
 import { BlinkApi } from '../blink/api';
 import { BlinkService } from '../blink/service';
@@ -68,6 +71,9 @@ export interface Services {
   retention: RetentionDeps;
   voice: VoiceMemos;
   conversation: Conversation;
+  /** The Printer page through Jarvis (C67): what it shows, and what the owner folded. */
+  printerSession: PrinterSession;
+  printerPrefs: PrinterPrefs;
   /** Camera alerts while the app is open, and the catch-up when the owner returns (C72). */
   alerts: { prefs: AlertPrefs; loop: AlertLoop; notifier: Notifier; demoRing: () => void };
   home: Home;
@@ -113,7 +119,12 @@ export async function createServices(): Promise<Services> {
   // Blink: HTTPS to blink.com and immedia-semi.com only (the api checks every address itself: it follows redirects by hand to keep the sign-in's cookies).
   home.registerService(new BlinkService({ secrets, api: new BlinkApi({ fetch: httpFetch, randomBytes: (n) => Crypto.getRandomBytes(n) }), uuid: () => Crypto.randomUUID() }));
   // Jarvis (C66a, D39): ordinary HTTPS to the PC's Tailscale name only (a publicly trusted certificate on Jarvis's second listener).
-  home.registerService(new JarvisService({ secrets, api: new JarvisApi({ fetch: secureFetch(httpFetch, { allowHosts: ['ts.net'] }) }) }));
+  const jarvis = new JarvisService({ secrets, api: new JarvisApi({ fetch: secureFetch(httpFetch, { allowHosts: ['ts.net'] }) }) });
+  home.registerService(jarvis);
+  // The Printer page through Jarvis (C67): the session asks only while the page is on screen.
+  const printerPrefs = new PrinterPrefs(kvStore);
+  await printerPrefs.load();
+  const printerSession = new PrinterSession({ feed: new PrinterFeed(jarvis) });
   // Each is restored at startup; one failing never stops the app.
   await home.restoreServices();
   // The Demo home is for trying things with no service; development builds only (Expo Go is one).
@@ -200,7 +211,7 @@ export async function createServices(): Promise<Services> {
   });
   alertLoop.start();
   const alerts = { prefs: alertPrefs, loop: alertLoop, notifier: expoNotifier, demoRing: () => demo?.ring() };
-  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments, retention, voice, conversation, alerts, home, secrets };
+  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments, retention, voice, conversation, alerts, printerSession, printerPrefs, home, secrets };
 }
 
 const ServicesContext = createContext<Services | null>(null);

@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -122,6 +122,9 @@ export function HomeScreen() {
     }, [printing, home]),
   );
 
+  // The Printer page button reads "Details" when a Jarvis is paired (even one that isn't sharing the printer), else "Printer page" (C39 §8.1).
+  const jarvisState = home.services.get().find((s) => s.id === 'jarvis')?.state.get().kind;
+  const jarvisPaired = jarvisState === 'connected' || jarvisState === 'needs_sign_in';
   const devices = home.visible();
   const shown = useMemo(() => devices.filter((d) => inChip(d, chip, home.isFavourite(d.id))), [devices, chip, home]);
   const locks = shown.filter(isSecure);
@@ -192,6 +195,8 @@ export function HomeScreen() {
                     now={now}
                     onCommand={(type) => runFromScreen(home, d, { type })}
                     onCamera={() => setLiveCam(d)}
+                    onDetails={() => router.push('/printer')}
+                    detailsLabel={jarvisPaired ? 'Details' : 'Printer page'}
                   />
                 ) : (
                   <Tile key={d.id} d={d} home={home} theme={theme} now={now} expanded={open === d.id} onOpen={() => setOpen(open === d.id ? null : d.id)} />
