@@ -125,6 +125,7 @@ export function MessageBubble({
   return (
     <View style={styles.rowStart}>
       <View style={[styles.bubble, styles.edithBubble, { backgroundColor: theme.edithBubble, maxWidth }, stopped && { opacity: 0.7 }]}>
+        <BubbleAttachments items={attachments} onOpen={(b) => onOpenImage?.(b)} theme={theme} tone="edith" />
         <MarkdownText text={message.content} color={theme.onEdithBubble} theme={theme} />
         {stopped ? <Text style={[styles.time, { color: theme.textMuted }]}>(stopped)</Text> : null}
       </View>

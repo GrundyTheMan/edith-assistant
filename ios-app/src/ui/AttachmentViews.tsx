@@ -37,7 +37,8 @@ export function PendingChips({ items, onRemove, theme }: { items: PendingAttachm
 }
 
 /** Thumbnails in the owner's bubble, above the text; a tap opens the picture full screen. */
-export function BubbleAttachments({ items, onOpen, theme }: { items: BubbleAttachment[]; onOpen: (base64: string) => void; theme: Theme }) {
+export function BubbleAttachments({ items, onOpen, theme, tone = 'user' }: { items: BubbleAttachment[]; onOpen: (base64: string) => void; theme: Theme; tone?: 'user' | 'edith' }) {
+  const ink = tone === 'edith' ? theme.onEdithBubble : theme.onPrimary;
   if (items.length === 0) return null;
   return (
     <View style={styles.bubbleRow}>
@@ -47,9 +48,9 @@ export function BubbleAttachments({ items, onOpen, theme }: { items: BubbleAttac
             <Image source={{ uri: dataUri(a.base64) }} style={styles.thumb} />
           </Pressable>
         ) : (
-          <View key={a.id} style={[styles.missing, { borderColor: theme.onPrimary }]}>
-            <Ionicons name="image-outline" size={18} color={theme.onPrimary} />
-            <Text style={{ color: theme.onPrimary, fontSize: 13 }} numberOfLines={1}>
+          <View key={a.id} style={[styles.missing, { borderColor: ink }]}>
+            <Ionicons name="image-outline" size={18} color={ink} />
+            <Text style={{ color: ink, fontSize: 13 }} numberOfLines={1}>
               {a.fileName} — no longer available
             </Text>
           </View>

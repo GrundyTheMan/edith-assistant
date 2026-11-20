@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo), Wave A |
-| Status | **Design** |
+| Status | **Built** in Expo Go; see "As built" at the end. The owner's iPhone check is open |
 | Depends on | C47 (photos kept on disk), C46 (home tools), C45 |
 | Unblocks | C51 Ring and C52 Blink (snapshots), C56 (Edith's files and resends), C71 (live snapshots in chat) |
 | Runs in | Expo Go |
@@ -69,3 +69,21 @@ Define the tool here so Ring/Blink only supply `HomeBackend.snapshot`:
 
 ## Not in this chunk
 `<file>` blocks and resends (C56); audio; any service's snapshot implementation (C51, C52).
+
+## As built (2026-11-20)
+Built by an AI agent; Android is untouched. Where the code differs from the specification above, the code is right.
+- **Files:** `tools/framework/tool.ts` (`ToolImage`, `ToolResult.images`, `ok(text, images)`), `tools/framework/toolRunner.ts` (`TurnOutput.images`, `MAX_TURN_IMAGES`
+  4, `MAX_IMAGE_BASE64`), `data/chatRepository.ts` (`NewAttachment.direction`, `addAssistantMessage(..., attachments)`, `deleteMessage` and `clearConversation` return
+  the attachment ids), `chat/engine.ts`, `chat/contextBuilder.ts`, `chat/promptBuilder.ts`, `attachments/retention.ts` (both directions: `DIRECTIONS`,
+  `countBeyondKeep`), `ui/AttachmentsSettings.tsx` ("You sent / Edith showed"), `ui/AttachmentViews.tsx` and `ui/ChatComponents.tsx` (pictures in her bubble),
+  `home/home.ts` (`Home.snapshot` with the service's own limit), `home/homeTools.ts` (`camera_snapshot`), `home/demoBackend.ts` (a doorbell camera).
+- **Differences from the specification:**
+  - **A picture over about 1 MB is dropped with a note, not re-encoded.** `ToolContext` has no image processor; a service that returns a large picture (Ring, C51;
+    Blink, C52) must shrink it itself, with `prepareImage` / the `ImageProcessor` from C43.
+  - Retention counts and Delete all treat both directions with the one number (O1), and the confirmation text counts both. Resends (C56) have no file and are not counted
+    (`keptAttachments` already excludes `resend_of` rows).
+  - **The Demo doorbell's picture is a one-pixel grey JPEG** (the smallest valid one), scaled up by the screen: it proves the path, not how a real snapshot looks.
+  - `camera_snapshot` has no Home-tab button yet (a tile shows the doorbell as "No state reported"); C51 and C52 add the Snapshot button when real cameras exist.
+- **Whether a vision model reads a picture in a `tool` message is not verified** (the risk in this document): if a model ignores it, the fallback is to add the picture to
+  the next user message of the turn.
+- **Not verified:** everything on a real iPhone, including how the one-pixel Demo picture looks in the bubble and the viewer.

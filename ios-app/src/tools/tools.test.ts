@@ -163,7 +163,7 @@ describe('runToolTurn', () => {
     const { client, requests } = script([toolReply(callLine('echo_text', { text: 'hi', times: '3' })), textReply('Done.')]);
     const { h, events } = hooks();
     const out = await run(client, [echoTool()], { h });
-    expect(out).toEqual({ text: 'Done.', toolsUsed: ['echo_text'] });
+    expect(out).toEqual({ text: 'Done.', toolsUsed: ['echo_text'], images: [] });
     const [first, second] = bodies(requests);
     expect(first.tools).toHaveLength(1);
     expect(second.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'tool']);

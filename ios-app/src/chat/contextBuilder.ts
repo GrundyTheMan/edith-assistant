@@ -19,7 +19,7 @@ export function truncateMiddle(text: string, maxTokens: number): string {
   return text.slice(0, head) + marker + text.slice(text.length - (keep - head));
 }
 
-/** What the model may see of the owner's attachments (C15 §3). */
+/** What the model may see of the attachments, the owner's and Edith's own pictures (C15 §3, C49). */
 export interface MediaContext {
   attachments: StoredAttachment[];
   /** The picture's Base64 if it is still held in this run of the app. */
@@ -46,7 +46,6 @@ export function buildContext(
 ): OllamaMessage[] {
   const byMessage = new Map<number, StoredAttachment[]>();
   for (const a of media?.attachments ?? []) {
-    if (a.direction !== 'from_user') continue;
     byMessage.set(a.messageId, [...(byMessage.get(a.messageId) ?? []), a]);
   }
 
@@ -59,7 +58,7 @@ export function buildContext(
   for (const m of history) {
     if (m.status !== 'complete') continue;
     const text = m.role === 'assistant' ? stripToolCalls(m.content).trim() : m.content;
-    const attachments = m.role === 'user' ? (byMessage.get(m.id) ?? []) : [];
+    const attachments = byMessage.get(m.id) ?? [];
     if (!text.trim() && attachments.length === 0) continue;
     usable.push({ role: m.role, content: text, attachments });
   }

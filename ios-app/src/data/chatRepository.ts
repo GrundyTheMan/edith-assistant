@@ -35,6 +35,8 @@ export interface StoredAttachment {
   removedAt: number | null;
 }
 export interface NewAttachment {
+  /** Who produced it. Default: the owner. */
+  direction?: 'from_user' | 'from_edith';
   kind: 'image' | 'audio';
   fileName: string;
   mimeType: string;
@@ -283,8 +285,9 @@ export class ChatRepository {
     this.changed();
   }
 
-  async addAssistantMessage(conversationId: number, text: string, model: string, toolsUsed: string[] = []) {
-    return this.insert(conversationId, 'assistant', stripToolCalls(text).trim(), 'complete', 'typed', model, toolsUsed, null, false);
+  /** Edith's reply, with the pictures her tools produced as `from_edith` attachments (C49). */
+  async addAssistantMessage(conversationId: number, text: string, model: string, toolsUsed: string[] = [], attachments: NewAttachment[] = []) {
+    return this.insert(conversationId, 'assistant', stripToolCalls(text).trim(), 'complete', 'typed', model, toolsUsed, null, false, attachments.map((a) => ({ ...a, direction: 'from_edith' as const })));
   }
 
   /** A failed turn: no text, the error is kept for display. It is never sent back to the model. */
@@ -297,14 +300,21 @@ export class ChatRepository {
     return this.insert(conversationId, 'assistant', stripToolCalls(text).trim(), 'cancelled', 'typed', model, [], null, false);
   }
 
-  async deleteMessage(id: number): Promise<void> {
+  /** Deletes a message and returns the ids of its attachments, so their files can go too (C49). */
+  async deleteMessage(id: number): Promise<number[]> {
+    const ids = (await this.db.all<{ id: number }>('SELECT id FROM attachments WHERE message_id = ?', [id])).map((r) => r.id);
     await this.db.run('DELETE FROM messages WHERE id = ?', [id]);
     this.changed();
+    return ids;
   }
 
-  async clearConversation(conversationId: number): Promise<void> {
+  async clearConversation(conversationId: number): Promise<number[]> {
+    const ids = (
+      await this.db.all<{ id: number }>('SELECT a.id FROM attachments a JOIN messages m ON m.id = a.message_id WHERE m.conversation_id = ?', [conversationId])
+    ).map((r) => r.id);
     await this.db.run('DELETE FROM messages WHERE conversation_id = ?', [conversationId]);
     this.changed();
+    return ids;
   }
 
   private async insert(
@@ -340,8 +350,8 @@ export class ChatRepository {
           const next = await this.db.first<{ n: number }>('SELECT COALESCE(MAX(number), 0) + 1 AS n FROM attachments');
           await this.db.run(
             `INSERT INTO attachments (message_id, number, direction, kind, file_name, mime_type, size_bytes, created_at)
-             VALUES (?, ?, 'from_user', ?, ?, ?, ?, ?)`,
-            [res.lastInsertRowId, next?.n ?? 1, a.kind, a.fileName, a.mimeType, a.sizeBytes, now],
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [res.lastInsertRowId, next?.n ?? 1, a.direction ?? 'from_user', a.kind, a.fileName, a.mimeType, a.sizeBytes, now],
           );
         }
         return res.lastInsertRowId;

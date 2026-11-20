@@ -1,4 +1,4 @@
-import type { AttachmentStore, PendingAttachment } from '../attachments/attachments';
+import { base64Bytes, type AttachmentStore, type PendingAttachment } from '../attachments/attachments';
 import { AppError, isAbortError, toAppError } from '../core/errors';
 import { log } from '../core/log';
 import { Store } from '../core/store';
@@ -215,7 +215,10 @@ export class ChatEngine {
     let label = 'Edith is thinking…';
     try {
       this.state.set({ kind: 'working', conversationId, label: 'Edith is thinking…', partialText: '' });
-      if (regenerate && replaceId !== undefined) await repo.deleteMessage(replaceId);
+      if (regenerate && replaceId !== undefined) {
+        const gone = await repo.deleteMessage(replaceId); // its pictures' files go with it (C49)
+        await this.deps.attachments?.forget(gone);
+      }
       if (userText !== null) {
         const id = await repo.addUserMessage(
           conversationId,
@@ -279,7 +282,19 @@ export class ChatEngine {
       });
       const text = turn.text.trim();
       if (!text) throw AppError.emptyReply();
-      const messageId = await repo.addAssistantMessage(conversationId, text, model.name, turn.toolsUsed);
+      const messageId = await repo.addAssistantMessage(
+        conversationId,
+        text,
+        model.name,
+        turn.toolsUsed,
+        turn.images.map((i) => ({ kind: 'image' as const, fileName: i.fileName, mimeType: i.mimeType, sizeBytes: base64Bytes(i.base64) })),
+      );
+      if (messageId !== null && turn.images.length > 0) {
+        // The pictures were numbered with the message: hand each to the store under its row id (as for the owner's), then retention.
+        const rows = (await repo.attachments(conversationId)).filter((r) => r.messageId === messageId);
+        await Promise.all(rows.map((row, i) => this.deps.attachments?.put(row.id, turn.images[i].base64)));
+        await this.deps.afterAttachmentsSent?.().catch(() => {});
+      }
       this.finish();
       listeners.forEach((l) => l.onFinished?.(conversationId, text, messageId));
     } catch (e) {

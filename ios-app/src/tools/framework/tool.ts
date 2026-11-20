@@ -19,8 +19,15 @@ export interface ToolSpec {
   parameters: ToolParam[];
 }
 
-export type ToolResult = { ok: true; text: string } | { ok: false; text: string };
-export const ok = (text: string): ToolResult => ({ ok: true, text });
+/** A picture a tool produced (a camera snapshot). It is shown in Edith's bubble and offered to a model that can see (C49). */
+export interface ToolImage {
+  fileName: string;
+  mimeType: 'image/jpeg';
+  /** Base64 JPEG, already at a sensible size: the runner drops anything over ~1 MB. */
+  base64: string;
+}
+export type ToolResult = { ok: true; text: string; images?: ToolImage[] } | { ok: false; text: string; images?: ToolImage[] };
+export const ok = (text: string, images?: ToolImage[]): ToolResult => (images && images.length > 0 ? { ok: true, text, images } : { ok: true, text });
 export const failed = (text: string): ToolResult => ({ ok: false, text });
 
 /** What the owner is asked to approve before a tool changes something outside the app (C08 §6, D11). */

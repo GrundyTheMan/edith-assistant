@@ -248,6 +248,31 @@ export class Home {
     return { ok: true, text };
   }
 
+  /** A fresh picture from a camera, with the service's own limit (35 s for a Ring battery camera). Throws a plain message on failure. */
+  async snapshot(device: HomeDevice, signal?: AbortSignal): Promise<{ jpegBase64: string; takenAt: number }> {
+    const backend = this.backends.find((b) => b.id === device.backend);
+    if (!backend?.snapshot) throw new Error(`${device.name} can't show a picture.`);
+    const limit = backend.snapshotTimeoutMs ?? 20_000;
+    const ctl = new AbortController();
+    const onAbort = () => ctl.abort();
+    signal?.addEventListener('abort', onAbort);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        backend.snapshot(device.id, ctl.signal),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            ctl.abort();
+            reject(new Error(`${device.name} didn't answer in ${Math.round(limit / 1000)} seconds.`));
+          }, limit);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    }
+  }
+
   private async recheck(backend: HomeBackend, device: HomeDevice): Promise<HomeDevice> {
     try {
       const state = await backend.state(device.id);

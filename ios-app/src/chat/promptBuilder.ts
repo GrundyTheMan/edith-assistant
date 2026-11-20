@@ -72,6 +72,6 @@ export class PromptBuilder {
 export const attachmentsSection: PromptSection = {
   text: (ctx) =>
     ctx.model.capabilities.includes('vision')
-      ? 'The user can attach images; they appear as labels like [Attachment 3: receipt.jpg (image)].'
+      ? 'The user can attach images; they appear as labels like [Attachment 3: receipt.jpg (image)]. Pictures you showed the user (a camera snapshot) appear as labels in your own messages.'
       : null,
 };
