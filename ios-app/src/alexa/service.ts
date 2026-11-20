@@ -40,6 +40,8 @@ interface Saved {
   site: string;
   deviceSerial: string;
   signedInAt: number;
+  /** The last csrf token Alexa gave (not a secret on its own, but kept with the rest): see `AlexaApi.session`. */
+  csrf?: string;
 }
 
 type Outcome<T> = { ok: true; value: T } | { ok: false; why: string };
@@ -162,9 +164,14 @@ export class AlexaService implements HomeService {
     const saved = this.saved;
     if (!saved) return Promise.resolve(null);
     const p = (async () => {
-      const r = await this.deps.api.session(site, saved.refreshToken);
+      const r = await this.deps.api.session(site, saved.refreshToken, saved.csrf);
       if (r.kind === 'ok') {
         this.session = r.value;
+        if (saved.csrf !== r.value.csrf) {
+          // Remember it: Amazon sends it only the first time (see `AlexaApi.session`).
+          saved.csrf = r.value.csrf;
+          await this.deps.secrets.set(SECRET, JSON.stringify(saved)).catch(() => {});
+        }
         return r.value;
       }
       if (r.kind === 'rejected') this.needsSignIn();

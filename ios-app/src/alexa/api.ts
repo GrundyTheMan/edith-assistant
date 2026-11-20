@@ -314,7 +314,7 @@ export class AlexaApi {
    * Alexa's cookies and csrf token for `site`, from the refresh token: Amazon's token exchange gives the cookies, and a page on `alexa.<site>` gives the
    * csrf token. `rejected`: the refresh token is no good any more.
    */
-  async session(site: AmazonSite, refreshToken: string): Promise<AlexaReply<AlexaSession>> {
+  async session(site: AmazonSite, refreshToken: string, knownCsrf?: string): Promise<AlexaReply<AlexaSession>> {
     const e = this.endpointsFor(site);
     const form = new URLSearchParamsLite()
       .add('di.os.name', 'iOS')
@@ -353,6 +353,12 @@ export class AlexaApi {
       if (!page.ok) return { kind: 'failed', why: page.why };
       const csrf = jar.get('csrf');
       if (csrf) return { kind: 'ok', value: { cookie: jar.header(), csrf } };
+    }
+    // iOS keeps Amazon's cookies itself after the first sign-in, so Amazon no longer sends the csrf cookie again: reuse the token seen before, which the
+    // server still holds for this browser. (Found on the owner's phone: the first load worked, every later one said "no csrf token".)
+    if (knownCsrf) {
+      jar.put('csrf', knownCsrf);
+      return { kind: 'ok', value: { cookie: jar.header(), csrf: knownCsrf } };
     }
     return { kind: 'failed', why: 'Alexa gave no csrf token' };
   }
@@ -427,7 +433,8 @@ export class AlexaApi {
     try {
       for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
         if (!this.guard(url)) return { ok: false, why: "Amazon sent Edith to a page that isn't Amazon's, so she stopped" };
-        const res = await this.deps.fetch(url, { ...current, signal: ctl.signal, redirect: 'manual' });
+        // credentials omitted: this client keeps its own cookie jar, and the platform's shared one would hide Set-Cookie from us on later calls.
+        const res = await this.deps.fetch(url, { ...current, signal: ctl.signal, redirect: 'manual', credentials: 'omit' });
         jar?.addSetCookies(splitSetCookie(res.headers?.get('set-cookie')));
         if (res.url && res.url !== url && /\/ap\/signin/.test(res.url)) return { ok: true, code: 401, body: '', signedOut: true };
         const location = res.status >= 300 && res.status < 400 ? res.headers?.get('location') : null;
