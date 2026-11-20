@@ -4,12 +4,15 @@
 |---|---|
 | Phase | 9 — iOS (Expo), Wave B |
 | Status | **Design** — a very large chunk: **build it as the ten work packages below, one PR each** (E1–E10) |
-| Depends on | C66 (the Jarvis account and pinned transport), C55 (the direct printer card and `printer_status`), C45 (cards) |
+| Depends on | **C66a** (the Jarvis connection: pairing and the client), C55 (the direct printer card and `printer_status`), C45 (cards) |
 | Unblocks | stages 3–4 on iOS (upload/start/delete/queue-add, alerts, recordings, live camera): **not designed yet because Android has not built them** (`C39-printer-parity.md` §12 E11–E14); add chunks C77+ when Android does |
-| Runs in | the development build |
+| Runs in | **Expo Go** (decision D39: ordinary HTTPS to Jarvis's Tailscale name; `react-native-svg` is in Expo Go); it waits for the Jarvis change, not for a development build |
 | Size | **XL** (ten packages) |
 | Ports | C39 stages 1 and 2 (E1–E10), D26 |
 | Read first | **`C39-printer-parity.md` in full** — it is the normative design for the feature (the contract on one page §2, the model §4, the session §6, Controls and confirmation §7, the page and every card with its **final strings** §8, settings §9, chat tools §10, tests §11, work packages §12, acceptance §13, **As built §15 and the Jarvis-side review §16**), and **`jarvis-printer-feed-spec.md`** (the Jarvis side, incl. §14 "As built on the Jarvis side" and §15) |
+
+## Update 2026-11-20 (D39): the transport is C66a's, ordinary HTTPS
+Everything below that says `PinnedHttp`, "C66's pinned transport", `requestBinary` or a hand-written HTTP client is **replaced by C66a's `JarvisApi` (over `secureFetch`)**: a long poll is an ordinary `fetch` that takes up to `wait` seconds (set the timeout to `wait + 10 s`), a camera frame is `res.body` read as bytes (`core/bytes.ts` `readBytes`) then Base64. Verify early that `expo/fetch` keeps a request open for 25 s on iOS. The package order, the strings, the safety model and the tests are unchanged.
 
 ## How this chunk relates to the Android design
 C39 was written for Kotlin/Compose. **Its words, rules and screens are binding on iOS too** ("What the owner sees must behave the

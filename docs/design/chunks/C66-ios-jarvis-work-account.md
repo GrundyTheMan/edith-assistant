@@ -1,15 +1,18 @@
-# C66 — The work account through Jarvis on iOS (pinned TLS, pairing, mail, calendar, to-dos)
+# C66b — The work account through Jarvis on iOS (mail, calendar, to-dos)
 
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo), Wave B |
-| Status | **Design** — two PRs: (a) the pinned transport and pairing, (b) the three read-only sources and tools. Decision **D29** (how the phone trusts Jarvis) must be recorded first |
-| Depends on | C58 (a development build **with a TLS socket module**), C59 (accounts), C60, C61, C62 (the tools that read sources) |
+| Status | **Design — the transport and pairing moved to C66a (decision D39); this chunk is only the three read-only sources and their tools.** The text below that describes pinning (§2, most of §3 and the D29 table) is **superseded**: use C66a's client. Kept for the fallback if the owner ever picks D29 A |
+| Depends on | **C66a** (the Jarvis connection), C58 (the accounts need a development build), C59 (accounts), C60, C61, C62 (the tools that read sources) |
 | Unblocks | C67 (the printer through Jarvis uses the same transport and account) |
-| Runs in | the development build only |
+| Runs in | the development build (the account screens), over C66a's Expo Go-capable client |
 | Size | **XL** |
 | Ports | C38 (`jarvis/`: `JarvisApi`, `JarvisSources`, `JarvisAccounts`, `JarvisDialog`), D25 |
 | Read first | C38 spec **and** As built (read-only rules, `Patient` sources, time rules, the pairing bug found on the emulator), **`docs/design/jarvis-feed-spec.md` — the contract, in full (parts 5–9 especially)**, D25, C37, `scripts/fake-jarvis.mjs` (the pretend Jarvis the Android agent wrote: use it to test, run with `node scripts/fake-jarvis.mjs`; it prints its fingerprint, pairs with the code `ABCDE-FGHJK`, serves sample mail, events, tasks, writes drafts to `drafts.json`) |
+
+## Update 2026-11-20 (D39): what changed
+Jarvis gets a second listener with a **Tailscale-issued certificate** (`jarvis-tailscale-listener-spec.md`), so the iPhone connects with ordinary HTTPS and **needs no pinning, no TLS socket module and no hand-written HTTP client**. The connection (the name rules, the pairing proof, the token, the authenticated client, the 401 handling) is **C66a**, built first and usable in Expo Go. This chunk keeps §1 (the account) and §4–§5 (the sources, the read-only rules, errors, privacy), and uses C66a's `JarvisApi` instead of `PinnedHttp`. **Ignore §2 (the pinned transport), §3's fingerprint steps and the socket-module pre-checks**, unless the owner chooses the D29 A fallback.
 
 ## Why
 The owner's **work Outlook exists only on the PC** (classic Outlook through COM). Jarvis serves it over **HTTPS on the home
