@@ -228,8 +228,9 @@ M ≈ a day, L ≈ two or three days, XL ≈ a week (an agent's working time).
 | [C63](chunks/C63-ios-microsoft.md) | Microsoft account: Outlook mail and calendar | C23 | C60, C61 | Entra app registration | L |
 | [C64](chunks/C64-ios-icloud-calendar.md) | iCloud account, part 1: calendar over CalDAV | C24 | C60 | app-specific password | L |
 | [C65](chunks/C65-ios-icloud-mail.md) | iCloud account, part 2: mail over IMAP/SMTP | C24 | C61, C64 | TCP/TLS module | XL |
-| [C66](chunks/C66-ios-jarvis-work-account.md) | Work account through Jarvis (pinned TLS transport, pairing, mail/calendar/to-dos read-only) | C38 | C58, C60–C62 | Jarvis feed running | XL |
-| [C67](chunks/C67-ios-jarvis-printer.md) | 3D printer through Jarvis: Printer page, Controls, chat control | C39 stages 1–2 | C66, C55 | Jarvis printer feed | XL |
+| [C66a](chunks/C66a-ios-jarvis-connection.md) | **Jarvis connection (Expo Go, no development build): pairing and the authenticated client over a Tailscale-certificate listener** | C38 (core) | C48 | the Jarvis change (`jarvis-tailscale-listener-spec.md`), Tailscale HTTPS on | M |
+| [C66b](chunks/C66-ios-jarvis-work-account.md) | Work account through Jarvis (mail/calendar/to-dos read-only) | C38 | C66a, C58, C60–C62 | Jarvis feed running | XL |
+| [C67](chunks/C67-ios-jarvis-printer.md) | 3D printer through Jarvis: Printer page, Controls, chat control | C39 stages 1–2 | **C66a**, C55 | Jarvis printer feed | XL |
 | [C68](chunks/C68-ios-audio-attachments.md) | Audio files as attachments (convert to WAV) | C15 audio | C58 | native audio decode | M |
 | [C69](chunks/C69-ios-wake-word.md) | "Hey Edith" wake word while the app is open | C14 | C57, C58 | the trained model file | XL |
 | [C70](chunks/C70-ios-meross-cloud.md) | Meross cloud control (MQTT over TLS) so the garage works away from home | C26 | C50, C58 | — | L |
@@ -257,7 +258,9 @@ C58 ── C59 ── C60 ──┬─ C61 ── C65
         │           ├─ C62
         │           ├─ C63
         │           └─ C64 ── C65
-        ├─ C66 (needs C60–C62) ── C67
+        ├─ C66b (needs C60–C62)
+C48 ── C66a ──┬─ C67 (with C55)
+              └─ C66b
         ├─ C68, C73, C74, C75
 C76 last.
 ```
@@ -269,7 +272,7 @@ C76 last.
   {C50, C54, C55}, {C56}, {C57}, then {C51, C52}.
 - **Wave B waits for C58**, which waits for the owner. Once C58 is done: C59 first, then C60/C61 together, then C62–C65 and
   C66 in parallel pairs; C68–C75 are independent of the accounts work.
-- **A chunk may be split into two PRs** when its doc says so (C65, C66, C67, C71).
+- **A chunk may be split into two PRs** when its doc says so (C65, C66b, C67, C71). **C66a and C67 need no development build (D39); they wait for the Jarvis change instead.**
 
 ---
 
@@ -296,7 +299,7 @@ Each is "ask the owner, recommended default first". Record the answer in `06-dec
 | ID | Question | Recommended | Needed by |
 |---|---|---|---|
 | D28 | Accounts on iOS (Google, Microsoft, iCloud mail) wait for the development build (C58)? | **Yes**: no workable Expo Go route (custom URL schemes, sockets) | C58–C65 |
-| D29 | How does the phone trust Jarvis's self-signed certificate? | **A: pin it with a native TLS module** (no change to Jarvis). B: Jarvis serves a Tailscale-issued certificate (no pinning; needs a Jarvis change). C: install a profile/CA by hand | C66 |
+| D29 | How does the phone trust Jarvis's self-signed certificate? | **Superseded by D39**: B first (a Tailscale-issued certificate on a second Jarvis listener, no pinning). A (pin it with a native TLS module, a development build, no change to Jarvis) stays the fallback if B is refused. C: install a profile/CA by hand (not recommended). | C66 |
 | D30 | Hands-free on iOS: conversation mode first (no wake word), wake word later? | **Yes** | C57, C69 |
 | D31 | Camera alerts on iOS: (A) while the app is open only, plus a local-notification summary on return; (B) Jarvis on the PC sends push through APNs (needs the membership and a Jarvis change); (C) both | **A now, B only if the owner wants away-from-home alerts** | C72 |
 | D32 | Google on iOS: keep the 7-day weekly sign-in (project in Testing), or publish the OAuth consent screen ("In production", unverified, up to 100 users, no weekly expiry for non-sensitive scopes only; Calendar/Gmail are sensitive and then show a warning screen)? | **Keep Testing + weekly sign-in** (as Android, D16) | C59 |
@@ -306,6 +309,7 @@ Each is "ask the owner, recommended default first". Record the answer in `06-dec
 | D36 | Standalone distribution: internal (ad hoc) builds, or TestFlight? | **Internal first** | C75 |
 | D37 | Over-the-air JavaScript updates with EAS Update? | **Yes** (fewer builds) | C75 |
 | D38 | Philips lock on iOS: build C74's unofficial path, or use the Alexa route? | **Alexa route; C74 is not built.** The owner confirmed on 2026-11-20 that the lock is linked to Alexa and that locking and unlocking it works from the Home tab (C54). The Philips path would add an unofficial signing key for no gain. The unlock rule is unchanged: always a card, never approved by voice. Reopen only if Alexa stops covering it. | C74 |
+| D39 | Jarvis from the iPhone without a development build? | **Yes: Jarvis gets a second listener with a Tailscale-issued certificate** (`jarvis-tailscale-listener-spec.md`); the iPhone uses ordinary HTTPS to the PC's `*.ts.net` name. The owner asked for it on 2026-11-20. C66 is split: **C66a** (the connection: pairing and the client, Expo Go) and **C66b** (the work account's mail, calendar and to-dos, which still need the development build for the accounts UI); **C67 (the printer) depends on C66a only and runs in Expo Go.** Needs a change in the Jarvis repository and the owner's Tailscale HTTPS switched on. | C66a, C66b, C67 |
 
 ---
 
