@@ -4,6 +4,10 @@ import type { DeviceCommand, DeviceState, HomeBackend, HomeDevice } from './mode
  * The Demo home (C25 §9): made-up devices so the Home tab and the tools can be tried with no service. Locks, the door
  * and the thermostat report a change a moment late, as real clouds do. Development builds only (Expo Go is one).
  */
+/** The smallest valid JPEG: one grey pixel. */
+export const DEMO_JPEG =
+  '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
+
 export class DemoBackend implements HomeBackend {
   readonly id = 'demo';
   readonly name = 'Demo home';
@@ -31,6 +35,7 @@ export class DemoBackend implements HomeBackend {
       }),
       mk({ id: 'front', name: 'Front door', room: 'Entry', type: 'lock', capabilities: ['lock_unlock'], state: { lock: 'locked' } }),
       mk({ id: 'back', name: 'Back door', room: 'Kitchen', type: 'lock', capabilities: ['lock_unlock'], state: { lock: 'locked' } }),
+      mk({ id: 'doorbell', name: 'Doorbell camera', room: 'Entry', type: 'doorbell', capabilities: ['snapshot'], state: {} }),
       mk({ id: 'garage', name: 'Garage door', room: 'Garage', type: 'garage_door', capabilities: ['open_close'], state: { door: 'closed' } }),
     ]);
   }
@@ -40,6 +45,11 @@ export class DemoBackend implements HomeBackend {
 
   async devices(): Promise<HomeDevice[]> {
     return [...this.devices_.keys()].map((id) => this.view(id));
+  }
+  /** A small made-up picture (a 1×1 grey JPEG, scaled up by the screen), so the whole picture path can be tried with no camera. */
+  async snapshot(id: string): Promise<{ jpegBase64: string; takenAt: number }> {
+    if (id !== 'doorbell') throw new Error('That device has no camera.');
+    return { jpegBase64: DEMO_JPEG, takenAt: this.now() };
   }
   async state(id: string): Promise<DeviceState> {
     return this.view(id).state;

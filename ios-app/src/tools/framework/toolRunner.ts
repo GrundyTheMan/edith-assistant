@@ -1,7 +1,7 @@
 import { log } from '../../core/log';
 import type { OllamaClient } from '../../ollama/client';
 import type { OllamaMessage, OllamaTool } from '../../ollama/types';
-import { DEFAULT_MAX_RESULT_CHARS, toOllama, type ConfirmationRequest, type Tool, type ToolContext, type ToolResult } from './tool';
+import { DEFAULT_MAX_RESULT_CHARS, toOllama, type ConfirmationRequest, type Tool, type ToolContext, type ToolImage, type ToolResult } from './tool';
 import { ArgumentError, ToolArgs } from './toolArgs';
 import type { ToolRegistry } from './toolRegistry';
 
@@ -37,7 +37,13 @@ export interface TurnOutput {
   text: string;
   /** Tool names used, once each, in order. */
   toolsUsed: string[];
+  /** Pictures the tools produced this turn (at most MAX_TURN_IMAGES), to be stored as Edith's attachments (C49). */
+  images: ToolImage[];
 }
+
+/** At most this many pictures a turn, each no larger than this many Base64 characters (about 1 MB of JPEG). */
+export const MAX_TURN_IMAGES = 4;
+export const MAX_IMAGE_BASE64 = 1_400_000;
 
 /** Runs one tool, turning every failure into text for the model. Throws only when the turn itself is cancelled. */
 async function runTool(tool: Tool, args: ToolArgs, ctx: ToolContext, timeoutMs: number): Promise<ToolResult> {
@@ -107,6 +113,8 @@ export async function runToolTurn(input: TurnInput): Promise<TurnOutput> {
   const toolsJson: OllamaTool[] = offered.map((t) => toOllama(t.spec));
   const messages = [...input.messages];
   const toolsUsed: string[] = [];
+  const images: ToolImage[] = [];
+  const canSee = model.capabilities.includes('vision');
   const timeoutMs = input.timeoutMs ?? TOOL_TIMEOUT_MS;
 
   const round = async (tools: OllamaTool[] | undefined) => {
@@ -127,7 +135,7 @@ export async function runToolTurn(input: TurnInput): Promise<TurnOutput> {
     hooks.onStatus(THINKING);
     const { text, calls } = await round(toolsJson.length > 0 ? toolsJson : undefined);
     const requested = calls?.tool_calls ?? [];
-    if (!calls || requested.length === 0) return { text, toolsUsed };
+    if (!calls || requested.length === 0) return { text, toolsUsed, images };
 
     hooks.onTextReset();
     messages.push(calls); // exactly as received (03 §4 rule 1)
@@ -149,10 +157,23 @@ export async function runToolTurn(input: TurnInput): Promise<TurnOutput> {
       }
       log.info('Tools', `${tool?.spec.name ?? 'unknown tool'} -> ${result.ok ? 'ok' : 'error'}`);
       log.sensitive('Tools', `${rawName}(${JSON.stringify(call.function.arguments)}) -> ${result.text.slice(0, 120)}`);
+      // Pictures: keep a few that are not too big; only a model that can see is given them (the exchange is never stored, L3).
+      const kept: ToolImage[] = [];
+      let note = '';
+      for (const img of result.images ?? []) {
+        if (img.base64.length > MAX_IMAGE_BASE64) note += ' A picture was too large to show and was left out.';
+        else if (images.length >= MAX_TURN_IMAGES) note += ' Only the first pictures could be shown.';
+        else {
+          images.push(img);
+          kept.push(img);
+        }
+      }
+      if (kept.length > 0 && !canSee) note += ' The picture was shown to the owner; you cannot see it.';
       messages.push({
         role: 'tool',
         tool_name: tool?.spec.name ?? rawName,
-        content: result.text.slice(0, tool?.maxResultChars ?? DEFAULT_MAX_RESULT_CHARS),
+        content: (result.text.slice(0, tool?.maxResultChars ?? DEFAULT_MAX_RESULT_CHARS) + note).trim(),
+        ...(kept.length > 0 && canSee ? { images: kept.map((i) => i.base64) } : {}),
       });
     }
   }
@@ -161,5 +182,5 @@ export async function runToolTurn(input: TurnInput): Promise<TurnOutput> {
   hooks.onStatus(THINKING);
   hooks.onTextReset();
   const final = await round(undefined);
-  return { text: final.text, toolsUsed };
+  return { text: final.text, toolsUsed, images };
 }

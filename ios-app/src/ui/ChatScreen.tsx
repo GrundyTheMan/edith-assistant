@@ -121,7 +121,7 @@ export function ChatScreen() {
   };
   const bubbleAttachments = (messageId: number): BubbleAttachment[] =>
     stored
-      .filter((a) => a.messageId === messageId && a.direction === 'from_user' && a.kind === 'image')
+      .filter((a) => a.messageId === messageId && a.kind === 'image')
       .map((a) => ({ id: a.id, fileName: a.fileName, base64: a.removedAt ? null : store.image(a.id) }));
   const regenerate = () => {
     if (conversationId !== null) void engine.regenerateLast(conversationId);

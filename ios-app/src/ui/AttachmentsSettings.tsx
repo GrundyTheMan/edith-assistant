@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
-import { MAX_KEEP, applyRetention, beyondKeep, deleteAllAttachments, usageText } from '../attachments/retention';
+import { MAX_KEEP, applyRetention, countBeyondKeep, deleteAllAttachments, usageText } from '../attachments/retention';
 import { useServices, useStore } from '../core/services';
 import { useRepoQuery } from '../core/useRepoQuery';
 import type { Settings, SettingsRepository } from '../settings/settings';
@@ -11,13 +11,14 @@ export function AttachmentsSettings({ theme }: { theme: Theme }) {
   const { settings, repo, retention, attachments } = useServices();
   useStore(attachments.version);
   const keep = useStoreSettings(settings.snapshot(), settings);
-  const kept = useRepoQuery(repo, () => repo.keptAttachments('from_user'), [attachments.version.get()], []);
-  const bytes = kept.reduce((n, a) => n + a.sizeBytes, 0);
+  const sent = useRepoQuery(repo, () => repo.keptAttachments('from_user'), [attachments.version.get()], []);
+  const shown = useRepoQuery(repo, () => repo.keptAttachments('from_edith'), [attachments.version.get()], []);
+  const bytes = (list: { sizeBytes: number }[]) => list.reduce((n, a) => n + a.sizeBytes, 0);
 
   const change = async (next: number) => {
     const n = Math.min(MAX_KEEP, Math.max(0, next));
     if (n === keep) return;
-    const doomed = n < keep ? (await beyondKeep(repo, n)).length : 0;
+    const doomed = n < keep ? await countBeyondKeep(repo, n) : 0;
     const go = async () => {
       await settings.update((s) => ({ ...s, keepRecentAttachments: n }));
       await applyRetention(retention, n);
@@ -40,7 +41,7 @@ export function AttachmentsSettings({ theme }: { theme: Theme }) {
   return (
     <View style={{ gap: 10 }}>
       <Text style={[styles.note, { color: theme.textMuted }]}>
-        Keeps the most recent photos you sent on this phone only; older ones are deleted. 0 keeps none after the app closes.
+        Keeps the most recent photos you sent, and the most recent pictures Edith showed you, on this phone only (that many of each); older ones are deleted. 0 keeps none after the app closes.
       </Text>
       <View style={styles.row}>
         <Text style={{ color: theme.text, fontSize: 16, flex: 1 }}>Keep the newest {keep}</Text>
@@ -51,8 +52,9 @@ export function AttachmentsSettings({ theme }: { theme: Theme }) {
           <Text style={{ color: theme.text, fontSize: 18 }}>+</Text>
         </Pressable>
       </View>
-      <Text style={{ color: theme.textMuted }}>{usageText(kept.length, bytes)}</Text>
-      <Pressable onPress={deleteAll} accessibilityRole="button" accessibilityLabel="Delete all attachments now" disabled={kept.length === 0} style={kept.length === 0 && { opacity: 0.4 }}>
+      <Text style={{ color: theme.textMuted }}>You sent: {usageText(sent.length, bytes(sent))}</Text>
+      <Text style={{ color: theme.textMuted }}>Edith showed: {usageText(shown.length, bytes(shown))}</Text>
+      <Pressable onPress={deleteAll} accessibilityRole="button" accessibilityLabel="Delete all attachments now" disabled={sent.length + shown.length === 0} style={sent.length + shown.length === 0 && { opacity: 0.4 }}>
         <Text style={{ color: theme.error, fontWeight: '600' }}>Delete all attachments now</Text>
       </Pressable>
     </View>

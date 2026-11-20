@@ -1,5 +1,5 @@
 import type { Clock } from '../core/clock';
-import type { ChatRepository } from '../data/chatRepository';
+import type { ChatRepository, StoredAttachment } from '../data/chatRepository';
 import type { AttachmentStore } from './attachments';
 
 export interface RetentionDeps {
@@ -8,38 +8,57 @@ export interface RetentionDeps {
   clock: Pick<Clock, 'now'>;
 }
 
-/** The owner's attachments beyond the newest `keep`: what retention would remove (C16 §2, counted across all chats). */
-export async function beyondKeep(repo: ChatRepository, keep: number) {
-  return (await repo.keptAttachments('from_user')).slice(keep);
+/** O1 (06-decisions): the newest N of each direction are kept, counted across all chats. Resends never count (they have no file). */
+export const DIRECTIONS = ['from_user', 'from_edith'] as const;
+
+/** Attachments of one direction beyond the newest `keep`: what retention would remove. */
+export async function beyondKeep(repo: ChatRepository, keep: number, direction: StoredAttachment['direction'] = 'from_user') {
+  return (await repo.keptAttachments(direction)).slice(keep);
+}
+
+/** What would be removed in both directions if the number were `keep` (for "This will delete N older attachments"). */
+export async function countBeyondKeep(repo: ChatRepository, keep: number): Promise<number> {
+  let n = 0;
+  for (const d of DIRECTIONS) n += (await beyondKeep(repo, keep, d)).length;
+  return n;
 }
 
 /**
- * Keeps the newest `keep` of the owner's pictures on the phone and removes the rest (files and bytes; the rows stay
+ * Keeps the newest `keep` attachments of each direction on the phone and removes the rest (files and bytes; the rows stay
  * with `removed_at`, so the chat says "no longer available"). With `keep` 0 nothing is kept across runs of the app, but
- * a picture just sent must stay visible, so that case is only applied `atStartup`.
+ * a picture just sent or shown must stay visible, so that case is only applied `atStartup`.
  */
 export async function applyRetention(deps: RetentionDeps, keep: number, atStartup = false): Promise<number> {
   if (keep === 0 && !atStartup) return 0;
-  const doomed = await beyondKeep(deps.repo, keep);
-  if (doomed.length === 0) return 0;
-  const ids = doomed.map((a) => a.id);
-  await deps.store.forget(ids);
-  await deps.repo.markAttachmentsRemoved(ids, deps.clock.now());
-  return ids.length;
+  let removed = 0;
+  for (const direction of DIRECTIONS) {
+    const doomed = await beyondKeep(deps.repo, keep, direction);
+    if (doomed.length === 0) continue;
+    const ids = doomed.map((a) => a.id);
+    await deps.store.forget(ids);
+    await deps.repo.markAttachmentsRemoved(ids, deps.clock.now());
+    removed += ids.length;
+  }
+  return removed;
 }
 
-/** Removes every kept picture now ("Delete all attachments now"). */
+/** Removes every kept attachment, both directions, now ("Delete all attachments now"). */
 export async function deleteAllAttachments(deps: RetentionDeps): Promise<number> {
-  const ids = (await deps.repo.keptAttachments('from_user')).map((a) => a.id);
-  await deps.store.forget(ids);
-  await deps.repo.markAttachmentsRemoved(ids, deps.clock.now());
-  return ids.length;
+  let removed = 0;
+  for (const direction of DIRECTIONS) {
+    const ids = (await deps.repo.keptAttachments(direction)).map((a) => a.id);
+    await deps.store.forget(ids);
+    await deps.repo.markAttachmentsRemoved(ids, deps.clock.now());
+    removed += ids.length;
+  }
+  return removed;
 }
 
-/** At startup: files that no kept row points to (a deleted chat, a crash) are deleted. */
+/** At startup: files that no kept row of either direction points to (a deleted chat, a crash) are deleted. */
 export async function removeOrphans(deps: RetentionDeps): Promise<number> {
-  const keptIds = new Set((await deps.repo.keptAttachments('from_user')).map((a) => a.id));
-  const orphans = (await deps.store.listFiles()).filter((id) => !keptIds.has(id));
+  const kept = new Set<number>();
+  for (const direction of DIRECTIONS) for (const a of await deps.repo.keptAttachments(direction)) kept.add(a.id);
+  const orphans = (await deps.store.listFiles()).filter((id) => !kept.has(id));
   await deps.store.forget(orphans);
   return orphans.length;
 }

@@ -4,7 +4,7 @@ import { expoAttachmentFiles } from '../attachments/expoAttachmentFiles';
 import { applyRetention, removeOrphans, type RetentionDeps } from '../attachments/retention';
 import { DemoBackend } from '../home/demoBackend';
 import { Home } from '../home/home';
-import { homeControlTool, homeDevicesTool } from '../home/homeTools';
+import { cameraSnapshotTool, homeControlTool, homeDevicesTool } from '../home/homeTools';
 import { ExpoRecorder, expoAudioFiles } from '../voice/expoRecorder';
 import { OllamaTranscriber, VoiceMemos } from '../voice/voiceMemos';
 import { ChatEngine } from '../chat/engine';
@@ -74,7 +74,7 @@ export async function createServices(): Promise<Services> {
       applyBackends();
     }
   });
-  const tools = new ToolRegistry([currentTimeTool, homeDevicesTool(home), homeControlTool(home), weatherTool({ client: new OpenMeteoClient({ fetch: httpFetch }), location: deviceLocation }),
+  const tools = new ToolRegistry([currentTimeTool, homeDevicesTool(home), homeControlTool(home), cameraSnapshotTool(home), weatherTool({ client: new OpenMeteoClient({ fetch: httpFetch }), location: deviceLocation }),
     searchWebTool(new DuckDuckGoSearch(httpFetch)),
     readWebPageTool(new PageReader(httpFetch)),
   ]);

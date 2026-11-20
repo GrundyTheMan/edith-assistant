@@ -49,6 +49,38 @@ export function homeDevicesTool(home: Home): Tool {
   };
 }
 
+const hasSnapshot = (d: HomeDevice) => d.capabilities.includes('snapshot');
+const ageText = (ms: number) => (ms < 45_000 ? 'just now' : `${Math.round(ms / 60_000)} min ago`);
+
+/** `camera_snapshot`: a current picture from a camera or doorbell, shown in Edith's bubble (C49). Read-only: no card. */
+export function cameraSnapshotTool(home: Home, now: () => number = Date.now): Tool {
+  return {
+    spec: {
+      name: 'camera_snapshot',
+      description: 'Shows a current picture from a camera or doorbell. Use it for "show me the front door" or "is anyone at the door?".',
+      parameters: [{ name: 'device', type: 'string', description: 'The camera or doorbell name, e.g. "front door"', required: true, aliases: ['name', 'camera', 'target'] }],
+    },
+    statusLabel: 'Getting a picture…',
+    displayName: 'Camera',
+    enabled: () => home.visible().some(hasSnapshot),
+    async execute(args, ctx) {
+      const cameras = home.visible().filter(hasSnapshot);
+      const m = matchDevice(cameras, args.string('device') ?? '');
+      if (m.kind === 'none') return failed(`No camera called "${args.string('device')}". Cameras: ${cameras.map((d) => d.name).join(', ') || 'none'}.`);
+      if (m.kind === 'ambiguous') return failed(ambiguous(m));
+      try {
+        const shot = await home.snapshot(m.device, ctx.signal);
+        const age = ageText(Math.max(0, now() - shot.takenAt));
+        const stamp = new Date(shot.takenAt);
+        const name = `${m.device.name.replace(/[^A-Za-z0-9._-]+/g, '-').toLowerCase()}-${stamp.getHours()}${String(stamp.getMinutes()).padStart(2, '0')}.jpg`;
+        return ok(`Showing ${m.device.name}, taken ${age}.`, [{ fileName: name, mimeType: 'image/jpeg', base64: shot.jpegBase64 }]);
+      } catch (e) {
+        return failed(e instanceof Error && e.message ? e.message : `Couldn't get a picture from ${m.device.name}.`);
+      }
+    },
+  };
+}
+
 /** `home_control`: do something to one device. Unlock, open, close and mode changes ask first (C25 §4). */
 export function homeControlTool(home: Home): Tool {
   const resolve = async (device: string): Promise<Match> => {
