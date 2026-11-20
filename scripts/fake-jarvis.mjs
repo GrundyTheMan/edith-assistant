@@ -333,8 +333,9 @@ function printerRoute(req, res, path, url, body, token) {
     if (!armOf(token).armed) return printerError(res, 409, 'CONTROLS_OFF', 'Turn on Controls first.'), true
     const name = q.get('name') ?? ''
     if (!/^[A-Za-z0-9 _.()+-]{1,100}\.(gcode|3mf)$/.test(name)) return printerError(res, 400, 'BAD_REQUEST', 'That file name isn’t allowed.'), true
-    if (body.length > 64 * 1024 * 1024) return printerError(res, 413, 'TOO_LARGE', 'That file is over 64 MB.'), true
-    fileDefs.push({ path: name, size: body.length, modified: Date.now(), title: name.replace(/\.(gcode|3mf)$/, ''), kind: name.endsWith('.3mf') ? '3mf' : 'gcode', printedBefore: false }); P.filesCache = null
+    if (req.rawBody.length > 64 * 1024 * 1024) return printerError(res, 413, 'TOO_LARGE', 'That file is over 64 MB.'), true
+    console.log(`  upload ${name}: ${req.rawBody.length} bytes, sha256 ${createHash('sha256').update(req.rawBody).digest('hex')}`)
+    fileDefs.push({ path: name, size: req.rawBody.length, modified: Date.now(), title: name.replace(/\.(gcode|3mf)$/, ''), kind: name.endsWith('.3mf') ? '3mf' : 'gcode', printedBefore: false }); P.filesCache = null
     return send(res, 200, { path: name }), true
   }
   printerError(res, 404, 'NOT_FOUND', 'The pretend printer has no such route yet.'); return true
@@ -347,8 +348,10 @@ createServer({ key: readFileSync(keyFile), cert }, (req, res) => {
   const url = new URL(req.url, 'https://x')
   const path = url.pathname.replace(/\/+$/, '')
   let body = ''
-  req.on('data', (c) => (body += c))
+  const chunks = []
+  req.on('data', (c) => { chunks.push(c); body += c })
   req.on('end', () => {
+    req.rawBody = Buffer.concat(chunks)   // the exact bytes (an upload is binary: `body` above is text and only fit for JSON)
     console.log(req.method, path, url.search)
     if (path === '/v1/hello') return send(res, 200, { app: 'jarvis-feed', version: 1 })
     if (path === '/v1/pair' && req.method === 'POST') {

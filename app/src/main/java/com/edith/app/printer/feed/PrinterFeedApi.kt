@@ -7,8 +7,6 @@ import kotlinx.serialization.Serializable
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
-import okio.BufferedSink
-import okio.source
 import java.io.InputStream
 
 /** What sending a command came to. The mapping from the server's codes is part 7.5 of the chunk. */
@@ -134,12 +132,8 @@ internal class PrinterFeedApi(private val api: JarvisApi) : PrinterRoutes {
         api.postJson(printer("settings"), feedJson.encodeToString(SettingsRequest.serializer(), SettingsRequest(presets, hiddenMacros)), SettingsAnswer.serializer())
 
     /** Sends a file to the printer (stage 3): at most 64 MB, up to five minutes. Streams [source]; never reads it all into memory. */
-    override suspend fun upload(name: String, source: InputStream, size: Long): FeedResult<String> {
-        val body = object : RequestBody() {
-            override fun contentType() = OCTET
-            override fun contentLength() = size
-            override fun writeTo(sink: BufferedSink) { source.source().use { sink.writeAll(it) } }
-        }
+    override suspend fun upload(name: String, source: InputStream, size: Long, onProgress: (Long) -> Unit): FeedResult<String> {
+        val body = PrinterUpload.body(source, size, OCTET, onProgress)
         return map(api.postBytes(printer("files", "upload"), mapOf("name" to name), body, UPLOAD_SECONDS)) {
             runCatching { feedJson.decodeFromString(UploadAnswer.serializer(), it).path }.getOrDefault(name)
         }

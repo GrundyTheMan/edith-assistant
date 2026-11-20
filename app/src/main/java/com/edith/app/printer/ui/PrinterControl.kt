@@ -187,7 +187,11 @@ internal class PrinterControl(
 
     // --- Pending buttons ---------------------------------------------------------------------------------------------
 
+    /** Told of every command Jarvis accepted (the Files sheet closes on Print, Add to queue and Delete). Set by the ViewModel. */
+    @Volatile var onSent: (PrinterCommand) -> Unit = {}
+
     private fun sent(command: PrinterCommand) {
+        onSent(command)
         val key = controlKey(command)
         val timeout = PrinterSettle.timeoutMs(command)
         val before = (session.state.value as? PrinterScreenState.Live)?.data?.state

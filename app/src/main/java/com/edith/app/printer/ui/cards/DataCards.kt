@@ -46,7 +46,11 @@ import androidx.compose.ui.unit.dp
 import com.edith.app.printer.feed.ConsoleView
 import com.edith.app.printer.feed.FileList
 import com.edith.app.printer.feed.PrinterCamera
+import com.edith.app.printer.feed.PrinterCommand
 import com.edith.app.printer.feed.PrinterFormat
+import com.edith.app.printer.ui.UploadUi
+import com.edith.app.printer.ui.disabledReason
+import androidx.compose.material3.LinearProgressIndicator
 import com.edith.app.printer.feed.PrinterState
 import com.edith.app.printer.ui.CameraUi
 import com.edith.app.printer.ui.ConsoleUi
@@ -118,10 +122,13 @@ private const val NOT_WHILE_PRINTING = "Not while printing: the printer would st
 internal fun FilesCard(
     state: PrinterState, files: FilesUi, nowMs: Long, zone: ZoneId,
     onLoad: (Boolean) -> Unit, onQuery: (String) -> Unit, onPrintedOnly: (Boolean) -> Unit, onOpen: (String) -> Unit, onCloseDetail: () -> Unit,
+    ctx: ControlsCtx? = null, onPickUpload: () -> Unit = {}, onSendUpload: () -> Unit = {}, onCancelUpload: () -> Unit = {}, onClearUpload: () -> Unit = {},
 ) {
     val printing = state.print.state == "printing" || state.print.state == "paused"
     val list = files.files
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.testTag("files-card")) {
+        // Upload needs no list: it is a command like any other, so it is drawn only for a phone that may control, and Jarvis decides.
+        if (ctx != null && ctx.mayControl) UploadRow(files.upload, printing, ctx, onPickUpload, onSendUpload, onCancelUpload, onClearUpload)
         if (list == null) {
             Text(LISTING_NOTE, style = MaterialTheme.typography.bodyMedium)
             if (printing) Text(NOT_WHILE_PRINTING, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -151,12 +158,40 @@ internal fun FilesCard(
             files.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         }
     }
-    if (files.detailOf != null) FileDetailSheet(files, list.orEmpty().firstOrNull { it.path == files.detailOf }?.title ?: files.detailOf, onCloseDetail)
+    if (files.detailOf != null) FileDetailSheet(files, list.orEmpty().firstOrNull { it.path == files.detailOf }?.title ?: files.detailOf, onCloseDetail, ctx)
 }
 
+/** The Upload button and what became of the last upload: a progress bar with Cancel while it goes, then "Sent" or Jarvis's words. */
 @Composable
-private fun FileDetailSheet(files: FilesUi, title: String, onClose: () -> Unit) {
+private fun UploadRow(upload: UploadUi, printing: Boolean, ctx: ControlsCtx, onPick: () -> Unit, onSend: () -> Unit, onCancel: () -> Unit, onClear: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.testTag("upload-row")) {
+        if (upload.active) {
+            Text("Sending ${upload.name} · ${FileList.size(upload.sent)} of ${FileList.size(upload.total)}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("upload-progress-text"))
+            LinearProgressIndicator(progress = { if (upload.total > 0) (upload.sent.toFloat() / upload.total).coerceIn(0f, 1f) else 0f }, modifier = Modifier.fillMaxWidth().testTag("upload-progress"))
+            OutlinedButton(onClick = onCancel, modifier = Modifier.testTag("upload-cancel")) { Text("Cancel upload") }
+        } else if (upload.ready) {
+            // Picked and checked; nothing has gone yet. Sending needs Controls on now (the picker took the page off screen, which ended them).
+            Text("${upload.name} · ${FileList.size(upload.total)} is ready to send.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("upload-ready"))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onSend, enabled = disabledReason(ctx.ui, ctx.controls, null) == null, modifier = Modifier.testTag("upload-send")) { Text("Send") }
+                OutlinedButton(onClick = onCancel, modifier = Modifier.testTag("upload-discard")) { Text("Discard") }
+            }
+            WhyOff(ctx)
+            upload.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("upload-error")) }
+        } else {
+            // Choosing a file needs no Controls (it sends nothing, and the picker would end them anyway); Send, the next step, does.
+            OutlinedButton(onClick = { onClear(); onPick() }, modifier = Modifier.testTag("upload-button")) { Text("Upload a file") }
+            upload.done?.let { Text("Sent ${it}.${if (printing) "" else " Refresh the list to see it."}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("upload-done")) }
+            upload.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("upload-error")) }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FileDetailSheet(files: FilesUi, title: String, onClose: () -> Unit, ctx: ControlsCtx? = null) {
     val d = files.detail
+    val path = files.detailOf
     val thumb = rememberDecoded(d?.thumbnail) { d?.thumbnail?.substringAfter("base64,", "")?.takeIf { it.isNotEmpty() }?.let { runCatching { Base64.decode(it, Base64.DEFAULT) }.getOrNull() } }
     AlertDialog(
         onDismissRequest = onClose,
@@ -173,6 +208,18 @@ private fun FileDetailSheet(files: FilesUi, title: String, onClose: () -> Unit) 
                         d.layerCount?.let { LabelValue("Layers", "$it") }
                         if (d.estimatedTime == null && d.filamentTotal == null && d.layerCount == null && d.thumbnail == null) Text("No details on the printer for this file")
                     }
+                }
+                // The buttons come with Controls: each is a command Jarvis checks (a .3mf print is refused in Jarvis's words, shown below) and the
+                // sheet closes only when Jarvis accepted it. Print and Delete ask for the owner's yes first, as Jarvis says.
+                if (ctx != null && ctx.mayControl && path != null) {
+                    // A wrapping row: three buttons side by side are too wide for a dialog on a phone (Delete was squeezed into a strip).
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        CmdButton("Print", PrinterCommand.Start(path), ctx, filled = true, tag = "file-print")
+                        CmdButton("Add to queue", PrinterCommand.QueueAdd(path), ctx, tag = "file-queue")
+                        CmdButton("Delete", PrinterCommand.DeleteFile(path), ctx, danger = true, tag = "file-delete")
+                    }
+                    WhyOff(ctx)
+                    Refusal(ctx, "start", "queueAdd", "deleteFile")
                 }
             }
         },

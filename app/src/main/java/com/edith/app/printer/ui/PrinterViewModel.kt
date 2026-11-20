@@ -150,6 +150,11 @@ internal data class PrinterActions(
     val rememberConsoleLine: (String) -> Unit = {},
     val savePresets: (List<com.edith.app.printer.feed.Preset>) -> Unit = {},
     val clearPresetsError: () -> Unit = {},
+    // Stage 3: the Upload button opens the system file picker; the file's name, size and a way to open it come back as one call.
+    val pickUpload: () -> Unit = {},
+    val sendUpload: () -> Unit = {},
+    val cancelUpload: () -> Unit = {},
+    val clearUpload: () -> Unit = {},
 )
 
 /**
@@ -170,6 +175,8 @@ internal class PrinterViewModel(
     /** Controls, the confirm sheet and pending buttons (stage 2). */
     val control = PrinterControl(session, clock, viewModelScope)
     val controls: StateFlow<ControlUi> = control.ui
+
+    init { control.onSent = data::commandSent }
 
     private val local = MutableStateFlow(Local(clock.now().toEpochMilli()))
     private var ticking: Job? = null
