@@ -1,3 +1,4 @@
+import { formatDuration } from '../printer/parse';
 import type { ConfirmationSpec } from '../tools/framework/tool';
 import type { Capability, DeviceCommand, DeviceState, HomeDevice } from './model';
 
@@ -15,6 +16,9 @@ export const ACTIONS = [
   'unlock',
   'open',
   'close',
+  'pause',
+  'resume',
+  'cancel',
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 
@@ -32,6 +36,9 @@ const NEEDS: Record<Action, Capability> = {
   unlock: 'lock_unlock',
   open: 'open_close',
   close: 'open_close',
+  pause: 'print_control',
+  resume: 'print_control',
+  cancel: 'print_control',
 };
 
 const FAN_WORDS: Record<string, number> = { low: 33, medium: 66, med: 66, high: 100 };
@@ -56,7 +63,11 @@ export function buildCommand(d: HomeDevice, action: string, value: string | null
     case 'unlock':
     case 'open':
     case 'close':
+    case 'pause':
+    case 'resume':
       return { ok: true, command: { type: a } };
+    case 'cancel':
+      return { ok: true, command: { type: 'cancel_print' } };
     case 'set_brightness':
       return Number.isFinite(num) ? { ok: true, command: { type: a, value: Math.round(Math.min(100, Math.max(0, num))) } } : { ok: false, error: 'set_brightness needs a value from 0 to 100.' };
     case 'set_percentage': {
@@ -92,6 +103,14 @@ export function confirmationFor(d: HomeDevice, c: DeviceCommand): ConfirmationSp
       return { title: `Open ${d.name}?`, details: where, confirmLabel: 'Open' };
     case 'close':
       return { title: `Close ${d.name}?`, details: where, confirmLabel: 'Close' };
+    case 'cancel_print':
+      // Two buttons that both said "Cancel" would be easy to mix up on something that can't be undone (C34).
+      return {
+        title: `Cancel the print: ${d.name}?`,
+        details: [...(d.state.print?.title ? [['Printing', d.state.print.title] as [string, string]] : []), ...where],
+        confirmLabel: 'Cancel print',
+        denyLabel: 'Keep printing',
+      };
     case 'set_mode':
       return { title: `Change ${d.name} to ${c.value}?`, details: [...where, ['Now', d.state.mode ?? 'unknown']], confirmLabel: 'Change' };
     case 'set_temperature': {
@@ -111,6 +130,7 @@ export function confirmationFor(d: HomeDevice, c: DeviceCommand): ConfirmationSp
 
 /** "On, 60%", "Locked", "Heat to 70°F, now 68°F" ... */
 export function stateWords(d: HomeDevice): string {
+  if (d.type === 'printer') return printerWords(d);
   if (!d.online) return 'Not responding';
   const s: DeviceState = d.state;
   const parts: string[] = [];
@@ -131,6 +151,25 @@ export function stateWords(d: HomeDevice): string {
   }
   if (s.battery !== undefined) parts.push(`battery ${s.battery}%`);
   return parts.length ? parts.join(', ') : 'No state reported';
+}
+
+/** One sentence for a 3D printer (the tile text, `home_devices`, `printer_status`): "Printing Benchy, 42%, about 1h 12m left, nozzle 215°C, bed 60°C." */
+export function printerWords(d: HomeDevice): string {
+  const p = d.state.print;
+  const away = d.online ? '' : 'Not reachable. It works on your home Wi-Fi.';
+  if (!p) return away || 'No state reported';
+  const heat = [d.state.heaters?.nozzle && `nozzle ${Math.round(d.state.heaters.nozzle.temperature)}°C`, d.state.heaters?.bed && `bed ${Math.round(d.state.heaters.bed.temperature)}°C`].filter(Boolean).join(', ');
+  const name = p.title ? ` ${p.title}` : '';
+  let line: string;
+  if (p.klipper) line = `Klipper isn't ready${p.message ? `: ${p.message}` : ''}`;
+  else if (p.state === 'printing' || p.state === 'paused') {
+    const left = p.timeLeftSec !== null ? `, about ${formatDuration(p.timeLeftSec)} left` : '';
+    line = `${p.state === 'paused' ? 'Paused' : 'Printing'}${name}, ${Math.round(p.progress * 100)}%${left}`;
+  } else if (p.state === 'complete') line = `Finished${name}`;
+  else if (p.state === 'cancelled') line = `Cancelled${name}`;
+  else if (p.state === 'error') line = `Print failed${name}${p.message ? `: ${p.message}` : ''}`;
+  else line = 'Idle';
+  return [away || line, away ? line : '', heat].filter(Boolean).join('. ').replace(/\.\s*\./g, '.');
 }
 
 /** "moved 17 h ago" for a door or lock that reports when it last moved (C26's "moved … ago"); empty when it doesn't. */

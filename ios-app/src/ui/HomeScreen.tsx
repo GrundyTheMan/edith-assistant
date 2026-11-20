@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -6,10 +7,12 @@ import { useServices, useStore } from '../core/services';
 import { ageWords, buildCommand, confirmationFor, movedWords, stateWords } from '../home/actions';
 import type { Home } from '../home/home';
 import type { DeviceCommand, HomeDevice } from '../home/model';
+import { ImageViewer } from './AttachmentViews';
+import { PrinterCard } from './PrinterCard';
 import { useNow } from './useNow';
 import { useTheme, type Theme } from './theme';
 
-export const CHIPS = ['favorites', 'lights', 'plugs', 'fans', 'climate', 'locks', 'all'] as const;
+export const CHIPS = ['favorites', 'lights', 'plugs', 'fans', 'climate', 'locks', 'printer', 'all'] as const;
 export type Chip = (typeof CHIPS)[number];
 export const CHIP_LABELS: Record<Chip, string> = {
   favorites: 'Favorites',
@@ -18,6 +21,7 @@ export const CHIP_LABELS: Record<Chip, string> = {
   fans: 'Fans',
   climate: 'Climate',
   locks: 'Locks and doors',
+  printer: 'Printer',
   all: 'All',
 };
 
@@ -36,6 +40,8 @@ export function inChip(d: HomeDevice, chip: Chip, isFavourite: boolean): boolean
       return d.type === 'thermostat';
     case 'locks':
       return d.type === 'lock' || d.type === 'garage_door';
+    case 'printer':
+      return d.type === 'printer';
     case 'all':
       return true;
   }
@@ -67,6 +73,8 @@ export function HomeScreen() {
   const [open, setOpen] = useState<string | null>(null);
   const chip = (CHIPS as readonly string[]).includes(home.selectedChip) ? (home.selectedChip as Chip) : 'favorites';
   const loadedOnce = useRef('');
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -84,6 +92,24 @@ export function HomeScreen() {
       void refresh();
     }
   }, [backendKey, refresh]);
+
+  // While a print is going and this tab is showing, read the printer again every 5 s (C55); stop when the tab or the app isn't in front.
+  const printing = home.visible().some((d) => d.type === 'printer' && d.state.print?.busy);
+  useFocusEffect(
+    useCallback(() => {
+      if (!printing) return undefined;
+      const t = setInterval(() => void home.refresh(), 5_000);
+      return () => clearInterval(t);
+    }, [printing, home]),
+  );
+  const camera = async (d: HomeDevice) => {
+    setCameraError(null);
+    try {
+      setPhoto((await home.snapshot(d)).jpegBase64);
+    } catch (e) {
+      setCameraError(e instanceof Error ? e.message : "Couldn't get a picture.");
+    }
+  };
 
   const devices = home.visible();
   const shown = useMemo(() => devices.filter((d) => inChip(d, chip, home.isFavourite(d.id))), [devices, chip, home]);
@@ -140,12 +166,25 @@ export function HomeScreen() {
             <Text style={[styles.room, { color: theme.textMuted }]}>{room}</Text>
             {rest
               .filter((d) => (d.room || 'No room') === room)
-              .map((d) => (
-                <Tile key={d.id} d={d} home={home} theme={theme} now={now} expanded={open === d.id} onOpen={() => setOpen(open === d.id ? null : d.id)} />
-              ))}
+              .map((d) =>
+                d.type === 'printer' ? (
+                  <PrinterCard
+                    key={d.id}
+                    d={d}
+                    theme={theme}
+                    now={now}
+                    onCommand={(type) => runFromScreen(home, d, { type })}
+                    onCamera={() => void camera(d)}
+                    cameraError={cameraError}
+                  />
+                ) : (
+                  <Tile key={d.id} d={d} home={home} theme={theme} now={now} expanded={open === d.id} onOpen={() => setOpen(open === d.id ? null : d.id)} />
+                ),
+              )}
           </View>
         ))}
       </ScrollView>
+      <ImageViewer base64={photo} onClose={() => setPhoto(null)} />
     </SafeAreaView>
   );
 }

@@ -20,6 +20,34 @@ export interface DeviceState {
   battery?: number;
   /** When the device last moved (a door, a lock), ms since the epoch: "moved 17 h ago". */
   changedAt?: number;
+  /** A 3D printer's job (C55). */
+  print?: PrintJob;
+  /** A 3D printer's nozzle and bed (C55). */
+  heaters?: { nozzle?: HeaterReading; bed?: HeaterReading };
+}
+
+export type PrintState = 'standby' | 'printing' | 'paused' | 'complete' | 'cancelled' | 'error';
+export interface PrintJob {
+  state: PrintState;
+  filename?: string;
+  /** The file's name for people ("Benchy", "Name (plate 1)"). */
+  title?: string;
+  /** 0..1, the slicer's own (M73) when the file sends it. */
+  progress: number;
+  /** Seconds left, or null when too early to say. */
+  timeLeftSec: number | null;
+  layer?: { current: number; total: number };
+  message?: string;
+  /** Printing or paused (or Klipper's idle timeout says printing). */
+  busy: boolean;
+  /** Klipper isn't ready (starting, shut down, error): Klipper's first line is in `message`. */
+  klipper?: 'startup' | 'shutdown' | 'error';
+}
+export interface HeaterReading {
+  id: string;
+  label: string;
+  temperature: number;
+  target: number;
 }
 
 export interface HomeDevice {
@@ -51,7 +79,10 @@ export type DeviceCommand =
   | { type: 'lock' }
   | { type: 'unlock' }
   | { type: 'open' }
-  | { type: 'close' };
+  | { type: 'close' }
+  | { type: 'pause' }
+  | { type: 'resume' }
+  | { type: 'cancel_print' };
 
 /** Something a camera or doorbell noticed (C51, C52). */
 export interface DeviceEvent {
