@@ -11,6 +11,9 @@ import { ToolRegistry, toolGuidanceSection } from '../tools/framework/toolRegist
 import { deviceLocation } from '../tools/location/deviceLocation';
 import { OpenMeteoClient } from '../tools/weather/openMeteo';
 import { weatherTool } from '../tools/weather/weatherTool';
+import { DuckDuckGoSearch } from '../tools/web/duckDuckGo';
+import { PageReader } from '../tools/web/pageReader';
+import { readWebPageTool, searchWebTool } from '../tools/web/webTools';
 import { ModelSelection } from '../settings/modelSelection';
 import { SettingsRepository } from '../settings/settings';
 import { SpeechOutput } from '../speech/speechOutput';
@@ -39,7 +42,10 @@ export async function createServices(): Promise<Services> {
   const repo = new ChatRepository(db, systemClock);
   const catalog = new ModelCatalog(ollamaClient);
   const selection = new ModelSelection(settings, catalog);
-  const tools = new ToolRegistry([currentTimeTool, weatherTool({ client: new OpenMeteoClient({ fetch: httpFetch }), location: deviceLocation })]);
+  const tools = new ToolRegistry([currentTimeTool, weatherTool({ client: new OpenMeteoClient({ fetch: httpFetch }), location: deviceLocation }),
+    searchWebTool(new DuckDuckGoSearch(httpFetch)),
+    readWebPageTool(new PageReader(httpFetch)),
+  ]);
   const prompts = new PromptBuilder(systemClock, () => [dateTimeSection, toolGuidanceSection(tools)]);
   const titler = new ConversationTitler(repo, ollamaClient, settings);
   let openId: number | null = null;

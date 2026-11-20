@@ -71,6 +71,7 @@ design in the same PR, or ask the owner.
 | [C39](chunks/C39-printer-parity.md) | The 3D printer as in Jarvis, through Jarvis: a Printer page with every card, Controls with confirmations, chat control, print alerts; works away from home (D26). Jarvis side: [`jarvis-printer-feed-spec.md`](jarvis-printer-feed-spec.md) | 8 Smart home | C34, C38 (and C33 for alerts) | **Stages 1 and 2 built** (E1-E10b: the Printer page, Controls with confirmations, the cards' controls, macros, the console, the presets editor, and `printer_control` in chat); stages 3-4 not started. Not yet tried against the real Jarvis and printer |
 | [C40](chunks/C40-ios-app-expo.md) | Edith for iOS on Expo: chat with Ollama and spoken replies, first in Expo Go (free), then EAS builds once the Apple membership is renewed (D27) | 9 iOS (Expo) | C03–C06b, C07, C13 (as specs), C37 | Stage 1 built (Expo Go); the owner's iPhone checks of chat and speech are open. Stage 2 (EAS) waits for the Apple membership |
 | [C41](chunks/C41-ios-tools.md) | Tools on iOS: the tool loop, current time, weather (Open-Meteo) and the phone's location | 9 iOS (Expo) | C40, C08, C09, C11 (as specs) | Built (Expo Go); the owner's iPhone check is open |
+| [C42](chunks/C42-ios-web.md) | Web search (DuckDuckGo) and page reading on iOS | 9 iOS (Expo) | C41, C10 (as spec) | Built (Expo Go); the owner's iPhone check is open |
 
 ### State of the build (written at the 2026-10-29 handoff, kept up to date since)
 - `master` has the design and the C01 skeleton with its build/deploy tooling (`05-environment.md` §2, §6). Tag

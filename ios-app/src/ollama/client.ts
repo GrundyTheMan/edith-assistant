@@ -15,6 +15,9 @@ import {
 export interface HttpResponse {
   ok: boolean;
   status: number;
+  /** Present on real responses; the page reader uses them (C42). */
+  headers?: { get(name: string): string | null };
+  url?: string;
   text(): Promise<string>;
   body: { getReader(): { read(): Promise<{ done: boolean; value?: Uint8Array }>; cancel?(): Promise<void> } } | null;
 }
