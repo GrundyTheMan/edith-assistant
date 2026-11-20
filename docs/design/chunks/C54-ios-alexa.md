@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo), Wave A |
-| Status | **Design** (build in two PRs: sign-in + devices + states, then commands, as C30 did, D22) |
+| Status | **Built** in Expo Go, both parts in one PR; see "As built" at the end. The owner's first sign-in and live commands are open |
 | Depends on | C48 (services, `PageSignIn`, the WebView modal), C46 |
 | Unblocks | the lights, plugs, fans, thermostats and locks the owner linked to Alexa, from the Home tab and chat |
 | Runs in | Expo Go (`react-native-webview` is included) |
@@ -55,3 +55,27 @@ Parsing the device list and states from made-up answers (every device kind); bat
 
 ## Not in this chunk
 Routines, speakers, Echo devices, scheduled tasks, other Amazon sites.
+
+## As built (2026-11-20)
+Built by an AI agent from the Android code (`alexa/AlexaApi.kt`, `AlexaParse.kt`, `AlexaService.kt`), which is itself from `alexa-cookie2` 5.0.6 and `alexa-remote2` 8.1.1; Android is untouched.
+Both parts are in one PR. Where the code differs from the specification above, the code is right.
+- **Files:** `alexa/parse.ts` (sites, the device list, states, capabilities, commands, `controlProblem`), `alexa/api.ts` (sign-in page address with PKCE, registration, cookies and csrf
+  token, the GraphQL device query, states, control, a cookie jar), `alexa/service.ts` (`AlexaService`), `core/sha256.ts` (SHA-256 in plain TypeScript, synchronous; tested against Node's);
+  changes in `ui/PageSignInModal.tsx` (asks for the start address once: every call starts a new sign-in), `ui/HomeScreen.tsx` (Lock/Unlock and Open/Close buttons only for devices that can),
+  `core/services.tsx` (registered).
+- **Sign-in** is the WebView page flow of C48: the owner types the password on Amazon's page; Edith catches the redirect to `…/ap/maplanding?openid.oa2.authorization_code=…`, registers as an Alexa
+  device with the PKCE verifier, and keeps only the refresh token, the site and a serial (Keychain `home.alexa`). Cookies and the csrf token are got from the refresh token when needed, held in
+  memory, one request at a time, and fetched again once when Amazon refuses them. A refused refresh token is "Sign in again"; an unreachable Amazon is not.
+- **Devices** are filed without a room (the Home tab's "No room"), Echo speakers, Fire TVs and the Alexa app are left out, the garage door and cameras are listed but have no capabilities (so no
+  buttons). Thermostat units follow the Amazon site (`.com` → °F). States are asked in batches of five by maker, 20 s each; a batch with no answer, or one Amazon refuses as a whole,
+  leaves each device with its last reading and when it was reported (in memory only). **Change from Android:** a whole-request refusal counts as no answer (Android showed no state).
+- **Commands** are Android's: on/off, brightness and speed as fractions, colour and white by name, thermostat setpoint (account scale) and mode, lock and unlock; the unlock card is C46's.
+  Amazon answers 200 to a refusal, so `controlProblem` reads the answer and a refusal is a failure in words.
+- **The API checks every address** (HTTPS, and under an Amazon site) and follows redirects itself to keep the cookies set along the way; a redirect to Amazon's sign-in page means the cookies are no good.
+- **Not verified, and it matters a lot:**
+  - **Nothing has run against the real Amazon.** Everything is from the libraries' source, Android's port and a pretend Amazon that checks the PKCE proof, the cookies and the csrf token.
+  - **Cookies on iOS.** The csrf token arrives as a `Set-Cookie` header. Whether `expo/fetch` shows that header to the app on iOS, and whether `redirect: 'manual'` is honoured, is unknown. If the
+    header is hidden, signing in works but every later call fails with "Alexa gave no csrf token"; the fix would be reading the cookie jar through a native module (a development build) or XMLHttpRequest.
+  - **A WebView's cookies are not passed to registration** (Expo Go can't read them): registration goes with the two made-up cookies only, as Android's "Use my browser" path did, and whether Amazon
+    minds is unknown. If Amazon refuses the WebView, the fallback in this document (open the page in Safari and paste the address) is not built.
+  - Amazon may ask for a code by text or email, which the relay reportedly can't handle; the disconnect hint's path to Edith in the Alexa app is from memory.

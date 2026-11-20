@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
@@ -16,6 +16,8 @@ export const SAFARI_USER_AGENT =
 export function PageSignInModal({ service, theme, onClose }: { service: HomeService; theme: Theme; onClose: () => void }) {
   const page = service.pageSignIn!;
   const handled = useRef(false);
+  // Once: every call starts a new sign-in (a new device id and PKCE pair).
+  const startUrl = useMemo(() => page.startUrl(), [page]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,7 +56,7 @@ export function PageSignInModal({ service, theme, onClose }: { service: HomeServ
         {error ? <Text style={{ color: theme.error, padding: 12 }}>{error}</Text> : null}
         {busy ? <ActivityIndicator style={{ padding: 12 }} /> : null}
         <WebView
-          source={{ uri: page.startUrl() }}
+          source={{ uri: startUrl }}
           incognito
           javaScriptEnabled
           userAgent={SAFARI_USER_AGENT}

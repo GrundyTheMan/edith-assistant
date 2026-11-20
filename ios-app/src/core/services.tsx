@@ -35,6 +35,8 @@ import { keychainSecrets, type SecretStore } from './secrets';
 import * as Network from 'expo-network';
 import * as Crypto from 'expo-crypto';
 import { MerossService } from '../meross/service';
+import { AlexaApi } from '../alexa/api';
+import { AlexaService } from '../alexa/service';
 import { secureFetch } from './secureFetch';
 import { httpFetch, ollamaClient } from './network';
 import type { Store } from './store';
@@ -71,6 +73,8 @@ export async function createServices(): Promise<Services> {
   // Real services register here as their chunks land: `home.registerService(...)`.
   // The 3D printer talks plain HTTP to its LAN address (Moonraker has no TLS): `httpFetch`, deliberately (AGENTS.md).
   home.registerService(new PrinterService({ secrets, fetch: httpFetch }));
+  // Alexa: Amazon's own sign-in page in a WebView, then HTTPS to Amazon only (the api checks every address, and follows redirects itself to keep cookies).
+  home.registerService(new AlexaService({ secrets, api: new AlexaApi({ fetch: httpFetch, randomBytes: (n) => Crypto.getRandomBytes(n) }) }));
   // Meross: HTTPS to Meross's cloud only; plain HTTP to the doors on the LAN (they have no TLS), deliberately.
   home.registerService(
     new MerossService({

@@ -340,7 +340,7 @@ function SecureTile({ d, home, theme, now }: { d: HomeDevice; home: Home; theme:
             {d.online && movedWords(d.state.changedAt, now) ? ` · ${movedWords(d.state.changedAt, now)}` : ''}
           </Text>
         </View>
-        {d.online
+        {d.online && d.capabilities.includes(d.type === 'lock' ? 'lock_unlock' : 'open_close')
           ? buttons.map(([label, command]) => (
               <Pressable key={label} onPress={() => runFromScreen(home, d, command)} style={[styles.small, { borderColor: theme.border }]} accessibilityRole="button" accessibilityLabel={`${label} ${d.name}`}>
                 <Text style={{ color: theme.text }}>{label}</Text>
