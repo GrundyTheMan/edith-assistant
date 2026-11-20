@@ -2,7 +2,7 @@ import { toAppError } from '../core/errors';
 import { Store } from '../core/store';
 import type { KeyValueStore } from '../settings/settings';
 import { stateWords } from './actions';
-import type { DeviceCommand, DeviceEvent, HomeBackend, HomeDevice } from './model';
+import type { ClipSource, DeviceClip, DeviceCommand, DeviceEvent, HomeBackend, HomeDevice } from './model';
 import { isConnected, type HomeService } from './service';
 
 export const READ_TIMEOUT_MS = 10_000;
@@ -299,6 +299,52 @@ export class Home {
       }),
     );
     return { events: lists.flat().sort((a, b) => b.at - a.at), problems };
+  }
+
+  /** True while a connected service keeps clips (a signed-out service shows no Clips chip: the C27 bug). */
+  get hasClips(): boolean {
+    return this.backends.some((b) => b.hasClips && b.clips);
+  }
+
+  /**
+   * Clips between the two times from every connected service that has them, in parallel, each with its own time limit; newest first. A service that fails is
+   * a problem line and never hides the others. `noPlan`: names of services that keep no recordings for this account (not an error).
+   */
+  async clips(sinceMs: number, untilMs: number): Promise<{ clips: DeviceClip[]; problems: string[]; noPlan: string[] }> {
+    const problems: string[] = [];
+    const noPlan: string[] = [];
+    const lists = await Promise.all(
+      this.backends
+        .filter((b) => b.hasClips && b.clips)
+        .map(async (b) => {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          try {
+            const page = await Promise.race([
+              b.clips!(sinceMs, untilMs),
+              new Promise<never>((_, reject) => {
+                timer = setTimeout(() => reject(new Error("didn't answer in time")), (this.deps.readTimeoutMs ?? b.timeoutMs ?? READ_TIMEOUT_MS) * 2);
+              }),
+            ]);
+            if (page.noPlan) noPlan.push(b.name);
+            return page.clips.map((c) => ({ ...c, backend: b.id }));
+          } catch (e) {
+            problems.push(`${b.name}: ${toAppError(e).message.replace(/^Something went wrong: /, '')}`);
+            return [] as DeviceClip[];
+          } finally {
+            if (timer) clearTimeout(timer);
+          }
+        }),
+    );
+    return { clips: lists.flat().sort((a, b) => b.at - a.at), problems, noPlan };
+  }
+
+  /** Where to play a clip and with which header, asked at play time because addresses expire. Throws words for the owner. */
+  async clipSource(clip: DeviceClip): Promise<ClipSource> {
+    const backend = this.backends.find((b) => b.id === clip.backend);
+    if (!backend?.clipSource) throw new Error(`${clip.deviceName}'s service isn't connected.`);
+    const source = await backend.clipSource(clip.id);
+    if (!source.uri.toLowerCase().startsWith('https://')) throw new Error("Edith won't play a clip from an address that isn't secure.");
+    return source;
   }
 
   private async recheck(backend: HomeBackend, device: HomeDevice): Promise<HomeDevice> {

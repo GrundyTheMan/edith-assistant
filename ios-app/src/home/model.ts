@@ -104,6 +104,16 @@ export interface DeviceClip {
   at: number;
   durationSec?: number;
 }
+/** A page of clips from one service. `noPlan`: the account keeps no recordings (Ring without a Ring Protect plan): not an error. */
+export interface ClipsPage {
+  clips: DeviceClip[];
+  noPlan?: boolean;
+}
+/** Where to play a clip, and the header the player must send with it (Blink's video needs the bearer token). */
+export interface ClipSource {
+  uri: string;
+  headers?: Record<string, string>;
+}
 /** A live video feed (C71 defines it; declared here so backends can name the type). */
 export type LiveFeed = unknown;
 
@@ -125,9 +135,9 @@ export interface HomeBackend {
   events?(deviceId: string | null, sinceMs: number): Promise<DeviceEvent[]>;
   /** Recorded clips (C53). */
   hasClips?: boolean;
-  clips?(sinceMs: number, untilMs: number): Promise<DeviceClip[]>;
+  clips?(sinceMs: number, untilMs: number): Promise<ClipsPage>;
   /** Where to play a clip, asked at play time because addresses expire (C53). */
-  clipSource?(clipId: string): Promise<{ uri: string; headers?: Record<string, string> }>;
+  clipSource?(clipId: string): Promise<ClipSource>;
   /** Live video (C71). */
   hasLive?: boolean;
   startLive?(deviceId: string): Promise<LiveFeed>;

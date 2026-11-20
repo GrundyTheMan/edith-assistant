@@ -122,6 +122,7 @@ export function recentEventsTool(home: Home, now: () => number = Date.now): Tool
       const shown = events.filter((e) => !home.isHidden(e.deviceId)).slice(0, MAX_EVENTS);
       const lines = shown.map((e) => `${eventTime(e.at)} — ${e.deviceName} — ${KIND_WORDS[e.kind]}`);
       if (lines.length === 0 && problems.length === 0) lines.push(`No events in the last ${hours === 1 ? 'hour' : `${hours} hours`}.`);
+      if (shown.length > 0 && home.hasClips) lines.push('Open the Clips list on the Home tab to watch one.');
       for (const p of problems) lines.push(`Didn't answer: ${p}`);
       return ok(lines.join('\n'));
     },

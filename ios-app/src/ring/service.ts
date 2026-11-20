@@ -2,10 +2,10 @@ import { bytesToBase64 } from '../core/bytes';
 import { log } from '../core/log';
 import type { SecretStore } from '../core/secrets';
 import { Store } from '../core/store';
-import type { DeviceCommand, DeviceEvent, DeviceState, HomeBackend, HomeDevice } from '../home/model';
+import type { ClipSource, ClipsPage, DeviceCommand, DeviceEvent, DeviceState, HomeBackend, HomeDevice } from '../home/model';
 import type { HomeService, ServiceState, SignInForm, SignInResult } from '../home/service';
 import { RingApi, type RingReply, type RingTokens } from './api';
-import type { RingCamera } from './parse';
+import type { RingCamera, RingClipRow } from './parse';
 
 const SECRET = 'home.ring';
 const NEEDS_SIGN_IN = 'Ring asks you to sign in again (Settings → Home).';
@@ -47,6 +47,8 @@ export class RingService implements HomeService {
   private pendingHardwareId: string | null = null;
   private refreshing: Promise<{ token: string; hardwareId: string } | RingFailure> | null = null;
   private cameras: RingCamera[] = [];
+  /** The addresses the clip search listed clips with, by clip id: a last resort when Ring gives no fresh one. */
+  private listedUrls = new Map<string, string>();
   private readonly now: () => number;
 
   constructor(private readonly deps: RingServiceDeps) {
@@ -141,6 +143,7 @@ export class RingService implements HomeService {
     this.access = null;
     this.sessionReady = false;
     this.cameras = [];
+    this.listedUrls.clear();
     this.pendingLogin = null;
     this.pendingHardwareId = null;
     await this.deps.secrets.delete(SECRET);
@@ -232,6 +235,50 @@ export class RingService implements HomeService {
     return found;
   }
 
+  /**
+   * The clips of every camera between the two times. Without a Ring Protect plan Ring's search still lists the events but with `had_subscription` false:
+   * that is "no plan" (not an error, nothing listed). A camera Ring fails on is skipped; only if every camera fails is it an error.
+   */
+  private async clips(sinceMs: number, untilMs: number): Promise<ClipsPage> {
+    const cameras = await this.listCameras();
+    const rows: RingClipRow[] = [];
+    let firstFailure: Error | null = null;
+    let answered = 0;
+    for (const c of cameras) {
+      try {
+        rows.push(...(await this.authed((t, h) => this.deps.api.clips(t, h, c, sinceMs, untilMs))));
+        answered++;
+      } catch (e) {
+        firstFailure ??= e instanceof Error ? e : new Error('Ring did not answer');
+        if (this.state.get().kind === 'needs_sign_in') break;
+      }
+    }
+    if (answered === 0 && firstFailure) throw firstFailure;
+    for (const r of rows) if (r.url) this.listedUrls.set(r.id, r.url);
+    const noPlan = rows.length > 0 && rows.every((r) => !r.hadPlan);
+    const clips = noPlan ? [] : rows.filter((r) => r.hadPlan).map((r) => ({ id: r.id, deviceId: `${PREFIX}${r.cameraId}`, deviceName: r.cameraName, backend: this.id, kind: r.kind, at: r.at, ...(r.seconds === null ? {} : { durationSec: r.seconds }) }));
+    return { clips: clips.sort((a, b) => b.at - a.at), noPlan };
+  }
+
+  /**
+   * A fresh address for a clip, asked for at play time (Ring's are signed and expire): `share/play`, then `recording` (Ring answers 404 to the one it doesn't have;
+   * the owner's account answered 404 to `recording` on 2026-11-14), then the address the search listed it with. Only https addresses are played.
+   */
+  private async clipSource(clipId: string): Promise<ClipSource> {
+    let failure: Error | null = null;
+    for (const transcoded of [false, true]) {
+      try {
+        return { uri: await this.authed((t, h) => this.deps.api.clipUrl(t, h, clipId, transcoded)) };
+      } catch (e) {
+        if (this.state.get().kind === 'needs_sign_in') throw e;
+        failure ??= e instanceof Error ? e : new Error('Ring did not answer');
+      }
+    }
+    const listed = this.listedUrls.get(clipId);
+    if (listed && listed.startsWith('https://')) return { uri: listed };
+    throw failure ?? new RingFailure('Ring has no address for that clip');
+  }
+
   private device(c: RingCamera, at: number): HomeDevice {
     return {
       id: `${PREFIX}${c.id}`,
@@ -273,6 +320,9 @@ export class RingService implements HomeService {
         const bytes = await this.authed((t, h) => this.deps.api.snapshot(t, h, camera.id, this.now() - 1000, signal));
         return { jpegBase64: bytesToBase64(bytes), takenAt: this.now() };
       },
+      hasClips: true,
+      clips: (sinceMs, untilMs) => this.clips(sinceMs, untilMs),
+      clipSource: (clipId) => this.clipSource(clipId),
       events: async (deviceId, sinceMs): Promise<DeviceEvent[]> => {
         const wanted = deviceId === null ? await this.listCameras() : [await this.cameraFor(deviceId)];
         const all: DeviceEvent[] = [];

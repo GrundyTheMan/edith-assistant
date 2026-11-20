@@ -102,3 +102,35 @@ export function parseEvents(json: unknown, cam: RingCamera, sinceMs: number): De
   }
   return out.sort((a, b) => b.at - a.at);
 }
+
+/** One clip as Ring's video search lists it. `hadPlan` false: it was recorded without a Ring Protect plan, so nothing was kept. */
+export interface RingClipRow {
+  id: string;
+  cameraId: string;
+  cameraName: string;
+  at: number;
+  kind: DeviceEvent['kind'];
+  seconds: number | null;
+  hadPlan: boolean;
+  /** An address the search listed (signed, expires): kept only as a last resort for playing. */
+  url: string | null;
+}
+
+/** `video_search/history`: `created_at` is ms or ISO text depending on the account. `null`: not a clip list. */
+export function parseClipRows(json: unknown, cam: RingCamera): RingClipRow[] | null {
+  const root = obj(json);
+  if (!root) return null;
+  const out: RingClipRow[] = [];
+  for (const e of list(root, 'video_search')) {
+    const d = obj(e);
+    if (!d) continue;
+    const id = idText(d.ding_id);
+    const raw = d.created_at;
+    const at = typeof raw === 'number' ? raw : Date.parse(typeof raw === 'string' ? raw : '');
+    if (!id || !Number.isFinite(at)) continue;
+    const url = ['lq_url', 'hq_url', 'untranscoded_url'].map((k) => text(d, k)).find((u) => u !== null && u.startsWith('https://')) ?? null;
+    const seconds = num(d.duration);
+    out.push({ id, cameraId: cam.id, cameraName: cam.name, at, kind: eventKind(d) ?? 'other', seconds: seconds === null ? null : Math.trunc(seconds), hadPlan: d.had_subscription !== false, url });
+  }
+  return out;
+}

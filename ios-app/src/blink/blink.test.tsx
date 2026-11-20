@@ -488,6 +488,21 @@ describe('events', () => {
     expect(s.blink.mediaPages).toBeGreaterThanOrEqual(2);
   });
 
+  it('lists clips in the window as clips (no length) and gives the video address with the bearer header', async () => {
+    const s = await signedIn();
+    s.blink.media = [media(1, 11, 'Backyard', 1), media(2, 31, 'Front door', 2, { source: 'doorbell' }), media(3, 11, 'Backyard', 30)];
+    const page = await s.service.backend().clips!(NOW - 6 * 3_600_000, NOW);
+    expect(page.clips.map((c) => [c.id, c.deviceId, c.kind, c.durationSec, c.backend])).toEqual([
+      ['1', 'blink:11', 'motion', undefined, 'blink'],
+      ['2', 'blink:31', 'ring', undefined, 'blink'],
+    ]);
+    const source = await s.service.backend().clipSource!('1');
+    expect(source).toEqual({ uri: `${REST}/m/1.mp4`, headers: { Authorization: `Bearer ${[...s.blink.accessTokens].at(-1)}` } });
+    await expect(s.service.backend().clipSource!('999')).rejects.toThrow("isn't in the list any more");
+    await s.service.disconnect();
+    await expect(s.service.backend().clipSource!('1')).rejects.toThrow('refresh Clips');
+  });
+
   it('answers recent_events from Blink', async () => {
     const s = await signedIn();
     s.blink.media = [media(1, 11, 'Backyard', 1)];
@@ -496,6 +511,7 @@ describe('events', () => {
     await home.refresh();
     const tool = recentEventsTool(home, () => NOW);
     const r = await tool.execute(new ToolArgs({}, tool.spec), { clock: new FakeClock() });
-    expect(r.text).toMatch(/— Backyard — Motion$/);
+    expect(r.text).toContain('— Backyard — Motion');
+    expect(r.text).toContain('Open the Clips list on the Home tab');
   });
 });
