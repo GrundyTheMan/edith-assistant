@@ -22,6 +22,10 @@ export interface JarvisServiceDeps {
 /** What later chunks (the printer, the work account) use to talk to Jarvis: authenticated calls that turn a 401 into "pair it again". */
 export interface JarvisClient {
   call<T>(method: 'GET' | 'POST', path: string, parse: (json: unknown) => T | null, opts?: CallOptions & { body?: unknown }): Promise<FeedResult<T>>;
+  /** A GET that answers bytes (a camera picture). */
+  bytes(path: string, opts?: CallOptions): Promise<FeedResult<Uint8Array>>;
+  /** What Jarvis shares with this phone, as last read (null before the first answer). */
+  sharedNow(): Shared | null;
 }
 
 /**
@@ -146,6 +150,22 @@ export class JarvisService implements HomeService, JarvisClient {
       this.connected();
     }
     return r;
+  }
+
+  /** The same 401 and reachability handling as `call`, for bytes. */
+  async bytes(path: string, opts: CallOptions = {}): Promise<FeedResult<Uint8Array>> {
+    const link = this.link;
+    if (!link) return { kind: 'unauthorized' };
+    const r = await this.deps.api.bytes(link, path, opts);
+    if (r.kind === 'unauthorized' && this.link === link) {
+      this.link = null;
+      this.state.set({ kind: 'needs_sign_in', reason: NEEDS_PAIR });
+    }
+    return r;
+  }
+
+  sharedNow(): Shared | null {
+    return this.shared;
   }
 
   /** `GET /v1/shared`: what Jarvis shares, for the row's detail. Quiet on any failure. */

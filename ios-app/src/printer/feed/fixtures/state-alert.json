@@ -1,0 +1,1 @@
+{"rev":72,"epoch":1763400000,"state":{"connection":"ready","print":{"state":"error","message":"Filament runout"},"alert":{"text":"Filament runout detected","time":1763400350000},"heaters":[],"cameras":[]},"arm":{"armed":false},"quick":{},"consoleSeq":141,"serverTime":1763400400000}

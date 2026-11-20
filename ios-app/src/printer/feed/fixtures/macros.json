@@ -1,0 +1,1 @@
+{"macros":[{"name":"LOAD_FILAMENT","description":"Load filament","params":[],"risk":"confirm","group":"filament"},{"name":"BED_MESH_CALIBRATE","params":[{"name":"PROFILE","default":"default"}],"risk":"danger","group":"calibration"}],"groups":[{"id":"filament","title":"Filament and nozzle"},{"id":"calibration","title":"Bed and calibration"}],"hidden":["SECRET_MACRO"]}

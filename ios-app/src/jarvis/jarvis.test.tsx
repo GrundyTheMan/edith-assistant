@@ -182,8 +182,8 @@ describe('the connection afterwards', () => {
     expect(ok).toMatchObject({ kind: 'ok', value: { mail: 1, calendars: 1, tasks: 0, printer: true } });
     expect(await service.call('GET', '/v1/printer/state', () => ({}))).toEqual({ kind: 'notShared' });
     expect(await service.call('GET', '/v1/mail/messages', () => ({}))).toEqual({ kind: 'unavailable', message: "Outlook isn't running." });
-    expect(await service.call('GET', '/v1/nothing', () => ({}))).toEqual({ kind: 'failed', message: 'Something went wrong.' });
-    expect(await service.call('GET', '/v1/shared', () => null)).toEqual({ kind: 'failed', message: "Jarvis's answer wasn't what Edith expected." });
+    expect(await service.call('GET', '/v1/nothing', () => ({}))).toEqual({ kind: 'failed', message: 'Something went wrong.', code: 'FEED_ERROR', status: 500, body: { error: { code: 'FEED_ERROR', message: 'Something went wrong.' } } });
+    expect(await service.call('GET', '/v1/shared', () => null)).toEqual({ kind: 'failed', message: "Jarvis's answer wasn't what Edith expected.", code: 'UNREADABLE' });
     expect(service.state.get().kind).toBe('connected');
   });
 

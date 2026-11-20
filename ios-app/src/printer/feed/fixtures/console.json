@@ -1,0 +1,1 @@
+{"lines":[{"seq":119,"time":1763399900000,"text":"G28","kind":"command"},{"seq":120,"time":1763399901000,"text":"ok","kind":"response"},{"seq":121,"time":1763399902000,"text":"Must home axis first","kind":"error"}],"seq":121}
