@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo), Wave A′ (it needs **no development build**: decision D39) |
-| Status | **Design; building** — the Jarvis side is `jarvis-tailscale-listener-spec.md` (a change in the Jarvis repository, not yet built) |
+| Status | **Built** against a pretend Jarvis; see "As built". The real check needs the Jarvis change (`jarvis-tailscale-listener-spec.md`), Tailscale HTTPS on, and the owner |
 | Depends on | C48 (services, `SecretStore`, `secureFetch`) |
 | Unblocks | C67 (the printer through Jarvis), C66b (the work account through Jarvis), C72 option B (Jarvis sends the push) |
 | Runs in | **Expo Go**: ordinary HTTPS to a `*.ts.net` name with a publicly trusted certificate |
@@ -75,3 +75,12 @@ unreachable Jarvis (not a sign-out); 401 → needs sign in once, no loop, and a 
 
 ## Not in this chunk
 Anything shown from Jarvis (the printer: C67; mail, calendar, to-dos: C66b), pinning, alerts through Jarvis (C72 B).
+
+## As built
+Built in one PR, against a **pretend Jarvis** (the Jarvis side, `jarvis-tailscale-listener-spec.md`, is not built yet). Where the code differs from the specification above, the code is right.
+- **Files:** `core/hmac.ts` (HMAC-SHA256 over the pure SHA-256, tested on RFC 4231 cases 1, 2 and 6 and against Node's `crypto`), `jarvis/names.ts` (the name and code rules), `jarvis/link.ts` (`JarvisLink`: the token is private, hidden from `JSON.stringify` and `toString`; only `bearer()` and `serialize()` read it), `jarvis/api.ts` (`JarvisApi`: `hello`, `pair`, authenticated `call` with the typed `FeedResult`), `jarvis/service.ts` (`JarvisService`, a `HomeService` registered as "Jarvis" in Settings → Home → Services); tests `jarvis/jarvis.test.tsx` (20) and `core/hmac.test.ts` (2). Changed: `core/services.tsx` (registered with `secureFetch(httpFetch, { allowHosts: ['ts.net'] })`).
+- **Pairing:** name (a `.ts.net` name with at least four labels, `:port` optional, default 47822; IPs, `http://`, other domains and the bare tailnet name are refused before any request) and the code (any case, dash and spaces tolerated). `hello` must say `jarvis-feed`, version 1, `transport: "tailscale"` and **the same `host` that was typed** (so a different PC, or Jarvis's other listener, is refused **before any proof is sent**). The proof is `HMAC-SHA256(code, "tailscale:" + name)`: the code itself is never sent. The token is saved to the Keychain (`home.jarvis`) **before** the service says connected. A refused or used code, five wrong tries and a rate limit each have plain words; an unreachable Jarvis names Tailscale and the listener.
+- **Afterwards:** `JarvisService.call(method, path, parse, opts)` is the client later chunks use (`JarvisClient`). A 401 turns the service to "Jarvis removed this phone: pair it again" **once** and drops the refused token (no loop); pairing again uses the new token. An unreachable or slow Jarvis is **not** a sign-out and not an error state (the PC is often off): the row's detail says "can't reach it right now" and recovers by itself. `GET /v1/shared` fills the detail ("BEN-PC · shares mail, calendar, printer") after pairing and, from the Home tab's refresh, at most once a minute; it never raises a Home banner.
+- **Secrets:** a test runs a whole pairing and a call with the console captured and checks neither the token nor the code appears in any log, state or `JSON.stringify(service)`.
+- **Mutation-checked:** thirteen deliberate breaks (proof without the `tailscale:` prefix; the code sent instead of a proof; the `hello` host or transport not checked; the token saved after, or never; a 401 that keeps the token; an unreachable Jarvis becoming a sign-out; any host allowed; the token shown in JSON) were each caught, and the code restored.
+- **Not verified, and it matters:** **nothing here has met a real Jarvis.** The proof's message (`tailscale:<name>`), the extra `hello` fields (`transport`, `host`) and port 47822 come from the Jarvis spec I wrote, not from a running server; the Jarvis agent may differ and the Edith side then changes (one file: `jarvis/api.ts`). Also unconfirmed: that iOS lets Expo Go reach a `.ts.net` name while Tailscale's VPN is on (no Local Network prompt should apply), and the Tailscale certificate being accepted by iOS's trust store (it is a public Let's Encrypt certificate, so it should).

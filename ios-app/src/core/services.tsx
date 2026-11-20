@@ -12,6 +12,8 @@ import { Home } from '../home/home';
 import { cameraSnapshotTool, homeControlTool, homeDevicesTool, recentEventsTool } from '../home/homeTools';
 import { RingApi } from '../ring/api';
 import { RingService } from '../ring/service';
+import { JarvisApi } from '../jarvis/api';
+import { JarvisService } from '../jarvis/service';
 import { BlinkApi } from '../blink/api';
 import { BlinkService } from '../blink/service';
 import { PrinterService } from '../printer/service';
@@ -110,6 +112,8 @@ export async function createServices(): Promise<Services> {
   home.registerService(new RingService({ secrets, api: new RingApi({ fetch: secureFetch(httpFetch, { allowHosts: ['ring.com'] }) }), uuid: () => Crypto.randomUUID() }));
   // Blink: HTTPS to blink.com and immedia-semi.com only (the api checks every address itself: it follows redirects by hand to keep the sign-in's cookies).
   home.registerService(new BlinkService({ secrets, api: new BlinkApi({ fetch: httpFetch, randomBytes: (n) => Crypto.getRandomBytes(n) }), uuid: () => Crypto.randomUUID() }));
+  // Jarvis (C66a, D39): ordinary HTTPS to the PC's Tailscale name only (a publicly trusted certificate on Jarvis's second listener).
+  home.registerService(new JarvisService({ secrets, api: new JarvisApi({ fetch: secureFetch(httpFetch, { allowHosts: ['ts.net'] }) }) }));
   // Each is restored at startup; one failing never stops the app.
   await home.restoreServices();
   // The Demo home is for trying things with no service; development builds only (Expo Go is one).
