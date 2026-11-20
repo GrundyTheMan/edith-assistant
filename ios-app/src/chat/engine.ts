@@ -40,6 +40,8 @@ export interface EngineDeps {
   tools?: ToolRegistry;
   /** Where sent pictures are held for this run of the app (C15). */
   attachments?: AttachmentStore;
+  /** Runs after a message with pictures is stored (retention, C16 §2). Failures are ignored. */
+  afterAttachmentsSent?: () => Promise<void>;
   clock?: Clock;
   /** Minimum time between UI-facing updates while text streams (~30/s). 0 in tests. */
   throttleMs?: number;
@@ -225,7 +227,8 @@ export class ChatEngine {
         if (attachments.length > 0) {
           // The rows were numbered in order; hand each picture to the store under its row id.
           const rows = (await repo.attachments(conversationId)).filter((r) => r.messageId === id);
-          rows.forEach((row, i) => this.deps.attachments?.put(row.id, attachments[i].base64));
+          await Promise.all(rows.map((row, i) => this.deps.attachments?.put(row.id, attachments[i].base64)));
+          await this.deps.afterAttachmentsSent?.().catch(() => {});
         }
       }
       const model = await this.deps.selection.ensureModel();
@@ -234,6 +237,8 @@ export class ChatEngine {
       const history = await repo.recent(conversationId, 200);
       const stored = await repo.attachments(conversationId);
       const store = this.deps.attachments;
+      // After a restart the pictures are on disk, not in memory: load the ones the context window can use.
+      await store?.hydrate(stored.filter((a) => a.kind === 'image' && !a.removedAt).slice(-20).map((a) => a.id));
       // Pictures to a model that can't see them: don't call it (C15 §3). Only the newest message is checked.
       const newest = [...history].reverse().find((m) => m.role === 'user');
       if (newest && stored.some((a) => a.messageId === newest.id && a.kind === 'image' && !a.removedAt) && !canSee(model)) {

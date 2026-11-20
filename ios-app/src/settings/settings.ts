@@ -7,6 +7,8 @@ export interface Settings {
   speakReplies: boolean;
   speechRate: number;
   currentConversationId: number | null;
+  /** How many of the owner's recent attachments are kept on the phone (C16 §2; 0 to 50). */
+  keepRecentAttachments: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -15,6 +17,7 @@ export const DEFAULT_SETTINGS: Settings = {
   speakReplies: true,
   speechRate: 1.0,
   currentConversationId: null,
+  keepRecentAttachments: 10,
 };
 
 /** Async string key-value storage. The app uses `expo-sqlite/kv-store`; tests use a Map. */
@@ -30,6 +33,7 @@ const KEYS: Record<keyof Settings, string> = {
   speakReplies: 'speak_replies',
   speechRate: 'speech_rate',
   currentConversationId: 'current_conversation_id',
+  keepRecentAttachments: 'keep_recent_attachments',
 };
 
 export class SettingsRepository {
@@ -46,13 +50,15 @@ export class SettingsRepository {
   async current(): Promise<Settings> {
     if (this.cache) return this.cache;
     const read = async (k: keyof Settings) => this.store.getItem(KEYS[k]);
-    const [serverUrl, model, speak, rate, conv] = await Promise.all([
+    const [serverUrl, model, speak, rate, conv, keep] = await Promise.all([
       read('serverUrl'),
       read('model'),
       read('speakReplies'),
       read('speechRate'),
       read('currentConversationId'),
+      read('keepRecentAttachments'),
     ]);
+    const keepNum = keep === null ? NaN : Number(keep);
     const rateNum = rate === null ? NaN : Number(rate);
     const convNum = conv === null ? NaN : Number(conv);
     this.cache = {
@@ -61,6 +67,7 @@ export class SettingsRepository {
       speakReplies: speak === null ? DEFAULT_SETTINGS.speakReplies : speak === 'true',
       speechRate: Number.isFinite(rateNum) ? rateNum : DEFAULT_SETTINGS.speechRate,
       currentConversationId: Number.isFinite(convNum) ? convNum : null,
+      keepRecentAttachments: Number.isFinite(keepNum) ? Math.min(50, Math.max(0, Math.round(keepNum))) : DEFAULT_SETTINGS.keepRecentAttachments,
     };
     return this.cache;
   }

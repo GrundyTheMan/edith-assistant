@@ -267,6 +267,22 @@ export class ChatRepository {
     return rows.map(toAttachment);
   }
 
+  /** Attachments still on the phone for one direction, newest first (C16 §2). */
+  async keptAttachments(direction: StoredAttachment['direction']): Promise<StoredAttachment[]> {
+    const rows = await this.db.all<AttachmentRow>(
+      `SELECT * FROM attachments WHERE direction = ? AND removed_at IS NULL AND resend_of IS NULL ORDER BY id DESC`,
+      [direction],
+    );
+    return rows.map(toAttachment);
+  }
+
+  /** Marks attachments as removed by retention; their bytes are gone, the rows stay for the labels. */
+  async markAttachmentsRemoved(ids: number[], at: number): Promise<void> {
+    if (ids.length === 0) return;
+    await this.db.run(`UPDATE attachments SET removed_at = ? WHERE id IN (${ids.map(() => '?').join(',')})`, [at, ...ids]);
+    this.changed();
+  }
+
   async addAssistantMessage(conversationId: number, text: string, model: string, toolsUsed: string[] = []) {
     return this.insert(conversationId, 'assistant', stripToolCalls(text).trim(), 'complete', 'typed', model, toolsUsed, null, false);
   }

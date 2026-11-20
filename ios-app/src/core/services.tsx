@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { AttachmentStore } from '../attachments/attachments';
+import { expoAttachmentFiles } from '../attachments/expoAttachmentFiles';
+import { applyRetention, removeOrphans, type RetentionDeps } from '../attachments/retention';
 import { DemoBackend } from '../home/demoBackend';
 import { Home } from '../home/home';
 import { homeControlTool, homeDevicesTool } from '../home/homeTools';
@@ -39,6 +41,8 @@ export interface Services {
   speech: SpeechOutput;
   tools: ToolRegistry;
   attachments: AttachmentStore;
+  /** What retention needs (C16): the Settings screen applies it when the number changes. */
+  retention: RetentionDeps;
   voice: VoiceMemos;
   home: Home;
 }
@@ -71,7 +75,8 @@ export async function createServices(): Promise<Services> {
   const titler = new ConversationTitler(repo, ollamaClient, settings);
   let openId: number | null = null;
   const speech = new SpeechOutput(expoTts, settings, (id) => id === openId);
-  const attachments = new AttachmentStore();
+  const attachments = new AttachmentStore(expoAttachmentFiles);
+  const retention: RetentionDeps = { repo, store: attachments, clock: systemClock };
   const engine = new ChatEngine({
     repo,
     settings,
@@ -81,6 +86,7 @@ export async function createServices(): Promise<Services> {
     listeners: [speech, titler],
     tools,
     attachments,
+    afterAttachmentsSent: async () => void (await applyRetention(retention, settings.snapshot().keepRecentAttachments)),
   });
   const voice = new VoiceMemos({
     recorder: new ExpoRecorder(),
@@ -89,18 +95,23 @@ export async function createServices(): Promise<Services> {
     engine,
     stopSpeaking: () => speech.stop(),
   });
-  const current = new CurrentConversation(repo, settings, engine);
+  const current = new CurrentConversation(repo, settings, engine, (ids) => attachments.forget(ids));
   current.id.subscribe(() => {
     openId = current.id.get();
   });
   await current.resolve();
+  // Startup housekeeping (C16 §2): keep only the newest N pictures, and delete files nothing points to.
+  void (async () => {
+    await applyRetention(retention, settings.snapshot().keepRecentAttachments, true);
+    await removeOrphans(retention);
+  })().catch(() => {});
   // Turning "Speak Edith's replies" off also stops what's being spoken (C13 As built).
   let speakWas = settings.snapshot().speakReplies;
   settings.subscribe((s) => {
     if (speakWas && !s.speakReplies) speech.stop();
     speakWas = s.speakReplies;
   });
-  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments, voice, home };
+  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments, retention, voice, home };
 }
 
 const ServicesContext = createContext<Services | null>(null);
