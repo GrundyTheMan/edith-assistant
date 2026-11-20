@@ -2,6 +2,7 @@ import { toAppError } from '../core/errors';
 import { Store } from '../core/store';
 import type { KeyValueStore } from '../settings/settings';
 import { stateWords } from './actions';
+import type { Activity } from '../alerts/model';
 import type { ClipSource, DeviceClip, DeviceCommand, DeviceEvent, HomeBackend, HomeDevice } from './model';
 import { isConnected, type HomeService } from './service';
 
@@ -116,6 +117,7 @@ export class Home {
     this.backends = [...this.fixedBackends, ...this.serviceList.filter(isConnected).map((s) => s.backend())];
     const ids = new Set(this.backends.map((b) => b.id));
     for (const [id, d] of this.last) if (!ids.has(d.backend)) this.last.delete(id); // a disconnected service's devices go
+    for (const id of [...this.alertCameras.keys()]) if (!ids.has(id)) this.alertCameras.delete(id);
     this.bump();
   }
   /** Changes when a different set of services is being read: screens refresh on it. */
@@ -299,6 +301,60 @@ export class Home {
       }),
     );
     return { events: lists.flat().sort((a, b) => b.at - a.at), problems };
+  }
+
+  /** Bumps when something (a tapped alert) asks the Home tab to open the Clips list (C72). */
+  readonly clipsRequest = new Store<number>(0);
+  requestClips() {
+    this.clipsRequest.set(this.clipsRequest.get() + 1);
+  }
+
+  /** The cameras and doorbells of each service the alerts have looked at, so the next look doesn't list the devices again (C72). */
+  private alertCameras = new Map<string, HomeDevice[]>();
+
+  /**
+   * What `backendId`'s cameras and doorbells reported since `sinceMs`, for alerts (C72): the service's clips when it has them (one call), else (Ring without
+   * a plan keeps events but no recordings) each camera's events. Throws words for the owner when the service can't answer.
+   */
+  async activity(backendId: string, sinceMs: number): Promise<Activity[]> {
+    const backend = this.backends.find((b) => b.id === backendId);
+    if (!backend) throw new Error(`${backendId} isn't connected.`);
+    const wait = (this.deps.readTimeoutMs ?? backend.timeoutMs ?? READ_TIMEOUT_MS) * 2;
+    const within = <T,>(work: Promise<T>): Promise<T> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      return Promise.race([work, new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error("didn't answer in time")), wait)))]).finally(() => timer && clearTimeout(timer));
+    };
+    if (backend.hasClips && backend.clips) {
+      const page = await within(backend.clips(sinceMs, this.now()));
+      if (!page.noPlan) return page.clips.map((c) => ({ key: `${backendId}:${c.id}`, backend: backendId, device: c.deviceName, at: c.at, kind: c.kind }));
+    }
+    if (!backend.events) return [];
+    let cameras = this.alertCameras.get(backendId);
+    if (!cameras) {
+      cameras = (await within(backend.devices())).filter((d) => d.capabilities.includes('events'));
+      if (cameras.length > 0) this.alertCameras.set(backendId, cameras);
+    }
+    const found: Activity[] = [];
+    for (const camera of cameras) {
+      for (const e of await within(backend.events(camera.id, sinceMs))) found.push({ key: `${backendId}:${camera.id}:${e.at}:${e.kind}`, backend: backendId, device: camera.name, at: e.at, kind: e.kind });
+    }
+    return found;
+  }
+
+  /** The camera `name` of `backendId` that an alert is about, to take its picture; null if it isn't known. */
+  async alertCamera(backendId: string, name: string): Promise<HomeDevice | null> {
+    const backend = this.backends.find((b) => b.id === backendId);
+    if (!backend) return null;
+    let cameras = this.alertCameras.get(backendId);
+    if (!cameras) {
+      try {
+        cameras = (await backend.devices()).filter((d) => d.capabilities.includes('events'));
+      } catch {
+        return null;
+      }
+      if (cameras.length > 0) this.alertCameras.set(backendId, cameras);
+    }
+    return cameras.find((d) => d.name === name && d.capabilities.includes('snapshot')) ?? null;
   }
 
   /** True while a connected service keeps clips (a signed-out service shows no Clips chip: the C27 bug). */

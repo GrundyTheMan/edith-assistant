@@ -1,4 +1,4 @@
-import type { DeviceCommand, DeviceState, HomeBackend, HomeDevice } from './model';
+import type { DeviceCommand, DeviceEvent, DeviceState, HomeBackend, HomeDevice } from './model';
 
 /**
  * The Demo home (C25 §9): made-up devices so the Home tab and the tools can be tried with no service. Locks, the door
@@ -35,9 +35,19 @@ export class DemoBackend implements HomeBackend {
       }),
       mk({ id: 'front', name: 'Front door', room: 'Entry', type: 'lock', capabilities: ['lock_unlock'], state: { lock: 'locked' } }),
       mk({ id: 'back', name: 'Back door', room: 'Kitchen', type: 'lock', capabilities: ['lock_unlock'], state: { lock: 'locked' } }),
-      mk({ id: 'doorbell', name: 'Doorbell camera', room: 'Entry', type: 'doorbell', capabilities: ['snapshot'], state: {} }),
+      mk({ id: 'doorbell', name: 'Doorbell camera', room: 'Entry', type: 'doorbell', capabilities: ['snapshot', 'events'], state: {} }),
       mk({ id: 'garage', name: 'Garage door', room: 'Garage', type: 'garage_door', capabilities: ['open_close'], state: { door: 'closed' } }),
     ]);
+  }
+
+  private rings: DeviceEvent[] = [];
+  /** Debug only (Settings → Alerts): the Demo doorbell rings, so the whole alert path can be tried with no camera (C72 §7). */
+  ring(): void {
+    const at = this.now();
+    this.rings.push({ id: `demo-${at}-${this.rings.length}`, deviceId: 'doorbell', deviceName: 'Doorbell camera', kind: 'ring', at });
+  }
+  async events(deviceId: string | null, sinceMs: number): Promise<DeviceEvent[]> {
+    return this.rings.filter((e) => (deviceId === null || e.deviceId === deviceId) && e.at >= sinceMs).sort((a, b) => b.at - a.at);
   }
 
   private pendingUntil = new Map<string, number>();

@@ -103,7 +103,7 @@ design in the same PR, or ask the owner.
 | [C69](chunks/C69-ios-wake-word.md) | "Hey Edith" on iOS while the app is open | 9 iOS (Expo) | C57, C58 | Design (spike first) |
 | [C70](chunks/C70-ios-meross-cloud.md) | Meross cloud control on iOS (MQTT over TLS) | 9 iOS (Expo) | C50, C58 | Design |
 | [C71](chunks/C71-ios-live-view.md) | Live camera view on iOS (Ring WebRTC, Blink stream) and the camera wall | 9 iOS (Expo) | C51, C52, C58 | Design (spikes first) |
-| [C72](chunks/C72-ios-camera-alerts.md) | Camera alerts on iOS under iOS rules | 9 iOS (Expo) | C53, C58 | Design |
+| [C72](chunks/C72-ios-camera-alerts.md) | Camera alerts on iOS under iOS rules | 9 iOS (Expo) | C53, C58 | Option A built (Expo Go): alerts while open + a catch-up; option B (Jarvis push) and the background task are not; the owner's check is open |
 | [C73](chunks/C73-ios-resideo.md) | Honeywell/Resideo thermostat on iOS | 9 iOS (Expo) | C48, C58 | Design |
 | [C74](chunks/C74-ios-philips-lock.md) | Philips lock on iOS | 9 iOS (Expo) | C48 | Design (owner must say yes) |
 | [C75](chunks/C75-ios-standalone-builds.md) | **Stage 3: standalone builds, TestFlight, OTA updates** on iOS | 9 iOS (Expo) | C58 | Design |
