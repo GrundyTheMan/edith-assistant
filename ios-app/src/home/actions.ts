@@ -106,7 +106,7 @@ export function confirmationFor(d: HomeDevice, c: DeviceCommand): ConfirmationSp
     case 'cancel_print':
       // Two buttons that both said "Cancel" would be easy to mix up on something that can't be undone (C34).
       return {
-        title: `Cancel the print: ${d.name}?`,
+        title: `Cancel the print on ${d.name}?`,
         details: [...(d.state.print?.title ? [['Printing', d.state.print.title] as [string, string]] : []), ...where],
         confirmLabel: 'Cancel print',
         denyLabel: 'Keep printing',

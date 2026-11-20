@@ -16,6 +16,7 @@ import { fileTitle, formatDuration, normalizePrinterAddress, parseStatus, parseW
 import { printerStatusTool } from './tools';
 
 const BASE = 'http://192.168.4.86:7125';
+const WEB = 'http://192.168.4.86';
 
 describe('parsing Moonraker', () => {
   const printing = {
@@ -72,8 +73,8 @@ describe('parsing Moonraker', () => {
     const cams = parseWebcams({ webcams: [{ name: 'off', enabled: false, snapshot_url: '/x' }, { name: 'zmod', snapshot_url: 'http://localhost:8080/?action=snapshot' }, { name: 'none' }] });
     expect(cams).toEqual([{ name: 'zmod', snapshotUrl: 'http://localhost:8080/?action=snapshot' }]);
     expect(resolveWebcamUrl(BASE, 'http://localhost:8080/?action=snapshot')).toBe('http://192.168.4.86:8080/?action=snapshot');
-    expect(resolveWebcamUrl(BASE, '/webcam/?action=snapshot')).toBe(`${BASE}/webcam/?action=snapshot`);
-    expect(resolveWebcamUrl(BASE, 'webcam/snap')).toBe(`${BASE}/webcam/snap`);
+    expect(resolveWebcamUrl(BASE, '/webcam/?action=snapshot')).toBe(`${WEB}/webcam/?action=snapshot`); // the web server (:80), not Moonraker's :7125
+    expect(resolveWebcamUrl(BASE, 'webcam/snap')).toBe(`${WEB}/webcam/snap`);
     expect(resolveWebcamUrl(BASE, 'http://192.168.4.90/snap')).toBe('http://192.168.4.90/snap');
     expect(parseWebcams({})).toEqual([]);
   });
@@ -101,7 +102,7 @@ describe('parsing Moonraker', () => {
 
 interface Pretend {
   fetch: HttpFetch;
-  calls: { method: string; path: string; key?: string }[];
+  calls: { method: string; path: string; key?: string; host: 'api' | 'web' }[];
   status: Record<string, unknown>;
   down: boolean;
   key: string | null;
@@ -127,8 +128,10 @@ function pretendMoonraker(): Pretend {
       heater_bed: { temperature: 60, target: 60 },
     },
     fetch: async (url, init) => {
-      const path = url.replace(BASE, '');
-      p.calls.push({ method: init.method, path, key: init.headers?.['X-Api-Key'] });
+      // Moonraker's API is on :7125 and the web server (which serves the camera) on :80 of the same host, as on the owner's printer.
+      const onApi = url.startsWith(BASE);
+      const path = onApi ? url.slice(BASE.length) : url.startsWith(WEB) ? url.slice(WEB.length) : url;
+      p.calls.push({ method: init.method, path, key: init.headers?.['X-Api-Key'], host: onApi ? 'api' : 'web' });
       if (p.down) throw new TypeError('Network request failed');
       const res = (body: unknown, status = 200): HttpResponse => ({ ok: status < 300, status, text: async () => JSON.stringify(body), body: null });
       if (p.key && init.headers?.['X-Api-Key'] !== p.key) return res({ error: 'Unauthorized' }, 401);
@@ -137,6 +140,7 @@ function pretendMoonraker(): Pretend {
       if (path.startsWith('/server/webcams/list')) return res({ result: p.webcams });
       if (path.startsWith('/printer/print/')) return res({ result: 'ok' });
       if (path.startsWith('/webcam/')) {
+        if (onApi) return res({ error: { message: 'Not Found' } }, 404); // what asking :7125 for the camera got
         let sent = false;
         return { ok: true, status: 200, text: async () => '', body: { getReader: () => ({ read: async () => (sent ? { done: true } : ((sent = true), { done: false, value: p.cam })) }) } };
       }
@@ -300,7 +304,7 @@ describe('cards and actions', () => {
   };
   it('cancel always asks, with two clearly different buttons; pause and resume do not', () => {
     const spec = confirmationFor(dev, { type: 'cancel_print' })!;
-    expect(spec.title).toBe('Cancel the print: 3D printer?');
+    expect(spec.title).toBe('Cancel the print on 3D printer?');
     expect([spec.confirmLabel, spec.denyLabel]).toEqual(['Cancel print', 'Keep printing']);
     expect(spec.details).toContainEqual(['Printing', 'Benchy']);
     expect(confirmationFor(dev, { type: 'pause' })).toBeNull();
@@ -352,7 +356,11 @@ describe('printer_status and the camera', () => {
     await home.refresh();
     const shot = await home.snapshot(printerOf(home));
     expect(shot.jpegBase64).toBe(bytesToBase64(jpeg));
-    expect(pretend.calls.at(-1)?.path).toBe('/webcam/?action=snapshot');
+    expect(pretend.calls.at(-1)).toMatchObject({ path: '/webcam/?action=snapshot', host: 'web' }); // the web server, not Moonraker's port (that answered HTTP 404)
+  });
+  it('asks the typed port when the owner typed a proxy port that serves both', async () => {
+    expect(resolveWebcamUrl('http://192.168.4.86:8123', '/webcam/?action=snapshot')).toBe('http://192.168.4.86:8123/webcam/?action=snapshot');
+    expect(resolveWebcamUrl('https://printer.local:7125', 'webcam/snap')).toBe('https://printer.local/webcam/snap');
   });
   it('a camera that sends something else is refused', async () => {
     const { home, pretend } = await connected();
