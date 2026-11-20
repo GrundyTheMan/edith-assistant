@@ -17,6 +17,7 @@ import { RingService } from './service';
 const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
 const CODE = '123456';
 const NOW = Date.parse('2026-11-20T18:00:00Z');
+const CLIPS_NOTE = 'Open the Clips list on the Home tab to watch one.';
 
 interface Seen {
   method: string;
@@ -46,6 +47,12 @@ class PretendRing {
     base_stations: [{ id: 444 }],
   };
   events: Record<string, unknown[]> = {};
+  clipRows: Record<string, unknown[]> = {};
+  clipAsks: string[] = [];
+  shareStatus = 200;
+  recordingStatus = 200;
+  shareUrl = 'https://share.ring.example/clip.mp4?sig=1';
+  recordingUrl = 'https://rec.ring.example/clip.mp4?sig=2';
   snapshotStatus = 200;
   snapshotHang = false;
   refreshStatus: number | null = null;
@@ -104,6 +111,14 @@ class PretendRing {
     if (url === 'https://api.ring.com/clients_api/ring_devices') return jsonResponse(this.devices);
     const ev = /clients_api\/locations\/([^/]+)\/devices\/(\d+)\/events\?limit=50$/.exec(url);
     if (ev) return this.eventsStatus === 200 ? jsonResponse({ events: this.events[ev[2]] ?? [] }) : jsonResponse({}, this.eventsStatus);
+    const search = /clients_api\/video_search\/history\?doorbot_id=(\d+)&date_from=(\d+)&date_to=(\d+)&order=desc&api_version=11&includes%5B%5D=pva$/.exec(url);
+    if (search) return jsonResponse({ video_search: this.clipRows[search[1]] ?? [] });
+    const ding = /clients_api\/dings\/(\d+)\/(share\/play|recording)\?disable_redirect=true$/.exec(url);
+    if (ding) {
+      this.clipAsks.push(ding[2]);
+      const status = ding[2] === 'recording' ? this.recordingStatus : this.shareStatus;
+      return status === 200 ? jsonResponse({ url: ding[2] === 'recording' ? this.recordingUrl : this.shareUrl }) : jsonResponse({}, status);
+    }
     const snap = /app-snaps\.ring\.com\/snapshots\/next\/(\d+)\?after-ms=\d+&extras=force$/.exec(url);
     if (snap) {
       if (this.snapshotHang) return new Promise<never>(() => {});
@@ -414,17 +429,19 @@ describe('events and recent_events', () => {
       `${eventTime(NOW - 3_600_000)} — Driveway — Person`,
       `${eventTime(NOW - 2 * 3_600_000)} — Front door — Ring`,
       `${eventTime(NOW - 3 * 3_600_000)} — Front door — Motion`,
+      CLIPS_NOTE,
     ]);
     const long = await run(tool, { hours: '72' });
-    expect(long.text.split('\n')).toHaveLength(5);
+    expect(long.text.split('\n')).toHaveLength(6);
     const one = await run(tool, { hours: '1' });
-    expect(one.text.split('\n')).toHaveLength(1); // 1 hour: the event at exactly 1 h counts
+    expect(one.text.split('\n')).toHaveLength(2); // 1 hour: the event at exactly 1 h counts
   });
 
   it('asks one camera, says nothing happened, and names the cameras for a wrong name', async () => {
     const { tool, s } = await homeAndTool();
     const one = await run(tool, { device: 'driveway' });
-    expect(one.text).toBe(`${eventTime(NOW - 3_600_000)} — Driveway — Person`);
+    expect(one.text).toBe(`${eventTime(NOW - 3_600_000)} — Driveway — Person
+${CLIPS_NOTE}`);
     s.ring.events = {};
     expect((await run(tool, { hours: '24' })).text).toBe('No events in the last 24 hours.');
     expect((await run(tool, { hours: '1' })).text).toBe('No events in the last hour.');
@@ -439,7 +456,7 @@ describe('events and recent_events', () => {
     expect((await run(tool, {})).text).not.toContain('Driveway');
     home.setHidden('ring:222', false);
     s.ring.events = { '111': Array.from({ length: 30 }, (_, i) => ev(i + 1, 'motion', 1 + i / 100)) };
-    expect((await run(tool, {})).text.split('\n')).toHaveLength(20);
+    expect((await run(tool, {})).text.split('\n')).toHaveLength(21); // 20 events and the Clips note
     s.ring.eventsStatus = 500;
     const failed = await run(tool, {});
     expect(failed.text).toContain("Didn't answer: Ring: Ring answered HTTP 500 for the events");
@@ -448,6 +465,78 @@ describe('events and recent_events', () => {
   it('is off when no camera can report events', async () => {
     const home = new Home({ store: memoryStore() as never, setTimer: () => 0 });
     expect(recentEventsTool(home).enabled?.()).toBe(false);
+  });
+});
+
+describe('clips (C53)', () => {
+  const row = (id: number, hoursAgo: number, over: Record<string, unknown> = {}) => ({ ding_id: id, created_at: NOW - hoursAgo * 3_600_000, kind: 'motion', duration: 23.4, had_subscription: true, lq_url: `https://listed.ring.example/${id}.mp4`, ...over });
+  const since = NOW - 3 * 24 * 3_600_000;
+
+  it('lists every camera\'s clips newest first with kind and length, asking video_search per camera', async () => {
+    const s = await signedIn();
+    s.ring.clipRows = { '111': [row(1, 5), row(2, 1, { kind: 'ding' })], '222': [row(3, 3, { cv_properties: { person_detected: true }, duration: 8 })] };
+    const page = await s.service.backend().clips!(since, NOW);
+    expect(page.noPlan).toBe(false);
+    expect(page.clips.map((c) => [c.id, c.deviceName, c.kind, c.durationSec, c.backend])).toEqual([
+      ['2', 'Front door', 'ring', 23, 'ring'],
+      ['3', 'Driveway', 'person', 8, 'ring'],
+      ['1', 'Front door', 'motion', 23, 'ring'],
+    ]);
+    expect(s.ring.seen.filter((r) => r.url.includes('video_search'))).toHaveLength(2);
+  });
+
+  it('says there is no plan when every recent event had no subscription, listing nothing (never an error)', async () => {
+    const s = await signedIn();
+    s.ring.clipRows = { '111': [row(1, 5, { had_subscription: false }), row(2, 1, { had_subscription: false })] };
+    expect(await s.service.backend().clips!(since, NOW)).toEqual({ clips: [], noPlan: true });
+    s.ring.clipRows = {};
+    expect(await s.service.backend().clips!(since, NOW)).toEqual({ clips: [], noPlan: false }); // a quiet window is not "no plan"
+  });
+
+  it('asks for the playing address at play time: share/play first', async () => {
+    const s = await signedIn();
+    s.ring.clipRows = { '111': [row(1, 1)] };
+    await s.service.backend().clips!(since, NOW);
+    expect(await s.service.backend().clipSource!('1')).toEqual({ uri: 'https://share.ring.example/clip.mp4?sig=1' });
+    expect(s.ring.clipAsks).toEqual(['share/play']);
+    s.ring.shareUrl = 'https://share.ring.example/clip.mp4?sig=NEW';
+    expect(await s.service.backend().clipSource!('1')).toEqual({ uri: 'https://share.ring.example/clip.mp4?sig=NEW' }); // a new address every time
+  });
+
+  it('falls back to recording on a 404, then to the listed address, and never plays http', async () => {
+    const s = await signedIn();
+    s.ring.clipRows = { '111': [row(1, 1)] };
+    await s.service.backend().clips!(since, NOW);
+    s.ring.shareStatus = 404;
+    expect(await s.service.backend().clipSource!('1')).toEqual({ uri: 'https://rec.ring.example/clip.mp4?sig=2' });
+    expect(s.ring.clipAsks).toEqual(['share/play', 'recording']);
+    s.ring.recordingStatus = 404;
+    expect(await s.service.backend().clipSource!('1')).toEqual({ uri: 'https://listed.ring.example/1.mp4' });
+    s.ring.recordingStatus = 200;
+    s.ring.shareStatus = 200;
+    s.ring.shareUrl = 'http://insecure.ring.example/clip.mp4';
+    s.ring.recordingUrl = 'http://insecure.ring.example/clip2.mp4';
+    expect(await s.service.backend().clipSource!('1')).toEqual({ uri: 'https://listed.ring.example/1.mp4' }); // http answers are not addresses
+    s.ring.clipRows = { '111': [row(9, 1, { lq_url: 'http://nope.example/9.mp4' })] };
+    await s.service.backend().clips!(since, NOW);
+    await expect(s.service.backend().clipSource!('9')).rejects.toThrow('wasn\'t what Edith expected');
+  });
+
+  it('one camera failing does not hide the others, and all failing is an error', async () => {
+    const s = await signedIn();
+    s.ring.clipRows = { '222': [row(3, 3)] };
+    const real = s.ring.fetch;
+    const flaky = new RingService({
+      secrets: s.secrets,
+      api: new RingApi({ fetch: async (u, i) => (u.includes('doorbot_id=111') ? jsonResponse({}, 500) : real(u, i)) }),
+      now: () => s.clock.t,
+      uuid: () => 'x',
+    });
+    await flaky.restore();
+    expect((await flaky.backend().clips!(since, NOW)).clips.map((c) => c.id)).toEqual(['3']);
+    const dead = new RingService({ secrets: s.secrets, api: new RingApi({ fetch: async (u, i) => (u.includes('video_search') ? jsonResponse({}, 500) : real(u, i)) }), now: () => s.clock.t, uuid: () => 'x' });
+    await dead.restore();
+    await expect(dead.backend().clips!(since, NOW)).rejects.toThrow('Ring answered HTTP 500 for the clips');
   });
 });
 

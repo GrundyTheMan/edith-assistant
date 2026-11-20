@@ -13,6 +13,7 @@ import type { DeviceCommand, HomeBackend, HomeDevice } from './model';
 import { matchDevice } from './names';
 
 const mockCurrent: { home: unknown } = { home: null };
+jest.mock('expo-video', () => ({ useVideoPlayer: () => ({}), VideoView: () => null }));
 jest.mock('expo-router', () => ({ useFocusEffect: (cb: () => void | (() => void)) => require('react').useEffect(cb, [cb]) }));
 jest.mock('../core/services', () => ({
   useServices: () => ({ home: mockCurrent.home }),

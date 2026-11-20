@@ -8,6 +8,7 @@ import { ageWords, buildCommand, confirmationFor, movedWords, stateWords } from 
 import type { Home } from '../home/home';
 import type { DeviceCommand, HomeDevice } from '../home/model';
 import { ImageViewer } from './AttachmentViews';
+import { ClipsScreen } from './ClipsScreen';
 import { PrinterCard } from './PrinterCard';
 import { useNow } from './useNow';
 import { useTheme, type Theme } from './theme';
@@ -75,6 +76,7 @@ export function HomeScreen() {
   const loadedOnce = useRef('');
   const [photo, setPhoto] = useState<string | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [clipsOpen, setClipsOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -132,6 +134,11 @@ export function HomeScreen() {
             <Text style={{ color: c === chip ? theme.onPrimary : theme.text }}>{CHIP_LABELS[c]}</Text>
           </Pressable>
         ))}
+        {home.hasClips ? (
+          <Pressable onPress={() => setClipsOpen(true)} accessibilityRole="button" accessibilityLabel="Clips" style={[styles.chip, { borderColor: theme.border, backgroundColor: theme.surface }]}>
+            <Text style={{ color: theme.text }}>Clips</Text>
+          </Pressable>
+        ) : null}
       </ScrollView>
       <ScrollView
         contentContainerStyle={styles.body}
@@ -185,6 +192,7 @@ export function HomeScreen() {
         ))}
       </ScrollView>
       <ImageViewer base64={photo} onClose={() => setPhoto(null)} />
+      {home.hasClips || clipsOpen ? <ClipsScreen visible={clipsOpen} onClose={() => setClipsOpen(false)} home={home} theme={theme} /> : null}
     </SafeAreaView>
   );
 }

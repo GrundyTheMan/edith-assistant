@@ -1,7 +1,7 @@
 import { readBytes } from '../core/bytes';
 import type { HttpFetch, HttpResponse } from '../ollama/client';
 import type { DeviceEvent } from '../home/model';
-import { parseCameras, parseEvents, type RingCamera } from './parse';
+import { parseCameras, parseClipRows, parseEvents, type RingCamera, type RingClipRow } from './parse';
 
 /** Where Ring's three services live. Tests point all three at one pretend server. */
 export interface RingEndpoints {
@@ -196,6 +196,27 @@ export class RingApi {
     if (!cam.locationId) return Promise.resolve({ kind: 'failed', why: "Ring didn't say where this camera is" });
     const url = `${this.ep.clients}/locations/${cam.locationId}/devices/${cam.id}/events?limit=${EVENT_LIMIT}`;
     return this.call(url, { method: 'GET', headers: { ...this.authHeaders(accessToken, hardwareId), Accept: 'application/json' } }, hardwareId, 'the events', (j) => parseEvents(j, cam, sinceMs));
+  }
+
+  /**
+   * The clips Ring recorded for a camera between `sinceMs` and `untilMs` (`video_search/history`). Ring keeps clips only with a Ring Protect plan; without one the
+   * search still lists the events, with `had_subscription` false.
+   */
+  clips(accessToken: string, hardwareId: string, cam: RingCamera, sinceMs: number, untilMs: number): Promise<RingReply<RingClipRow[]>> {
+    const q = `doorbot_id=${cam.id}&date_from=${sinceMs}&date_to=${untilMs}&order=desc&api_version=${API_VERSION}&includes%5B%5D=pva`;
+    return this.call(`${this.ep.clients}/video_search/history?${q}`, { method: 'GET', headers: { ...this.authHeaders(accessToken, hardwareId), Accept: 'application/json' } }, hardwareId, 'the clips', (j) => parseClipRows(j, cam));
+  }
+
+  /**
+   * A signed address to stream a clip from, asked for at play time because it expires: `dings/{id}/share/play` (the video as recorded) or, with `transcoded`,
+   * `dings/{id}/recording`. Ring answers 404 to one when it has only the other. Only an https address is returned.
+   */
+  clipUrl(accessToken: string, hardwareId: string, dingId: string, transcoded: boolean): Promise<RingReply<string>> {
+    const url = `${this.ep.clients}/dings/${dingId}/${transcoded ? 'recording' : 'share/play'}?disable_redirect=true`;
+    return this.call(url, { method: 'GET', headers: { ...this.authHeaders(accessToken, hardwareId), Accept: 'application/json' } }, hardwareId, 'the clip', (j) => {
+      const u = (j && typeof j === 'object' ? (j as Record<string, unknown>).url : null) as unknown;
+      return typeof u === 'string' && u.startsWith('https://') ? u : null;
+    });
   }
 
   /** A fresh picture: Ring has the camera take one now (`extras=force`) and returns the JPEG. */

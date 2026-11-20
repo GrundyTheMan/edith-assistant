@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo), Wave A |
-| Status | **Design** |
+| Status | **Built** in Expo Go; see "As built" at the end. The owner's check with real clips (and whether Blink's header reaches the player) is open |
 | Depends on | C51 (Ring) **or** C52 (Blink): either gives it clips |
 | Unblocks | C72 (alerts open the Clips list) |
 | Runs in | Expo Go |
@@ -50,3 +50,14 @@ Aggregation across two fake services; a failing or hanging service becomes a pro
 
 ## Not in this chunk
 Thumbnails in the list (Ring needs its own signed fetch), downloading or sharing a clip, live view (C71).
+
+## As built
+Built in one PR. Where the code differs from the specification above, the code is right.
+- **Files:** new `home/clips.ts` (3-day windows, merge, words), `ui/ClipsScreen.tsx`, `ui/ClipPlayer.tsx`, tests `home/clips.test.tsx` (13) plus 5 clip tests in `ring/ring.test.tsx` and 1 in `blink/blink.test.tsx`; changed `home/model.ts` (`ClipsPage`, `ClipSource`; `clips` now answers a page, not a bare list), `home/home.ts` (`clips`, `clipSource`, `hasClips`), `home/homeTools.ts` (`recent_events` adds "Open the Clips list on the Home tab to watch one." when it lists events and clips exist), `ring/{api,parse,service}.ts`, `blink/service.ts`, `ui/HomeScreen.tsx` (the Clips chip and modal), `package.json` and the lock file (`expo-video`, `npx expo install`, ~58.0.14).
+- **`clips` answers `{ clips, noPlan? }`**, not a bare list, so "no Ring Protect plan" is a state and never an error; `hasClips` is a getter on `Home` (it reads the connected services, and `version` already redraws screens) rather than a `Store<boolean>`. The `clipUrl` placeholder did not exist in the iOS model: `clipSource` is the only method.
+- **Ring:** `video_search/history` per camera; a camera that fails is skipped and only all failing is an error; every recent event with `had_subscription` false means "no plan" (nothing listed; the list says "Ring keeps recordings only with a Ring Protect plan, and this account doesn't have one."). `clipSource` asks at play time: `dings/{id}/share/play`, then `…/recording`, then the address the search listed (`lq_url`, `hq_url`, `untranscoded_url`); only `https` is ever played, in the service and again in `Home.clipSource`.
+- **Blink:** clips are `media/changed` from the window's start (at most 5 pages, as for events), filtered to the window; `clipSource` is the account server's address with `Authorization: Bearer <token>`. A long window far back can be cut off by the 5-page limit on a busy account; the newest clips of that window then show first.
+- **Clips chip and list:** shown only while `home.hasClips` (a signed-out or disconnected service shows nothing). Rows say the camera, what made it record, "Today 3:42 PM" and the length when the service gives one (Blink does not). Windows of 3 days back to 60 days; a quiet window loads the next older one (up to 4 per load, again when the list is scrolled to its end); pull to refresh starts over; what is listed stays while more loads.
+- **Player:** `expo-video` `useVideoPlayer({ uri, headers })` inside a full-screen modal that is mounted only while a clip is open, keyed by the clip; closing unmounts it, which releases the player, and the cleanup pauses it first. A failure says "This phone couldn't play the clip (…)" with the player's error text; a clip whose address can't be had says why.
+- **Mutation-checked:** nine deliberate breaks (Blink header dropped; Ring tries `recording` first; Ring http addresses allowed; `Home` plays http; the chip ignores connection; windows never reach 60 days; a quiet window not continued; the player not paused on close; "no plan" shown as an empty list) were each caught, and the code restored.
+- **Not verified, and it matters:** nothing has run on the iPhone. **Whether `expo-video` in Expo Go sends the `headers` for Blink's video** is unknown: if it does not, Blink's clips will fail with the player's error text, and the fallback in "Risks" (download to a temp file with the header, play the local file) is **not built**. Ring's 404 order is from the Android build's finding, on one account. Clip lengths for Ring come from `duration` in the search, unchecked on iOS.

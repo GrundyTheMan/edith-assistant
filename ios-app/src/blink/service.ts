@@ -2,9 +2,9 @@ import { bytesToBase64 } from '../core/bytes';
 import { log } from '../core/log';
 import type { SecretStore } from '../core/secrets';
 import { Store } from '../core/store';
-import type { DeviceCommand, DeviceEvent, DeviceState, HomeBackend, HomeDevice } from '../home/model';
+import type { ClipSource, ClipsPage, DeviceCommand, DeviceEvent, DeviceState, HomeBackend, HomeDevice } from '../home/model';
 import type { HomeService, ServiceState, SignInForm, SignInResult } from '../home/service';
-import { BlinkApi, type BlinkReply, type BlinkSignInSession, type BlinkTier, type BlinkTokens } from './api';
+import { BlinkApi, restOf, type BlinkReply, type BlinkSignInSession, type BlinkTier, type BlinkTokens } from './api';
 import { thumbnailPath, type BlinkCamera, type BlinkMedia } from './parse';
 
 const SECRET = 'home.blink';
@@ -55,6 +55,8 @@ export class BlinkService implements HomeService {
   private pending: BlinkSignInSession | null = null;
   private refreshing: Promise<{ token: string; where: BlinkTier } | BlinkFailure> | null = null;
   private cameras: BlinkCamera[] = [];
+  /** Where each listed clip video is on the account server, by clip id. */
+  private mediaPaths = new Map<string, string>();
   private readonly now: () => number;
   private readonly pause: (ms: number) => Promise<void>;
 
@@ -155,6 +157,7 @@ export class BlinkService implements HomeService {
     this.access = null;
     this.pending = null;
     this.cameras = [];
+    this.mediaPaths.clear();
     await this.deps.secrets.delete(SECRET);
     this.state.set({ kind: 'signed_out' });
   }
@@ -269,6 +272,7 @@ export class BlinkService implements HomeService {
         return all;
       }
       all.push(...got);
+      for (const m of got) this.mediaPaths.set(m.id, m.mediaPath);
       if (got.length === 0 || got.some((m) => m.at <= sinceMs)) break;
     }
     return all;
@@ -318,6 +322,21 @@ export class BlinkService implements HomeService {
           if (signal?.aborted) throw new BlinkFailure('Stopped.');
         }
         throw new BlinkFailure(`${camera.name} didn't send a new picture in time. It may be offline or its battery low.`);
+      },
+      hasClips: true,
+      clips: async (sinceMs, untilMs): Promise<ClipsPage> => {
+        const media = await this.mediaSince(sinceMs);
+        return { clips: media.filter((m) => m.at >= sinceMs && m.at <= untilMs).map((m) => ({ id: m.id, deviceId: `${PREFIX}${m.cameraId}`, deviceName: m.cameraName, backend: this.id, kind: m.kind, at: m.at })) };
+      },
+      /** The video's address on the account's server and the sign-in header the player must send with it: Blink's clips are not public. */
+      clipSource: async (clipId): Promise<ClipSource> => {
+        const path = this.mediaPaths.get(clipId);
+        if (!path) throw new BlinkFailure("that clip isn't in the list any more; refresh Clips.");
+        const got = await this.accessToken();
+        if (got instanceof BlinkFailure) throw got;
+        const uri = restOf(got.where.tier) + path;
+        if (!uri.startsWith('https://')) throw new BlinkFailure("Blink gave an address Edith can't use.");
+        return { uri, headers: { Authorization: `Bearer ${got.token}` } };
       },
       /** What the cameras recorded since `sinceMs`, newest first: Blink's recordings are its motion events. */
       events: async (deviceId, sinceMs): Promise<DeviceEvent[]> => {
