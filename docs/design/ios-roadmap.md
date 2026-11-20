@@ -236,7 +236,7 @@ M ≈ a day, L ≈ two or three days, XL ≈ a week (an agent's working time).
 | [C71](chunks/C71-ios-live-view.md) | Live camera view (Blink stream, Ring WebRTC) and the camera wall | C32 | C52, C51, C58 | WebRTC module | XL |
 | [C72](chunks/C72-ios-camera-alerts.md) | Camera alerts under iOS's rules | C33 | C53, C58 | owner decision D31 | L |
 | [C73](chunks/C73-ios-resideo.md) | Honeywell/Resideo thermostat | C28 | C48, C58 | developer app approved | M |
-| [C74](chunks/C74-ios-philips-lock.md) | Philips lock | C31 | C48 | owner's acceptance of an unofficial path | M |
+| [C74](chunks/C74-ios-philips-lock.md) | Philips lock | C31 | C48 | not needed: the lock works through Alexa (D38) | M |
 | [C75](chunks/C75-ios-standalone-builds.md) | **Stage 3: standalone builds, TestFlight, OTA updates, versioning** | C40 §4 | C58 | membership | M |
 | [C76](chunks/C76-ios-parity-audit.md) | Parity audit and polish: close every gap against the Android app | all | everything above | — | M |
 
@@ -305,6 +305,7 @@ Each is "ask the owner, recommended default first". Record the answer in `06-dec
 | D35 | Wake word on iOS: listen only while Edith is open with the screen on, or keep the microphone running with the screen locked (`UIBackgroundModes: audio`, orange microphone indicator, battery cost)? | **Only while open**, then try the other if wanted | C69 |
 | D36 | Standalone distribution: internal (ad hoc) builds, or TestFlight? | **Internal first** | C75 |
 | D37 | Over-the-air JavaScript updates with EAS Update? | **Yes** (fewer builds) | C75 |
+| D38 | Philips lock on iOS: build C74's unofficial path, or use the Alexa route? | **Alexa route; C74 is not built.** The owner confirmed on 2026-11-20 that the lock is linked to Alexa and that locking and unlocking it works from the Home tab (C54). The Philips path would add an unofficial signing key for no gain. The unlock rule is unchanged: always a card, never approved by voice. Reopen only if Alexa stops covering it. | C74 |
 
 ---
 
