@@ -52,16 +52,23 @@ const isSecure = (d: HomeDevice) => d.type === 'lock' || d.type === 'garage_door
 const toggles = (d: HomeDevice) => d.capabilities.includes('on_off');
 
 /** Sends a command from the screen; unlock, open, close and mode changes ask on a dialog first (the same rule as chat). */
-export function runFromScreen(home: Home, device: HomeDevice, command: DeviceCommand, ask: (title: string, ok: string, go: () => void) => void = alertAsk) {
+export function runFromScreen(home: Home, device: HomeDevice, command: DeviceCommand, ask: AskDialog = alertAsk) {
   const spec = confirmationFor(device, command);
   const go = () => void home.command(device, command, 'home');
-  if (spec) ask(spec.title, spec.confirmLabel ?? 'Confirm', go);
-  else go();
+  if (spec) {
+    // The same words as the card in chat: its own "no" button (a print's is "Keep printing", never a second "Cancel") and its details (which print).
+    ask(spec.title, spec.confirmLabel ?? 'Confirm', go, {
+      deny: spec.denyLabel ?? 'Cancel',
+      message: spec.details.map(([k, v]) => `${k}: ${v}`).join('\n') || undefined,
+      destructive: command.type === 'cancel_print',
+    });
+  } else go();
 }
-function alertAsk(title: string, ok: string, go: () => void) {
-  Alert.alert(title, undefined, [
-    { text: 'Cancel', style: 'cancel' },
-    { text: ok, onPress: go },
+export type AskDialog = (title: string, ok: string, go: () => void, extra?: { deny?: string; message?: string; destructive?: boolean }) => void;
+function alertAsk(title: string, ok: string, go: () => void, extra: { deny?: string; message?: string; destructive?: boolean } = {}) {
+  Alert.alert(title, extra.message, [
+    { text: extra.deny ?? 'Cancel', style: 'cancel' },
+    { text: ok, style: extra.destructive ? 'destructive' : 'default', onPress: go },
   ]);
 }
 

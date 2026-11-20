@@ -1,4 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react-native';
+import { Alert } from 'react-native';
 import { memoryStore } from '../settings/settings';
 import { ToolArgs } from '../tools/framework/toolArgs';
 import type { Tool, ToolContext } from '../tools/framework/tool';
@@ -283,10 +284,45 @@ describe('Home tab helpers', () => {
     expect(ask).not.toHaveBeenCalled();
     expect(send).toHaveBeenCalledTimes(1);
     runFromScreen(home, front, { type: 'unlock' }, ask);
-    expect(ask).toHaveBeenCalledWith('Unlock Front door?', 'Unlock', expect.any(Function));
+    expect(ask).toHaveBeenCalledWith('Unlock Front door?', 'Unlock', expect.any(Function), expect.objectContaining({ deny: 'Cancel', destructive: false }));
     expect(send).toHaveBeenCalledTimes(1); // nothing sent until the owner agrees
     ask.mock.calls[0][2]();
     expect(send).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('the Home tab dialog for cancelling a print', () => {
+  const printer: HomeDevice = {
+    id: 'printer', name: '3D printer', room: 'Workshop', type: 'printer', capabilities: ['print_control'], backend: 'printer', online: true, stateAt: 0,
+    state: { print: { state: 'printing', title: 'Diorama', progress: 0.22, timeLeftSec: 600, busy: true } },
+  };
+  it('has Keep printing and Cancel print (never two Cancels), names the print, and sends nothing until Cancel print', async () => {
+    const { home } = await demoHome();
+    const send = jest.spyOn(home, 'command').mockResolvedValue({ ok: true, text: '' });
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    runFromScreen(home, printer, { type: 'cancel_print' });
+    expect(alert).toHaveBeenCalledTimes(1);
+    const [title, message, buttons] = alert.mock.calls[0] as unknown as [string, string, { text: string; style?: string; onPress?: () => void }[]];
+    expect(title).toBe('Cancel the print on 3D printer?');
+    expect(message).toBe('Printing: Diorama\nDevice: 3D printer (Workshop)');
+    expect(buttons.map((b) => [b.text, b.style])).toEqual([['Keep printing', 'cancel'], ['Cancel print', 'destructive']]);
+    expect(send).not.toHaveBeenCalled();
+    buttons[1].onPress!();
+    expect(send).toHaveBeenCalledWith(printer, { type: 'cancel_print' }, 'home');
+    alert.mockRestore();
+  });
+
+  it('keeps Cancel for the other confirmations, and pause asks nothing', async () => {
+    const { home } = await demoHome();
+    jest.spyOn(home, 'command').mockResolvedValue({ ok: true, text: '' });
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    runFromScreen(home, printer, { type: 'pause' });
+    expect(alert).not.toHaveBeenCalled();
+    const front = home.visible().find((d) => d.name === 'Front door')!;
+    runFromScreen(home, front, { type: 'unlock' });
+    const buttons = alert.mock.calls[0][2] as unknown as { text: string; style?: string }[];
+    expect(buttons.map((b) => [b.text, b.style])).toEqual([['Cancel', 'cancel'], ['Unlock', 'default']]);
+    alert.mockRestore();
   });
 });
 

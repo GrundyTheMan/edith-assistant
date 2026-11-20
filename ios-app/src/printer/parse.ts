@@ -131,13 +131,19 @@ export function parseWebcams(result: unknown): Webcam[] {
   return out;
 }
 
+/** Moonraker's own port: the API, never the web page that the camera's relative addresses belong to. */
+export const MOONRAKER_PORT = 7125;
+
 /**
- * Where a webcam's snapshot is: a relative address is on the printer's own host, and one that says `localhost` (ZMOD does) means the printer,
- * not this phone: swap in the printer's host and keep the webcam's port.
+ * Where a webcam's snapshot is. A relative address ("/webcam/?action=snapshot") is on the printer's **web server**, not on Moonraker's API port: with the
+ * usual setup (Moonraker on :7125, the web page on :80) the web server is the host without the port; only when the owner typed some other port (a proxy
+ * serving both) is it that port. Asking :7125 for /webcam/ answers HTTP 404 (found on the owner's printer, 2026-11-20; Android does the same as this).
+ * An address that says `localhost` (ZMOD does) means the printer, not this phone: swap in the printer's host and keep the webcam's port.
  */
 export function resolveWebcamUrl(base: string, url: string): string {
-  const origin = /^(https?:\/\/[^/?#]+)/i.exec(base)?.[1] ?? base;
-  const printerHost = /^https?:\/\/([^/:?#]+)/i.exec(base)?.[1] ?? '';
+  const parts = /^(https?):\/\/([^/:?#]+)(?::(\d+))?/i.exec(base);
+  const printerHost = parts?.[2] ?? '';
+  const origin = parts ? `${parts[1]}://${parts[2]}${parts[3] && Number(parts[3]) !== MOONRAKER_PORT ? `:${parts[3]}` : ''}` : base;
   if (/^https?:\/\//i.test(url)) {
     return url.replace(/^(https?:\/\/)(localhost|127\.0\.0\.1|0\.0\.0\.0)(?=[:/?#]|$)/i, `$1${printerHost}`);
   }
@@ -155,7 +161,7 @@ export function normalizePrinterAddress(input: string): { ok: true; base: string
   const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `http://${text}`;
   const m = /^(https?):\/\/([^/:?#@\s]+)(?::(\d{1,5}))?\/?$/i.exec(withScheme);
   if (!m) return { ok: false, message: "That doesn't look like an address. Try 192.168.4.86 or http://192.168.4.86:7125." };
-  const port = m[3] ? Number(m[3]) : 7125;
+  const port = m[3] ? Number(m[3]) : MOONRAKER_PORT;
   if (port < 1 || port > 65535) return { ok: false, message: 'The port has to be between 1 and 65535.' };
   return { ok: true, base: `${m[1].toLowerCase()}://${m[2]}:${port}` };
 }
