@@ -201,14 +201,16 @@ class PrinterCardDataTest {
 
     // --- The camera -------------------------------------------------------------------------------------------------
 
-    @Test fun `the camera is asked for about once a second while its card is open, and not at all before or after`() = runTest(UnconfinedTestDispatcher()) {
+    @Test fun `the camera is asked for every FRAME_MS while its card is open, and not at all before or after`() = runTest(UnconfinedTestDispatcher()) {
         val r = ready(rig())
         advanceTimeBy(5_000); runCurrent()
         assertTrue("closed card: no pictures", r.routes.snapshotIds.isEmpty())
         r.data.visible(PrinterCards.CAMERA, true); runCurrent()
         assertEquals(1, r.routes.snapshotIds.size)
         advanceTimeBy(3_000); runCurrent()
-        assertEquals(4, r.routes.snapshotIds.size)
+        assertEquals("the first picture at once, then one every FRAME_MS", 1 + 3_000 / PrinterCardData.FRAME_MS.toInt(), r.routes.snapshotIds.size)
+        assertTrue("faster than once a second", PrinterCardData.FRAME_MS < 1_000)
+        assertTrue("not faster than Jarvis's 500 ms picture cache and 120 requests a minute allow", PrinterCardData.FRAME_MS >= 600)
         assertEquals(listOf("video"), r.routes.snapshotIds.distinct())
         assertNotNull(r.data.ui.value.camera.frame)
         r.data.visible(PrinterCards.CAMERA, false); runCurrent()

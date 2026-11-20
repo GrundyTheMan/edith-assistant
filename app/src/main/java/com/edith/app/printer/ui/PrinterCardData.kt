@@ -454,6 +454,12 @@ internal class PrinterCardData(
 
     companion object {
         const val PAGE = 50
-        const val FRAME_MS = 1_000L
+        /**
+         * The wait between camera pictures (the next one is asked for after the last arrived, so the real rate is a little lower). 700 ms is about
+         * 1.4 pictures a second, up from 1 a second. Two limits sit above this: Jarvis keeps a picture for 500 ms (asking more often only gets the
+         * same one), and it allows 120 requests a minute per phone for everything except the long polls (spec part 5), so this leaves room for
+         * commands and the other cards. Real live video is the camera stream of stage 4 (E14), which this does not replace.
+         */
+        const val FRAME_MS = 700L
     }
 }
