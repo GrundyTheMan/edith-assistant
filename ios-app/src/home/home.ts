@@ -3,6 +3,7 @@ import { Store } from '../core/store';
 import type { KeyValueStore } from '../settings/settings';
 import { stateWords } from './actions';
 import type { DeviceCommand, HomeBackend, HomeDevice } from './model';
+import { isConnected, type HomeService } from './service';
 
 export const READ_TIMEOUT_MS = 10_000;
 /** The device is asked again after a command; clouds lag, so thermostats and locks are asked again later too (C25 §6). */
@@ -17,6 +18,8 @@ export interface LogEntry {
   ok: boolean;
   result: string;
   source: 'chat' | 'home';
+  /** The service (backend id) the command went to. */
+  service?: string;
 }
 
 export interface HomeSnapshot {
@@ -42,7 +45,12 @@ interface Deps {
  * devices, runs commands, and logs them.
  */
 export class Home {
+  /** The backends in use: `setBackends` ones (the Demo home, tests) plus every connected service's. */
   private backends: HomeBackend[] = [];
+  private fixedBackends: HomeBackend[] = [];
+  private serviceList: HomeService[] = [];
+  /** The registered services (C48), for Settings → Home. */
+  readonly services = new Store<HomeService[]>([]);
   private last = new Map<string, HomeDevice>();
   private lastProblems: string[] = [];
   /** Bumps whenever devices, preferences or the log change, so screens redraw. */
@@ -88,9 +96,31 @@ export class Home {
 
   // --- backends ---------------------------------------------------------------------------------------------
   setBackends(backends: HomeBackend[]) {
-    this.backends = backends;
+    this.fixedBackends = backends;
     this.last.clear();
+    this.recompute();
+  }
+  /** Adds a real service (C48). While it is connected its backend is read with the others; its state changes re-run this. */
+  registerService(service: HomeService) {
+    if (this.serviceList.some((s) => s.id === service.id)) return;
+    this.serviceList = [...this.serviceList, service];
+    this.services.set(this.serviceList);
+    service.state.subscribe(() => this.recompute());
+    this.recompute();
+  }
+  /** At startup: every service loads its secrets and sets its state. One failing never stops the others (or the app). */
+  async restoreServices(): Promise<void> {
+    await Promise.all(this.serviceList.map((s) => s.restore().catch(() => {})));
+  }
+  private recompute() {
+    this.backends = [...this.fixedBackends, ...this.serviceList.filter(isConnected).map((s) => s.backend())];
+    const ids = new Set(this.backends.map((b) => b.id));
+    for (const [id, d] of this.last) if (!ids.has(d.backend)) this.last.delete(id); // a disconnected service's devices go
     this.bump();
+  }
+  /** Changes when a different set of services is being read: screens refresh on it. */
+  backendKey(): string {
+    return this.backends.map((b) => b.id).join(',');
   }
   get connected(): boolean {
     return this.backends.length > 0;
@@ -107,9 +137,9 @@ export class Home {
   // --- reading ----------------------------------------------------------------------------------------------
   /** Asks every service; a service that fails or takes over 10 s keeps its last known devices and adds a problem line. */
   async refresh(): Promise<HomeSnapshot> {
-    const timeout = this.deps.readTimeoutMs ?? READ_TIMEOUT_MS;
     const results = await Promise.all(
       this.backends.map(async (b) => {
+        const timeout = this.deps.readTimeoutMs ?? b.timeoutMs ?? READ_TIMEOUT_MS;
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
           const devices = await Promise.race([
@@ -207,13 +237,13 @@ export class Home {
       await backend.command(device.id, command);
     } catch (e) {
       const text = `Couldn't ${this.label(command).replace(/_/g, ' ')} ${device.name}: ${toAppError(e).message.replace(/^Something went wrong: /, '')}`;
-      this.record({ at: this.now(), device: device.name, action: this.label(command), ok: false, result: text, source });
+      this.record({ at: this.now(), device: device.name, action: this.label(command), ok: false, result: text, source, service: device.backend });
       return { ok: false, text };
     }
     const updated = await this.recheck(backend, device);
     const slow = device.type === 'thermostat' || device.type === 'lock' || device.type === 'garage_door';
     const text = `${device.name}: ${stateWords(updated)}${slow ? ' (this device can take a few seconds to report the change)' : ''}.`;
-    this.record({ at: this.now(), device: device.name, action: this.label(command), ok: true, result: stateWords(updated), source });
+    this.record({ at: this.now(), device: device.name, action: this.label(command), ok: true, result: stateWords(updated), source, service: device.backend });
     for (const ms of slow ? RECHECK_SLOW_MS : RECHECK_MS) this.setTimer(() => void this.recheck(backend, device), ms);
     return { ok: true, text };
   }

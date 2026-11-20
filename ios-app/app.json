@@ -32,7 +32,8 @@
         {
           "microphonePermission": "Edith records your voice memos so the model on your PC can turn them into messages."
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true

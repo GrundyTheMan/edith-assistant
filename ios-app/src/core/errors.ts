@@ -9,6 +9,7 @@ export type AppErrorKind =
   | 'malformed'
   | 'invalid_url'
   | 'model_lacks_capability'
+  | 'http_blocked'
   | 'unknown';
 
 export class AppError extends Error {
@@ -55,6 +56,10 @@ export class AppError extends Error {
     const verb = what === 'images' ? 'see images' : 'hear audio';
     const badge = what === 'images' ? 'Sees images' : 'Hears audio';
     return new AppError('model_lacks_capability', `${model} can't ${verb} — pick a model marked "${badge}" in Settings.`);
+  }
+  /** A request was refused because it wasn't HTTPS, or went (or was sent on) to an address it may not use. Names the host only. */
+  static insecureUrl(host: string) {
+    return new AppError('http_blocked', `Edith only talks to ${host} over a secure connection to the right address, so she stopped.`);
   }
   static unknown(cause: unknown) {
     const text = cause instanceof Error ? cause.message || cause.name : String(cause);

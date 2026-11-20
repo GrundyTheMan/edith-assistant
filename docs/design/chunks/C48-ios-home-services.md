@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo), Wave A |
-| Status | **Design** |
+| Status | **Built** in Expo Go; see "As built" at the end. The owner's iPhone check is open |
 | Depends on | C46 (the home core), C45 (confirmations) |
 | Unblocks | C50 Meross, C51 Ring, C52 Blink, C54 Alexa, C55 Printer, C70, C73, C74 (every real home service) |
 | Runs in | Expo Go |
@@ -146,3 +146,22 @@ New: `core/secrets.ts`, `home/service.ts`, `ui/ServiceSignIn.tsx`, `ui/PageSignI
 
 ## Not in this chunk
 Any real service; camera pictures (C49); clips UI (C53); alerts (C72).
+
+## As built (2026-11-20)
+Built by an AI agent; Android is untouched. Where the code differs from the specification above, the code is right.
+- **Files:** `core/secrets.ts` (`SecretStore`, `keychainSecrets`, `memorySecrets`, `checkSecretKey`), `core/secureFetch.ts` (`secureFetch`,
+  `hostAllowed`, `resolveLocation`), `core/network.ts` (`secureHttp`), `home/service.ts` (`HomeService`, `ServiceState`, the sign-in form types,
+  `PageSignIn`, `stateText`), `ui/ServiceSignIn.tsx`, `ui/PageSignInModal.tsx`; changes in `home/home.ts` (`registerService`, `services`,
+  `restoreServices`, `backendKey`, per-backend `timeoutMs`, `LogEntry.service`), `home/model.ts` (the optional backend methods, `DeviceEvent`, `DeviceClip`,
+  the new device types and capabilities, `DeviceState.changedAt`), `home/actions.ts` (`movedWords`), `ui/HomeSettings.tsx` (the Services list and `ServiceRow`),
+  `ui/HomeScreen.tsx` (refreshes when the set of services changes; "moved … ago"), `core/errors.ts` (`http_blocked`), `ollama/client.ts` (`redirect` in the
+  request type), `core/services.tsx` (`secrets`, the restore call), `package.json` and `app.json` (`expo-secure-store`, `react-native-webview`).
+- **`secureFetch` defaults to the starting host:** without `allowHosts` a redirect to any other host is refused, so a credential can't be carried away. A
+  service that really talks to several of its own hosts lists them (`allowHosts: ['meross.com']`). It asks the platform for `redirect: 'manual'` and
+  follows up to 3 redirects by hand; if the platform followed one itself, the final `response.url` is checked and the answer thrown away when it left the
+  allowed hosts (the request was already sent: the same limit as the web-page reader, C42). **Whether `expo/fetch` honours `redirect: 'manual'` is not verified.**
+- **No service is registered yet.** `createServices` calls `home.restoreServices()`; each service chunk adds `home.registerService(...)` before it.
+  Settings → Home shows the Services list only when one is registered.
+- Not done: the `Capability`/`DeviceType` additions have no UI yet (cameras, doorbells and printers come with their chunks).
+- **Not verified:** the Keychain under Expo Go on a real iPhone (and that items vanish when Expo Go is deleted), the WebView page sign-in (nothing uses it until C54),
+  and how the sign-in form looks. The form and the page modal are tested with fakes only.
