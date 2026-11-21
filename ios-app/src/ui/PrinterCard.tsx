@@ -53,6 +53,11 @@ export function PrinterCard({
         {printerWords({ ...d, online: true })}
         {age && !d.online ? ` (last seen ${age})` : ''}
       </Text>
+      {p?.viaJarvis ? (
+        <Text testID="printer-via-jarvis" style={{ color: theme.textMuted, fontSize: 12 }}>
+          via Jarvis
+        </Text>
+      ) : null}
       {p && (printing || paused) ? (
         <View style={{ gap: 4 }}>
           <View style={[styles.track, { backgroundColor: theme.border }]}>

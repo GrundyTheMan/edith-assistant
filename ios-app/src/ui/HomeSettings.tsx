@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { useServices, useStore } from '../core/services';
 import { stateText, type HomeService, type ServiceAction } from '../home/service';
+import { PrinterJarvisNote } from './PrinterJarvisNote';
 import { PageSignInModal } from './PageSignInModal';
 import { ServiceSignIn } from './ServiceSignIn';
 import type { Theme } from './theme';
@@ -74,7 +75,10 @@ export function HomeSettings({ theme }: { theme: Theme }) {
         <View style={{ gap: 10 }}>
           <Text style={{ color: theme.text, fontWeight: '600' }}>Services</Text>
           {services.map((s) => (
-            <ServiceRow key={s.id} service={s} theme={theme} onSignIn={(again) => setSigningIn({ service: s, again })} />
+            <View key={s.id} style={{ gap: 6 }}>
+              <ServiceRow service={s} theme={theme} onSignIn={(again) => setSigningIn({ service: s, again })} />
+              {s.id === 'printer' ? <PrinterJarvisNote theme={theme} /> : null}
+            </View>
           ))}
         </View>
       ) : null}

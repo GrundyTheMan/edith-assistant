@@ -44,6 +44,8 @@ export interface PrintJob {
   busy: boolean;
   /** Klipper isn't ready (starting, shut down, error): Klipper's first line is in `message`. */
   klipper?: 'startup' | 'shutdown' | 'error';
+  /** The state came through Jarvis on the PC, because the printer did not answer directly (C39 §9.3). */
+  viaJarvis?: boolean;
 }
 export interface HeaterReading {
   id: string;

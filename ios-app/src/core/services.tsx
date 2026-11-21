@@ -15,6 +15,7 @@ import { RingService } from '../ring/service';
 import { JarvisApi } from '../jarvis/api';
 import { PrinterFeed } from '../printer/feed/feed';
 import { PrinterCardData } from '../printer/feed/cards';
+import { FeedPrinterRead } from '../printer/feed/toHome';
 import { PrinterPrefs } from '../printer/feed/prefs';
 import { PrinterSession } from '../printer/feed/session';
 import { JarvisService } from '../jarvis/service';
@@ -76,6 +77,8 @@ export interface Services {
   printerSession: PrinterSession;
   printerPrefs: PrinterPrefs;
   printerCards: PrinterCardData;
+  /** What Jarvis shares of the printer (Settings reads it for its status line). */
+  printerFeed: PrinterFeed;
   /** Camera alerts while the app is open, and the catch-up when the owner returns (C72). */
   alerts: { prefs: AlertPrefs; loop: AlertLoop; notifier: Notifier; demoRing: () => void };
   home: Home;
@@ -96,7 +99,10 @@ export async function createServices(): Promise<Services> {
   const secrets = keychainSecrets;
   // Real services register here as their chunks land: `home.registerService(...)`.
   // The 3D printer talks plain HTTP to its LAN address (Moonraker has no TLS): `httpFetch`, deliberately (AGENTS.md).
-  home.registerService(new PrinterService({ secrets, fetch: httpFetch }));
+  // When it does not answer directly it asks Jarvis once ("via Jarvis"), and never when the direct read works (C67 E6).
+  const jarvis = new JarvisService({ secrets, api: new JarvisApi({ fetch: secureFetch(httpFetch, { allowHosts: ['ts.net'] }) }) });
+  const printerFeed = new PrinterFeed(jarvis);
+  home.registerService(new PrinterService({ secrets, fetch: httpFetch, jarvis: new FeedPrinterRead(printerFeed) }));
   // Alexa: Amazon's own sign-in page in a WebView, then HTTPS to Amazon only (the api checks every address, and follows redirects itself to keep cookies).
   home.registerService(new AlexaService({ secrets, api: new AlexaApi({ fetch: httpFetch, randomBytes: (n) => Crypto.getRandomBytes(n) }) }));
   // Meross: HTTPS to Meross's cloud only; plain HTTP to the doors on the LAN (they have no TLS), deliberately.
@@ -121,12 +127,11 @@ export async function createServices(): Promise<Services> {
   // Blink: HTTPS to blink.com and immedia-semi.com only (the api checks every address itself: it follows redirects by hand to keep the sign-in's cookies).
   home.registerService(new BlinkService({ secrets, api: new BlinkApi({ fetch: httpFetch, randomBytes: (n) => Crypto.getRandomBytes(n) }), uuid: () => Crypto.randomUUID() }));
   // Jarvis (C66a, D39): ordinary HTTPS to the PC's Tailscale name only (a publicly trusted certificate on Jarvis's second listener).
-  const jarvis = new JarvisService({ secrets, api: new JarvisApi({ fetch: secureFetch(httpFetch, { allowHosts: ['ts.net'] }) }) });
   home.registerService(jarvis);
   // The Printer page through Jarvis (C67): the session asks only while the page is on screen.
   const printerPrefs = new PrinterPrefs(kvStore);
   await printerPrefs.load();
-  const printerSession = new PrinterSession({ feed: new PrinterFeed(jarvis) });
+  const printerSession = new PrinterSession({ feed: printerFeed });
   const printerCards = new PrinterCardData({ session: printerSession });
   // Each is restored at startup; one failing never stops the app.
   await home.restoreServices();
@@ -214,7 +219,7 @@ export async function createServices(): Promise<Services> {
   });
   alertLoop.start();
   const alerts = { prefs: alertPrefs, loop: alertLoop, notifier: expoNotifier, demoRing: () => demo?.ring() };
-  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments, retention, voice, conversation, alerts, printerSession, printerPrefs, printerCards, home, secrets };
+  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments, retention, voice, conversation, alerts, printerSession, printerPrefs, printerCards, printerFeed, home, secrets };
 }
 
 const ServicesContext = createContext<Services | null>(null);

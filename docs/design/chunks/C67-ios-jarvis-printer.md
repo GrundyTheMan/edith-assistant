@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo), Wave B |
-| Status | **In progress** — ten work packages, one PR each (E1–E10): E1–E5 built (see "As built"); E6–E10 to do |
+| Status | **In progress** — ten work packages, one PR each (E1–E10): E1–E6 built (see "As built"; stage 1 ships with E6); E7–E10 to do |
 | Depends on | **C66a** (the Jarvis connection: pairing and the client), C55 (the direct printer card and `printer_status`), C45 (cards) |
 | Unblocks | stages 3–4 on iOS (upload/start/delete/queue-add, alerts, recordings, live camera): **not designed yet because Android has not built them** (`C39-printer-parity.md` §12 E11–E14); add chunks C77+ when Android does |
 | Runs in | **Expo Go** (decision D39: ordinary HTTPS to Jarvis's Tailscale name; `react-native-svg` is in Expo Go); it waits for the Jarvis change, not for a development build |
@@ -101,3 +101,11 @@ Work packages land as separate PRs; each adds its own lines here. Nothing below 
 - `ui/printer/Cards.tsx`: Camera, Temperatures (chart drawn from plain Views: `react-native-svg` is not a dependency and Expo Go does not need it for this; at most 120 points per line; dashed means the target), Toolhead, Fans and light, Limits and retraction, Sensors, Filament slots (no slot is called empty when the printer does not report them), System, Queue and Bed mesh (left out when Jarvis sends none), Objects (bed drawing), History (totals, More), Console (read; "// value" lines hidden by default; Clear), Files (Load files, search, Printed before, details). Macros comes in E9; every control comes in E7–E9.
 - Not built here: the chosen camera is not remembered across visits (Android remembers it); the file details are shown in the card, not in a sheet.
 - Not verified: a real Jarvis (none exists yet), the look on the phone, the camera rate against the real 120-requests-a-minute limit.
+
+### E6 — Home and chat fall back to Jarvis; settings text (built)
+- `printer/feed/toHome.ts`: `deviceStateFromFeed` (Jarvis's `PrinterState` as a Home state, the same rules as Android's `PrinterToHome`: null when Jarvis cannot see the printer, Klipper not ready is an error with Jarvis's words, the printer's alert is the job's message when there is no other) and `FeedPrinterRead` (one `state` request with no wait, and only when the printer is shared).
+- `PrinterService` takes an optional `jarvis` reader. It is asked **only** when the direct read says the printer is unreachable; never while the direct printer answers. Then the printer shows as online with `viaJarvis` (small "via Jarvis" on the tile) and no direct camera button. Any trouble (not paired, not shared, Jarvis away, an error) is "no answer": the tile stays "not reachable" as before.
+- **Commands stay direct only**: away from home, Pause/Resume/Cancel on the tile say "Not reachable. It works on your home Wi-Fi. Open the Printer page to use it through Jarvis." and send nothing; they never ask Jarvis. (C39 §9.3: the tile's buttons never arm Controls.)
+- `printer_status` says "(via Jarvis)" and adds "The printer's latest error line: …" while a print is going (not when the state already says it).
+- Settings → Home → the printer's row has the paragraph (final words changed only in where to pair: "the Jarvis service above") and a status line: sharing the printer (name) / not sharing / not paired / can't be reached right now (`ui/PrinterJarvisNote.tsx`).
+- Not verified: no real Jarvis; the tile's "via Jarvis" look on the phone. Stage 1 (read-only printer through Jarvis) is complete with this package, still unchecked against a real Jarvis.
