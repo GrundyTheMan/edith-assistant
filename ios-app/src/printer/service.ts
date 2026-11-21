@@ -5,6 +5,7 @@ import type { DeviceCommand, DeviceState, HomeBackend, HomeDevice } from '../hom
 import type { HomeService, ServiceState, SignInForm, SignInResult } from '../home/service';
 import type { HttpFetch } from '../ollama/client';
 import { MoonrakerApi, PrinterError } from './api';
+import type { JarvisPrinterRead } from './feed/toHome';
 import { normalizePrinterAddress, parseStatus, parseWebcams, resolveWebcamUrl, type PrinterReading, type Webcam } from './parse';
 
 const SECRET = 'home.printer';
@@ -20,6 +21,8 @@ export interface PrinterServiceDeps {
   /** Plain HTTP on the home network: the 3D printer is one of the allowed exceptions (AGENTS.md; Moonraker has no TLS and sits at a LAN IP). */
   fetch: HttpFetch;
   now?: () => number;
+  /** Asked only when the printer does not answer directly (the PC is on and Jarvis shares the printer): C39 §9.3. Never asked when the direct read works. */
+  jarvis?: JarvisPrinterRead;
 }
 
 /**
@@ -137,7 +140,16 @@ export class PrinterService implements HomeService {
   }
 
   /** The printer as one device. Unreachable is a device that is "not online" with the last report; only a wrong key or a wrong address throws. */
-  private async device(): Promise<HomeDevice> {
+  private async viaJarvis(): Promise<DeviceState | null> {
+    try {
+      return (await this.deps.jarvis?.read()) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** `direct` is for commands: they need the printer itself, never Jarvis's view of it. */
+  private async device(direct = false): Promise<HomeDevice> {
     if (!this.api) throw new PrinterError('bad', 'The printer is not connected.');
     const web = await this.cam().catch(() => null);
     const base: Omit<HomeDevice, 'online' | 'state' | 'stateAt'> = {
@@ -158,7 +170,9 @@ export class PrinterService implements HomeService {
       return this.last;
     } catch (e) {
       if (e instanceof PrinterError && e.kind === 'unreachable') {
-        // Away from home: keep the last report, say it isn't reachable, and raise no banner.
+        // Away from home: ask Jarvis once (when it is paired and shares the printer). With no answer, keep the last report, say it isn't reachable, and raise no banner.
+        const j = direct ? null : await this.viaJarvis();
+        if (j) return { ...base, capabilities: ['print_control'], online: true, state: j, stateAt: this.now() };
         return { ...base, online: false, state: this.last?.state ?? {}, stateAt: this.last?.stateAt ?? null };
       }
       if (e instanceof PrinterError && e.kind === 'unauthorized') this.state.set({ kind: 'needs_sign_in', reason: e.message });
@@ -172,8 +186,8 @@ export class PrinterService implements HomeService {
     if (command.type !== 'pause' && command.type !== 'resume' && command.type !== 'cancel_print') throw new Error("The printer can't do that.");
     const api = this.api;
     if (!api) throw new PrinterError('bad', 'The printer is not connected.');
-    const d = await this.device();
-    if (!d.online) throw new PrinterError('unreachable', 'Not reachable. It works on your home Wi-Fi.');
+    const d = await this.device(true);
+    if (!d.online) throw new PrinterError('unreachable', this.deps.jarvis ? 'Not reachable. It works on your home Wi-Fi. Open the Printer page to use it through Jarvis.' : 'Not reachable. It works on your home Wi-Fi.');
     const p = d.state.print;
     if (!p || p.klipper) throw new Error(`The printer isn't ready${p?.message ? `: ${p.message}` : ''}.`);
     if (command.type === 'pause') {
