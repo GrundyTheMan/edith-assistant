@@ -1,0 +1,86 @@
+# The shared-code spike (spike-kmp/): does Kotlin + Compose Multiplatform build for the iPhone from a Windows-only workflow, and how long does it take?
+# macOS minutes cost 10x on a private repository: this runs only when started by hand or when spike-kmp/ changes on the spike branch.
+name: Spike KMP iOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      tests:
+        description: Run the Kotlin tests on the iOS simulator first (about 7 Mac minutes)
+        type: boolean
+        default: true
+  push:
+    branches: [spike-kmp-ios]
+    paths: ['spike-kmp/**', '.github/workflows/spike-kmp-ios.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: spike-kmp
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Kotlin tests on the iOS simulator (the shared code, running as iPhone code)
+        if: github.event_name == 'workflow_dispatch' && inputs.tests
+        continue-on-error: true
+        run: |
+          start=$SECONDS
+          ./gradlew --console=plain :composeApp:iosSimulatorArm64Test
+          echo "ios_tests_seconds=$((SECONDS - start))" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Say which tests failed, and why
+        if: always()
+        run: |
+          for f in composeApp/build/test-results/iosSimulatorArm64Test/*.xml; do
+            [ -f "$f" ] && grep -E '<testsuite |<failure' "$f" | cut -c1-600
+          done || true
+
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          cd iosApp && xcodegen generate
+
+      - name: Build the app for the iPhone simulator (no signing)
+        run: |
+          set -eo pipefail
+          start=$SECONDS
+          xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/xcode ARCHS=arm64 EXCLUDED_ARCHS=x86_64 CODE_SIGNING_ALLOWED=NO build | tail -60
+          echo "xcode_build_seconds=$((SECONDS - start))" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Launch it in a simulator and take a picture (best effort)
+        continue-on-error: true
+        run: |
+          udid=$(xcrun simctl list devices available | grep -m1 "iPhone" | grep -oE '[0-9A-F]{8}-[0-9A-F-]{27}')
+          xcrun simctl boot "$udid"
+          xcrun simctl install "$udid" build/xcode/Build/Products/Debug-iphonesimulator/iosApp.app
+          xcrun simctl privacy "$udid" grant microphone com.example.edithkmpspike
+          SIMCTL_CHILD_SPIKE_AUTOPROBE=1 xcrun simctl launch "$udid" com.example.edithkmpspike
+          sleep 15
+          xcrun simctl io "$udid" screenshot "$RUNNER_TEMP/spike.png"
+          cp "$RUNNER_TEMP/spike.png" build/spike.png
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: spike-ios
+          path: |
+            spike-kmp/build/spike.png
+            spike-kmp/composeApp/build/reports/**
+            spike-kmp/composeApp/build/test-results/**
+          if-no-files-found: ignore
