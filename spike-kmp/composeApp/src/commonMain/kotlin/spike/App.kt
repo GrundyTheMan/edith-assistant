@@ -65,6 +65,8 @@ fun App(chat: OllamaChat = remember { OllamaChat(HttpClient()) }) {
             nav.popBackStack()
             probes.lines += "Navigation and ViewModel: ${probes.visits} visit(s) to the second screen, back on the first."
         }
+        // Each probe line is also printed, so the cloud build can read the results as text.
+        LaunchedEffect(probes.lines.size) { probes.lines.lastOrNull()?.let { println("PROBE: $it") } }
         NavHost(nav, startDestination = "home") {
             composable("home") { Home(chat, nav, probes) }
             composable("second") { Second(nav, probes) }
