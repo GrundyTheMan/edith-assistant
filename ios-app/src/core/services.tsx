@@ -15,6 +15,7 @@ import { RingService } from '../ring/service';
 import { JarvisApi } from '../jarvis/api';
 import { PrinterFeed } from '../printer/feed/feed';
 import { PrinterCardData } from '../printer/feed/cards';
+import { PrinterControl } from '../printer/feed/control';
 import { FeedPrinterRead } from '../printer/feed/toHome';
 import { PrinterPrefs } from '../printer/feed/prefs';
 import { PrinterSession } from '../printer/feed/session';
@@ -77,6 +78,8 @@ export interface Services {
   printerSession: PrinterSession;
   printerPrefs: PrinterPrefs;
   printerCards: PrinterCardData;
+  /** Controls, the confirm flow and the pending buttons of the Printer page (C67 E7). */
+  printerControl: PrinterControl;
   /** What Jarvis shares of the printer (Settings reads it for its status line). */
   printerFeed: PrinterFeed;
   /** Camera alerts while the app is open, and the catch-up when the owner returns (C72). */
@@ -133,6 +136,7 @@ export async function createServices(): Promise<Services> {
   await printerPrefs.load();
   const printerSession = new PrinterSession({ feed: printerFeed });
   const printerCards = new PrinterCardData({ session: printerSession });
+  const printerControl = new PrinterControl({ session: printerSession, uuid: () => Crypto.randomUUID() });
   // Each is restored at startup; one failing never stops the app.
   await home.restoreServices();
   // The Demo home is for trying things with no service; development builds only (Expo Go is one).
@@ -219,7 +223,7 @@ export async function createServices(): Promise<Services> {
   });
   alertLoop.start();
   const alerts = { prefs: alertPrefs, loop: alertLoop, notifier: expoNotifier, demoRing: () => demo?.ring() };
-  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments, retention, voice, conversation, alerts, printerSession, printerPrefs, printerCards, printerFeed, home, secrets };
+  return { settings, repo, catalog, selection, engine, current, speech, tools, attachments, retention, voice, conversation, alerts, printerSession, printerPrefs, printerCards, printerControl, printerFeed, home, secrets };
 }
 
 const ServicesContext = createContext<Services | null>(null);

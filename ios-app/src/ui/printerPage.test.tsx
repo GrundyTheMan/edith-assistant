@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
+import { initialControl } from '../printer/feed/control';
 import type { CardsUi } from '../printer/feed/cards';
 import type { CardActions } from './printer/Cards';
 import { COLLAPSED_AT_FIRST } from '../printer/feed/prefs';
@@ -30,6 +31,8 @@ async function show(u: PrinterUi, over: Partial<Parameters<typeof PrinterPage>[0
       lastPrint={null}
       cards={cardsUi()}
       actions={noActions}
+      controls={initialControl()}
+      controlActions={noActions as never}
       directConnected={false}
       onBack={() => calls.back++}
       onTryAgain={() => calls.again++}
@@ -119,6 +122,30 @@ describe('the Printer page', () => {
   it('the idle page names the last print', async () => {
     await show(ui(live('state-ready-idle')), { lastPrint: { title: 'Benchy', status: 'completed', at: NOW - 2 * 3_600_000 - 5000 } });
     expect(screen.getByTestId('last-print')).toHaveTextContent('Last print: Benchy, completed 2 h ago');
+  });
+
+  it('a controlling phone sees the Controls bar, the emergency stop and the job buttons; a look-only one does not see buttons', async () => {
+    const send: string[] = [];
+    await show(ui(live('state-printing')), { controls: { ...initialControl(), mayControl: true, armed: true }, controlActions: { send: (c: { kind: string }) => send.push(c.kind) } as never });
+    expect(screen.getByTestId('controls-bar')).toBeTruthy();
+    expect(screen.getByTestId('job-buttons')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('Emergency stop'));
+    await fireEvent.press(screen.getByLabelText('Pause'));
+    expect(send).toEqual(['estop', 'pause']);
+  });
+
+  it('a look-only phone has no job buttons and no Controls switch, but keeps the emergency stop', async () => {
+    await show(ui(live('state-printing')));
+    expect(screen.queryByTestId('job-buttons')).toBeNull();
+    expect(screen.getByTestId('controls-look-only')).toBeTruthy();
+    expect(screen.getByLabelText('Emergency stop')).toBeTruthy();
+  });
+
+  it('the confirm sheet and the control message are drawn over the page', async () => {
+    const sheet = { question: 'Really cancel?', confirm: 'Cancel print', danger: true, command: { kind: 'cancel' }, requestId: 'r', keepLabel: 'Keep printing' };
+    await show(ui(live('state-printing')), { controls: { ...initialControl(), mayControl: true, armed: true, sheet: sheet as never, message: 'Home the printer first.' } });
+    expect(screen.getByTestId('confirm-question')).toHaveTextContent('Really cancel?');
+    expect(screen.getByTestId('control-message')).toBeTruthy();
   });
 
   it('Back goes back', async () => {

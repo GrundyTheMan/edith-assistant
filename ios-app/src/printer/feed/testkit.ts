@@ -133,7 +133,7 @@ export class FakeFeed {
     const risk: string = this.risks[kind] ?? 'none';
     const check = { allowed: true, risk, ...(risk !== 'none' ? { question: `Really ${kind}?`, confirm: kind } : {}) };
     if (body.dryRun) return jsonResponse(check);
-    if (!this.armed) return jsonResponse({ error: { code: 'CONTROLS_OFF', message: 'Controls are off.' } }, 403);
+    if (!this.armed && kind !== 'estop') return jsonResponse({ error: { code: 'CONTROLS_OFF', message: 'Controls are off.' } }, 403);
     if (risk !== 'none' && !body.confirmed) return jsonResponse({ error: { code: 'CONFIRM_REQUIRED', message: 'Ask the owner to confirm this first.' }, check }, 409);
     return jsonResponse({ sent: kind.toUpperCase(), risk });
   }
