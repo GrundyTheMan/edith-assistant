@@ -59,6 +59,7 @@ fun App(chat: OllamaChat = remember { OllamaChat(HttpClient()) }) {
             }
             probes.lines += try { roomProbe() } catch (e: Exception) { "Room failed: ${e.message}" }
             probes.lines += try { dataStoreProbe() } catch (e: Exception) { "DataStore failed: ${e.message}" }
+            probes.lines += mqttProbe()
             nav.navigate("second")
             delay(600)
             nav.popBackStack()

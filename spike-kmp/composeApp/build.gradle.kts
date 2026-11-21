@@ -40,6 +40,9 @@ kotlin {
             implementation(libs.coil.compose)
             implementation(libs.coil.network.ktor3)
             implementation(libs.material.icons.extended)
+            // K0.6b: an MQTT client with TLS (MIT licensed; the GPL one was set aside)
+            implementation(libs.mqtt.client)
+            implementation(libs.mqtt.models.v4)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

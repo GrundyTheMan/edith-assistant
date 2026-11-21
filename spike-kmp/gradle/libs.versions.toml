@@ -13,6 +13,7 @@ navigation = "2.10.0"
 lifecycle = "2.11.0"
 coil = "3.6.3"
 icons = "1.7.3"
+ditchoom-mqtt = "3.0.0"
 
 [libraries]
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
@@ -34,6 +35,9 @@ lifecycle-viewmodel-compose = { module = "org.jetbrains.androidx.lifecycle:lifec
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-ktor3 = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }
 material-icons-extended = { module = "org.jetbrains.compose.material:material-icons-extended", version.ref = "icons" }
+
+mqtt-client = { module = "com.ditchoom:mqtt-client", version.ref = "ditchoom-mqtt" }
+mqtt-models-v4 = { module = "com.ditchoom:mqtt-4-models", version.ref = "ditchoom-mqtt" }
 
 [plugins]
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
