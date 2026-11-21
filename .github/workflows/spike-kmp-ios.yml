@@ -33,6 +33,13 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
+      # The Kotlin/Native compiler and its dependencies live in ~/.konan: without this cache every run downloads them again.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('spike-kmp/gradle/libs.versions.toml') }}
+          restore-keys: konan-${{ runner.os }}-
+
       - name: Kotlin tests on the iOS simulator (the shared code, running as iPhone code)
         if: github.event_name == 'workflow_dispatch' && inputs.tests
         continue-on-error: true
@@ -57,6 +64,7 @@ jobs:
         run: |
           set -eo pipefail
           start=$SECONDS
+          echo "konan_cache_present=$([ -d ~/.konan ] && echo yes || echo no)" >> "$GITHUB_STEP_SUMMARY"
           xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Debug \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/xcode ARCHS=arm64 EXCLUDED_ARCHS=x86_64 CODE_SIGNING_ALLOWED=NO build | tail -60
