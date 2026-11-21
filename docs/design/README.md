@@ -99,7 +99,7 @@ design in the same PR, or ask the owner.
 | [C65](chunks/C65-ios-icloud-mail.md) | iCloud on iOS, part 2: mail over IMAP/SMTP (sockets) | 9 iOS (Expo) | C61, C64 | Design |
 | [C66a](chunks/C66a-ios-jarvis-connection.md) | The Jarvis connection on iOS: pairing and the client (Expo Go, Tailscale certificate, D39) | 9 iOS (Expo) | C48 | Built against a pretend Jarvis; the real check needs the Jarvis change (`jarvis-tailscale-listener-spec.md`) |
 | [C66b](chunks/C66-ios-jarvis-work-account.md) | Work account through Jarvis on iOS (mail, calendar, to-dos) | 9 iOS (Expo) | C66a, C58, C60–C62 | Design |
-| [C67](chunks/C67-ios-jarvis-printer.md) | The 3D printer through Jarvis on iOS (Printer page, Controls, chat) | 9 iOS (Expo) | C66a, C55 | In progress (Expo Go, D39): E1 wire, E2 client, E3 session, E4 page skeleton with the Status card E5 the read-only cards E6 the Home/chat fallback (stage 1) and E7 Controls with the confirm flow built; E8–E10 to do |
+| [C67](chunks/C67-ios-jarvis-printer.md) | The 3D printer through Jarvis on iOS (Printer page, Controls, chat) | 9 iOS (Expo) | C66a, C55 | In progress (Expo Go, D39): E1 wire, E2 client, E3 session, E4 page skeleton with the Status card E5 the read-only cards E6 the Home/chat fallback (stage 1), E7 Controls with the confirm flow and E8 the cards' controls built; E9–E10 to do |
 | [C68](chunks/C68-ios-audio-attachments.md) | Audio files as attachments on iOS | 9 iOS (Expo) | C58 | Design |
 | [C69](chunks/C69-ios-wake-word.md) | "Hey Edith" on iOS while the app is open | 9 iOS (Expo) | C57, C58 | Design (spike first) |
 | [C70](chunks/C70-ios-meross-cloud.md) | Meross cloud control on iOS (MQTT over TLS) | 9 iOS (Expo) | C50, C58 | Design |

@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
+import { initialControl } from '../printer/feed/control';
 import { ChartBuffer, type CardsUi, type ChartLine } from '../printer/feed/cards';
 import { fixture, JPEG } from '../printer/feed/testkit';
-import { parsePrinterState, type PrinterState } from '../printer/feed/wire';
+import { parsePrinterState, parseStateAnswer, type PrinterState } from '../printer/feed/wire';
 import { CameraCard, ConsoleCard, FansCard, FilesCard, HistoryCard, LimitsCard, MeshCard, ObjectsCard, QueueCard, SensorsCard, SlotsCard, SystemCard, TemperatureCard, ToolheadCard, swatchColor, type CardActions } from './printer/Cards';
 import { themes } from './theme';
 
@@ -22,6 +23,48 @@ function actions() {
   const a = new Proxy({}, { get: (_t, name: string) => (...args: unknown[]) => void (calls[name] ??= []).push(args) }) as CardActions;
   return { a, calls };
 }
+
+describe('the cards with controls', () => {
+  const ctxOf = (armed = true) => ({ ui: { screen: { kind: 'live', data: parseStateAnswer(fixture('state-printing')), receivedAt: NOW, offsetMs: 0, stale: false } as never, name: 'P', collapsed: new Set<string>(), dismissedAlert: null, now: NOW, presets: [{ name: 'PLA', extruder: 220, bed: 60 }] }, controls: { ...initialControl(), mayControl: true, armed }, send: () => {}, theme });
+  it('each card draws its own controls only when it is given a controls context', async () => {
+    const st = base();
+    const { a } = actions();
+    const ctx = ctxOf();
+    await render(<TemperatureCard state={st} cards={cardsUi()} actions={a} theme={theme} ctx={ctx} />);
+    expect(screen.getByTestId('temperature-controls')).toBeTruthy();
+    await render(<TemperatureCard state={st} cards={cardsUi()} actions={a} theme={theme} />);
+    expect(screen.queryByTestId('temperature-controls')).toBeNull();
+    await render(<ToolheadCard state={st} theme={theme} ctx={ctx} />);
+    expect(screen.getByTestId('toolhead-controls')).toBeTruthy();
+    await render(<FansCard state={st} theme={theme} ctx={ctx} />);
+    expect(screen.getByTestId('fan-controls')).toBeTruthy();
+    await render(<LimitsCard state={st} theme={theme} ctx={ctx} />);
+    expect(screen.getByTestId('limit-controls')).toBeTruthy();
+    await render(<SensorsCard state={{ ...st, filamentSensors: [{ id: 'f', label: 'R', detected: true, enabled: true }] }} theme={theme} ctx={ctx} />);
+    expect(screen.getByTestId('sensor-controls')).toBeTruthy();
+    await render(<SystemCard state={st} theme={theme} ctx={ctx} />);
+    expect(screen.getByTestId('system-controls')).toBeTruthy();
+    await render(<ObjectsCard state={st} theme={theme} ctx={ctx} />);
+    expect(screen.getByTestId('object-controls')).toBeTruthy();
+    await render(<QueueCard state={{ ...st, queue: { state: 'ready', jobs: [] } }} now={NOW} theme={theme} ctx={ctx} />);
+    expect(screen.getByTestId('queue-controls')).toBeTruthy();
+    await render(<CameraCard state={st} camera={{ cameraId: null, frame: null, number: 0, offline: true }} actions={a} theme={theme} ctx={ctx} />);
+    expect(screen.getByLabelText('Turn camera on')).toBeTruthy();
+    await render(<CameraCard state={st} camera={{ cameraId: null, frame: null, number: 0, offline: false }} actions={a} theme={theme} ctx={ctx} />);
+    expect(screen.queryByLabelText('Turn camera on')).toBeNull();
+  });
+
+  it('the file details offer Print, Add to queue and Delete only with controls', async () => {
+    const { a } = actions();
+    const idle = { ...base(), print: { ...base().print, state: 'standby' } };
+    const files = [{ path: 'a.gcode', size: 1, modified: NOW, title: 'A', kind: 'gcode', printedBefore: true }];
+    const open = cardsUi({ files: { files, cachedAt: NOW, loading: false, error: null, query: '', printedOnly: false, detailOf: 'a.gcode', detail: { path: 'a.gcode', estimatedTime: null, filamentTotal: null, layerCount: 3, thumbnail: null }, detailLoading: false, detailError: null } });
+    await render(<FilesCard state={idle} cards={open} now={NOW} actions={a} theme={theme} />);
+    expect(screen.queryByTestId('file-controls')).toBeNull();
+    await render(<FilesCard state={idle} cards={open} now={NOW} actions={a} theme={theme} ctx={ctxOf()} />);
+    expect(screen.getByLabelText('Delete')).toBeTruthy();
+  });
+});
 
 describe('the read-only cards', () => {
   it('Camera: connecting, a picture, offline, none, and a choice between cameras', async () => {

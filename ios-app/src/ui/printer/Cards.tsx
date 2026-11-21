@@ -6,6 +6,7 @@ import * as format from '../../printer/feed/format';
 import type { BedMesh, FilamentSlot, PrinterState, PrintObject } from '../../printer/feed/wire';
 import { Connections } from '../../printer/feed/wire';
 import type { Theme } from '../theme';
+import { CameraControls, FanControls, FileControls, LimitControls, ObjectControls, QueueControls, SensorControls, SystemControls, TemperatureControls, ToolheadControls, type ControlsCtx } from './CardControls';
 
 /** What the cards can ask for (the page passes the card data's methods; a test passes fakes). */
 export interface CardActions {
@@ -52,7 +53,7 @@ export function Seg({ x1, y1, x2, y2, color, thickness = 2, dashed = false }: { 
 
 // ---- Camera ------------------------------------------------------------------------------------------------------------
 
-export function CameraCard({ state, camera, actions, theme }: { state: PrinterState; camera: CameraUi; actions: CardActions; theme: Theme }) {
+export function CameraCard({ state, camera, actions, theme, ctx }: { state: PrinterState; camera: CameraUi; actions: CardActions; theme: Theme; ctx?: ControlsCtx }) {
   const cameras = state.cameras;
   const chosen = cameras.find((c) => c.id === camera.cameraId) ?? cameras[0];
   if (!chosen) return <Text style={{ color: theme.text }}>This printer has no camera.</Text>;
@@ -90,6 +91,7 @@ export function CameraCard({ state, camera, actions, theme }: { state: PrinterSt
           </Text>
         ) : null}
       </View>
+      {camera.offline && ctx ? <CameraControls ctx={ctx} /> : null}
     </View>
   );
 }
@@ -147,7 +149,7 @@ export function TempChart({ lines, hidden, theme }: { lines: ChartLine[]; hidden
   );
 }
 
-export function TemperatureCard({ state, cards, actions, theme }: { state: PrinterState; cards: CardsUi; actions: CardActions; theme: Theme }) {
+export function TemperatureCard({ state, cards, actions, theme, ctx }: { state: PrinterState; cards: CardsUi; actions: CardActions; theme: Theme; ctx?: ControlsCtx }) {
   const colors = lineColors(theme);
   const lines = cards.chart;
   return (
@@ -179,13 +181,14 @@ export function TemperatureCard({ state, cards, actions, theme }: { state: Print
       ) : (
         <Small theme={theme}>The chart fills in as the printer reports.</Small>
       )}
+      {ctx ? <TemperatureControls state={state} presets={ctx.ui.presets ?? []} ctx={ctx} /> : null}
     </View>
   );
 }
 
 // ---- Values --------------------------------------------------------------------------------------------------------------
 
-export function ToolheadCard({ state, theme }: { state: PrinterState; theme: Theme }) {
+export function ToolheadCard({ state, theme, ctx }: { state: PrinterState; theme: Theme; ctx?: ControlsCtx }) {
   const t = state.toolhead;
   return (
     <View style={{ gap: 6 }} testID="toolhead-card">
@@ -199,11 +202,12 @@ export function ToolheadCard({ state, theme }: { state: PrinterState; theme: The
       </View>
       <Small theme={theme}>{t.homed ? `Homed: ${t.homed.toUpperCase().split('').join(' ')}` : 'Not homed'}</Small>
       {!t.motorsOn ? <Small theme={theme}>Motors are off</Small> : null}
+      {ctx ? <ToolheadControls state={state} ctx={ctx} /> : null}
     </View>
   );
 }
 
-export function FansCard({ state, theme }: { state: PrinterState; theme: Theme }) {
+export function FansCard({ state, theme, ctx }: { state: PrinterState; theme: Theme; ctx?: ControlsCtx }) {
   return (
     <View style={{ gap: 6 }} testID="fans-card">
       {state.fans.map((f) => (
@@ -211,11 +215,12 @@ export function FansCard({ state, theme }: { state: PrinterState; theme: Theme }
       ))}
       <LabelValue label="Light" value={state.light === null ? 'No light' : state.light <= 0 ? 'Off' : format.percent(state.light)} theme={theme} />
       {state.fans.length === 0 && state.light === null ? <Small theme={theme}>This printer reports no fans.</Small> : null}
+      {ctx ? <FanControls state={state} ctx={ctx} /> : null}
     </View>
   );
 }
 
-export function LimitsCard({ state, theme }: { state: PrinterState; theme: Theme }) {
+export function LimitsCard({ state, theme, ctx }: { state: PrinterState; theme: Theme; ctx?: ControlsCtx }) {
   const t = state.toolhead;
   const r = state.retraction;
   return (
@@ -237,11 +242,12 @@ export function LimitsCard({ state, theme }: { state: PrinterState; theme: Theme
           <LabelValue label="Unretract speed" value={`${format.position(r.unretractSpeed)} mm/s`} theme={theme} />
         </>
       ) : null}
+      {ctx ? <LimitControls state={state} ctx={ctx} /> : null}
     </View>
   );
 }
 
-export function SensorsCard({ state, theme }: { state: PrinterState; theme: Theme }) {
+export function SensorsCard({ state, theme, ctx }: { state: PrinterState; theme: Theme; ctx?: ControlsCtx }) {
   const temps = state.sensors.filter((s) => s.unit);
   return (
     <View style={{ gap: 6 }} testID="sensors-card">
@@ -252,6 +258,7 @@ export function SensorsCard({ state, theme }: { state: PrinterState; theme: Them
         <LabelValue key={f.id} label={f.label} value={`${f.detected ? 'Filament detected' : 'No filament'} · ${f.enabled ? 'enabled' : 'disabled'}`} theme={theme} />
       ))}
       {temps.length === 0 && state.filamentSensors.length === 0 ? <Small theme={theme}>This printer reports no sensors.</Small> : null}
+      {ctx ? <SensorControls state={state} ctx={ctx} /> : null}
     </View>
   );
 }
@@ -281,7 +288,7 @@ export function SlotsCard({ state, theme }: { state: PrinterState; theme: Theme 
   );
 }
 
-export function SystemCard({ state, theme }: { state: PrinterState; theme: Theme }) {
+export function SystemCard({ state, theme, ctx }: { state: PrinterState; theme: Theme; ctx?: ControlsCtx }) {
   return (
     <View style={{ gap: 6 }} testID="system-card">
       {state.message && state.message.trim() && state.connection !== Connections.ready ? <Text style={{ color: theme.text }}>{state.message}</Text> : null}
@@ -294,11 +301,12 @@ export function SystemCard({ state, theme }: { state: PrinterState; theme: Theme
           <LabelValue label="Memory free" value={`${Math.trunc(state.host.memAvailableKb / 1024)} MB`} theme={theme} />
         </>
       ) : null}
+      {ctx ? <SystemControls ctx={ctx} /> : null}
     </View>
   );
 }
 
-export function QueueCard({ state, now, theme }: { state: PrinterState; now: number; theme: Theme }) {
+export function QueueCard({ state, now, theme, ctx }: { state: PrinterState; now: number; theme: Theme; ctx?: ControlsCtx }) {
   const q = state.queue;
   if (!q) return null;
   return (
@@ -309,6 +317,7 @@ export function QueueCard({ state, now, theme }: { state: PrinterState; now: num
         <LabelValue key={j.id} label={j.title.trim() ? j.title : j.filename} value={format.age(j.added, now)} theme={theme} />
       ))}
       <Small theme={theme}>Starting prints from here needs the printer in Local Only mode.</Small>
+      {ctx ? <QueueControls state={state} ctx={ctx} /> : null}
     </View>
   );
 }
@@ -318,7 +327,7 @@ export function QueueCard({ state, now, theme }: { state: PrinterState; now: num
 const objectNote = (o: PrintObject) => (o.excluded ? 'excluded' : o.current ? 'printing now' : '');
 
 /** The parts of this print on a drawing of the bed: the one being printed in the accent colour, excluded ones crossed out. The back of the bed is the top. */
-export function ObjectsCard({ state, theme }: { state: PrinterState; theme: Theme }) {
+export function ObjectsCard({ state, theme, ctx }: { state: PrinterState; theme: Theme; ctx?: ControlsCtx }) {
   const [width, setWidth] = useState(0);
   const maxX = state.toolhead.max[0] > 0 ? state.toolhead.max[0] : 220;
   const maxY = state.toolhead.max[1] > 0 ? state.toolhead.max[1] : 220;
@@ -352,6 +361,7 @@ export function ObjectsCard({ state, theme }: { state: PrinterState; theme: Them
         <LabelValue key={o.name} label={o.name} value={objectNote(o)} theme={theme} />
       ))}
       {state.objects.length === 0 ? <Small theme={theme}>No objects in this print.</Small> : null}
+      {ctx ? <ObjectControls state={state} ctx={ctx} /> : null}
     </View>
   );
 }
@@ -452,7 +462,7 @@ const LISTING_NOTE = 'Listing the files keeps the printer busy for several secon
 const NOT_WHILE_PRINTING = 'Not while printing: the printer would stop answering for several seconds.';
 
 /** Files: nothing is asked of Jarvis until Load files is pressed. Then a search, newest first, and the details of a file. */
-export function FilesCard({ state, cards, now, actions, theme }: { state: PrinterState; cards: CardsUi; now: number; actions: CardActions; theme: Theme }) {
+export function FilesCard({ state, cards, now, actions, theme, ctx }: { state: PrinterState; cards: CardsUi; now: number; actions: CardActions; theme: Theme; ctx?: ControlsCtx }) {
   const f = cards.files;
   const printing = state.print.state === 'printing' || state.print.state === 'paused';
   const list = f.files;
@@ -518,6 +528,7 @@ export function FilesCard({ state, cards, now, actions, theme }: { state: Printe
               {d.estimatedTime === null && d.filamentTotal === null && d.layerCount === null && !d.thumbnail ? <Text style={{ color: theme.text }}>No details on the printer for this file</Text> : null}
             </>
           ) : null}
+          {ctx && f.detailOf ? <FileControls path={f.detailOf} ctx={ctx} /> : null}
           <Pressable onPress={actions.closeFile} accessibilityRole="button" accessibilityLabel="Close details" style={[styles.button, { borderColor: theme.border }]}>
             <Text style={{ color: theme.primary, fontWeight: '600' }}>Close</Text>
           </Pressable>

@@ -148,6 +148,15 @@ describe('the Printer page', () => {
     expect(screen.getByTestId('control-message')).toBeTruthy();
   });
 
+  it('when Klipper has stopped a controlling phone is offered a firmware restart, and a look-only one is not', async () => {
+    const send: string[] = [];
+    await show(ui(live('state-klippy-shutdown')), { controls: { ...initialControl(), mayControl: true, armed: true }, controlActions: { send: (c: { kind: string }) => send.push(c.kind) } as never });
+    await fireEvent.press(screen.getByLabelText('Firmware restart'));
+    expect(send).toEqual(['firmwareRestart']);
+    await show(ui(live('state-klippy-shutdown')));
+    expect(screen.queryByLabelText('Firmware restart')).toBeNull();
+  });
+
   it('Back goes back', async () => {
     const c = await show(ui({ kind: 'noJarvis' }));
     await fireEvent.press(screen.getByLabelText('Back'));

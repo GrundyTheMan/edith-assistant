@@ -1,6 +1,6 @@
 import { age } from './format';
 import type { PrinterScreenState } from './session';
-import { Connections, type PrinterAlert, type PrinterState } from './wire';
+import { Connections, type PrinterAlert, type Preset, type PrinterState } from './wire';
 import { PrinterWords } from './words';
 
 /** How strongly the connection chip should look: from "all well" to "something is wrong". */
@@ -27,6 +27,8 @@ export interface PrinterUi {
   dismissedAlert: number | null;
   /** The phone's clock, in ms; moves every 30 s so the ages on the page stay right. */
   now: number;
+  /** The temperature presets Jarvis offers this phone. */
+  presets?: Preset[];
 }
 
 /** The printer's state to draw: the live one, or the last one while Jarvis is away. Null when there is none. */
