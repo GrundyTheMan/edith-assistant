@@ -135,7 +135,7 @@ export async function createServices(): Promise<Services> {
   const printerPrefs = new PrinterPrefs(kvStore);
   await printerPrefs.load();
   const printerSession = new PrinterSession({ feed: printerFeed });
-  const printerCards = new PrinterCardData({ session: printerSession });
+  const printerCards = new PrinterCardData({ session: printerSession, prefs: printerPrefs });
   const printerControl = new PrinterControl({ session: printerSession, uuid: () => Crypto.randomUUID() });
   printerControl.onSent = (c) => printerCards.commandSent(c);
   // Each is restored at startup; one failing never stops the app.

@@ -12,6 +12,7 @@ import {
   parseFiles,
   parseHistory,
   parseMacros,
+  parseSettings,
   parseStateAnswer,
   parseTemperatures,
   type ArmState,
@@ -20,7 +21,9 @@ import {
   type FilesAnswer,
   type HistoryAnswer,
   type MacrosAnswer,
+  type Preset,
   type PrinterFileDetail,
+  type SettingsAnswer,
   type StateAnswer,
   type TempSeries,
 } from './wire';
@@ -51,6 +54,7 @@ export interface PrinterRoutes {
   history(start: number): Promise<FeedResult<HistoryAnswer>>;
   snapshot(cameraId: string, signal?: AbortSignal): Promise<FeedResult<Uint8Array>>;
   controls(on: boolean): Promise<FeedResult<ArmState>>;
+  settings(presets: Preset[] | null, hiddenMacros: string[] | null): Promise<FeedResult<SettingsAnswer>>;
   command(command: PrinterCommand, via: 'phone' | 'chat', opts: { confirmed?: boolean; dryRun?: boolean; requestId?: string }): Promise<CommandAnswer>;
 }
 
@@ -115,6 +119,14 @@ export class PrinterFeedApi implements PrinterRoutes {
   }
   controls(on: boolean) {
     return this.client.call('POST', '/v1/printer/controls', (j) => (hasShape(j, 'arm') ? parseControlsAnswer(j) : null), { body: { on } });
+  }
+
+  /** The two settings a phone may change: the temperature presets and the hidden macros (needs Controls; each is sent only when given). */
+  settings(presets: Preset[] | null, hiddenMacros: string[] | null) {
+    const body: Record<string, unknown> = {};
+    if (presets) body.presets = presets;
+    if (hiddenMacros) body.hiddenMacros = hiddenMacros;
+    return this.client.call('POST', '/v1/printer/settings', (j) => (j && typeof j === 'object' ? parseSettings(j) : null), { body });
   }
 
   /**

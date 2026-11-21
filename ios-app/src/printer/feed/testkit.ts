@@ -48,6 +48,9 @@ export class FakeFeed {
   risks: Record<string, 'confirm' | 'danger'> = { cancel: 'danger', home: 'confirm', estop: 'danger' };
   /** When set, the state route answers this instead (an error body, a 429, ...). */
   stateReply: (() => HttpResponse) | null = null;
+  /** What `POST settings` last saved. */
+  savedPresets: unknown[] | null = null;
+  savedHidden: string[] | null = null;
   snapshotBytes: Uint8Array = JPEG;
   snapshotStatus = 200;
 
@@ -117,6 +120,13 @@ export class FakeFeed {
       case 'POST /v1/printer/controls':
         this.armed = !!req.body?.on;
         return ok({ arm: { armed: this.armed, until: this.armed ? 1763400160000 : null } });
+      case 'POST /v1/printer/settings': {
+        if (!this.armed) return jsonResponse({ error: { code: 'CONTROLS_OFF', message: 'Controls are off.' } }, 403);
+        const b = req.body ?? {};
+        if (Array.isArray(b.presets)) this.savedPresets = b.presets;
+        if (Array.isArray(b.hiddenMacros)) this.savedHidden = b.hiddenMacros as string[];
+        return ok({ presets: this.savedPresets ?? [], hiddenMacros: this.savedHidden ?? [] });
+      }
       case 'POST /v1/printer/command':
         return this.command(req.body ?? {});
     }

@@ -3,9 +3,10 @@ import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Switch, Te
 import { bytesToBase64 } from '../../core/bytes';
 import { ChartMath, ConsoleView, FileList, MeshColors, type CameraUi, type CardsUi, type ChartLine } from '../../printer/feed/cards';
 import * as format from '../../printer/feed/format';
-import type { BedMesh, FilamentSlot, PrinterState, PrintObject } from '../../printer/feed/wire';
+import type { BedMesh, FilamentSlot, Preset, PrinterState, PrintObject } from '../../printer/feed/wire';
 import { Connections } from '../../printer/feed/wire';
 import type { Theme } from '../theme';
+import { ConsoleInput } from './MacrosAndConsole';
 import { CameraControls, FanControls, FileControls, LimitControls, ObjectControls, QueueControls, SensorControls, SystemControls, TemperatureControls, ToolheadControls, type ControlsCtx } from './CardControls';
 
 /** What the cards can ask for (the page passes the card data's methods; a test passes fakes). */
@@ -20,6 +21,11 @@ export interface CardActions {
   setPrintedOnly(on: boolean): void;
   openFile(path: string): void;
   closeFile(): void;
+  setMacroQuery(q: string): void;
+  setHiddenMacros(hidden: string[]): void;
+  rememberConsoleLine(line: string): void;
+  savePresets(presets: Preset[]): void;
+  clearPresetsError(): void;
 }
 
 const lineColors = (t: Theme) => [t.primary, '#C77700', t.error, '#1B7F5C', t.text, t.textMuted];
@@ -181,7 +187,7 @@ export function TemperatureCard({ state, cards, actions, theme, ctx }: { state: 
       ) : (
         <Small theme={theme}>The chart fills in as the printer reports.</Small>
       )}
-      {ctx ? <TemperatureControls state={state} presets={ctx.ui.presets ?? []} ctx={ctx} /> : null}
+      {ctx ? <TemperatureControls state={state} presets={ctx.ui.presets ?? []} ctx={ctx} editor={cards.presets} onSavePresets={actions.savePresets} onClearPresetsError={actions.clearPresetsError} /> : null}
     </View>
   );
 }
@@ -433,7 +439,7 @@ export function HistoryCard({ cards, now, actions, theme }: { cards: CardsUi; no
   );
 }
 
-export function ConsoleCard({ cards, actions, theme }: { cards: CardsUi; actions: CardActions; theme: Theme }) {
+export function ConsoleCard({ cards, actions, theme, ctx }: { cards: CardsUi; actions: CardActions; theme: Theme; ctx?: ControlsCtx }) {
   const c = cards.terminal;
   const lines = ConsoleView.visible(c.lines, c.hideValues).slice(-120);
   return (
@@ -454,6 +460,7 @@ export function ConsoleCard({ cards, actions, theme }: { cards: CardsUi; actions
         {lines.length === 0 ? <Small theme={theme}>Nothing yet.</Small> : null}
       </ScrollView>
       {c.error ? <Small theme={theme} error>{c.error}</Small> : null}
+      {ctx ? <ConsoleInput history={c.history} ctx={ctx} onRemember={actions.rememberConsoleLine} /> : null}
     </View>
   );
 }

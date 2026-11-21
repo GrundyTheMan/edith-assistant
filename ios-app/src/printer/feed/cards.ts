@@ -1,6 +1,8 @@
 import { Store } from '../../core/store';
+import { memoryStore } from '../../settings/settings';
 import type { PrinterCommand } from './commands';
-import { Connections, type ConsoleLine, type HistoryJob, type HistoryTotals, type PrinterFile, type PrinterFileDetail, type PrinterState, type TempSeries } from './wire';
+import { Connections, type MacroInfo, type MacrosAnswer, type Preset, type ConsoleLine, type HistoryJob, type HistoryTotals, type PrinterFile, type PrinterFileDetail, type PrinterState, type TempSeries } from './wire';
+import { PrinterPrefs } from './prefs';
 import type { PrinterSession } from './session';
 import { wordsForFailure } from './words';
 
@@ -117,6 +119,39 @@ export const ConsoleView = {
   },
 };
 
+/** One group of the Macros card: Jarvis's group and the macros that are shown in it. */
+export interface MacroSection {
+  id: string;
+  title: string;
+  macros: MacroInfo[];
+}
+
+/** The Macros card's list: Jarvis's groups in Jarvis's order, filtered by what the owner typed. Edith never decides what is hidden: she shows what Jarvis sends. */
+export const MacroList = {
+  /**
+   * The sections to draw. A macro whose group Jarvis did not list goes under "Other". With a `query` only the macros whose name or description contains it (any case) are
+   * kept, and a section with none is left out. Macros keep the order Jarvis sent.
+   */
+  sections(answer: MacrosAnswer, query: string): MacroSection[] {
+    const q = query.trim().toLowerCase();
+    const known = new Set(answer.groups.map((g) => g.id));
+    const groupOf = (m: MacroInfo) => (known.has(m.group) ? m.group : 'other');
+    const titles = new Map(answer.groups.map((g) => [g.id, g.title] as const));
+    if (!titles.has('other')) titles.set('other', 'Other');
+    const order = answer.groups.map((g) => g.id);
+    if (!order.includes('other')) order.push('other');
+    const kept = answer.macros.filter((m) => !q || m.name.toLowerCase().includes(q) || (m.description ?? '').toLowerCase().includes(q));
+    return order.flatMap((id) => {
+      const inGroup = kept.filter((m) => groupOf(m) === id);
+      return inGroup.length ? [{ id, title: titles.get(id) ?? 'Other', macros: inGroup }] : [];
+    });
+  },
+  /** The parameters to send: what the owner typed, trimmed; a box left empty is not sent, so the macro uses its own default. */
+  params(typed: Record<string, string>): Record<string, string> {
+    return Object.fromEntries(Object.entries(typed).map(([k, v]) => [k, v.trim()] as const).filter(([, v]) => v !== ''));
+  },
+};
+
 export interface MeshExtremes {
   spread: number;
   lowest: { value: number; row: number; col: number };
@@ -175,6 +210,21 @@ export interface ConsoleUi {
   lines: ConsoleLine[];
   hideValues: boolean;
   error: string | null;
+  /** The last 50 lines the owner sent, newest first. */
+  history: string[];
+}
+/** The Macros card: what Jarvis sent (null until read), and the filter. */
+export interface MacrosUi {
+  answer: MacrosAnswer | null;
+  loading: boolean;
+  error: string | null;
+  query: string;
+}
+/** The presets editor: saving, Jarvis's refusal in its words, and a count that goes up when a save worked (the dialog closes on it). */
+export interface PresetsUi {
+  saving: boolean;
+  error: string | null;
+  saved: number;
 }
 /** The newest camera picture; `number` changes with each one so the page redraws even for equal bytes. */
 export interface CameraUi {
@@ -190,15 +240,19 @@ export interface CardsUi {
   files: FilesUi;
   terminal: ConsoleUi;
   camera: CameraUi;
+  macros: MacrosUi;
+  presets: PresetsUi;
 }
 
-const initial = (): CardsUi => ({
+const initial = (prefs: PrinterPrefs): CardsUi => ({
   chart: [],
   chartHidden: new Set(),
   history: { jobs: [], totals: null, loading: false, more: false, error: null },
   files: { files: null, cachedAt: 0, loading: false, error: null, query: '', printedOnly: true, detailOf: null, detail: null, detailLoading: false, detailError: null },
-  terminal: { lines: [], hideValues: true, error: null },
-  camera: { cameraId: null, frame: null, number: 0, offline: false },
+  terminal: { lines: [], hideValues: prefs.consoleHideValues.get(), error: null, history: prefs.consoleHistory.get() },
+  camera: { cameraId: prefs.camera.get(), frame: null, number: 0, offline: false },
+  macros: { answer: null, loading: false, error: null, query: '' },
+  presets: { saving: false, error: null, saved: 0 },
 });
 
 export const HISTORY_PAGE = 50;
@@ -215,7 +269,9 @@ const realDelay = (ms: number, signal: AbortSignal) =>
   });
 
 export interface CardDataDeps {
-  session: Pick<PrinterSession, 'state' | 'routes'>;
+  session: Pick<PrinterSession, 'state' | 'routes'> & Partial<Pick<PrinterSession, 'updatePresets'>>;
+  /** What the owner chose and wants kept (the console's switch and history, the camera). */
+  prefs?: PrinterPrefs;
   delay?: (ms: number, signal: AbortSignal) => Promise<void>;
 }
 
@@ -225,7 +281,8 @@ export interface CardDataDeps {
  * open, and **the file list is never asked for until Load files is pressed**. `visible` is how the page says which cards are open.
  */
 export class PrinterCardData {
-  readonly ui = new Store<CardsUi>(initial());
+  readonly ui: Store<CardsUi>;
+  private readonly prefs: PrinterPrefs;
   private readonly chart = new ChartBuffer();
   private readonly open = new Set<string>();
   private readonly delay: (ms: number, signal: AbortSignal) => Promise<void>;
@@ -237,10 +294,15 @@ export class PrinterCardData {
   private consoleLoaded = false;
   private cameraCtl: AbortController | null = null;
   private consoleBusy = false;
+  private macrosLoaded = false;
   private generation = 0;
 
   constructor(private readonly deps: CardDataDeps) {
     this.delay = deps.delay ?? realDelay;
+    this.prefs = deps.prefs ?? new PrinterPrefs(memoryStore());
+    this.ui = new Store<CardsUi>(initial(this.prefs));
+    this.prefs.consoleHideValues.subscribe(() => this.update((u) => ({ ...u, terminal: { ...u.terminal, hideValues: this.prefs.consoleHideValues.get() } })));
+    this.prefs.consoleHistory.subscribe(() => this.update((u) => ({ ...u, terminal: { ...u.terminal, history: this.prefs.consoleHistory.get() } })));
     deps.session.state.subscribe(() => {
       const s = deps.session.state.get();
       if (s.kind === 'live' && !s.stale) this.onLive(s.data);
@@ -258,6 +320,7 @@ export class PrinterCardData {
     this.chartSeeded = false;
     this.historyLoaded = false;
     this.consoleLoaded = false;
+    this.macrosLoaded = false;
   }
 
   /** The page came back: the cards that are open load again. */
@@ -284,6 +347,8 @@ export class PrinterCardData {
         return !this.historyLoaded;
       case 'console':
         return !this.consoleLoaded;
+      case 'macros':
+        return !this.macrosLoaded;
       case 'camera':
         return !this.cameraCtl;
       default:
@@ -295,6 +360,7 @@ export class PrinterCardData {
     if (card === 'temperatures') void this.seedChart();
     else if (card === 'history') void this.loadHistory(0);
     else if (card === 'console') void this.loadConsole();
+    else if (card === 'macros') void this.loadMacros();
     else if (card === 'camera') this.startCamera();
   }
 
@@ -392,7 +458,62 @@ export class PrinterCardData {
   }
 
   setHideValues(on: boolean): void {
-    this.update((u) => ({ ...u, terminal: { ...u.terminal, hideValues: on } }));
+    void this.prefs.setConsoleHideValues(on);
+  }
+  /** A console line the owner sent is kept for the up arrow. */
+  rememberConsoleLine(line: string): void {
+    void this.prefs.pushConsoleHistory(line);
+  }
+
+  // --- Macros ---
+  private async loadMacros() {
+    const routes = this.deps.session.routes();
+    if (!routes) return;
+    const gen = this.generation;
+    this.update((u) => ({ ...u, macros: { ...u.macros, loading: true, error: null } }));
+    const r = await routes.macros();
+    if (gen !== this.generation) {
+      this.update((u) => ({ ...u, macros: { ...u.macros, loading: false } }));
+      return;
+    }
+    if (r.kind === 'ok') {
+      this.macrosLoaded = true;
+      this.update((u) => ({ ...u, macros: { ...u.macros, answer: r.value, loading: false, error: null } }));
+    } else {
+      this.update((u) => ({ ...u, macros: { ...u.macros, loading: false, error: wordsForFailure(r) } }));
+    }
+  }
+
+  setMacroQuery(q: string): void {
+    this.update((u) => ({ ...u, macros: { ...u.macros, query: q } }));
+  }
+
+  /** Hide or show macros on the phone and the PC (Jarvis saves the list; it needs Controls on, and refuses a name that is not a macro name). */
+  async setHiddenMacros(hidden: string[]): Promise<void> {
+    const routes = this.deps.session.routes();
+    if (!routes) return;
+    const r = await routes.settings(null, hidden);
+    if (r.kind === 'ok') await this.loadMacros();
+    else this.update((u) => ({ ...u, macros: { ...u.macros, error: wordsForFailure(r) } }));
+  }
+
+  // --- Presets ---
+  /** Saves the temperature presets in Jarvis (it needs Controls on and checks them again); the page then shows what Jarvis kept. */
+  async savePresets(presets: Preset[]): Promise<void> {
+    const routes = this.deps.session.routes();
+    if (!routes || this.ui.get().presets.saving) return;
+    this.update((u) => ({ ...u, presets: { ...u.presets, saving: true, error: null } }));
+    const r = await routes.settings(presets, null);
+    if (r.kind === 'ok') {
+      this.deps.session.updatePresets?.(r.value.presets);
+      this.update((u) => ({ ...u, presets: { saving: false, error: null, saved: u.presets.saved + 1 } }));
+    } else {
+      this.update((u) => ({ ...u, presets: { ...u.presets, saving: false, error: wordsForFailure(r) } }));
+    }
+  }
+
+  clearPresetsError(): void {
+    this.update((u) => ({ ...u, presets: { ...u.presets, error: null } }));
   }
   /** Clear empties the view only; the printer keeps its lines. */
   clearConsole(): void {
@@ -443,6 +564,7 @@ export class PrinterCardData {
 
   // --- Camera ---
   chooseCamera(id: string): void {
+    void this.prefs.setCamera(id);
     this.update((u) => ({ ...u, camera: { cameraId: id, frame: null, number: 0, offline: false } }));
     if (this.open.has('camera')) {
       this.stopCamera();

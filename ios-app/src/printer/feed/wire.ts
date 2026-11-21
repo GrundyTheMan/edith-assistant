@@ -335,5 +335,11 @@ export const parseMacros = (v: unknown): MacrosAnswer => ({
   groups: list(asObj(v).groups, (g) => ({ id: str(asObj(g), 'id'), title: str(asObj(g), 'title') })),
   hidden: list(asObj(v).hidden, (h) => (typeof h === 'string' ? h : '')).filter(Boolean),
 });
+/** `POST settings` answers what is now saved. */
+export interface SettingsAnswer { presets: Preset[]; hiddenMacros: string[] }
+export const parseSettings = (v: unknown): SettingsAnswer => ({
+  presets: list(asObj(v).presets, (p) => ({ name: str(asObj(p), 'name'), extruder: num(asObj(p), 'extruder'), bed: num(asObj(p), 'bed') })),
+  hiddenMacros: list(asObj(v).hiddenMacros, (h) => (typeof h === 'string' ? h : '')).filter(Boolean),
+});
 /** The error body of a refused command that needs the owner's yes: `{ "error": {…}, "check": {…} }`. */
 export const parseCheckErrorBody = (v: unknown): Check | null => (asObj(v).check ? parseCheck(asObj(v).check) : null);

@@ -9,6 +9,8 @@ import type { PrinterUi } from '../../printer/feed/page';
 import type { Preset, PrinterState } from '../../printer/feed/wire';
 import type { Theme } from '../theme';
 import { disabledReason } from './ControlViews';
+import { PresetsDialog } from './MacrosAndConsole';
+import type { PresetsUi } from '../../printer/feed/cards';
 
 /**
  * What a card needs to draw controls (C39 stage 2): the page's state, Controls, and how to send. A card draws controls only when `mayControl` (Jarvis lets this phone
@@ -103,8 +105,9 @@ const Row = ({ children }: { children: React.ReactNode }) => <View style={styles
 // --- Temperatures ---
 
 /** A target for each heater (Set, Off), the presets from Jarvis, and All off. (Editing the presets comes with the settings route.) */
-export function TemperatureControls({ state, presets, ctx }: { state: PrinterState; presets: Preset[]; ctx: ControlsCtx }) {
+export function TemperatureControls({ state, presets, ctx, editor = { saving: false, error: null, saved: 0 }, onSavePresets, onClearPresetsError }: { state: PrinterState; presets: Preset[]; ctx: ControlsCtx; editor?: PresetsUi; onSavePresets?: (p: Preset[]) => void; onClearPresetsError?: () => void }) {
   const [texts, setTexts] = useState<Record<string, string>>({});
+  const [editing, setEditing] = useState(false);
   return (
     <View style={{ gap: 8 }} testID="temperature-controls">
       {state.heaters.map((h) => (
@@ -128,7 +131,15 @@ export function TemperatureControls({ state, presets, ctx }: { state: PrinterSta
       <View style={{ alignSelf: 'flex-start' }}>
         <CmdButton text="All off" cmd={{ kind: 'heatersOff' }} ctx={ctx} quickKey="heatersOff" />
       </View>
+      {onSavePresets ? (
+        <View style={{ alignSelf: 'flex-start' }}>
+          <Pressable onPress={() => { onClearPresetsError?.(); setEditing(true); }} accessibilityRole="button" accessibilityLabel="Edit presets" testID="edit-presets" style={[styles.cmd, { borderColor: ctx.theme.border }]}>
+            <Text style={{ color: ctx.theme.text, fontWeight: '600' }}>Edit presets</Text>
+          </Pressable>
+        </View>
+      ) : null}
       <WhyOff ctx={ctx} />
+      {editing && onSavePresets ? <PresetsDialog presets={presets} ctx={ctx} editor={editor} onSave={onSavePresets} onClose={() => { setEditing(false); onClearPresetsError?.(); }} /> : null}
     </View>
   );
 }
