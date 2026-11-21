@@ -14,6 +14,7 @@ import type { PrinterScreenState } from '../../printer/feed/session';
 import type { PrinterState } from '../../printer/feed/wire';
 import { useTheme, type Theme } from '../theme';
 import { CameraCard, ConsoleCard, FansCard, FilesCard, HistoryCard, LimitsCard, MeshCard, ObjectsCard, QueueCard, SensorsCard, SlotsCard, SystemCard, TemperatureCard, ToolheadCard, type CardActions } from './Cards';
+import { FirmwareRestartButton, type ControlsCtx } from './CardControls';
 import { ConfirmSheet, ControlMessage, ControlsBar, EmergencyStop, type ControlActions } from './ControlViews';
 import { StatusCard, type LastPrint } from './StatusCard';
 
@@ -32,29 +33,30 @@ function cardShown(id: string, state: PrinterState): boolean {
 }
 
 function CardBody({ id, ui, state, theme, is24Hour, lastPrint, cards, actions, controls, controlActions, onDismissAlert }: { id: string; ui: PrinterUi; state: PrinterState; theme: Theme; is24Hour: boolean; lastPrint: LastPrint | null; cards: CardsUi; actions: CardActions; controls: ControlUi; controlActions: ControlActions; onDismissAlert: (time: number) => void }) {
+  const ctx: ControlsCtx | undefined = controls.mayControl ? { ui, controls, send: controlActions.send, theme } : undefined;
   switch (id) {
     case 'status':
       return <StatusCard ui={ui} theme={theme} is24Hour={is24Hour} lastPrint={lastPrint} onDismissAlert={onDismissAlert} controls={controls} onSend={controlActions.send} />;
     case 'camera':
-      return <CameraCard state={state} camera={cards.camera} actions={actions} theme={theme} />;
+      return <CameraCard state={state} camera={cards.camera} actions={actions} theme={theme} ctx={ctx} />;
     case 'temperatures':
-      return <TemperatureCard state={state} cards={cards} actions={actions} theme={theme} />;
+      return <TemperatureCard state={state} cards={cards} actions={actions} theme={theme} ctx={ctx} />;
     case 'toolhead':
-      return <ToolheadCard state={state} theme={theme} />;
+      return <ToolheadCard state={state} theme={theme} ctx={ctx} />;
     case 'fans':
-      return <FansCard state={state} theme={theme} />;
+      return <FansCard state={state} theme={theme} ctx={ctx} />;
     case 'limits':
-      return <LimitsCard state={state} theme={theme} />;
+      return <LimitsCard state={state} theme={theme} ctx={ctx} />;
     case 'sensors':
-      return <SensorsCard state={state} theme={theme} />;
+      return <SensorsCard state={state} theme={theme} ctx={ctx} />;
     case 'slots':
       return <SlotsCard state={state} theme={theme} />;
     case 'files':
-      return <FilesCard state={state} cards={cards} now={ui.now} actions={actions} theme={theme} />;
+      return <FilesCard state={state} cards={cards} now={ui.now} actions={actions} theme={theme} ctx={ctx} />;
     case 'objects':
-      return <ObjectsCard state={state} theme={theme} />;
+      return <ObjectsCard state={state} theme={theme} ctx={ctx} />;
     case 'queue':
-      return <QueueCard state={state} now={ui.now} theme={theme} />;
+      return <QueueCard state={state} now={ui.now} theme={theme} ctx={ctx} />;
     case 'history':
       return <HistoryCard cards={cards} now={ui.now} actions={actions} theme={theme} />;
     case 'console':
@@ -62,7 +64,7 @@ function CardBody({ id, ui, state, theme, is24Hour, lastPrint, cards, actions, c
     case 'mesh':
       return state.mesh ? <MeshCard mesh={state.mesh} theme={theme} /> : null;
     case 'system':
-      return <SystemCard state={state} theme={theme} />;
+      return <SystemCard state={state} theme={theme} ctx={ctx} />;
     default:
       return null;
   }
@@ -158,6 +160,9 @@ export function PrinterPage({
             <View style={[styles.banner, { backgroundColor: theme.surface, borderColor: theme.error }]} testID="banner">
               <Ionicons name="alert-circle-outline" size={18} color={theme.error} />
               <Text style={{ color: theme.text, flex: 1 }}>{banner}</Text>
+              {controls.mayControl && state && (state.connection === Connections.klippyShutdown || state.connection === Connections.klippyError) ? (
+                <FirmwareRestartButton ctx={{ ui, controls, send: controlActions.send, theme }} />
+              ) : null}
               {ui.screen.kind === 'away' ? (
                 <Pressable onPress={onTryAgain} accessibilityRole="button" accessibilityLabel="Try again" hitSlop={8}>
                   <Text style={{ color: theme.primary, fontWeight: '600' }}>Try again</Text>
@@ -263,7 +268,7 @@ export function PrinterScreen() {
     };
   }, [idle, lastPrint, session]);
 
-  const ui: PrinterUi = { screen: screen as PrinterScreenState, name: shared?.name?.trim() ? shared.name : 'Printer', collapsed, dismissedAlert: dismissed, now };
+  const ui: PrinterUi = { screen: screen as PrinterScreenState, name: shared?.name?.trim() ? shared.name : 'Printer', collapsed, dismissedAlert: dismissed, now, presets: shared?.presets ?? [] };
   const directConnected = home.services.get().some((s) => s.id === 'printer' && s.state.get().kind === 'connected');
   return (
     <PrinterPage

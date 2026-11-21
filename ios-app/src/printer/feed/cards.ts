@@ -1,4 +1,5 @@
 import { Store } from '../../core/store';
+import type { PrinterCommand } from './commands';
 import { Connections, type ConsoleLine, type HistoryJob, type HistoryTotals, type PrinterFile, type PrinterFileDetail, type PrinterState, type TempSeries } from './wire';
 import type { PrinterSession } from './session';
 import { wordsForFailure } from './words';
@@ -424,6 +425,18 @@ export class PrinterCardData {
       return r.kind === 'ok' ? { ...u, files: { ...u.files, detail: r.value, detailLoading: false } } : { ...u, files: { ...u.files, detailLoading: false, detailError: wordsForFailure(r) } };
     });
   }
+  /**
+   * A command of the Files details was sent (Print, Add to queue or Delete): the details have done their job and close, and a deleted file leaves the list at once (the list
+   * is not asked for again: it keeps the printer busy for seconds). Called only when Jarvis accepted the command, so a refusal or a "No" leaves the details as they are.
+   */
+  commandSent(command: PrinterCommand): void {
+    if (command.kind !== 'start' && command.kind !== 'queueAdd' && command.kind !== 'deleteFile') return;
+    this.update((u) => {
+      const list = command.kind === 'deleteFile' ? (u.files.files?.filter((f) => f.path !== command.path) ?? null) : u.files.files;
+      return { ...u, files: { ...u.files, files: list, detailOf: null, detail: null, detailLoading: false, detailError: null } };
+    });
+  }
+
   closeFile(): void {
     this.update((u) => ({ ...u, files: { ...u.files, detailOf: null, detail: null, detailLoading: false, detailError: null } }));
   }

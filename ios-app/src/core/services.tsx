@@ -137,6 +137,7 @@ export async function createServices(): Promise<Services> {
   const printerSession = new PrinterSession({ feed: printerFeed });
   const printerCards = new PrinterCardData({ session: printerSession });
   const printerControl = new PrinterControl({ session: printerSession, uuid: () => Crypto.randomUUID() });
+  printerControl.onSent = (c) => printerCards.commandSent(c);
   // Each is restored at startup; one failing never stops the app.
   await home.restoreServices();
   // The Demo home is for trying things with no service; development builds only (Expo Go is one).

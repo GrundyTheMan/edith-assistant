@@ -274,6 +274,28 @@ describe('the card data against the pretend feed', () => {
     session.detach();
   });
 
+  it('a file command Jarvis accepted closes the details, and a deleted file leaves the list without asking for it again', async () => {
+    const { feed, session, data } = await setup();
+    await data.loadFiles(false);
+    const first = data.ui.get().files.files![0].path;
+    await data.openFile(first);
+    expect(data.ui.get().files.detailOf).toBe(first);
+    data.commandSent({ kind: 'pause' });
+    expect(data.ui.get().files.detailOf).toBe(first); // not a file command
+    data.commandSent({ kind: 'queueAdd', path: first });
+    expect(data.ui.get().files.detailOf).toBeNull();
+    expect(data.ui.get().files.files!.some((f) => f.path === first)).toBe(true);
+    await data.openFile(first);
+    const count = data.ui.get().files.files!.length;
+    data.commandSent({ kind: 'deleteFile', path: first });
+    expect(data.ui.get().files.detailOf).toBeNull();
+    expect(data.ui.get().files.files!.length).toBe(count - 1);
+    expect(feed.count('/v1/printer/files')).toBe(1);
+    data.commandSent({ kind: 'start', path: 'x' });
+    expect(data.ui.get().files.files!.length).toBe(count - 1);
+    session.detach();
+  });
+
   it('hiding a chart line is toggled and remembered', async () => {
     const { session, data } = await setup();
     data.toggleSeries('extruder');
