@@ -62,7 +62,7 @@ a native iOS app **in the Android app** (the owner's iPhone runs Edith inside An
 ## 4. Owner decisions (binding)
 
 ### 4.1 Platform and process
-- Native Android, Kotlin, Jetpack Compose. Same GitHub repo (`GrundyTheMan/edith`, private), fresh
+- Native Android, Kotlin, Jetpack Compose. Same GitHub repo (`GrundyTheMan/edith-assistant`, public since 2026-11-21: the history was scrubbed and moved there from the private `GrundyTheMan/edith`), fresh
   start on `master`; v1 lives only in history.
 - Built one tested phase at a time, chunk by chunk, each through a pull request.
 - Implementers may be different AI models in different apps. Every chunk must be self-contained and

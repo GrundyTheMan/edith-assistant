@@ -45,6 +45,14 @@ cd ios-app && npx expo start --lan   # dev server for Expo Go on the owner's iPh
 - `scripts/` — build/deploy scripts above. `.github/workflows/ci.yml` — CI on every PR and push to master.
 - `docs/design/` — the design. Keep it current in the same PR when the design changes.
 
+## This repository is public
+- `GrundyTheMan/edith-assistant` is **public**: everything committed, every commit message, every PR and every CI log can be read by anyone.
+  Never commit or write the owner's real name or email addresses, the Windows user name, real IP addresses or Tailscale names, tokens, keys, crash logs
+  (`hs_err_*`, `replay_*`) or recorded build logs; use placeholders (`owner@example.com`, `192.168.x.x`, `USER`). Commits use the GitHub no-reply identity
+  (`GrundyTheMan <188627129+GrundyTheMan@users.noreply.github.com>`): check `git config user.email` in a new clone before the first commit.
+- Never push or merge history from the old private repository: its commits carry personal data. Move changes over as new commits.
+- No license has been chosen yet (all rights reserved); the owner decides.
+
 ## Working with the owner (details: `docs/design/02-standards.md` §4–6)
 - Honest, direct feedback; say plainly what isn't done or couldn't be verified, and ask about it.
 - Call something a "fix" only when it repairs broken code; otherwise it's a "change".

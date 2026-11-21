@@ -68,7 +68,7 @@ in `app/src/test/java/com/edith/app/testing/` (created in C02/C03 and reused).
 
 ## 5. Git and pull requests
 
-- Repository: `https://github.com/GrundyTheMan/edith` (private). Default branch `master`.
+- Repository: `https://github.com/GrundyTheMan/edith-assistant` (**public**, so GitHub's Mac builds are free). Default branch `master`. The earlier private repository `GrundyTheMan/edith` is archived: it holds the old pull requests and the first 160 or so releases' history, and must never be merged or pushed into this one (its commits carry personal data that was scrubbed here).
 - Branch per chunk: `cNN-short-name` (e.g. `c08-tool-framework`) from up-to-date `master`.
 - Commits: imperative subject ≤ 72 chars, body explaining why. End commit messages with the
   attribution line your environment requires (if any).

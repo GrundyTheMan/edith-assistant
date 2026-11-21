@@ -10,7 +10,7 @@ server with at least one model that has `tools` (and ideally `vision`+`audio`).
 
 | Item | Value |
 |---|---|
-| Repo | `D:\Dev Projects\edith` (path has a space — always quote it) · GitHub `GrundyTheMan/edith` (private) |
+| Repo | `D:\Dev Projects\edith` (path has a space — always quote it) · GitHub `GrundyTheMan/edith-assistant` (public; the old private `GrundyTheMan/edith` is archived) |
 | JDK | Temurin 21 — `JAVA_HOME=C:\Users\USER\AppData\Local\Programs\Eclipse Adoptium\jdk-21.0.12.1+1` |
 | Android SDK | `ANDROID_HOME=C:\Users\USER\AppData\Local\Android\Sdk`; Android Studio installed |
 | Emulator | AVD `Pixel_9_API_37` (Google Play image, x86_64, 1080×2424), WHPX acceleration |
