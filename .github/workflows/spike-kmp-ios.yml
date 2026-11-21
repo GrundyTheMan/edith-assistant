@@ -81,6 +81,13 @@ jobs:
           sleep 15
           xcrun simctl io "$udid" screenshot "$RUNNER_TEMP/spike.png"
           cp "$RUNNER_TEMP/spike.png" build/spike.png
+          # Did it stay up? If not, say why: the app's own log and any crash report.
+          xcrun simctl spawn "$udid" launchctl list | grep -i edithkmp || echo "the app is NOT running"
+          echo "--- app log (last 2 minutes) ---"
+          xcrun simctl spawn "$udid" log show --last 2m --style compact --predicate 'process == "iosApp"' | tail -60 || true
+          echo "--- crash reports ---"
+          mkdir -p build/crash
+          for f in $(ls -t ~/Library/Logs/DiagnosticReports/*iosApp* 2>/dev/null | head -2); do echo "== $f"; head -80 "$f"; cp "$f" build/crash/; done
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -89,6 +96,7 @@ jobs:
           name: spike-ios
           path: |
             spike-kmp/build/spike.png
+            spike-kmp/build/crash/**
             spike-kmp/composeApp/build/reports/**
             spike-kmp/composeApp/build/test-results/**
           if-no-files-found: ignore
