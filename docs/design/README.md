@@ -24,6 +24,8 @@ different applications, can each implement one chunk independently** and hand th
 If something in a chunk is wrong or impossible, don't silently diverge: explain it in the PR and update the
 design in the same PR, or ask the owner.
 
+> **Planned (2026-11-21): one shared Kotlin codebase for Android and iPhone.** [`kmp-transition.md`](kmp-transition.md) is the detailed plan (phases, work packages K0-K5, gates, decisions D40-D47, risks). It is **proposed**, not started: until its first gate (G0) the Expo app below stays the iPhone app and nothing in `app/` changes.
+
 > **Working on the iOS app (`ios-app/`)?** Read [`ios-roadmap.md`](ios-roadmap.md) first: it holds the rules for iOS agents, a guide to the code, what Expo Go can and cannot do, the build order and the owner decisions D28–D37. Chunks C40–C47 are built; C48–C76 are designed.
 
 ## Chunks

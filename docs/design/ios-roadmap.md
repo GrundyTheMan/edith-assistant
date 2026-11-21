@@ -1,5 +1,7 @@
 # Edith for iOS — roadmap, architecture guide and rules for implementing agents
 
+> **A transition to shared Kotlin code is proposed** ([`kmp-transition.md`](kmp-transition.md), decision D40). It is not started and needs the owner's go at its first gate (G0). Until then this roadmap stands; if the transition goes ahead, the Expo app is frozen to bug fixes and this file is archived at parity.
+
 **Status:** written 2026-11-20, after C40–C47 were built and merged. This file is the entry point for **every agent that
 works on `ios-app/`**. Read it first, then read the one chunk you were given (C48–C76, in `chunks/`). It repeats nothing
 that the Android design already says well: where an iOS chunk ports an Android chunk, the iOS chunk says which Android
