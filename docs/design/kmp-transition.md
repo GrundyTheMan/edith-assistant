@@ -110,12 +110,17 @@ microphone probe (written, never run), a desktop target, a SwiftUI shell generat
 | 4 | tests passed (4 of 4); app build failed | 10 m 16 s | Xcode built both simulator chip types while Kotlin built one: `ARCHS=arm64 EXCLUDED_ARCHS=x86_64`. A piped command hid the failure: `set -o pipefail`. |
 | 5 | **app built and launched in a simulator; screenshot** | 7 m 47 s | Cold: Kotlin 7 min (with tests) plus Xcode 5 min. |
 | 6 | blocked by GitHub billing (private repo, macOS minutes cost 10x) | n/a | The reason the repository was made public. |
+| 7 | failed (public repo, free runner) | 30 s | The executable bit on `gradlew` was lost again when the files were copied into the new clone. |
+| 8 | failed | 2 m 15 s | **`AVAudioSession.setActive` is not exposed to Kotlin** (unresolved reference). `AVAudioRecorder` activates the session itself, so the call was dropped; a Swift seam would call it (§4.4). |
+| 9 | **built, launched; microphone probe worked** | 13 m 25 s | The screenshot read "Recorded 3 s: 24864 bytes": microphone permission, `AVAudioSession` and `AVAudioRecorder` driven from Kotlin (K0.1). |
+| 10 | built, launched; all probes worked | 16 m 13 s | Microphone 24,908 bytes; **Room KMP + bundled SQLite** wrote and read a row; **DataStore** counted launch 1; **navigation + ViewModel** went to a second screen (Material icon and Coil image composed) and back (K0.4, K0.5). Cold. |
+| 11 | same, cold with the new `~/.konan` cache step | 17 m 52 s | The cache was saved (about 1 minute). |
+| 12 | same, **warm** (a comment changed) | **5 m 39 s** | Xcode build 2 m 11 s; simulator boot, launch and screenshot 2 m 28 s (K0.7). |
 
 Local desktop: shared tests (4) pass in 34 s warm. Versions that worked together: Kotlin 2.4.21, Compose Multiplatform 1.12.2, Ktor 3.6.1, coroutines 1.11.0,
-serialization 1.12.0, Gradle 9.8.2, JDK 21, Xcode on GitHub's `macos-15` runner.
+serialization 1.12.0, Gradle 9.8.2, JDK 21, Xcode on GitHub's `macos-15` runner. Added in Phase 0 and working on both the desktop and the iPhone simulator: Room 2.8.5 with KSP 2.3.12 and `sqlite-bundled` 2.6.2, DataStore 1.3.0, okio 3.18.2, JetBrains multiplatform navigation 2.10.0 and lifecycle-viewmodel 2.11.0, Coil 3.6.3, Material icons 1.7.3.
 
-**Not yet shown:** the microphone code on iOS, a build on a real iPhone (signing, TestFlight), streaming from the owner's real Ollama on a phone, Room and DataStore on iOS,
-warm-cache build times, sherpa-onnx on iOS. These are Phase 0.
+**Not yet shown** (Phase 0, 2026-11-21): a build on a real iPhone (signing, TestFlight: K0.2), streaming from the owner's real Ollama on a phone (K0.3), the database surviving an app restart and opening a copy of the real Android `edith.db` (K0.4 second half, K1.5), sherpa-onnx and ONNX Runtime on iOS (K0.6), VoiceOver and text input by hand (G0).
 
 ### 3.4 What the Android documentation says about the Gradle setup (read 2026-11-21: developer.android.com/kotlin/multiplatform/plugin)
 
@@ -281,6 +286,19 @@ Goal: replace the open questions in §3.3 and §14 with measurements, using free
 **Gate G0 (owner).** Go if: the spike runs on a real iPhone, streaming and Room/DataStore work on iOS, Compose screens are acceptable by hand (typing, scrolling, VoiceOver reads the
 labels), and a warm iOS CI run is acceptable. Otherwise stop here: the Expo plan continues unchanged and this document is archived with what was learned.
 
+**Phase 0 progress (2026-11-21)**
+
+| WP | Status | Result |
+|---|---|---|
+| K0.1 | **done** | The microphone probe works on an iOS simulator (§3.3 runs 8-9). One Apple call, `AVAudioSession.setActive`, is not exposed to Kotlin. |
+| K0.2 | waiting for the owner | Needs D43 (bundle id) and the Apple and GitHub setup in `spike-kmp/DEVICE_BUILD.md`. |
+| K0.3 | waiting for K0.2 | Needs the spike installed on the phone. |
+| K0.4 | **half done** | Room KMP + bundled SQLite and DataStore work on the desktop and on an iOS simulator (§3.3 run 10). Not yet: survive a restart (needs the phone), open a copy of the real `edith.db` (needs the real entities: K1.5). |
+| K0.5 | **done** | Navigation, ViewModel, Coil and Material icons compile, link and run on iOS with Compose Multiplatform 1.12.2 and Kotlin 2.4.21. Not checked by eye: how the Coil image and the icon look. |
+| K0.6 | not started | Research and a probe for sherpa-onnx, ONNX Runtime, WebRTC, IMAP/SMTP, MQTT. |
+| K0.7 | **done** | Cold 17 m 52 s, warm 5 m 39 s with the `~/.konan` and Gradle caches (§3.3 runs 11-12). The simulator launch and screenshot take about 2.5 minutes of that; the shared-code PR job can skip them. Target met (under 12 minutes). |
+| K0.8 | **partly** | Every run on the public repository started and ran; none was refused for billing (the private repository was). That the minutes are not billed is for the owner to confirm on GitHub's billing page (§14 U9). |
+
 ### Phase 1 — Make the Android build ready for sharing (no behaviour change)
 
 Goal: `shared/` exists, builds for Android, desktop and iOS, and the first foundations live in it. `app/` and the Expo app are untouched in behaviour.
@@ -354,7 +372,7 @@ After K2.4 the iPhone app can run the whole engine. **Gate G2:** the shared engi
 - `ios-app.yml` (existing): the Expo tests, until retirement.
 
 **Cost.** On a public repository GitHub's standard runners, macOS included, are free (to re-verify, K0.8). Even so: path filters, `concurrency: cancel-in-progress`, Gradle build cache and the Kotlin/Native
-cache (`~/.konan`), and no iOS job for Android-only changes. A cold iOS build was about 12 minutes in the spike.
+cache (`~/.konan`), and no iOS job for Android-only changes. In the spike an iOS build took about 18 minutes cold and about 6 minutes warm (§3.3 runs 11-12).
 
 **Secrets.** Three secrets and two variables are needed for TestFlight (`spike-kmp/DEVICE_BUILD.md` becomes `docs/ios-build-setup.md`). The owner types them into GitHub's settings page. They are never in the repo, chat, or logs; the workflow writes the key to a temp file and deletes it.
 
@@ -448,6 +466,18 @@ Ask in the PR that needs each; recommended answer first.
 | U10 | Ktor Darwin engine: pinning a self-signed certificate (Jarvis) natively, and plain HTTP to LAN addresses under App Transport Security | K0.3, K4.5 |
 | U11 | The microphone and `AVAudioSession` behaviour on a real phone and under interruptions (calls, Siri) | K0.1, K4.3 |
 | U12 | App Store and TestFlight requirements for this app's permission strings and background modes | K4.1 |
+
+### Status of the unverified items (2026-11-21)
+
+| # | Status |
+|---|---|
+| U2 | Holds for what was tried: Compose Multiplatform 1.12.2 with Kotlin 2.4.21 compiled and ran Material 3, navigation, ViewModel, Coil and icons on an iOS simulator. |
+| U3 | Answered: JetBrains navigation 2.10.0 and lifecycle-viewmodel 2.11.0 work with Compose Multiplatform 1.12.2. They match the generation of the Android app's navigation 2.10.2 and lifecycle 2.11.0. |
+| U4 | Half: Room KMP generated and ran on the desktop and on iOS with the bundled driver. Whether the real Android `edith.db` opens unchanged is still open (K1.5). |
+| U8 | Not tried. |
+| U9 | Partly: runs on the public repository were not refused for billing; billing page to confirm. |
+| U11 | Partly: the microphone and `AVAudioSession` setup work on a simulator; a real phone, interruptions and a call are not tried. |
+| U1, U5, U6, U7, U10, U12 | Not started. |
 
 ## 15. How to start
 
