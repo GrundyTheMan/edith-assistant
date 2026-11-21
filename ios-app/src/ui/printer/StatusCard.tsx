@@ -2,7 +2,10 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import * as format from '../../printer/feed/format';
 import { alertOf, stateOf, type PrinterUi } from '../../printer/feed/page';
 import { PrinterStates, type PrintInfo } from '../../printer/feed/wire';
+import type { ControlUi } from '../../printer/feed/control';
+import type { PrinterCommand } from '../../printer/feed/commands';
 import type { Theme } from '../theme';
+import { JobButtons } from './ControlViews';
 
 /** What the print state is called on the chip. A state from a newer Jarvis is shown as it came. */
 export function printStateLabel(state: string): string {
@@ -55,7 +58,7 @@ function stateColors(state: string, theme: Theme): { bg: string; fg: string } {
 }
 
 /** The Status card (C39 §8.4): the job, its progress, and the numbers that matter while it prints. Controls come in E7. */
-export function StatusCard({ ui, theme, is24Hour, lastPrint, onDismissAlert }: { ui: PrinterUi; theme: Theme; is24Hour: boolean; lastPrint: LastPrint | null; onDismissAlert: (time: number) => void }) {
+export function StatusCard({ ui, theme, is24Hour, lastPrint, onDismissAlert, controls, onSend }: { ui: PrinterUi; theme: Theme; is24Hour: boolean; lastPrint: LastPrint | null; onDismissAlert: (time: number) => void; controls: ControlUi; onSend: (command: PrinterCommand) => void }) {
   const state = stateOf(ui);
   if (!state) return null;
   const p = state.print;
@@ -101,6 +104,7 @@ export function StatusCard({ ui, theme, is24Hour, lastPrint, onDismissAlert }: {
           </View>
         ))}
       </View>
+      {controls.mayControl && (p.state === PrinterStates.printing || p.state === PrinterStates.paused) ? <JobButtons ui={ui} state={state} c={controls} theme={theme} onSend={onSend} /> : null}
       {p.message && p.message.trim() ? <Text style={{ color: theme.textMuted, fontSize: 13 }}>{p.message}</Text> : null}
       {p.state === PrinterStates.standby && lastPrint ? (
         <Text style={{ color: theme.textMuted, fontSize: 13 }} testID="last-print">

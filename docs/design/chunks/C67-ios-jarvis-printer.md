@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo), Wave B |
-| Status | **In progress** — ten work packages, one PR each (E1–E10): E1–E6 built (see "As built"; stage 1 ships with E6); E7–E10 to do |
+| Status | **In progress** — ten work packages, one PR each (E1–E10): E1–E7 built (see "As built"; stage 1 shipped with E6); E8–E10 to do |
 | Depends on | **C66a** (the Jarvis connection: pairing and the client), C55 (the direct printer card and `printer_status`), C45 (cards) |
 | Unblocks | stages 3–4 on iOS (upload/start/delete/queue-add, alerts, recordings, live camera): **not designed yet because Android has not built them** (`C39-printer-parity.md` §12 E11–E14); add chunks C77+ when Android does |
 | Runs in | **Expo Go** (decision D39: ordinary HTTPS to Jarvis's Tailscale name; `react-native-svg` is in Expo Go); it waits for the Jarvis change, not for a development build |
@@ -109,3 +109,10 @@ Work packages land as separate PRs; each adds its own lines here. Nothing below 
 - `printer_status` says "(via Jarvis)" and adds "The printer's latest error line: …" while a print is going (not when the state already says it).
 - Settings → Home → the printer's row has the paragraph (final words changed only in where to pair: "the Jarvis service above") and a status line: sharing the printer (name) / not sharing / not paired / can't be reached right now (`ui/PrinterJarvisNote.tsx`).
 - Not verified: no real Jarvis; the tile's "via Jarvis" look on the phone. Stage 1 (read-only printer through Jarvis) is complete with this package, still unchecked against a real Jarvis.
+
+### E7 — Controls and the confirm flow (built)
+- `printer/feed/control.ts` (`PrinterControl`, ported from Android's `PrinterControl.kt`): the Controls switch (`setControls`, then the page follows Jarvis's own `arm` answer), `send` (a command goes out with `via: "phone"` and a new request id; a command the owner must confirm opens the sheet with **the server's** question and confirm words and sends nothing), `confirm` (sends again with `confirmed: true` and **the same request id**), `dismissSheet`, the 10-second self-closing sheet, the pending buttons, and the rules that end Controls: the page leaving or the app going to the background (`detached`, plus `session.detach` asking Jarvis to turn it off), a printer that is not ready, Jarvis away, and `CONTROLS_OFF`. A server that asks again after the owner's yes is not answered with another yes.
+- `printer/feed/settle.ts`: a port of Jarvis's `commandSettled` and `settleTimeout` with its constants (all 33 kinds have a time; 0 means it does not wait). A button shows a spinner until the printer shows the change or the time is up.
+- `ui/printer/ControlViews.tsx`: the Controls bar ("Controls on · 1:43", counted from Jarvis's clock; a look-only phone gets "Jarvis lets this phone look, not control."), the confirm sheet (Jarvis's words; red when dangerous; the other button says "Keep going", or "Keep printing" when the confirm says Cancel; never OK or Yes), **Emergency stop** in the header (works with Controls off and from a look-only phone, asks first, button "Stop now"), Pause/Resume and Cancel print on the Status card (reasons under them from the server's `quick` map), and a one-line message that goes after six seconds. The page has a coloured border while Controls are on.
+- Not built here (E8–E10): the controls of the other cards, macros and the console input, and chat. The Files sheet's `onSent` hook exists for E8.
+- Not verified: against a real Jarvis (the pretend feed has the contract's behaviour, not Jarvis's); nothing was tried on the real printer. **The owner decides what to try, one control at a time, printer idle first (C39 §13).**
