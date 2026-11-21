@@ -15,18 +15,21 @@ import type { PrinterState } from '../../printer/feed/wire';
 import { useTheme, type Theme } from '../theme';
 import { CameraCard, ConsoleCard, FansCard, FilesCard, HistoryCard, LimitsCard, MeshCard, ObjectsCard, QueueCard, SensorsCard, SlotsCard, SystemCard, TemperatureCard, ToolheadCard, type CardActions } from './Cards';
 import { FirmwareRestartButton, type ControlsCtx } from './CardControls';
+import { MacrosCard } from './MacrosAndConsole';
 import { ConfirmSheet, ControlMessage, ControlsBar, EmergencyStop, type ControlActions } from './ControlViews';
 import { StatusCard, type LastPrint } from './StatusCard';
 
-/** The cards that exist so far (E4 Status; E5 all the read-only ones; Macros comes in E9). They are drawn in the order of `CARD_IDS`. */
-export const BUILT_CARDS: readonly string[] = CARD_IDS.filter((id) => id !== 'macros');
+/** The cards that exist, drawn in the order of `CARD_IDS` (a card with nothing to show is left out: see `cardShown`). */
+export const BUILT_CARDS: readonly string[] = CARD_IDS;
 
 const TITLES: Record<string, string> = { status: 'Status', camera: 'Camera', temperatures: 'Temperatures', toolhead: 'Toolhead', fans: 'Fans and light', limits: 'Limits and retraction', sensors: 'Sensors', slots: 'Filament slots', macros: 'Macros', files: 'Files', objects: 'Objects', queue: 'Queue', history: 'History', console: 'Console', mesh: 'Bed mesh', system: 'System' };
 
 const toneColor = (tone: Tone, theme: Theme) => (tone === 'good' ? theme.primary : tone === 'bad' ? theme.error : tone === 'warn' ? '#B26A00' : theme.textMuted);
 
 /** A card with nothing to show is left out: no queue, no mesh. */
-function cardShown(id: string, state: PrinterState): boolean {
+function cardShown(id: string, state: PrinterState, mayControl: boolean): boolean {
+  // Every macro button is a control: a look-only phone has no Macros card at all.
+  if (id === 'macros') return mayControl;
   if (id === 'queue') return state.queue !== null;
   if (id === 'mesh') return state.mesh !== null;
   return true;
@@ -60,7 +63,9 @@ function CardBody({ id, ui, state, theme, is24Hour, lastPrint, cards, actions, c
     case 'history':
       return <HistoryCard cards={cards} now={ui.now} actions={actions} theme={theme} />;
     case 'console':
-      return <ConsoleCard cards={cards} actions={actions} theme={theme} />;
+      return <ConsoleCard cards={cards} actions={actions} theme={theme} ctx={ctx} />;
+    case 'macros':
+      return ctx ? <MacrosCard macros={cards.macros} ctx={ctx} onQuery={actions.setMacroQuery} onHidden={actions.setHiddenMacros} /> : null;
     case 'mesh':
       return state.mesh ? <MeshCard mesh={state.mesh} theme={theme} /> : null;
     case 'system':
@@ -170,7 +175,7 @@ export function PrinterPage({
               ) : null}
             </View>
           ) : null}
-          {CARD_IDS.filter((id) => BUILT_CARDS.includes(id) && cardShown(id, state)).map((id) => {
+          {CARD_IDS.filter((id) => BUILT_CARDS.includes(id) && cardShown(id, state, controls.mayControl)).map((id) => {
             const open = !ui.collapsed.has(id);
             return (
               <View key={id} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]} testID={`card-${id}`}>

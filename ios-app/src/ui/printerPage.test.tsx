@@ -15,7 +15,7 @@ import { themes } from './theme';
 jest.mock('../core/services', () => ({ useServices: jest.fn(), useStore: jest.fn() }));
 
 const noActions = new Proxy({}, { get: () => () => {} }) as CardActions;
-const cardsUi = (): CardsUi => ({ chart: [], chartHidden: new Set(), history: { jobs: [], totals: null, loading: false, more: false, error: null }, files: { files: null, cachedAt: 0, loading: false, error: null, query: '', printedOnly: true, detailOf: null, detail: null, detailLoading: false, detailError: null }, terminal: { lines: [], hideValues: true, error: null }, camera: { cameraId: null, frame: null, number: 0, offline: false } });
+const cardsUi = (): CardsUi => ({ chart: [], chartHidden: new Set(), history: { jobs: [], totals: null, loading: false, more: false, error: null }, files: { files: null, cachedAt: 0, loading: false, error: null, query: '', printedOnly: true, detailOf: null, detail: null, detailLoading: false, detailError: null }, terminal: { lines: [], hideValues: true, error: null, history: [] }, camera: { cameraId: null, frame: null, number: 0, offline: false }, macros: { answer: null, loading: false, error: null, query: '' }, presets: { saving: false, error: null, saved: 0 } });
 const NOW = 1_763_400_000_000;
 const answer = (name: string) => parseStateAnswer(fixture(name));
 const live = (name: string): PrinterScreenState => ({ kind: 'live', data: answer(name), receivedAt: NOW, offsetMs: 0, stale: false });
@@ -155,6 +155,13 @@ describe('the Printer page', () => {
     expect(send).toEqual(['firmwareRestart']);
     await show(ui(live('state-klippy-shutdown')));
     expect(screen.queryByLabelText('Firmware restart')).toBeNull();
+  });
+
+  it('the Macros card is there only for a phone that may control', async () => {
+    await show(ui(live('state-printing')));
+    expect(screen.queryByTestId('card-macros')).toBeNull();
+    await show(ui(live('state-printing')), { controls: { ...initialControl(), mayControl: true, armed: true } });
+    expect(screen.getByTestId('card-macros')).toBeTruthy();
   });
 
   it('Back goes back', async () => {

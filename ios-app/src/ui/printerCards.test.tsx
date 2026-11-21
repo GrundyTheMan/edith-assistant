@@ -14,8 +14,10 @@ const cardsUi = (over: Partial<CardsUi> = {}): CardsUi => ({
   chartHidden: new Set(),
   history: { jobs: [], totals: null, loading: false, more: false, error: null },
   files: { files: null, cachedAt: 0, loading: false, error: null, query: '', printedOnly: true, detailOf: null, detail: null, detailLoading: false, detailError: null },
-  terminal: { lines: [], hideValues: true, error: null },
+  terminal: { lines: [], hideValues: true, error: null, history: [] },
   camera: { cameraId: null, frame: null, number: 0, offline: false },
+  macros: { answer: null, loading: false, error: null, query: '' },
+  presets: { saving: false, error: null, saved: 0 },
   ...over,
 });
 function actions() {
@@ -184,14 +186,14 @@ describe('the read-only cards', () => {
       { seq: 2, time: 2, text: 'G28', kind: 'command' },
       { seq: 3, time: 3, text: '!! Error', kind: 'error' },
     ];
-    await render(<ConsoleCard cards={cardsUi({ terminal: { lines, hideValues: true, error: null } })} actions={a} theme={theme} />);
+    await render(<ConsoleCard cards={cardsUi({ terminal: { lines, hideValues: true, error: null, history: [] } })} actions={a} theme={theme} />);
     expect(screen.queryByText('// value: 3')).toBeNull();
     expect(screen.getByText('G28')).toBeTruthy();
     await fireEvent.press(screen.getByLabelText('Clear console'));
     expect(calls.clearConsole).toHaveLength(1);
     await fireEvent(screen.getByLabelText('Hide value lines'), 'valueChange', false);
     expect(calls.setHideValues).toEqual([[false]]);
-    await render(<ConsoleCard cards={cardsUi({ terminal: { lines, hideValues: false, error: null } })} actions={a} theme={theme} />);
+    await render(<ConsoleCard cards={cardsUi({ terminal: { lines, hideValues: false, error: null, history: [] } })} actions={a} theme={theme} />);
     expect(screen.getByText('// value: 3')).toBeTruthy();
     await render(<ConsoleCard cards={cardsUi()} actions={a} theme={theme} />);
     expect(screen.getByText('Nothing yet.')).toBeTruthy();

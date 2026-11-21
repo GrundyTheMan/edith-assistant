@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo), Wave B |
-| Status | **In progress** — ten work packages, one PR each (E1–E10): E1–E8 built (see "As built"; stage 1 shipped with E6); E9–E10 to do |
+| Status | **In progress** — ten work packages, one PR each (E1–E10): E1–E9 built (see "As built"; stage 1 shipped with E6); E10 to do |
 | Depends on | **C66a** (the Jarvis connection: pairing and the client), C55 (the direct printer card and `printer_status`), C45 (cards) |
 | Unblocks | stages 3–4 on iOS (upload/start/delete/queue-add, alerts, recordings, live camera): **not designed yet because Android has not built them** (`C39-printer-parity.md` §12 E11–E14); add chunks C77+ when Android does |
 | Runs in | **Expo Go** (decision D39: ordinary HTTPS to Jarvis's Tailscale name; `react-native-svg` is in Expo Go); it waits for the Jarvis change, not for a development build |
@@ -123,3 +123,10 @@ Work packages land as separate PRs; each adds its own lines here. Nothing below 
 - A Files command Jarvis accepted closes the details, and a deleted file leaves the list without asking Jarvis for the list again (`PrinterCardData.commandSent`, hooked to `PrinterControl.onSent`). A stopped Klipper (shutdown or error) shows **Firmware restart** in the banner for a controlling phone.
 - **Not built here:** editing the temperature presets and hiding macros need Jarvis's `settings` route, which the client does not have yet (E9 adds it with the macros); the file **upload** is stage 3.
 - Not verified: against a real Jarvis or the real printer. **The owner decides what to try, one control at a time, printer idle first (C39 §13).**
+
+### E9 — Macros and the console input (built)
+- `printer/feed/cards.ts`: `MacroList` (Jarvis's groups in Jarvis's order; a macro of an unlisted group under "Other"; the filter matches the name or the description in any case; typed parameters trimmed and an empty box not sent) and the data for the Macros card, read when the card opens (and again after leaving and coming back). `printer/feed/consoleHistory.ts`: the last 50 lines sent, newest first, no repeats.
+- `printer/feed/api.ts`: **`settings(presets, hiddenMacros)`** (`POST /v1/printer/settings`; only what is given is sent; needs Controls on, and Jarvis's refusal comes back in its words). It saves the temperature presets and the hidden-macro list, the two settings a phone may change. The pretend feed answers it like Jarvis (CONTROLS_OFF when not armed).
+- `ui/printer/MacrosAndConsole.tsx`: **Macros** (the card exists only for a phone that may control: every button is a control; groups fold, but while the filter has text every group is open; a macro with parameters opens a form where the default is the hint; every run goes through the confirm sheet; Hide adds the name to Jarvis's list, and the hidden ones are listed with Show), the **console input** (at most 200 characters, never a line break, Enter or Send, the up and down arrows through the last 50 lines, Jarvis's refusal under the box), and the **presets editor** (up to 10; Jarvis's own rules in plain words; opened by Edit presets on the Temperatures card; closes when a save worked).
+- `printer/feed/prefs.ts` now also keeps the console's "hide // value lines" switch (on at first), its history and the camera the owner chose. (The camera choice is new on iOS since E5.)
+- Not verified: against a real Jarvis (its `settings` route is J2b in the Jarvis spec); nothing was tried on the real printer.
