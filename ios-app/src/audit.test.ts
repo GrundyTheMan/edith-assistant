@@ -84,6 +84,13 @@ describe('privacy (C76 §3)', () => {
     expect(files.map(rel)).toEqual(['tools/framework/toolRunner.ts']);
   });
 
+  it('a card that only a tap may answer is answered only from the screen (C39 §10: cancel a print is never a voice)', () => {
+    // `screenOnly` cards (cancelling a print) must never be approved by a spoken yes. Today the chat screen's button is the only caller: a voice path (C57, C69) that wants to
+    // answer a card must check `screenOnly` first and leave it to the screen, and then this list changes on purpose.
+    const callers = sourceFiles(/\.tsx?$/).filter((f) => /\.resolveConfirmation\(/.test(fs.readFileSync(f, 'utf8')));
+    expect(callers.map(rel)).toEqual(['ui/ChatScreen.tsx']);
+  });
+
   it('nothing but core/log.ts uses console', () => {
     const offenders = sourceFiles(/\.tsx?$/).filter((f) => rel(f) !== 'core/log.ts' && /\bconsole\./.test(fs.readFileSync(f, 'utf8')));
     expect(offenders.map(rel)).toEqual([]);

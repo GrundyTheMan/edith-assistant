@@ -9,6 +9,7 @@ import { AlertPrefs } from '../alerts/prefs';
 import { AlertWatcher } from '../alerts/watcher';
 import { DemoBackend } from '../home/demoBackend';
 import { Home } from '../home/home';
+import { printerControlTool } from '../home/printerControlTool';
 import { cameraSnapshotTool, homeControlTool, homeDevicesTool, recentEventsTool } from '../home/homeTools';
 import { RingApi } from '../ring/api';
 import { RingService } from '../ring/service';
@@ -151,7 +152,7 @@ export async function createServices(): Promise<Services> {
       applyBackends();
     }
   });
-  const tools = new ToolRegistry([currentTimeTool, homeDevicesTool(home), homeControlTool(home), cameraSnapshotTool(home), recentEventsTool(home), printerStatusTool(home), weatherTool({ client: new OpenMeteoClient({ fetch: httpFetch }), location: deviceLocation }),
+  const tools = new ToolRegistry([currentTimeTool, homeDevicesTool(home), homeControlTool(home), cameraSnapshotTool(home), recentEventsTool(home), printerStatusTool(home), printerControlTool({ feed: printerFeed, mayControl: () => jarvis.sharedNow()?.printerShare?.control === true, uuid: () => Crypto.randomUUID() }), weatherTool({ client: new OpenMeteoClient({ fetch: httpFetch }), location: deviceLocation }),
     searchWebTool(new DuckDuckGoSearch(httpFetch)),
     readWebPageTool(new PageReader(httpFetch)),
   ]);
