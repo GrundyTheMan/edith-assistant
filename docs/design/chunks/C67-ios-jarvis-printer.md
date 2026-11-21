@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 9 — iOS (Expo), Wave B |
-| Status | **In progress** — ten work packages, one PR each (E1–E10): E1–E9 built (see "As built"; stage 1 shipped with E6); E10 to do |
+| Status | **In progress** — ten work packages, one PR each (E1–E10): all ten packages built (see "As built"); stage 1 shipped with E6 and stage 2 with E10; the real-Jarvis checks are the owner's |
 | Depends on | **C66a** (the Jarvis connection: pairing and the client), C55 (the direct printer card and `printer_status`), C45 (cards) |
 | Unblocks | stages 3–4 on iOS (upload/start/delete/queue-add, alerts, recordings, live camera): **not designed yet because Android has not built them** (`C39-printer-parity.md` §12 E11–E14); add chunks C77+ when Android does |
 | Runs in | **Expo Go** (decision D39: ordinary HTTPS to Jarvis's Tailscale name; `react-native-svg` is in Expo Go); it waits for the Jarvis change, not for a development build |
@@ -130,3 +130,10 @@ Work packages land as separate PRs; each adds its own lines here. Nothing below 
 - `ui/printer/MacrosAndConsole.tsx`: **Macros** (the card exists only for a phone that may control: every button is a control; groups fold, but while the filter has text every group is open; a macro with parameters opens a form where the default is the hint; every run goes through the confirm sheet; Hide adds the name to Jarvis's list, and the hidden ones are listed with Show), the **console input** (at most 200 characters, never a line break, Enter or Send, the up and down arrows through the last 50 lines, Jarvis's refusal under the box), and the **presets editor** (up to 10; Jarvis's own rules in plain words; opened by Edit presets on the Temperatures card; closes when a save worked).
 - `printer/feed/prefs.ts` now also keeps the console's "hide // value lines" switch (on at first), its history and the camera the owner chose. (The camera choice is new on iOS since E5.)
 - Not verified: against a real Jarvis (its `settings` route is J2b in the Jarvis spec); nothing was tried on the real printer.
+
+### E10 — Chat: printer_control (built)
+- `home/printerControlTool.ts`: `printer_control(action, level?)` with action pause, resume, cancel or light (the description is the final one of C39 §10). It is offered only while the paired Jarvis shares the printer **with control** (`Shared.printerShare.control`). It goes through Jarvis's chat path (`via: "chat"`: needs no Controls switch on the phone, and Jarvis accepts only these four).
+- **Every call shows a card first, and nothing is sent without one.** The card's title and confirm words come from Jarvis's dry run (`Check.question`, `Check.confirm`); when the dry run could not be had the owner still decides, on a card in Edith's own words (the Android build sent without a card in that case; this one does not). A dry run that says "not allowed" shows no card and the reason is told. `execute` refuses to send unless a card was shown for that very call, and a card turned down is not good for the next one.
+- **Cancel is `screenOnly`** (a new field of `ConfirmationSpec`): its buttons are "Cancel print" (Jarvis's words) and "Keep printing", and only a tap may answer it, never a spoken yes. Today the chat screen's button is the only caller of `resolveConfirmation`; a standing test in `audit.test.ts` keeps it so, and conversation mode (C57) or a later voice approval (C69) must check `screenOnly` and leave such a card to the screen.
+- `printer_status` was made richer in E6 ("(via Jarvis)", the printer's latest error line, the temperatures).
+- Not verified: with the real chat model (the tool loop is tested with a scripted one and the pretend feed); against a real Jarvis; nothing was tried on the real printer. **The owner decides what to try first.**

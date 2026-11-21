@@ -38,6 +38,11 @@ export interface ConfirmationSpec {
   details: [string, string][];
   confirmLabel?: string;
   denyLabel?: string;
+  /**
+   * Only a tap on this card may approve it: never a spoken "yes", in any mode (cancelling a print, C39 §10). Today the card is the only way to answer, and a standing test
+   * (`audit.test.ts`) keeps it so: conversation mode (C57) and any later voice approval (C69) must leave a `screenOnly` card to the screen.
+   */
+  screenOnly?: boolean;
 }
 export interface ConfirmationRequest extends ConfirmationSpec {
   id: string;
