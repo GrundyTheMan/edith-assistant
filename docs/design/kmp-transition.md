@@ -295,9 +295,29 @@ labels), and a warm iOS CI run is acceptable. Otherwise stop here: the Expo plan
 | K0.3 | waiting for K0.2 | Needs the spike installed on the phone. |
 | K0.4 | **half done** | Room KMP + bundled SQLite and DataStore work on the desktop and on an iOS simulator (§3.3 run 10). Not yet: survive a restart (needs the phone), open a copy of the real `edith.db` (needs the real entities: K1.5). |
 | K0.5 | **done** | Navigation, ViewModel, Coil and Material icons compile, link and run on iOS with Compose Multiplatform 1.12.2 and Kotlin 2.4.21. Not checked by eye: how the Coil image and the icon look. |
-| K0.6 | not started | Research and a probe for sherpa-onnx, ONNX Runtime, WebRTC, IMAP/SMTP, MQTT. |
+| K0.6 | **research done; probes not run** | See "K0.6 findings" below: every one of the five has an iPhone option; none is proven by a build yet. The probes (MQTT first, then sherpa-onnx text-to-speech) are K0.6b. |
 | K0.7 | **done** | Cold 17 m 52 s, warm 5 m 39 s with the `~/.konan` and Gradle caches (§3.3 runs 11-12). The simulator launch and screenshot take about 2.5 minutes of that; the shared-code PR job can skip them. Target met (under 12 minutes). |
 | K0.8 | **partly** | Every run on the public repository started and ran; none was refused for billing (the private repository was). That the minutes are not billed is for the owner to confirm on GitHub's billing page (§14 U9). |
+
+**K0.6 findings (research, 2026-11-21).** What the Android code actually does with each library (read from the source), what the iPhone options are, and how sure we are. A web search showed the option exists; **only a build on a runner proves it works for us.**
+
+| Need | What Android does today | iPhone option | Evidence | Open questions |
+|---|---|---|---|---|
+| **Speech (text to speech)** | sherpa-onnx `OfflineTts` running Piper (VITS) voices (`voice/own/SherpaTts.kt`) | sherpa-onnx's iOS build: its `build-ios.sh` makes an XCFramework (device and simulator slices, C and C++ headers; minimum iOS 13), and it has a Swift API with a text-to-speech example. Community Swift packages exist but track upstream loosely (one showed a failed iOS build). | Search results (below) | Build our own XCFramework from a pinned release in our macOS CI rather than depend on a community package. Does a Piper voice run in real time on the phone? App size? |
+| **Wake word** | A three-stage ONNX pipeline run directly with ONNX Runtime: `melspectrogram.onnx`, `embedding_model.onnx`, then the `hey_edith.onnx` classifier (`voice/handsfree/WakeWord.kt`) | ONNX Runtime for iOS: Microsoft's `onnxruntime-swift-package-manager` (Objective-C API) or the C API in the prebuilt iOS libraries | Search results (below) | **Linking two copies of ONNX Runtime (one inside sherpa-onnx, one for the wake word) may clash; use one copy.** Does the pipeline keep up in the foreground? (Wake word only while the app is open, D41.) |
+| **Live video (WebRTC)** | Google's WebRTC API through `stream-webrtc-android`: `PeerConnectionFactory`, `PeerConnection`, `SessionDescription`, `IceCandidate`, a `VideoTrack` on an `EglBase` (`ring/RingRtc.kt`) | `stasel/WebRTC`: precompiled Google WebRTC as a Swift package (XCFramework, iOS 12+, tags follow Chrome milestones, recent tags build) | Search results (below) | Signalling (Ring's API) stays in shared Kotlin; only media goes through a Swift seam. Show the video in Compose (`UIKitView` around a Metal video view): unproven. |
+| **Mail over IMAP and SMTP** | Jakarta Mail (JVM only), but only a small part: open a folder, search, fetch a message, set the Seen or Draft flag, append a draft, send over SMTP, build and read a MIME message (`icloud/`, about 1,160 lines) | **SwiftMail** (Cocoanetics): actors with async/await for IMAP and SMTP on SwiftNIO, iOS 14+, active releases. MailCore2 is Objective-C and its last release was in 2020. Apple's `swift-nio-imap` says it is not production-ready. | Search results (below) | SwiftMail's maturity is unverified (the author, not a test of ours, says so). Needs a real iCloud account and an app-specific password to try: an owner step. Fallback: defer iCloud mail on the iPhone (D45). |
+| **MQTT (Meross cloud)** | Paho MQTT 3.1.1 over TLS (`ssl://`), connect, subscribe, publish (`meross/MerossBus.kt`) | Kotlin Multiplatform: **MQTTastic Client KMP** (MQTT 5 and 3.1.1, iosArm64 and iosSimulatorArm64 with TCP and TLS); KMQTT (its iOS TLS builds depend on OpenSSL: a reported error); DitchOoM mqtt (TLS listed only for WebSocket). Swift options (CocoaMQTT, MQTTNIO) are from memory, not searched. | Search results (below) | Prove TLS on a runner against a public test broker, then against Meross with the owner's credentials. |
+
+Sources: [sherpa-onnx iOS build guide](https://csukuangfj.github.io/sherpa/onnx/ios/build-sherpa-onnx-swift.html), [sherpa-onnx Swift API](https://k2-fsa.github.io/sherpa/onnx/swift-api/examples.html), [sherpa-onnx SPM (community)](https://swiftpackageregistry.com/willwade/sherpa-onnx-spm), [onnxruntime-swift-package-manager](https://github.com/microsoft/onnxruntime-swift-package-manager), [prebuilt iOS ONNX Runtime libraries](https://huggingface.co/csukuangfj/ios-onnxruntime), [stasel/WebRTC](https://www.github.com/stasel/WebRTC), [SwiftMail](https://github.com/Cocoanetics/SwiftMail), [swift-nio-imap](https://swift.org/blog/swift-nio-imap/), [MQTTastic Client KMP](https://klibs.io/project/meshtastic/MQTTastic-Client-KMP), [KMQTT](https://www.Github.com/davidepianca98/KMQTT), [DitchOoM mqtt](https://github.com/ditchoom/mqtt).
+
+**K0.6b: the probes that would settle it (free runners, no owner steps unless noted)**
+
+1. **MQTT over TLS**: in the spike, connect with the Kotlin MQTT library from the simulator to a public test broker on its TLS port, subscribe, publish, receive. (Then Meross, owner step.)
+2. **sherpa-onnx text to speech**: build the XCFramework in CI from a pinned release, link it into the spike through a Swift seam, synthesise one sentence with a Piper voice, report the time. The voice file (tens of megabytes) is downloaded in CI, not committed.
+3. **One ONNX Runtime**: with (2) linked, run one tiny model through the same runtime from Swift (the wake-word path) to show the two do not clash.
+4. **WebRTC**: add `stasel/WebRTC`, create a `PeerConnectionFactory`, and draw a test video track in a `UIKitView` inside the Compose screen.
+5. **SwiftMail** against iCloud: an owner step (app-specific password). Last.
 
 ### Phase 1 — Make the Android build ready for sharing (no behaviour change)
 
@@ -477,7 +497,10 @@ Ask in the PR that needs each; recommended answer first.
 | U8 | Not tried. |
 | U9 | Partly: runs on the public repository were not refused for billing; billing page to confirm. |
 | U11 | Partly: the microphone and `AVAudioSession` setup work on a simulator; a real phone, interruptions and a call are not tried. |
-| U1, U5, U6, U7, U10, U12 | Not started. |
+| U5 | Researched, not proven (K0.6): sherpa-onnx ships an iOS XCFramework build and a Swift API; the one-copy-of-ONNX-Runtime question is open. |
+| U6 | Researched, not proven: SwiftMail is the best Swift option found (about 1,160 lines of Android mail code only use a small part of IMAP/SMTP); the fallback is to defer. |
+| U7 | Researched, not proven: MQTTastic Client KMP lists iOS with TLS; to be proven on a runner (K0.6b). |
+| U1, U10, U12 | Not started. |
 
 ## 15. How to start
 
