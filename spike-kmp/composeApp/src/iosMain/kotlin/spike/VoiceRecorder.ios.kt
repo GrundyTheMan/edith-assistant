@@ -35,7 +35,7 @@ actual suspend fun recordMemo(seconds: Int): RecordResult {
         if (!session.setCategory(AVAudioSessionCategoryRecord, error.ptr)) {
             return@memScoped RecordResult.Failed(error.value?.localizedDescription ?: "Couldn't set up the audio session.")
         }
-        session.setActive(true, error.ptr)
+        // (AVAudioSession.setActive is not exposed to Kotlin here; AVAudioRecorder activates the session itself when it starts. A Swift seam would call it.)
         // 1633772320 is the code for AAC ('aac '): the format the iPhone records a voice memo in.
         val settings = mapOf<Any?, Any?>(AVFormatIDKey to 1633772320, AVSampleRateKey to 16000.0, AVNumberOfChannelsKey to 1)
         val recorder = AVAudioRecorder(url, settings, error.ptr)
