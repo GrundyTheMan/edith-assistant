@@ -20,6 +20,8 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         ITSAppUsesNonExemptEncryption: false
+        # Compose Multiplatform throws at start-up on a 120 Hz iPhone without this (found by a crash on a high-refresh simulator).
+        CADisableMinimumFrameDurationOnPhone: true
         NSMicrophoneUsageDescription: Edith records your voice memos so the model on your PC can turn them into messages.
         NSLocalNetworkUsageDescription: Edith talks to the model on your PC over your home network.
         NSAppTransportSecurity:
