@@ -294,7 +294,7 @@ labels), and a warm iOS CI run is acceptable. Otherwise stop here: the Expo plan
 | WP | Status | Result |
 |---|---|---|
 | K0.1 | **done** | The microphone probe works on an iOS simulator (§3.3 runs 8-9). One Apple call, `AVAudioSession.setActive`, is not exposed to Kotlin. |
-| K0.2 | waiting for the owner | Needs D43 (bundle id) and the Apple and GitHub setup in `spike-kmp/DEVICE_BUILD.md`. |
+| K0.2 | waiting for the owner | Needs the Apple and GitHub setup in `spike-kmp/DEVICE_BUILD.md`. |
 | K0.3 | waiting for K0.2 | Needs the spike installed on the phone. |
 | K0.4 | **half done** | Room KMP + bundled SQLite and DataStore work on the desktop and on an iOS simulator (§3.3 run 10). Not yet: survive a restart (needs the phone), open a copy of the real `edith.db` (needs the real entities: K1.5). |
 | K0.5 | **done** | Navigation, ViewModel, Coil and Material icons compile, link and run on iOS with Compose Multiplatform 1.12.2 and Kotlin 2.4.21. Not checked by eye: how the Coil image and the icon look. |
@@ -466,7 +466,7 @@ Ask in the PR that needs each; recommended answer first.
 | D40 | Move to shared code (this plan)? | **Yes, as phases with gates**; the go/no-go is G0 | G0 |
 | D41 | iPhone UI toolkit and platform limits: Compose Multiplatform screens everywhere; wake word only while the app is open | **Compose Multiplatform**; fall back to native screens only if K0/K3.2 checks fail | K0.5, K3.2 |
 | D42 | One `shared` module, or split it? | **One at first**; split only if builds are slow | K1.1, K5.4 |
-| D43 | iPhone bundle identifier (unique across Apple; not `com.example...`) | the owner picks, for example `com.<yourname>.edith` | K0.2 |
+| D43 | iPhone bundle identifier | **Decided 2026-11-21: `com.edith.app`, the same as the Android release.** The Phase 0 device test uses `com.edith.app.spike`, so the real identifier stays unused until K4.1 (an identifier cannot be changed once an app ships). Still to check: that Apple accepts `com.edith.app` (identifiers are unique across all developers; if it is taken, fall back to a variant such as `com.edith.app.ios`). | K0.2 |
 | D44 | Minimum iPhone OS version | **iOS 17** (recent Compose Multiplatform and SwiftUI features, and the owner's phone is current) | K4.1 |
 | D45 | iCloud mail on iPhone (IMAP/SMTP has no iOS-ready library in our stack) | research in K0.6; defer to last (K4.7) | K4.7 |
 | D46 | Freeze the Expo app at G0 (§11.2)? | **Yes** | G0 |
