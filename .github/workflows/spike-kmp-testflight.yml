@@ -28,6 +28,11 @@ jobs:
         with:
           ref: spike-kmp-ios
 
+      - name: Use Xcode 26 (Apple only accepts uploads built with the iOS 26 SDK or later)
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.3.app
+          xcodebuild -version
+
       - name: Check the Apple setup is there
         run: |
           for v in BUNDLE_ID TEAM_ID KEY_ID ISSUER_ID KEY_P8; do
