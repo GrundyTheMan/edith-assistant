@@ -1,0 +1,83 @@
+# Builds the spike signed for a real iPhone and uploads it to TestFlight, so it can be installed from the TestFlight app (no Mac, no cable).
+# Started by hand only. It needs the owner's Apple setup in spike-kmp/DEVICE_BUILD.md: three repository secrets and two repository variables.
+# The secrets are typed into GitHub's settings page by the owner and never appear in chat, files or logs.
+# This copy lives on master only so GitHub offers the Run button; it builds the spike-kmp-ios branch.
+name: Spike KMP TestFlight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  testflight:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      BUNDLE_ID: ${{ vars.SPIKE_BUNDLE_ID }}
+      TEAM_ID: ${{ vars.SPIKE_APPLE_TEAM_ID }}
+      KEY_ID: ${{ secrets.SPIKE_ASC_KEY_ID }}
+      ISSUER_ID: ${{ secrets.SPIKE_ASC_ISSUER_ID }}
+      KEY_P8: ${{ secrets.SPIKE_ASC_KEY_P8 }}
+    defaults:
+      run:
+        working-directory: spike-kmp
+    steps:
+      - name: Check the Apple setup is there
+        run: |
+          for v in BUNDLE_ID TEAM_ID KEY_ID ISSUER_ID KEY_P8; do
+            if [ -z "${!v}" ]; then echo "Missing $v: see spike-kmp/DEVICE_BUILD.md"; exit 1; fi
+          done
+
+      - uses: actions/checkout@v7
+        with:
+          ref: spike-kmp-ios
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Generate the Xcode project with the owner's bundle identifier
+        run: |
+          brew install xcodegen
+          sed -i '' "s/com.example.edithkmpspike/${BUNDLE_ID}/" iosApp/project.yml
+          (cd iosApp && xcodegen generate)
+
+      - name: Write the App Store Connect key (kept out of the log)
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s' "$KEY_P8" > "$RUNNER_TEMP/keys/AuthKey_${KEY_ID}.p8"
+
+      - name: Archive for a real iPhone
+        run: |
+          set -eo pipefail
+          xcodebuild archive -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath build/App.xcarchive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_${KEY_ID}.p8" -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER_ID" \
+            DEVELOPMENT_TEAM="$TEAM_ID" CURRENT_PROJECT_VERSION="${{ github.run_number }}" | tail -60
+
+      - name: Upload to TestFlight
+        run: |
+          set -eo pipefail
+          cat > build/ExportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath build/App.xcarchive -exportOptionsPlist build/ExportOptions.plist -exportPath build/export \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_${KEY_ID}.p8" -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER_ID" | tail -40
+
+      - name: Remove the key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/keys"
