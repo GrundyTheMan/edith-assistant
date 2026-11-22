@@ -116,6 +116,9 @@ microphone probe (written, never run), a desktop target, a SwiftUI shell generat
 | 10 | built, launched; all probes worked | 16 m 13 s | Microphone 24,908 bytes; **Room KMP + bundled SQLite** wrote and read a row; **DataStore** counted launch 1; **navigation + ViewModel** went to a second screen (Material icon and Coil image composed) and back (K0.4, K0.5). Cold. |
 | 11 | same, cold with the new `~/.konan` cache step | 17 m 52 s | The cache was saved (about 1 minute). |
 | 12 | same, **warm** (a comment changed) | **5 m 39 s** | Xcode build 2 m 11 s; simulator boot, launch and screenshot 2 m 28 s (K0.7). |
+| 13 | MQTT probe added; screenshot showed the home screen | 9 m 20 s | I first took it for a crash. It was not: the process was alive, no crash report, and the window only appeared 18 s after launch (first-start shader compiling). A fixed 15-second wait is too short; the app now prints each probe result and the workflow waits for them. |
+| 14 | **a real crash found** | 10 m | The app's own output: `Uncaught Kotlin exception ... Info.plist doesn't have a valid CADisableMinimumFrameDurationOnPhone entry`. Compose Multiplatform refuses to start on a 120 Hz (ProMotion) iPhone without that key. A real phone would have crashed too. The same output showed every probe passing, **including MQTT over TLS**. |
+| 15 | fixed (the key added); app stays running | 9 m | All five probes print as text: microphone 24,876 bytes, Room, DataStore, **MQTT over TLS (`broker.hivemq.com:8883`): received my own message**, navigation + ViewModel. |
 
 Local desktop: shared tests (4) pass in 34 s warm. Versions that worked together: Kotlin 2.4.21, Compose Multiplatform 1.12.2, Ktor 3.6.1, coroutines 1.11.0,
 serialization 1.12.0, Gradle 9.8.2, JDK 21, Xcode on GitHub's `macos-15` runner. Added in Phase 0 and working on both the desktop and the iPhone simulator: Room 2.8.5 with KSP 2.3.12 and `sqlite-bundled` 2.6.2, DataStore 1.3.0, okio 3.18.2, JetBrains multiplatform navigation 2.10.0 and lifecycle-viewmodel 2.11.0, Coil 3.6.3, Material icons 1.7.3.
@@ -291,11 +294,11 @@ labels), and a warm iOS CI run is acceptable. Otherwise stop here: the Expo plan
 | WP | Status | Result |
 |---|---|---|
 | K0.1 | **done** | The microphone probe works on an iOS simulator (§3.3 runs 8-9). One Apple call, `AVAudioSession.setActive`, is not exposed to Kotlin. |
-| K0.2 | waiting for the owner | Needs D43 (bundle id) and the Apple and GitHub setup in `spike-kmp/DEVICE_BUILD.md`. |
+| K0.2 | waiting for the owner | Needs the Apple and GitHub setup in `spike-kmp/DEVICE_BUILD.md`. |
 | K0.3 | waiting for K0.2 | Needs the spike installed on the phone. |
 | K0.4 | **half done** | Room KMP + bundled SQLite and DataStore work on the desktop and on an iOS simulator (§3.3 run 10). Not yet: survive a restart (needs the phone), open a copy of the real `edith.db` (needs the real entities: K1.5). |
 | K0.5 | **done** | Navigation, ViewModel, Coil and Material icons compile, link and run on iOS with Compose Multiplatform 1.12.2 and Kotlin 2.4.21. Not checked by eye: how the Coil image and the icon look. |
-| K0.6 | **research done; probes not run** | See "K0.6 findings" below: every one of the five has an iPhone option; none is proven by a build yet. The probes (MQTT first, then sherpa-onnx text-to-speech) are K0.6b. |
+| K0.6 | **research done; MQTT probe done** | See "K0.6 findings" below. K0.6b probe 1 (MQTT over TLS) **passed on the desktop and on an iOS simulator** with the MIT-licensed DitchOoM client. The others (sherpa-onnx speech, one ONNX Runtime, WebRTC, SwiftMail) are not yet run. |
 | K0.7 | **done** | Cold 17 m 52 s, warm 5 m 39 s with the `~/.konan` and Gradle caches (§3.3 runs 11-12). The simulator launch and screenshot take about 2.5 minutes of that; the shared-code PR job can skip them. Target met (under 12 minutes). |
 | K0.8 | **partly** | Every run on the public repository started and ran; none was refused for billing (the private repository was). That the minutes are not billed is for the owner to confirm on GitHub's billing page (§14 U9). |
 
@@ -307,17 +310,24 @@ labels), and a warm iOS CI run is acceptable. Otherwise stop here: the Expo plan
 | **Wake word** | A three-stage ONNX pipeline run directly with ONNX Runtime: `melspectrogram.onnx`, `embedding_model.onnx`, then the `hey_edith.onnx` classifier (`voice/handsfree/WakeWord.kt`) | ONNX Runtime for iOS: Microsoft's `onnxruntime-swift-package-manager` (Objective-C API) or the C API in the prebuilt iOS libraries | Search results (below) | **Linking two copies of ONNX Runtime (one inside sherpa-onnx, one for the wake word) may clash; use one copy.** Does the pipeline keep up in the foreground? (Wake word only while the app is open, D41.) |
 | **Live video (WebRTC)** | Google's WebRTC API through `stream-webrtc-android`: `PeerConnectionFactory`, `PeerConnection`, `SessionDescription`, `IceCandidate`, a `VideoTrack` on an `EglBase` (`ring/RingRtc.kt`) | `stasel/WebRTC`: precompiled Google WebRTC as a Swift package (XCFramework, iOS 12+, tags follow Chrome milestones, recent tags build) | Search results (below) | Signalling (Ring's API) stays in shared Kotlin; only media goes through a Swift seam. Show the video in Compose (`UIKitView` around a Metal video view): unproven. |
 | **Mail over IMAP and SMTP** | Jakarta Mail (JVM only), but only a small part: open a folder, search, fetch a message, set the Seen or Draft flag, append a draft, send over SMTP, build and read a MIME message (`icloud/`, about 1,160 lines) | **SwiftMail** (Cocoanetics): actors with async/await for IMAP and SMTP on SwiftNIO, iOS 14+, active releases. MailCore2 is Objective-C and its last release was in 2020. Apple's `swift-nio-imap` says it is not production-ready. | Search results (below) | SwiftMail's maturity is unverified (the author, not a test of ours, says so). Needs a real iCloud account and an app-specific password to try: an owner step. Fallback: defer iCloud mail on the iPhone (D45). |
-| **MQTT (Meross cloud)** | Paho MQTT 3.1.1 over TLS (`ssl://`), connect, subscribe, publish (`meross/MerossBus.kt`) | Kotlin Multiplatform: **MQTTastic Client KMP** (MQTT 5 and 3.1.1, iosArm64 and iosSimulatorArm64 with TCP and TLS); KMQTT (its iOS TLS builds depend on OpenSSL: a reported error); DitchOoM mqtt (TLS listed only for WebSocket). Swift options (CocoaMQTT, MQTTNIO) are from memory, not searched. | Search results (below) | Prove TLS on a runner against a public test broker, then against Meross with the owner's credentials. |
+| **MQTT (Meross cloud)** | Paho MQTT 3.1.1 over TLS (`ssl://`), connect, subscribe, publish (`meross/MerossBus.kt`) | Kotlin Multiplatform, three candidates. **MQTTastic Client KMP**: MQTT 5 and 3.1.1, iOS with TCP and TLS, but its licence is **GPL-3.0** (Maven metadata), which cannot go into an app that is distributed (D48). **KMQTT**: MIT, but its iOS TLS needs OpenSSL files copied in by hand (its README). **DitchOoM mqtt 3.0.0**: MIT, TLS through Apple's Network framework with no extra setup (its README). **Chosen and proven: DitchOoM mqtt.** Swift options (CocoaMQTT, MQTTNIO) are from memory, not searched. | Search results (below); the probe (§3.3 run 15) | A round trip over TLS with the platform's own trust store works on the desktop and on an iOS simulator (MQTT 3.1.1, no credentials). **Not yet shown:** username and password (Meross needs them; the parameter name was not found in the library's docs) and Meross's real broker (owner step). |
 
 Sources: [sherpa-onnx iOS build guide](https://csukuangfj.github.io/sherpa/onnx/ios/build-sherpa-onnx-swift.html), [sherpa-onnx Swift API](https://k2-fsa.github.io/sherpa/onnx/swift-api/examples.html), [sherpa-onnx SPM (community)](https://swiftpackageregistry.com/willwade/sherpa-onnx-spm), [onnxruntime-swift-package-manager](https://github.com/microsoft/onnxruntime-swift-package-manager), [prebuilt iOS ONNX Runtime libraries](https://huggingface.co/csukuangfj/ios-onnxruntime), [stasel/WebRTC](https://www.github.com/stasel/WebRTC), [SwiftMail](https://github.com/Cocoanetics/SwiftMail), [swift-nio-imap](https://swift.org/blog/swift-nio-imap/), [MQTTastic Client KMP](https://klibs.io/project/meshtastic/MQTTastic-Client-KMP), [KMQTT](https://www.Github.com/davidepianca98/KMQTT), [DitchOoM mqtt](https://github.com/ditchoom/mqtt).
 
 **K0.6b: the probes that would settle it (free runners, no owner steps unless noted)**
 
-1. **MQTT over TLS**: in the spike, connect with the Kotlin MQTT library from the simulator to a public test broker on its TLS port, subscribe, publish, receive. (Then Meross, owner step.)
+1. **MQTT over TLS: done 2026-11-21** (§3.3 run 15). Then Meross with credentials, an owner step.
 2. **sherpa-onnx text to speech**: build the XCFramework in CI from a pinned release, link it into the spike through a Swift seam, synthesise one sentence with a Piper voice, report the time. The voice file (tens of megabytes) is downloaded in CI, not committed.
 3. **One ONNX Runtime**: with (2) linked, run one tiny model through the same runtime from Swift (the wake-word path) to show the two do not clash.
 4. **WebRTC**: add `stasel/WebRTC`, create a `PeerConnectionFactory`, and draw a test video track in a `UIKitView` inside the Compose screen.
 5. **SwiftMail** against iCloud: an owner step (app-specific password). Last.
+
+**Checklist for the real iPhone shell (K4.1), from what the spike's crashes and runs showed**
+
+- `Info.plist` must set `CADisableMinimumFrameDurationOnPhone` to true, or Compose Multiplatform throws at start-up on a 120 Hz iPhone (a crash found in run 14).
+- Also set `NSMicrophoneUsageDescription`, `NSLocalNetworkUsageDescription`, `NSAppTransportSecurity` with `NSAllowsLocalNetworking`, and `ITSAppUsesNonExemptEncryption` (false); the spike's `project.yml` has them.
+- Wait for the app to be ready before judging a simulator screenshot: the first start on a fresh simulator took about 18 seconds. Have the app print its results as text and read the log; check that the process is still running and that there is no crash report.
+- Treat any `Uncaught Kotlin exception` in the app's output as a crash to fix, never as noise.
 
 ### Phase 1 — Make the Android build ready for sharing (no behaviour change)
 
@@ -456,11 +466,12 @@ Ask in the PR that needs each; recommended answer first.
 | D40 | Move to shared code (this plan)? | **Yes, as phases with gates**; the go/no-go is G0 | G0 |
 | D41 | iPhone UI toolkit and platform limits: Compose Multiplatform screens everywhere; wake word only while the app is open | **Compose Multiplatform**; fall back to native screens only if K0/K3.2 checks fail | K0.5, K3.2 |
 | D42 | One `shared` module, or split it? | **One at first**; split only if builds are slow | K1.1, K5.4 |
-| D43 | iPhone bundle identifier (unique across Apple; not `com.example...`) | the owner picks, for example `com.<yourname>.edith` | K0.2 |
+| D43 | iPhone bundle identifier | **Decided 2026-11-21: `com.edith.app`, the same as the Android release.** The Phase 0 device test uses `com.edith.app.spike`, so the real identifier stays unused until K4.1 (an identifier cannot be changed once an app ships). Still to check: that Apple accepts `com.edith.app` (identifiers are unique across all developers; if it is taken, fall back to a variant such as `com.edith.app.ios`). | K0.2 |
 | D44 | Minimum iPhone OS version | **iOS 17** (recent Compose Multiplatform and SwiftUI features, and the owner's phone is current) | K4.1 |
 | D45 | iCloud mail on iPhone (IMAP/SMTP has no iOS-ready library in our stack) | research in K0.6; defer to last (K4.7) | K4.7 |
 | D46 | Freeze the Expo app at G0 (§11.2)? | **Yes** | G0 |
 | D47 | License for the public repository | the owner decides (for example MIT, or keep all rights reserved) | any time |
+| D48 | Licensing rule for dependencies | **Permissive licences only (MIT, Apache 2.0, BSD).** A GPL library cannot go into an app that is distributed through TestFlight or the App Store without making the whole app GPL. K0.6 found one (MQTTastic Client KMP, GPL-3.0) and set it aside. Check the licence of every new dependency in its PR. | K1 onward |
 
 ## 13. Acceptance for the whole transition
 
@@ -499,7 +510,7 @@ Ask in the PR that needs each; recommended answer first.
 | U11 | Partly: the microphone and `AVAudioSession` setup work on a simulator; a real phone, interruptions and a call are not tried. |
 | U5 | Researched, not proven (K0.6): sherpa-onnx ships an iOS XCFramework build and a Swift API; the one-copy-of-ONNX-Runtime question is open. |
 | U6 | Researched, not proven: SwiftMail is the best Swift option found (about 1,160 lines of Android mail code only use a small part of IMAP/SMTP); the fallback is to defer. |
-| U7 | Researched, not proven: MQTTastic Client KMP lists iOS with TLS; to be proven on a runner (K0.6b). |
+| U7 | **Mostly answered**: DitchOoM mqtt (MIT) does a TLS round trip on an iOS simulator. Still open: username and password, and Meross's own broker. |
 | U1, U10, U12 | Not started. |
 
 ## 15. How to start
