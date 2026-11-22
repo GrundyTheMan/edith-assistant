@@ -26,6 +26,8 @@ targets:
         NSLocalNetworkUsageDescription: Edith talks to the model on your PC over your home network.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+          # Found on a real iPhone: NSAllowsLocalNetworking does not cover a Tailscale address (100.x), so plain-HTTP Ollama was blocked (error -1022).
+          NSAllowsArbitraryLoads: true
     settings:
       base:
         # A placeholder: the owner picks the real bundle identifier (decision D34) when this goes on a phone.
