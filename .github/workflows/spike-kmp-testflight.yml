@@ -24,15 +24,15 @@ jobs:
       run:
         working-directory: spike-kmp
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: spike-kmp-ios
+
       - name: Check the Apple setup is there
         run: |
           for v in BUNDLE_ID TEAM_ID KEY_ID ISSUER_ID KEY_P8; do
             if [ -z "${!v}" ]; then echo "Missing $v: see spike-kmp/DEVICE_BUILD.md"; exit 1; fi
           done
-
-      - uses: actions/checkout@v7
-        with:
-          ref: spike-kmp-ios
 
       - uses: actions/setup-java@v6
         with:
