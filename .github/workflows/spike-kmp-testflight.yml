@@ -50,7 +50,11 @@ jobs:
       - name: Write the App Store Connect key (kept out of the log)
         run: |
           mkdir -p "$RUNNER_TEMP/keys"
-          printf '%s' "$KEY_P8" > "$RUNNER_TEMP/keys/AuthKey_${KEY_ID}.p8"
+          # Rebuild a clean PEM from whatever text was pasted: drop the BEGIN/END lines, spaces and CRs, rewrap at 64 columns, end with a newline.
+          body=$(printf '%s' "$KEY_P8" | tr -d '' | grep -v -- '-----' | tr -d ' 
+	')
+          echo "key body length: ${#body} characters (a valid Apple key is about 184)"
+          { echo '-----BEGIN PRIVATE KEY-----'; printf '%s' "$body" | fold -w 64; echo; echo '-----END PRIVATE KEY-----'; } > "$RUNNER_TEMP/keys/AuthKey_${KEY_ID}.p8"
 
       - name: Archive for a real iPhone
         run: |
