@@ -32,6 +32,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.edithkmpspike
         FRAMEWORK_SEARCH_PATHS: $(SRCROOT)/../composeApp/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)
         CODE_SIGN_STYLE: Automatic
+        # iPhone only: the spike has no iPad layout, and an iPad build would also need every orientation and an iPad icon.
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     preBuildScripts:
       - name: Compile the Kotlin framework
         script: |
