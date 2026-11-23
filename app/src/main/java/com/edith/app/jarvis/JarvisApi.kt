@@ -7,24 +7,30 @@ import com.edith.app.core.error.Outcome
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
-import okhttp3.Call
-import okhttp3.Callback
+import com.edith.app.core.net.HttpClients
+import io.ktor.client.HttpClient
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.request
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsBytes
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
+import io.ktor.http.content.OutgoingContent
+import io.ktor.http.content.TextContent
+import io.ktor.http.isSuccess
+import io.ktor.http.withCharset
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody
-import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
 import java.io.IOException
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 import java.security.MessageDigest
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
@@ -46,7 +52,9 @@ internal data class JarvisLink(val base: String, val fingerprint: String, val to
 }
 
 /** The bytes of an answer, with its status and type. */
-internal class Raw(val status: Int, val contentType: String?, val body: ByteArray)
+internal class Raw(val status: Int, val contentType: String?, val body: ByteArray) {
+    val text: String get() = body.decodeToString()
+}
 
 /** What a feed call came to (C39 part 5.1). */
 internal sealed interface FeedResult<out T> {
@@ -107,6 +115,7 @@ internal class JarvisApi(
     private val onUnauthorized: suspend () -> Unit = {},
 ) {
     private val clients = HashMap<String, OkHttpClient>()
+    private val ktorClients = HashMap<String, HttpClient>()
     /** Set by the pin check; the handshake wraps its exception differently on each platform, so the flag is what [unreachable] trusts. */
     private val pinMismatch = java.util.concurrent.atomic.AtomicBoolean(false)
 
@@ -138,17 +147,20 @@ internal class JarvisApi(
 
     @Synchronized private fun clientFor(fingerprint: String): OkHttpClient = clients.getOrPut(fingerprint.lowercase()) { pinned(fingerprint) }
 
+    /** Ktor over the pinned client: the pin check, the timeouts and the https-only rule are the OkHttp client's, so they are the same. */
+    @Synchronized private fun ktorFor(fingerprint: String): HttpClient = ktorClients.getOrPut(fingerprint.lowercase()) { HttpClients.over(clientFor(fingerprint)) }
+
     /** Pairing, step 1: the certificate Jarvis shows at [base], for the owner to compare. Nothing secret is sent. */
     suspend fun probe(base: HttpUrl): Outcome<String> = withContext(dispatchers.io) {
         val seen = AtomicReference<String?>(null)
         try {
-            pinned(null, seen).newCall(Request.Builder().url(base.resolve("/v1/hello")!!).build()).execute().use { r ->
-                val fp = seen.get()
-                if (!r.isSuccessful || fp == null) return@withContext Outcome.Failure(failureFor(r.code, r.body.string()))
-                val hello = runCatching { feedJson.decodeFromString(Hello.serializer(), r.body.string()) }.getOrNull()
-                if (hello?.app != "jarvis-feed") return@withContext Outcome.Failure(AppError.ToolFailed("Jarvis", NOT_JARVIS))
-                Outcome.Success(fp)
-            }
+            val r = HttpClients.over(pinned(null, seen)).get(base.resolve("/v1/hello")!!.toString())
+            val text = r.bodyAsText()
+            val fp = seen.get()
+            if (!r.status.isSuccess() || fp == null) return@withContext Outcome.Failure(failureFor(r.status.value, text))
+            val hello = runCatching { feedJson.decodeFromString(Hello.serializer(), text) }.getOrNull()
+            if (hello?.app != "jarvis-feed") return@withContext Outcome.Failure(AppError.ToolFailed("Jarvis", NOT_JARVIS))
+            Outcome.Success(fp)
         } catch (e: IOException) {
             Outcome.Failure(unreachable(e, pinMismatch.getAndSet(false)))
         }
@@ -157,11 +169,12 @@ internal class JarvisApi(
     /** Pairing, step 2: proves the code, on a connection pinned to the fingerprint the owner compared. */
     suspend fun pair(base: HttpUrl, fingerprint: String, code: String, deviceName: String): Outcome<JarvisLink> = withContext(dispatchers.io) {
         val body = feedJson.encodeToString(PairRequest.serializer(), PairRequest(deviceName.take(40), JarvisPairing.proof(code, fingerprint)))
-        val request = Request.Builder().url(base.resolve("/v1/pair")!!).post(body.toRequestBody(JSON)).build()
         try {
-            clientFor(fingerprint).newCall(request).execute().use { r ->
-                val text = r.body.string()
-                if (!r.isSuccessful) return@use Outcome.Failure(failureFor(r.code, text))
+            val r = ktorFor(fingerprint).post(base.resolve("/v1/pair")!!.toString()) { setBody(TextContent(body, JSON)) }
+            val text = r.bodyAsText()
+            if (!r.status.isSuccess()) {
+                Outcome.Failure(failureFor(r.status.value, text))
+            } else {
                 val reply = feedJson.decodeFromString(PairReply.serializer(), text)
                 Outcome.Success(JarvisLink(base.toString().trimEnd('/'), fingerprint.lowercase(), reply.token, reply.pcName))
             }
@@ -187,17 +200,16 @@ internal class JarvisApi(
             if (last != null) addPathSegment(last)
             query.forEach { (k, v) -> addQueryParameter(k, v) }
         }.build()
-        val request = Request.Builder().url(url).header("Authorization", "Bearer ${l.token}").apply {
-            if (body != null) post(body.toRequestBody(JSON)) else get()
-        }.build()
         val outcome = withContext(dispatchers.io) {
             try {
                 // Cancellable: when Edith's own time limit (or the owner's Stop) cancels this, the HTTP call is cancelled too.
-                // A blocking execute() ignored both, so a slow Outlook left the whole reply stuck.
-                clientFor(l.fingerprint).newCall(request).await().use { r ->
-                    val text = r.body.string()
-                    if (r.isSuccessful) Outcome.Success(feedJson.decodeFromString(serializer, text)) else Outcome.Failure(failureFor(r.code, text))
+                val r = ktorFor(l.fingerprint).request(url.toString()) {
+                    method = if (body != null) HttpMethod.Post else HttpMethod.Get
+                    header(HttpHeaders.Authorization, "Bearer ${l.token}")
+                    if (body != null) setBody(TextContent(body, JSON))
                 }
+                val text = r.bodyAsText()
+                if (r.status.isSuccess()) Outcome.Success(feedJson.decodeFromString(serializer, text)) else Outcome.Failure(failureFor(r.status.value, text))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: SerializationException) {
@@ -222,10 +234,10 @@ internal class JarvisApi(
     internal suspend fun <R> exchange(
         segments: List<String>,
         query: Map<String, String> = emptyMap(),
-        body: RequestBody? = null,
+        body: OutgoingContent? = null,
         readTimeoutS: Long? = null,
         callTimeoutS: Long? = null,
-        parse: (Response) -> R,
+        parse: (Raw) -> R,
     ): FeedResult<R> {
         val l = link() ?: return FeedResult.Unauthorized
         val base = l.base.toHttpUrlOrNull() ?: return FeedResult.Err(0, "BAD_ADDRESS", "The saved address is damaged: pair again.", "")
@@ -234,19 +246,22 @@ internal class JarvisApi(
             segments.forEach { addPathSegment(it) }
             query.forEach { (k, v) -> addQueryParameter(k, v) }
         }.build()
-        val request = Request.Builder().url(url).header("Authorization", "Bearer ${l.token}").apply {
-            if (body != null) post(body) else get()
-        }.build()
         val result: FeedResult<R> = withContext(dispatchers.io) {
             try {
-                val shared = clientFor(l.fingerprint)
-                val client = if (readTimeoutS == null && callTimeoutS == null) shared else shared.newBuilder().apply {
-                    readTimeoutS?.let { readTimeout(it, TimeUnit.SECONDS) }
-                    callTimeoutS?.let { callTimeout(it, TimeUnit.SECONDS) }
-                }.build()
-                client.newCall(request).await().use { r ->
-                    if (r.isSuccessful) FeedResult.Ok(parse(r)) else errorOf(r.code, r.body.string())
+                // A call with its own limits gets its own copy of the pinned client: OkHttp's call timeout is the client's, not the request's.
+                val client = if (readTimeoutS == null && callTimeoutS == null) ktorFor(l.fingerprint) else HttpClients.over(
+                    clientFor(l.fingerprint).newBuilder().apply {
+                        readTimeoutS?.let { readTimeout(it, TimeUnit.SECONDS) }
+                        callTimeoutS?.let { callTimeout(it, TimeUnit.SECONDS) }
+                    }.build(),
+                )
+                val r = client.request(url.toString()) {
+                    method = if (body != null) HttpMethod.Post else HttpMethod.Get
+                    header(HttpHeaders.Authorization, "Bearer ${l.token}")
+                    if (body != null) setBody(body)
                 }
+                val answer = Raw(r.status.value, r.headers[HttpHeaders.ContentType], r.bodyAsBytes())
+                if (r.status.isSuccess()) FeedResult.Ok(parse(answer)) else errorOf(answer.status, answer.text)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: SerializationException) {
@@ -274,33 +289,22 @@ internal class JarvisApi(
         query: Map<String, String> = emptyMap(),
         serializer: KSerializer<T>,
         readTimeoutS: Long? = null,
-    ): FeedResult<T> = exchange(segments, query, null, readTimeoutS) { feedJson.decodeFromString(serializer, it.body.string()) }
+    ): FeedResult<T> = exchange(segments, query, null, readTimeoutS) { feedJson.decodeFromString(serializer, it.text) }
 
     /** POST a JSON body and read the answer as JSON. */
     internal suspend fun <T> postJson(segments: List<String>, body: String, serializer: KSerializer<T>): FeedResult<T> =
-        exchange(segments, emptyMap(), body.toRequestBody(JSON)) { feedJson.decodeFromString(serializer, it.body.string()) }
+        exchange(segments, emptyMap(), TextContent(body, JSON)) { feedJson.decodeFromString(serializer, it.text) }
 
     /** GET the bytes of an answer (a camera picture). */
     internal suspend fun getBytes(segments: List<String>, query: Map<String, String> = emptyMap()): FeedResult<Raw> =
-        exchange(segments, query) { Raw(it.code, it.header("Content-Type"), it.body.bytes()) }
+        exchange(segments, query) { it }
 
     /** POST raw bytes (an upload); the call may take [callTimeoutS], on this call only. The answer's text is returned. */
-    internal suspend fun postBytes(segments: List<String>, query: Map<String, String>, body: RequestBody, callTimeoutS: Long): FeedResult<String> =
-        exchange(segments, query, body, readTimeoutS = callTimeoutS, callTimeoutS = callTimeoutS) { it.body.string() }
-
-    /** Runs the call without blocking a thread, and cancels it if the coroutine is cancelled. */
-    private suspend fun Call.await(): Response = suspendCancellableCoroutine { c ->
-        c.invokeOnCancellation { cancel() }
-        enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) { if (c.isActive) c.resumeWithException(e) }
-            override fun onResponse(call: Call, response: Response) {
-                if (c.isActive) c.resume(response) else response.close()
-            }
-        })
-    }
+    internal suspend fun postBytes(segments: List<String>, query: Map<String, String>, body: OutgoingContent, callTimeoutS: Long): FeedResult<String> =
+        exchange(segments, query, body, readTimeoutS = callTimeoutS, callTimeoutS = callTimeoutS) { it.text }
 
     companion object {
-        private val JSON = "application/json; charset=utf-8".toMediaType()
+        private val JSON = ContentType.Application.Json.withCharset(Charsets.UTF_8)
         const val NOT_JARVIS = "That address answered, but it isn't Jarvis's feed. Check the address and that the feed is switched on."
         const val NOT_REACHABLE = "Edith can't reach Jarvis. Is the PC on, Jarvis running with the feed switched on, and this phone on the home Wi-Fi?"
         const val PAIRING_REFUSED = "Jarvis refused that code. Make a new one with Pair a phone in Jarvis and type it in within 5 minutes."

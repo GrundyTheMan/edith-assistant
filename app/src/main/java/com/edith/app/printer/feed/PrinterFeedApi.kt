@@ -4,9 +4,10 @@ import com.edith.app.jarvis.FeedResult
 import com.edith.app.jarvis.JarvisApi
 import com.edith.app.jarvis.feedJson
 import kotlinx.serialization.Serializable
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody
-import okhttp3.RequestBody.Companion.toRequestBody
+import io.ktor.http.ContentType
+import io.ktor.http.content.OutgoingContent
+import io.ktor.http.content.TextContent
+import io.ktor.http.withCharset
 import java.io.InputStream
 
 /** What sending a command came to. The mapping from the server's codes is part 7.5 of the chunk. */
@@ -97,7 +98,7 @@ internal class PrinterFeedApi(private val api: JarvisApi) : PrinterRoutes {
      */
     override suspend fun command(command: PrinterCommand, via: String, confirmed: Boolean, dryRun: Boolean, requestId: String?): CommandAnswer {
         val body = commandJson.encodeToString(CommandRequest.serializer(), CommandRequest(command, via, confirmed, dryRun, if (dryRun) null else requestId))
-        return when (val r = api.exchange(printer("command"), body = jsonBody(body)) { it.body.string() }) {
+        return when (val r = api.exchange(printer("command"), body = jsonBody(body)) { it.text }) {
             is FeedResult.Ok -> answerOf(r.value, dryRun)
             is FeedResult.Err -> when (r.code) {
                 "CONFIRM_REQUIRED" -> runCatching { feedJson.decodeFromString(CheckErrorBody.serializer(), r.body).check }.getOrNull()
@@ -139,7 +140,7 @@ internal class PrinterFeedApi(private val api: JarvisApi) : PrinterRoutes {
         }
     }
 
-    private fun jsonBody(text: String): RequestBody = text.toRequestBody(JSON)
+    private fun jsonBody(text: String): OutgoingContent = TextContent(text, JSON)
 
     private inline fun <A, B> map(r: FeedResult<A>, f: (A) -> B): FeedResult<B> = when (r) {
         is FeedResult.Ok -> FeedResult.Ok(f(r.value))
@@ -151,7 +152,7 @@ internal class PrinterFeedApi(private val api: JarvisApi) : PrinterRoutes {
     companion object {
         const val MAX_WAIT_S = 25
         const val UPLOAD_SECONDS = 300L
-        private val JSON = "application/json; charset=utf-8".toMediaType()
-        private val OCTET = "application/octet-stream".toMediaType()
+        private val JSON = ContentType.Application.Json.withCharset(Charsets.UTF_8)
+        private val OCTET = ContentType.Application.OctetStream
     }
 }

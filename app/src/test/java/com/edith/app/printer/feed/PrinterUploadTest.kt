@@ -1,13 +1,13 @@
 package com.edith.app.printer.feed
 
-import okio.Buffer
-import okio.buffer
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.InputStream
 
 /** C39 E11: what may be sent from the phone (the same rules as Jarvis's `files/upload`), and the streaming body. */
@@ -58,15 +58,15 @@ class PrinterUploadTest {
 
     // --- The body -----------------------------------------------------------------------------------------------------------
 
-    private fun write(source: InputStream, size: Long, progress: MutableList<Long> = mutableListOf()): Buffer {
-        val sink = Buffer()
-        PrinterUpload.body(source, size, null) { progress += it }.writeTo(sink)
-        return sink
+    private fun write(source: InputStream, size: Long, progress: MutableList<Long> = mutableListOf()): ByteArray {
+        val sink = ByteArrayOutputStream()
+        runBlocking { PrinterUpload.copy(source, size, { progress += it }) { bytes, count -> sink.write(bytes, 0, count) } }
+        return sink.toByteArray()
     }
 
     @Test fun `the body writes exactly the bytes of the file`() {
         val bytes = ByteArray(300_000) { (it * 7 % 251).toByte() }
-        assertArrayEquals(bytes, write(ByteArrayInputStream(bytes), bytes.size.toLong()).readByteArray())
+        assertArrayEquals(bytes, write(ByteArrayInputStream(bytes), bytes.size.toLong()))
     }
 
     @Test fun `progress rises to the full size, in steps no bigger than one buffer`() {
@@ -81,7 +81,7 @@ class PrinterUploadTest {
     @Test fun `a file that grew after it was measured is cut at the promised size`() {
         val bytes = ByteArray(10_000) { 7 }
         val out = write(ByteArrayInputStream(bytes), 6_000)
-        assertEquals(6_000L, out.size)
+        assertEquals(6_000, out.size)
     }
 
     @Test fun `the body never holds more than a buffer, even for a stream of the cap's size`() {
@@ -97,16 +97,14 @@ class PrinterUploadTest {
             }
         }
         var lastProgress = 0L
-        var biggestBuffered = 0L
-        val sink = okio.blackholeSink().buffer()
-        PrinterUpload.body(endless, PrinterUpload.MAX_BYTES, null) { sent -> lastProgress = sent; biggestBuffered = maxOf(biggestBuffered, sink.buffer.size) }.writeTo(sink)
+        var biggestChunk = 0
+        runBlocking { PrinterUpload.copy(endless, PrinterUpload.MAX_BYTES, { sent -> lastProgress = sent }) { _, count -> biggestChunk = maxOf(biggestChunk, count) } }
         assertEquals(PrinterUpload.MAX_BYTES, lastProgress)
-        assertTrue("the sink was emptied as it went (most held: $biggestBuffered)", biggestBuffered <= 128 * 1024)
+        assertTrue("it was handed on a buffer at a time (biggest: $biggestChunk)", biggestChunk <= 64 * 1024)
     }
 
-    @Test fun `the body is one-shot and says how long it is`() {
+    @Test fun `the body says how long it is`() {
         val body = PrinterUpload.body(ByteArrayInputStream(ByteArray(10)), 10, null) {}
-        assertTrue(body.isOneShot())
-        assertEquals(10L, body.contentLength())
+        assertEquals(10L, body.contentLength)
     }
 }
