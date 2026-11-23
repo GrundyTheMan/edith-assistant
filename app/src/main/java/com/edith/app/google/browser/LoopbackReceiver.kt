@@ -9,7 +9,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import io.ktor.http.Url
 import java.io.Closeable
 import java.io.IOException
 import java.io.InputStream
@@ -93,10 +93,10 @@ class LoopbackReceiver private constructor(
             socket.use {
                 it.soTimeout = READ_TIMEOUT_MS
                 val target = readRequestTarget(it.getInputStream())
-                val url = target?.let { t -> "$redirectUri$t".toHttpUrlOrNull() }
+                val url = target?.let { t -> runCatching { Url("$redirectUri$t") }.getOrNull() }
                 val out = it.getOutputStream()
-                if (url != null && (url.queryParameter("code") != null || url.queryParameter("error") != null) && !answer.isCompleted) {
-                    val page = page(signedIn = url.queryParameter("code") != null)
+                if (url != null && (url.parameters["code"] != null || url.parameters["error"] != null) && !answer.isCompleted) {
+                    val page = page(signedIn = url.parameters["code"] != null)
                     out.write(response("200 OK", "text/html; charset=utf-8", page))
                     out.flush()
                     Log.d(LogTag.Accounts, "Browser sign-in: the redirect arrived")

@@ -12,11 +12,15 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
-import okhttp3.FormBody
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okhttp3.OkHttpClient
-import okhttp3.Request
+import io.ktor.client.HttpClient
+import io.ktor.client.request.forms.submitForm
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ParametersBuilder
+import io.ktor.http.URLBuilder
+import io.ktor.http.URLProtocol
+import io.ktor.http.Url
+import io.ktor.http.isSuccess
+import io.ktor.http.parameters
 import java.io.IOException
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -24,19 +28,19 @@ import java.util.Base64
 
 /**
  * A provider's OAuth endpoints for an installed app (C17b §1, D16; any [OAuthProvider] since C23): the authorization
- * code with PKCE, a refresh token and, where the provider has one, revocation. Pure logic over OkHttp, so it runs on
+ * code with PKCE, a refresh token and, where the provider has one, revocation. Pure logic over Ktor, so it runs on
  * the JVM against MockWebServer. Nothing it handles (code, state, verifier, tokens, id_token) is ever logged: only the
  * step and the HTTP status or OAuth `error` code.
  */
 class BrowserOAuth(
-    private val http: Lazy<OkHttpClient>,
+    private val http: Lazy<HttpClient>,
     private val dispatchers: AppDispatchers,
     val provider: OAuthProvider,
     private val random: SecureRandom = SecureRandom(),
 ) {
     /** Google's Desktop client (C17b): the constructor C17b's code and tests use. */
     constructor(
-        http: Lazy<OkHttpClient>,
+        http: Lazy<HttpClient>,
         dispatchers: AppDispatchers,
         clientId: String,
         clientSecret: String = "",
@@ -104,41 +108,38 @@ class BrowserOAuth(
      * (the provider's account chooser).
      */
     fun authUrl(redirect: String, challenge: String, state: String, loginHint: String?, scope: String = provider.scope): String =
-        provider.authUrl.toHttpUrl().newBuilder()
-            .addQueryParameter("client_id", provider.clientId)
-            .addQueryParameter("redirect_uri", redirect)
-            .addQueryParameter("response_type", "code")
-            .addQueryParameter("scope", scope)
-            .addQueryParameter("code_challenge", challenge)
-            .addQueryParameter("code_challenge_method", "S256")
-            .addQueryParameter("state", state)
-            .apply { provider.authParams(loginHint).forEach { (k, v) -> addQueryParameter(k, v) } }
-            .build()
-            .toString()
+        URLBuilder(provider.authUrl).apply {
+            parameters.append("client_id", provider.clientId)
+            parameters.append("redirect_uri", redirect)
+            parameters.append("response_type", "code")
+            parameters.append("scope", scope)
+            parameters.append("code_challenge", challenge)
+            parameters.append("code_challenge_method", "S256")
+            parameters.append("state", state)
+            provider.authParams(loginHint).forEach { (k, v) -> parameters.append(k, v) }
+        }.buildString()
 
     /** Trades the authorization [code] for tokens. [redirect] must be exactly the one in [authUrl]. */
     suspend fun exchange(code: String, verifier: String, redirect: String): TokenResult = postToken("exchange") {
-        add("grant_type", "authorization_code")
-        add("code", code)
-        add("code_verifier", verifier)
-        add("redirect_uri", redirect)
+        append("grant_type", "authorization_code")
+        append("code", code)
+        append("code_verifier", verifier)
+        append("redirect_uri", redirect)
     }
 
     /** A new access token from the stored [refreshToken]. */
     suspend fun refresh(refreshToken: String): TokenResult = postToken("refresh") {
-        add("grant_type", "refresh_token")
-        add("refresh_token", refreshToken)
+        append("grant_type", "refresh_token")
+        append("refresh_token", refreshToken)
     }
 
     /** Revokes [token] (and with it every token of the grant). False if the provider couldn't be told, or has no way. */
     suspend fun revoke(token: String): Boolean = withContext(dispatchers.io) {
         val url = provider.revokeUrl ?: return@withContext false
-        val request = Request.Builder().url(url).post(FormBody.Builder().add("token", token).build()).build()
         try {
-            http.value.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) Log.w(tag, "Browser sign-in: revoke answered HTTP ${response.code}")
-                response.isSuccessful
-            }
+            val response = http.value.submitForm(url, formParameters = parameters { append("token", token) })
+            if (!response.status.isSuccess()) Log.w(tag, "Browser sign-in: revoke answered HTTP ${response.status.value}")
+            response.status.isSuccess()
         } catch (e: IOException) {
             Log.w(tag, "Browser sign-in: revoke didn't reach ${provider.displayName} (${e::class.simpleName})")
             false
@@ -152,46 +153,45 @@ class BrowserOAuth(
     fun parseRedirect(address: String, expectedState: String): Redirect {
         val trimmed = address.trim()
         val withScheme = if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) trimmed else "http://$trimmed"
-        val url = withScheme.toHttpUrlOrNull() ?: return Redirect.WrongState
-        val state = url.queryParameter("state")
+        val url = runCatching { Url(withScheme) }.getOrNull()?.takeIf { (it.protocol == URLProtocol.HTTP || it.protocol == URLProtocol.HTTPS) && it.host.isNotEmpty() } ?: return Redirect.WrongState
+        val state = url.parameters["state"]
         if (state == null || !MessageDigest.isEqual(state.toByteArray(), expectedState.toByteArray())) return Redirect.WrongState
-        url.queryParameter("error")?.let { error ->
-            if (needsAdmin(url.queryParameter("error_description"))) return Redirect.AdminApproval
+        url.parameters["error"]?.let { error ->
+            if (needsAdmin(url.parameters["error_description"])) return Redirect.AdminApproval
             return if (error == "access_denied") Redirect.Denied else Redirect.Error(error)
         }
-        val code = url.queryParameter("code")
+        val code = url.parameters["code"]
         return if (code.isNullOrBlank()) Redirect.Error("no_code") else Redirect.Code(code)
     }
 
     private val tag: LogTag get() = if (provider.id == "google") LogTag.Google else LogTag.Accounts
 
-    private suspend fun postToken(step: String, fields: FormBody.Builder.() -> Unit): TokenResult = withContext(dispatchers.io) {
-        val form = FormBody.Builder().apply {
+    private suspend fun postToken(step: String, fields: ParametersBuilder.() -> Unit): TokenResult = withContext(dispatchers.io) {
+        val form = parameters {
             fields()
-            add("client_id", provider.clientId)
-            if (provider.scopeOnTokenRequests) add("scope", provider.scope)
-            if (provider.clientSecret.isNotBlank()) add("client_secret", provider.clientSecret)
-        }.build()
-        val request = Request.Builder().url(provider.tokenUrl).post(form).build()
+            append("client_id", provider.clientId)
+            if (provider.scopeOnTokenRequests) append("scope", provider.scope)
+            if (provider.clientSecret.isNotBlank()) append("client_secret", provider.clientSecret)
+        }
         try {
-            http.value.newCall(request).execute().use { response ->
-                val body = response.body.string()
-                if (response.isSuccessful) {
-                    parseTokens(body) ?: TokenResult.Failed("unreadable answer").also {
-                        Log.w(tag, "Browser sign-in: $step answer couldn't be read (HTTP ${response.code})")
-                    }
-                } else {
-                    val error = parseError(body)
-                    val aadsts = error?.description?.let { AADSTS.find(it)?.value }
-                    Log.w(tag, "Browser sign-in: $step refused, HTTP ${response.code}, error ${error?.error ?: "none"}${aadsts?.let { " ($it)" }.orEmpty()}")
-                    when {
-                        aadsts == "AADSTS65001" -> TokenResult.ConsentRequired
-                        error?.error == "invalid_grant" -> TokenResult.InvalidGrant
-                        error?.error == "invalid_client" || error?.error == "unauthorized_client" -> TokenResult.InvalidClient
-                        // A Desktop client whose secret Google still wants says so in the description.
-                        error?.description?.contains("client_secret") == true -> TokenResult.InvalidClient
-                        else -> TokenResult.Failed(error?.error ?: "HTTP ${response.code}")
-                    }
+            val response = http.value.submitForm(provider.tokenUrl, formParameters = form)
+            val body = response.bodyAsText()
+            val code = response.status.value
+            if (response.status.isSuccess()) {
+                parseTokens(body) ?: TokenResult.Failed("unreadable answer").also {
+                    Log.w(tag, "Browser sign-in: $step answer couldn't be read (HTTP $code)")
+                }
+            } else {
+                val error = parseError(body)
+                val aadsts = error?.description?.let { AADSTS.find(it)?.value }
+                Log.w(tag, "Browser sign-in: $step refused, HTTP $code, error ${error?.error ?: "none"}${aadsts?.let { " ($it)" }.orEmpty()}")
+                when {
+                    aadsts == "AADSTS65001" -> TokenResult.ConsentRequired
+                    error?.error == "invalid_grant" -> TokenResult.InvalidGrant
+                    error?.error == "invalid_client" || error?.error == "unauthorized_client" -> TokenResult.InvalidClient
+                    // A Desktop client whose secret Google still wants says so in the description.
+                    error?.description?.contains("client_secret") == true -> TokenResult.InvalidClient
+                    else -> TokenResult.Failed(error?.error ?: "HTTP $code")
                 }
             }
         } catch (e: IOException) {

@@ -55,7 +55,7 @@ class OutlookCalendarSource(
 
     override suspend fun calendars(): Outcome<List<CalendarInfo>> = lock.withLock {
         cached?.takeIf { nowMs() - fetchedAtMs < CACHE_MS }?.let { return@withLock Outcome.Success(it) }
-        val r = graph.get(graph.url("me", "calendars") { addQueryParameter("\$select", "id,name,isDefaultCalendar,canEdit"); addQueryParameter("\$top", "50") }) { body ->
+        val r = graph.get(graph.url("me", "calendars") { append("\$select", "id,name,isDefaultCalendar,canEdit"); append("\$top", "50") }) { body ->
             graphJson.decodeFromString<ListDto<CalendarDto>>(body).value
                 .map { CalendarInfo(it.id, it.name ?: "Calendar", isDefault = it.isDefaultCalendar == true, canWrite = it.canEdit != false) }
                 .sortedByDescending { it.isDefault }
@@ -71,11 +71,11 @@ class OutlookCalendarSource(
         for (cal in calendars) {
             val r = graph.get(
                 graph.url("me", "calendars", cal.id, "calendarView") {
-                    addQueryParameter("startDateTime", utc(from))
-                    addQueryParameter("endDateTime", utc(to))
-                    addQueryParameter("\$top", MAX_RESULTS.toString())
-                    addQueryParameter("\$orderby", "start/dateTime")
-                    addQueryParameter("\$select", "id,subject,start,end,isAllDay,location,bodyPreview,iCalUId,isCancelled")
+                    append("startDateTime", utc(from))
+                    append("endDateTime", utc(to))
+                    append("\$top", MAX_RESULTS.toString())
+                    append("\$orderby", "start/dateTime")
+                    append("\$select", "id,subject,start,end,isAllDay,location,bodyPreview,iCalUId,isCancelled")
                 },
                 mapOf("Prefer" to "outlook.timezone=\"${asked.first}\""),
             ) { body -> graphJson.decodeFromString<ListDto<EventDto>>(body).value.mapNotNull { it.toEvent(cal, asked) } }
@@ -225,14 +225,14 @@ class OutlookMailSource(
         val kql = kql(q)
         val clientSide = kql != null && (q.unreadOnly || q.after != null || q.before != null)
         val url = graph.url("me", "mailFolders", "inbox", "messages") {
-            addQueryParameter("\$select", SUMMARY_FIELDS)
+            append("\$select", SUMMARY_FIELDS)
             if (kql != null) {
-                addQueryParameter("\$search", "\"$kql\"")
-                addQueryParameter("\$top", (if (clientSide) SEARCH_PAGE else limit).toString())
+                append("\$search", "\"$kql\"")
+                append("\$top", (if (clientSide) SEARCH_PAGE else limit).toString())
             } else {
-                addQueryParameter("\$filter", filter(q))
-                addQueryParameter("\$orderby", "receivedDateTime desc")
-                addQueryParameter("\$top", limit.toString())
+                append("\$filter", filter(q))
+                append("\$orderby", "receivedDateTime desc")
+                append("\$top", limit.toString())
             }
         }
         return when (val r = graph.get(url) { graphJson.decodeFromString<ListDto<MessageDto>>(it) }) {
@@ -251,7 +251,7 @@ class OutlookMailSource(
 
     override suspend fun read(id: String): Outcome<MailMessage> =
         graph.get(
-            graph.url("me", "messages", id) { addQueryParameter("\$select", "$SUMMARY_FIELDS,ccRecipients,body") },
+            graph.url("me", "messages", id) { append("\$select", "$SUMMARY_FIELDS,ccRecipients,body") },
             mapOf("Prefer" to "outlook.body-content-type=\"text\""),
         ) { body ->
             val dto = graphJson.decodeFromString<MessageDto>(body)

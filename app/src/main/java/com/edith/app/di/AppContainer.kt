@@ -355,7 +355,7 @@ class AppContainer(val app: Application) {
     /** Microsoft as an account provider (C23, D18): Outlook mail and calendars through Graph. */
     val microsoftAccounts: MicrosoftAccounts by lazy {
         MicrosoftAccounts(
-            oauth = BrowserOAuth(httpClients.secure, dispatchers, MicrosoftOAuth.provider(BuildConfig.MICROSOFT_CLIENT_ID)),
+            oauth = BrowserOAuth(httpClients.ktorSecure, dispatchers, MicrosoftOAuth.provider(BuildConfig.MICROSOFT_CLIENT_ID)),
             signInFlow = browserSignIn,
             secrets = secretStore,
             http = httpClients.secure,
@@ -367,7 +367,7 @@ class AppContainer(val app: Application) {
 
     val googleAccounts: GoogleAccounts by lazy {
         val browser = BrowserGoogle(
-            oauth = BrowserOAuth(httpClients.secure, dispatchers, BuildConfig.GOOGLE_DESKTOP_CLIENT_ID, BuildConfig.GOOGLE_DESKTOP_CLIENT_SECRET),
+            oauth = BrowserOAuth(httpClients.ktorSecure, dispatchers, BuildConfig.GOOGLE_DESKTOP_CLIENT_ID, BuildConfig.GOOGLE_DESKTOP_CLIENT_SECRET),
             secrets = secretStore,
             clock = clock,
             dispatchers = dispatchers,
@@ -383,7 +383,7 @@ class AppContainer(val app: Application) {
             playServicesAvailable = {
                 GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(app) == ConnectionResult.SUCCESS
             },
-            http = httpClients.secure,
+            http = httpClients.ktorSecure,
             clock = clock,
             dispatchers = dispatchers,
         )

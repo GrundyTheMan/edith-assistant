@@ -1,5 +1,6 @@
 package com.edith.app.microsoft
 
+import com.edith.app.core.net.HttpClients
 import android.app.Activity
 import com.edith.app.accounts.Account
 import com.edith.app.accounts.AccountSecrets
@@ -51,7 +52,7 @@ class MicrosoftAuthTest {
 
     @After fun tearDown() = server.close()
 
-    private fun oauth() = BrowserOAuth(lazy { OkHttpClient() }, dispatchers, MicrosoftOAuth.provider("ms-client-id", loginBase = server.url("/").toString()))
+    private fun oauth() = BrowserOAuth(lazy { HttpClients.over(OkHttpClient()) }, dispatchers, MicrosoftOAuth.provider("ms-client-id", loginBase = server.url("/").toString()))
 
     private fun json(body: String, code: Int = 200) =
         MockResponse.Builder().code(code).body(body).addHeader("Content-Type", "application/json").build()
@@ -186,7 +187,7 @@ class MicrosoftAuthTest {
         val down = MockWebServer().apply { start() }
         val url = down.url("/").toString()
         down.close()
-        val o = BrowserOAuth(lazy { OkHttpClient() }, dispatchers, MicrosoftOAuth.provider("ms-client-id", loginBase = url))
+        val o = BrowserOAuth(lazy { HttpClients.over(OkHttpClient()) }, dispatchers, MicrosoftOAuth.provider("ms-client-id", loginBase = url))
         val again = mutableListOf<String>()
         val a = auth(o, again)
         a.check()

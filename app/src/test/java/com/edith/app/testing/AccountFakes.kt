@@ -1,5 +1,6 @@
 package com.edith.app.testing
 
+import com.edith.app.core.net.HttpClients
 import android.app.Activity
 import android.content.Intent
 import com.edith.app.accounts.Account
@@ -101,7 +102,7 @@ class AccountsHarness(
     )
 
     val browser = BrowserGoogle(
-        BrowserOAuth(lazy { OkHttpClient() }, dispatchers, desktop, tokenUrl = url("/token"), revokeUrl = url("/revoke")),
+        BrowserOAuth(lazy { HttpClients.over(OkHttpClient()) }, dispatchers, desktop, tokenUrl = url("/token"), revokeUrl = url("/revoke")),
         secrets, FakeClock(), dispatchers, "com.edith.app.debug://signed-in",
         signInFlow = signInFlow,
     )
@@ -112,7 +113,7 @@ class AccountsHarness(
         browser = browser,
         webClientId = web,
         playServicesAvailable = { playAvailable },
-        http = lazy { OkHttpClient() },
+        http = lazy { HttpClients.over(OkHttpClient()) },
         dispatchers = AppDispatchersForTests.unconfined,
         zone = { zone.toKotlinTimeZone() },
         calendarBaseUrl = url("/calendar/v3"),
@@ -122,12 +123,12 @@ class AccountsHarness(
     )
 
     val microsoft = MicrosoftAccounts(
-        oauth = BrowserOAuth(lazy { OkHttpClient() }, dispatchers, MicrosoftOAuth.provider(microsoftClientId, loginBase = url("/ms"))),
+        oauth = BrowserOAuth(lazy { HttpClients.over(OkHttpClient()) }, dispatchers, MicrosoftOAuth.provider(microsoftClientId, loginBase = url("/ms"))),
         signInFlow = signInFlow,
         secrets = secrets,
         // The app reads for up to 180 s (AppContainer), so its 10 s per-account timeout always wins; OkHttp's default
         // 10 s would race it.
-        http = lazy { OkHttpClient.Builder().readTimeout(180, java.util.concurrent.TimeUnit.SECONDS).build() },
+        http = lazy { HttpClients.over(OkHttpClient.Builder().readTimeout(180, java.util.concurrent.TimeUnit.SECONDS).build()) },
         dispatchers = AppDispatchersForTests.unconfined,
         clock = clock,
         zone = { zone.toKotlinTimeZone() },

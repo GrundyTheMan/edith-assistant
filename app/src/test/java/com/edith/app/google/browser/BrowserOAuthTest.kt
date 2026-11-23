@@ -1,5 +1,6 @@
 package com.edith.app.google.browser
 
+import com.edith.app.core.net.HttpClients
 import com.edith.app.google.GoogleScope
 import com.edith.app.testing.testDispatchers
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +32,7 @@ class BrowserOAuthTest {
     @After fun tearDown() = server.close()
 
     private fun oauth(secret: String = "") = BrowserOAuth(
-        lazy { OkHttpClient() }, dispatchers, clientId = "desktop.apps.googleusercontent.com", clientSecret = secret,
+        lazy { HttpClients.over(OkHttpClient()) }, dispatchers, clientId = "desktop.apps.googleusercontent.com", clientSecret = secret,
         tokenUrl = tokenUrl, revokeUrl = server.url("/revoke").toString(),
     )
 

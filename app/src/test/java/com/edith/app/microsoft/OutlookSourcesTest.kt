@@ -1,5 +1,6 @@
 package com.edith.app.microsoft
 
+import com.edith.app.core.net.HttpClients
 import com.edith.app.accounts.Account
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
@@ -66,14 +67,14 @@ class OutlookSourcesTest {
         }
         server.start()
         val secrets = InMemorySecretStore().apply { put(AccountSecrets.refreshToken("m1"), "M.R3") }
-        val oauth = BrowserOAuth(lazy { OkHttpClient() }, AppDispatchersForTests.unconfined, MicrosoftOAuth.provider("ms-client-id", loginBase = server.url("/ms").toString()))
+        val oauth = BrowserOAuth(lazy { HttpClients.over(OkHttpClient()) }, AppDispatchersForTests.unconfined, MicrosoftOAuth.provider("ms-client-id", loginBase = server.url("/ms").toString()))
         auth = MicrosoftAccountAuth({ account }, oauth, secrets, clock) {}
     }
 
     @After fun tearDown() = server.close()
 
     private fun client(tool: String, service: String) = GraphClient(
-        lazy { OkHttpClient() }, auth, AppDispatchersForTests.unconfined, tool, service, "gone", server.url("/graph/v1.0").toString(),
+        lazy { HttpClients.over(OkHttpClient()) }, auth, AppDispatchersForTests.unconfined, tool, service, "gone", server.url("/graph/v1.0").toString(),
         sleep = { slept += it },
     )
 

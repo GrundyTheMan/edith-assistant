@@ -27,7 +27,7 @@ import com.edith.app.google.calendar.CalendarClient
 import com.edith.app.google.gmail.GmailClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.StateFlow
-import okhttp3.OkHttpClient
+import io.ktor.client.HttpClient
 
 /**
  * Google as an account provider (C17, C17b; any number of accounts since C22). Each account reaches Google through
@@ -42,7 +42,7 @@ class GoogleAccounts(
     private val webClientId: String,
     /** `GoogleApiAvailability.isGooglePlayServicesAvailable(context) == SUCCESS`; a lambda so tests can choose. */
     private val playServicesAvailable: () -> Boolean,
-    private val http: Lazy<OkHttpClient>,
+    private val http: Lazy<HttpClient>,
     private val dispatchers: AppDispatchers,
     private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() },
     private val calendarBaseUrl: String = CalendarClient.BASE_URL,

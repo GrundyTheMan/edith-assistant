@@ -18,12 +18,19 @@ import com.edith.app.tools.web.PageReader
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import okhttp3.HttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import io.ktor.client.HttpClient
+import io.ktor.client.request.header
+import io.ktor.client.request.request
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
+import io.ktor.http.ParametersBuilder
+import io.ktor.http.URLBuilder
+import io.ktor.http.Url
+import io.ktor.http.content.TextContent
+import io.ktor.http.withCharset
 import org.jsoup.Jsoup
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
@@ -39,7 +46,7 @@ import java.util.Base64
  * the owner confirms, which the tools enforce). Email content is never logged.
  */
 class GmailClient(
-    private val http: Lazy<OkHttpClient>,
+    private val http: Lazy<HttpClient>,
     private val auth: GoogleAccountAuth,
     private val dispatchers: AppDispatchers,
     private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() },
@@ -52,15 +59,15 @@ class GmailClient(
      * more matched (Gmail gives a `nextPageToken` then).
      */
     suspend fun search(query: String, max: Int): Outcome<MailSearchResult> = call(setOf(GoogleScope.GmailReadonly)) { token ->
-        val list = get(token, url("messages") { addQueryParameter("q", query); addQueryParameter("maxResults", max.coerceIn(1, MAX_SEARCH).toString()) }) {
+        val list = get(token, url("messages") { append("q", query); append("maxResults", max.coerceIn(1, MAX_SEARCH).toString()) }) {
             json.decodeFromString<MessageListDto>(it)
         }
         if (list !is GoogleCall.Ok) return@call list.map { MailSearchResult(emptyList(), false) }
         val out = mutableListOf<MailSummary>()
         for (ref in list.value.messages) {   // one at a time: at most 10, and Gmail limits concurrent requests per user
             val meta = get(token, url("messages/${ref.id}") {
-                addQueryParameter("format", "metadata")
-                METADATA_HEADERS.forEach { addQueryParameter("metadataHeaders", it) }
+                append("format", "metadata")
+                METADATA_HEADERS.forEach { append("metadataHeaders", it) }
             }) { json.decodeFromString<MessageDto>(it).summary() }
             when (meta) {
                 is GoogleCall.Ok -> out += meta.value
@@ -72,7 +79,7 @@ class GmailClient(
 
     /** One message in full, its body as plain text. */
     suspend fun read(id: String): Outcome<MailMessage> = call(setOf(GoogleScope.GmailReadonly)) { token ->
-        get(token, url("messages/$id") { addQueryParameter("format", "full") }) { body ->
+        get(token, url("messages/$id") { append("format", "full") }) { body ->
             val dto = json.decodeFromString<MessageDto>(body)
             MailMessage(dto.summary(), dto.header("Cc"), MailText.body(dto.payload))
         }
@@ -92,28 +99,30 @@ class GmailClient(
 
     // --- HTTP -------------------------------------------------------------------------------------------------
 
-    private suspend fun <T> call(scopes: Set<GoogleScope>, block: (String) -> GoogleCall<T>): Outcome<T> =
+    private suspend fun <T> call(scopes: Set<GoogleScope>, block: suspend (String) -> GoogleCall<T>): Outcome<T> =
         auth.authorized(scopes) { token -> withContext(dispatchers.io) { block(token) } }
 
-    private fun <T> get(token: String, url: HttpUrl, parse: (String) -> T) =
-        execute(Request.Builder().url(url).header("Authorization", "Bearer $token").build(), parse)
+    private suspend fun <T> get(token: String, url: Url, parse: (String) -> T) = execute(token, HttpMethod.Get, url, null, parse)
 
-    private fun <T> post(token: String, url: HttpUrl, body: String, parse: (String) -> T) =
-        execute(Request.Builder().url(url).header("Authorization", "Bearer $token").post(body.toRequestBody(JSON_TYPE)).build(), parse)
+    private suspend fun <T> post(token: String, url: Url, body: String, parse: (String) -> T) = execute(token, HttpMethod.Post, url, body, parse)
 
-    private fun <T> execute(request: Request, parse: (String) -> T): GoogleCall<T> = try {
-        http.value.newCall(request).execute().use { response ->
-            val body = response.body.string()
-            when {
-                response.isSuccessful -> GoogleCall.Ok(parse(body))
-                response.code == 401 -> GoogleCall.Unauthorized
-                response.code == 403 && (body.contains("insufficientPermissions") || body.contains("ACCESS_TOKEN_SCOPE_INSUFFICIENT")) -> GoogleCall.MissingScope
-                response.code == 404 -> GoogleCall.Failed(AppError.ToolFailed("email", "That email isn't there any more."))
-                response.code == 400 -> GoogleCall.Failed(AppError.ToolFailed("email", "Gmail didn't accept that (check the search words or the address)."))
-                else -> {
-                    Log.w(LogTag.Google, "Gmail HTTP ${response.code}")
-                    GoogleCall.Failed(AppError.ToolFailed("email", "Gmail said no (HTTP ${response.code})."))
-                }
+    private suspend fun <T> execute(token: String, method: HttpMethod, url: Url, body: String?, parse: (String) -> T): GoogleCall<T> = try {
+        val response = http.value.request(url) {
+            this.method = method
+            header(HttpHeaders.Authorization, "Bearer $token")
+            if (body != null) setBody(TextContent(body, JSON_TYPE))
+        }
+        val text = response.bodyAsText()
+        val code = response.status.value
+        when {
+            code in 200..299 -> GoogleCall.Ok(parse(text))
+            code == 401 -> GoogleCall.Unauthorized
+            code == 403 && (text.contains("insufficientPermissions") || text.contains("ACCESS_TOKEN_SCOPE_INSUFFICIENT")) -> GoogleCall.MissingScope
+            code == 404 -> GoogleCall.Failed(AppError.ToolFailed("email", "That email isn't there any more."))
+            code == 400 -> GoogleCall.Failed(AppError.ToolFailed("email", "Gmail didn't accept that (check the search words or the address)."))
+            else -> {
+                Log.w(LogTag.Google, "Gmail HTTP $code")
+                GoogleCall.Failed(AppError.ToolFailed("email", "Gmail said no (HTTP $code)."))
             }
         }
     } catch (e: java.io.IOException) {
@@ -131,8 +140,8 @@ class GmailClient(
         is GoogleCall.Failed -> this
     }
 
-    private fun url(path: String, query: HttpUrl.Builder.() -> Unit): HttpUrl =
-        (baseUrl.trimEnd('/') + "/" + path).toHttpUrl().newBuilder().apply(query).build()
+    private fun url(path: String, query: ParametersBuilder.() -> Unit): Url =
+        URLBuilder(baseUrl.trimEnd('/') + "/" + path).apply { parameters.query() }.build()
 
     private fun MessageDto.header(name: String): String? = payload?.headers?.firstOrNull { it.name.equals(name, ignoreCase = true) }?.value
 
@@ -153,7 +162,7 @@ class GmailClient(
         const val BASE_URL = "https://gmail.googleapis.com/gmail/v1/users/me"
         const val MAX_SEARCH = 10
         private val METADATA_HEADERS = listOf("From", "To", "Subject", "Date", "Message-ID")
-        private val JSON_TYPE = "application/json; charset=utf-8".toMediaType()
+        private val JSON_TYPE = ContentType.Application.Json.withCharset(Charsets.UTF_8)
         private val json = Json { ignoreUnknownKeys = true }
     }
 }
