@@ -358,7 +358,7 @@ class AppContainer(val app: Application) {
             oauth = BrowserOAuth(httpClients.ktorSecure, dispatchers, MicrosoftOAuth.provider(BuildConfig.MICROSOFT_CLIENT_ID)),
             signInFlow = browserSignIn,
             secrets = secretStore,
-            http = httpClients.secure,
+            http = httpClients.ktorSecure,
             dispatchers = dispatchers,
             clock = clock,
             windowsZone = { zone -> android.icu.util.TimeZone.getWindowsID(zone.id) },
@@ -409,10 +409,10 @@ class AppContainer(val app: Application) {
     val homeCommandLog: RoomCommandLog by lazy { RoomCommandLog(database.homeCommandDao()) }
 
     /** Meross garage door openers (C26): the account's sign-in is kept encrypted in [secretStore]. */
-    val meross: MerossService by lazy { MerossService(secretStore, MerossApi(httpClients.secure, clock), PahoMerossBus(dispatchers, clock), clock) }
+    val meross: MerossService by lazy { MerossService(secretStore, MerossApi(httpClients.ktorSecure, clock), PahoMerossBus(dispatchers, clock), clock) }
 
     /** Ring doorbells and cameras (C27): the sign-in is kept encrypted in [secretStore]. */
-    val ring: RingService by lazy { RingService(secretStore, RingApi(httpClients.secure), clock, rtc = com.edith.app.ring.WebRtcClient(app)) }   // C32: rtc is Ring live view
+    val ring: RingService by lazy { RingService(secretStore, RingApi(httpClients.ktorSecure), clock, rtc = com.edith.app.ring.WebRtcClient(app)) }   // C32: rtc is Ring live view
 
     /** Blink cameras (C29): the sign-in is kept encrypted in [secretStore]. */
     val blink: BlinkService by lazy { BlinkService(secretStore, BlinkApi(httpClients.secure, blinkEndpoints()), clock) }

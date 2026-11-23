@@ -10,13 +10,14 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import okhttp3.Call
-import okhttp3.Callback
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
+import io.ktor.client.HttpClient
+import io.ktor.client.plugins.timeout
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.content.TextContent
 import java.io.IOException
 import java.security.SecureRandom
 import java.util.concurrent.TimeUnit
@@ -41,7 +42,7 @@ sealed interface MerossLogin {
  * are never logged.
  */
 class MerossApi(
-    private val http: Lazy<OkHttpClient>,
+    private val http: Lazy<HttpClient>,
     private val clock: Clock,
     private val baseUrl: String = BASE_URL,
     private val random: SecureRandom = SecureRandom(),
@@ -144,18 +145,17 @@ class MerossApi(
 
     private suspend fun post(url: String, params: JsonObject, token: String?): Raw {
         val envelope = MerossProtocol.envelope(params, clock.now().toEpochMilliseconds(), MerossProtocol.nonce(random))
-        val request = Request.Builder().url(url)
-            .header("Authorization", if (token == null) "Basic" else "Basic $token")
-            .header("AppVersion", APP_VERSION).header("vender", "meross").header("AppType", APP_TYPE)
-            .header("AppLanguage", "EN").header("User-Agent", "Edith")
-            .post(envelope.toString().toRequestBody(JSON))
-            .build()
         return try {
-            http.value.newBuilder().callTimeout(CALL_TIMEOUT_S, TimeUnit.SECONDS).build().newCall(request).await().use { response ->
-                if (response.code != 200) return Raw.Failed("Meross answered HTTP ${response.code}")
-                val text = response.body?.string().orEmpty()
-                Raw.Done(json.parseToJsonElement(text) as? JsonObject ?: return Raw.Failed("Meross's answer wasn't what Edith expected"))
+            val response = http.value.post(url) {
+                timeout { requestTimeoutMillis = CALL_TIMEOUT_S * 1000 }
+                header("Authorization", if (token == null) "Basic" else "Basic $token")
+                header("AppVersion", APP_VERSION); header("vender", "meross"); header("AppType", APP_TYPE)
+                header("AppLanguage", "EN"); header("User-Agent", "Edith")
+                setBody(TextContent(envelope.toString(), JSON))
             }
+            if (response.status.value != 200) return Raw.Failed("Meross answered HTTP ${response.status.value}")
+            val text = response.bodyAsText()
+            Raw.Done(json.parseToJsonElement(text) as? JsonObject ?: return Raw.Failed("Meross's answer wasn't what Edith expected"))
         } catch (e: IOException) {
             Raw.Failed("Meross can't be reached right now")
         } catch (e: SerializationException) {
@@ -169,15 +169,6 @@ class MerossApi(
         private const val APP_VERSION = "2.0"
         private const val APP_TYPE = "MerossIOT"
         private const val CALL_TIMEOUT_S = 6L
-        private val JSON = "application/json".toMediaType()
+        private val JSON = ContentType.Application.Json
     }
-}
-
-/** Runs the call without blocking a thread; cancelling the coroutine cancels the HTTP call. */
-internal suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
-    cont.invokeOnCancellation { cancel() }
-    enqueue(object : Callback {
-        override fun onFailure(call: Call, e: IOException) = cont.resumeWithException(e)
-        override fun onResponse(call: Call, response: Response) = cont.resume(response) { _, r, _ -> r.close() }
-    })
 }

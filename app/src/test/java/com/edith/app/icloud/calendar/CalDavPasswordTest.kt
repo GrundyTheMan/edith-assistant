@@ -69,7 +69,7 @@ class CalDavPasswordTest {
                 lazy { OkHttpClient() }, AppDispatchersForTests.unconfined, "owner@icloud.com", "abcd-efgh-ijkl-mnop",
                 main.url("/").toString(),
             )
-            client.get(main.url("/start").toString().toHttpUrl())
+            client.get(io.ktor.http.Url(main.url("/start").toString()))
             val first = main.takeRequest()
             assertEquals(Credentials.basic("owner@icloud.com", "abcd-efgh-ijkl-mnop", Charsets.UTF_8), first.headers["Authorization"])
             val second = stranger.takeRequest()

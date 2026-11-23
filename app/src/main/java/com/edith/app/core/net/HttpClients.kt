@@ -56,9 +56,12 @@ class HttpClients(base: () -> OkHttpClient) {
         }
 
         /** A Ktor client that sends everything through [okHttp] as it is configured. */
-        fun over(okHttp: OkHttpClient, followHttpsToHttp: Boolean = false): HttpClient = HttpClient(OkHttp) {
+        fun over(okHttp: OkHttpClient, followHttpsToHttp: Boolean = false, redirectAnyMethod: Boolean = false): HttpClient = HttpClient(OkHttp) {
             engine { preconfigured = okHttp }
-            install(HttpRedirect) { allowHttpsDowngrade = followHttpsToHttp }
+            install(HttpRedirect) {
+                allowHttpsDowngrade = followHttpsToHttp
+                checkHttpMethod = !redirectAnyMethod   // Ktor follows only GET and HEAD by default; WebDAV's PROPFIND and REPORT are redirected too
+            }
             install(HttpTimeout)   // no limits of its own: the OkHttp ones apply, and a call can set its own with `timeout { }`
             expectSuccess = false   // services read the status themselves, as they did with OkHttp
         }
