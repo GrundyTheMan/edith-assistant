@@ -79,8 +79,12 @@ jobs:
           xcrun simctl privacy "$udid" grant microphone com.example.edithkmpspike
           # A fake streaming Ollama on the runner, so the app's chat reader is tested on the simulator (the owner's real phone showed it hanging).
           python3 tools/fake_ollama.py 2> "$RUNNER_TEMP/fake-ollama.txt" &
+          # A dotted hostname that is not a local address, like the owner's Tailscale address: App Transport Security treats it as the open internet.
+          echo "127.0.0.1 fake-ollama.example" | sudo tee -a /etc/hosts
+          echo "--- the built app's App Transport Security settings ---"
+          /usr/libexec/PlistBuddy -c "Print :NSAppTransportSecurity" build/xcode/Build/Products/Debug-iphonesimulator/iosApp.app/Info.plist
           sleep 1
-          SIMCTL_CHILD_SPIKE_CHAT_URL=http://127.0.0.1:18080 SIMCTL_CHILD_SPIKE_AUTOPROBE=1 xcrun simctl launch --stdout="$RUNNER_TEMP/app-out.txt" --stderr="$RUNNER_TEMP/app-err.txt" "$udid" com.example.edithkmpspike
+          SIMCTL_CHILD_SPIKE_CHAT_URL=http://fake-ollama.example:18080 SIMCTL_CHILD_SPIKE_AUTOPROBE=1 xcrun simctl launch --stdout="$RUNNER_TEMP/app-out.txt" --stderr="$RUNNER_TEMP/app-err.txt" "$udid" com.example.edithkmpspike
           # The first start on a fresh simulator is slow (the GPU shaders compile): wait until the probes have all printed, or 90 seconds.
           for i in $(seq 1 45); do grep -q "Navigation and ViewModel" "$RUNNER_TEMP/app-out.txt" 2>/dev/null && break; sleep 2; done
           sleep 3
