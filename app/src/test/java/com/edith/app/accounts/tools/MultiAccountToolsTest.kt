@@ -192,7 +192,7 @@ class MultiAccountToolsTest {
         val u = args(update, "event_id" to "e1", "title" to "Stand-up")
         assertEquals("Account" to "work (sam@contoso.com) — Work", update.confirmation(u)!!.details.last())
         update.execute(u, ctx)
-        val delete = DeleteCalendarEventTool(dir, handles)
+        val delete = DeleteCalendarEventTool(dir, handles) { zone }
         val d = args(delete, "event_id" to "e2")
         assertEquals("Account" to "personal (a@gmail.com) — Calendar", delete.confirmation(d)!!.details.last())
         delete.execute(d, ctx)
@@ -206,7 +206,7 @@ class MultiAccountToolsTest {
         val handles = CalendarHandles()
         ListCalendarEventsTool(dir, handles).let { it.execute(args(it, "start" to "2026-11-03", "end" to "2026-11-04"), ctx) }
         dir.list = listOf(entry(w, AccountState.NeedsSignIn("needs signing in again")))
-        val delete = DeleteCalendarEventTool(dir, handles)
+        val delete = DeleteCalendarEventTool(dir, handles) { zone }
         assertNull(delete.confirmation(args(delete, "event_id" to "e1")))
         assertTrue(delete.execute(args(delete, "event_id" to "e1"), ctx).text.contains("Settings → Accounts"))
         assertTrue(w.written.isEmpty())
@@ -288,7 +288,7 @@ class MultiAccountToolsTest {
             override suspend fun version(baseUrl: String) = Outcome.Success("x")
         }
         val confirmations = Confirmations()
-        val registry = ToolRegistry(calendarTools(h.accounts, calHandles) + mailTools(h.accounts, mailHandles), listOf(h.accounts))
+        val registry = ToolRegistry(calendarTools(h.accounts, calHandles) { zone } + mailTools(h.accounts, mailHandles), listOf(h.accounts))
         val runner = ToolTurnRunner(ollama, registry, confirmations, FakeSettingsRepository(), clock, dispatchers)
         var card: ConfirmationRequest? = null
         runner.run("http://ollama", ModelInfo("gemma4:12b", setOf("tools")), listOf(OllamaMessage("user", "go"))).collect { e ->

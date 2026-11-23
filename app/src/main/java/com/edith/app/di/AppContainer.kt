@@ -168,7 +168,7 @@ class AppContainer(val app: Application) {
                 CurrentTimeTool(), WeatherTool(openMeteo, deviceLocation),
                 SearchWebTool(webSearch), ReadWebPageTool(webSearch.pages(PageReader(httpClients.plain, dispatchers))),
                 // C18/C22: calendars across every account; C19/C22: email (send only after the owner confirms: D5)
-                *calendarTools(accounts, calendarHandles).toTypedArray(),
+                *calendarTools(accounts, calendarHandles, clock::zone).toTypedArray(),
                 *mailTools(accounts, mailHandles).toTypedArray(),
                 // C35: to-dos (Google Tasks), every change on a card (D11, D20)
                 *taskTools(accounts, taskHandles, taskRanker, clock) { settingsRepository.current() }.toTypedArray(),

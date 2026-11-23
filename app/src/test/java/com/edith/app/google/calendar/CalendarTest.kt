@@ -265,7 +265,7 @@ class CalendarTest {
     @Test fun `delete shows the event and removes it`() = runBlocking {
         ListCalendarEventsTool(dir, handles).let { it.execute(args(it, "start" to "2026-11-02", "end" to "2026-11-08"), ctx) }
         routes["DELETE /calendar/v3/calendars/primary%40gmail.com/events/standup1_20261102T140000Z"] = { MockResponse.Builder().code(204).build() }
-        val tool = DeleteCalendarEventTool(dir, handles)
+        val tool = DeleteCalendarEventTool(dir, handles) { zone }
         val a = args(tool, "event_id" to "e1")
         assertEquals(listOf("Event" to "Standup", "When" to "Mon Nov 2, 9:00–9:15 AM", "Account" to "owner@gmail.com — Blake"), tool.confirmation(a)!!.details)
         assertEquals("Deleted \"Standup\" (Mon Nov 2, 9:00–9:15 AM) from owner@gmail.com.", tool.execute(a, ctx).text)
@@ -273,7 +273,7 @@ class CalendarTest {
     }
 
     @Test fun `an unknown event id sends nothing and says to list first`() = runBlocking {
-        val tool = DeleteCalendarEventTool(dir, handles)
+        val tool = DeleteCalendarEventTool(dir, handles) { zone }
         assertNull(tool.confirmation(args(tool, "event_id" to "e99")))
         val r = tool.execute(args(tool, "event_id" to "e99"), ctx)
         assertTrue(r is ToolResult.Error && r.text.contains("list_calendar_events"))

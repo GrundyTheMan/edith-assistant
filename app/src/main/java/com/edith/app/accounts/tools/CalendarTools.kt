@@ -450,7 +450,7 @@ class DeleteCalendarEventTool(private val dir: AccountDirectory, private val han
 }
 
 /** The calendar tools (C18, C22), sharing one set of handles. */
-fun calendarTools(dir: AccountDirectory, handles: CalendarHandles): List<Tool> = listOf(
-    ListCalendarEventsTool(dir, handles), FindFreeTimeTool(dir), CreateCalendarEventTool(dir, handles),
-    UpdateCalendarEventTool(dir, handles), DeleteCalendarEventTool(dir, handles),
+fun calendarTools(dir: AccountDirectory, handles: CalendarHandles, zone: () -> TimeZone = { TimeZone.currentSystemDefault() }): List<Tool> = listOf(
+    ListCalendarEventsTool(dir, handles), FindFreeTimeTool(dir), CreateCalendarEventTool(dir, handles, zone),
+    UpdateCalendarEventTool(dir, handles, zone), DeleteCalendarEventTool(dir, handles, zone),
 )
