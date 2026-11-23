@@ -3,7 +3,8 @@ package com.edith.app.voice.capture
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
-import com.edith.app.ollama.OkHttpOllamaClient
+import com.edith.app.core.net.HttpClients
+import com.edith.app.ollama.KtorOllamaClient
 import com.edith.app.ollama.OllamaDtos
 import com.edith.app.settings.Settings
 import com.edith.app.testing.FakeSettingsRepository
@@ -88,7 +89,7 @@ class VoiceInputTest {
     @Test fun `transcription sends the WAV in images with the exact prompt, and NO_SPEECH means empty`() = runTest {
         val server = MockWebServer().apply { start() }
         try {
-            val client = OkHttpOllamaClient(OkHttpClient(), OllamaDtos.json, AppDispatchers(Dispatchers.Unconfined, Dispatchers.IO, Dispatchers.Default))
+            val client = KtorOllamaClient(HttpClients.over(OkHttpClient()), OllamaDtos.json, AppDispatchers(Dispatchers.Unconfined, Dispatchers.IO, Dispatchers.Default))
             val settings = FakeSettingsRepository(Settings(serverUrl = server.url("/").toString(), model = "gemma4:12b-it-q8_0"))
             val transcriber = OllamaTranscriber(client, settings, testDispatchers())
             val audio = wav("speech.wav", 1_000)

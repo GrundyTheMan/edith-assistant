@@ -1,5 +1,9 @@
 package com.edith.app.core.net
 
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.runBlocking
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import okhttp3.ConnectionSpec
@@ -96,6 +100,53 @@ class HttpClientsTest {
         tlsServer.enqueue(MockResponse.Builder().code(302).addHeader("Location", target.toString()).build())
         get(HttpClients { base }.plain.value, tlsServer.url("/start")).use { assertEquals("cleartext", it.body.string()) }
         assertEquals(1, plainServer.requestCount)
+    }
+
+    // --- K1.4: the same rules, seen through Ktor ------------------------------------------------------------------
+
+    @Test fun `ktor secure refuses a plain http address and the server never sees a request`() = runBlocking {
+        plainServer.enqueue(ok())
+        try {
+            HttpClients { base }.ktorSecure.value.get(plainServer.url("/").toString())
+            fail("a cleartext request went out through the secure client")
+        } catch (e: IOException) {
+            assertTrue("was ${e::class.simpleName}: ${e.message}", e is UnknownServiceException)
+        }
+        assertEquals(0, plainServer.requestCount)
+    }
+
+    @Test fun `ktor plain talks to a plain http address, secure to a TLS one`() = runBlocking {
+        plainServer.enqueue(ok("hello"))
+        assertEquals("hello", HttpClients { base }.ktorPlain.value.get(plainServer.url("/").toString()).bodyAsText())
+        tlsServer.enqueue(ok("secret"))
+        assertEquals("secret", HttpClients { base }.ktorSecure.value.get(tlsServer.url("/").toString()).bodyAsText())
+    }
+
+    @Test fun `ktor secure doesn't follow an https to http redirect but plain does`() = runBlocking {
+        val target = plainServer.url("/downgraded")
+        plainServer.enqueue(ok("cleartext"))
+        tlsServer.enqueue(MockResponse.Builder().code(302).addHeader("Location", target.toString()).build())
+        val answer = HttpClients { base }.ktorSecure.value.get(tlsServer.url("/start").toString())
+        assertEquals("the redirect comes back as an ordinary answer", HttpStatusCode.Found, answer.status)
+        assertEquals("nothing was sent to the cleartext address", 0, plainServer.requestCount)
+
+        // The control: the plain client follows the same redirect, so the test above isn't passing by accident.
+        tlsServer.enqueue(MockResponse.Builder().code(302).addHeader("Location", target.toString()).build())
+        assertEquals("cleartext", HttpClients { base }.ktorPlain.value.get(tlsServer.url("/start").toString()).bodyAsText())
+        assertEquals(1, plainServer.requestCount)
+    }
+
+    @Test fun `the ktor clients run over the same OkHttp clients, so one set of settings`() {
+        val clients = HttpClients { base }
+        assertTrue(clients.ktorSecure.value !== clients.ktorPlain.value)
+        // The pool is the OkHttp one: two requests through plain reuse it (checked through the server's connection count).
+        plainServer.enqueue(ok("a"))
+        plainServer.enqueue(ok("b"))
+        runBlocking {
+            clients.ktorPlain.value.get(plainServer.url("/").toString()).bodyAsText()
+            clients.ktorPlain.value.get(plainServer.url("/").toString()).bodyAsText()
+        }
+        assertEquals(2, plainServer.requestCount)
     }
 
     @Test fun `secure speaks only modern TLS`() {

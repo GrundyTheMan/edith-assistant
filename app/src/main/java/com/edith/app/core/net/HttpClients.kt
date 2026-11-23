@@ -1,5 +1,8 @@
 package com.edith.app.core.net
 
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.HttpRedirect
 import okhttp3.ConnectionSpec
 import okhttp3.OkHttpClient
 
@@ -15,6 +18,11 @@ import okhttp3.OkHttpClient
  *   goes in the clear when its address is `http://`, as Ollama's traffic does.
  *
  * A new service takes [secure], unless it must speak plain HTTP to a LAN device; its PR says why (01-architecture §9).
+ * [ktorPlain] and [ktorSecure] are the same two clients seen through Ktor (K1.4: services move to it one package at a time), running
+ * over those very OkHttp clients, so the policy, the pool, the timeouts, certificate pinning and the socket tags are the same ones.
+ * Ktor follows redirects itself (OkHttp's own following is switched off by its engine): [ktorSecure] never goes from https to http,
+ * [ktorPlain] does, as [plain] always did.
+ *
  * Both share [base]'s connection pool, dispatcher, timeouts and socket factory, and are built lazily: building TLS takes
  * ~190 ms, so the first use should be on an IO thread (C03 §5).
  */
@@ -28,5 +36,17 @@ class HttpClients(base: () -> OkHttpClient) {
             // An https → http redirect comes back as a plain 3xx answer, which the services report as an HTTP error.
             .followSslRedirects(false)
             .build()
+    }
+
+    val ktorPlain: Lazy<HttpClient> = lazy { over(plain.value, followHttpsToHttp = true) }
+    val ktorSecure: Lazy<HttpClient> = lazy { over(secure.value) }
+
+    companion object {
+        /** A Ktor client that sends everything through [okHttp] as it is configured. */
+        fun over(okHttp: OkHttpClient, followHttpsToHttp: Boolean = false): HttpClient = HttpClient(OkHttp) {
+            engine { preconfigured = okHttp }
+            install(HttpRedirect) { allowHttpsDowngrade = followHttpsToHttp }
+            expectSuccess = false   // services read the status themselves, as they did with OkHttp
+        }
     }
 }

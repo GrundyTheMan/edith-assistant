@@ -16,6 +16,7 @@ composeBom = "2026.09.00"
 navigation = "2.10.2"
 splashscreen = "1.2.0"
 okhttp = "5.5.1"
+ktor = "3.6.1"
 jsoup = "1.23.2"
 commons-compress = "1.28.0"
 onnxruntime = "1.31.0"
@@ -79,6 +80,8 @@ kotlinx-datetime = { group = "org.jetbrains.kotlinx", name = "kotlinx-datetime",
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver3", version.ref = "okhttp" }
 okhttp-tls = { group = "com.squareup.okhttp3", name = "okhttp-tls", version.ref = "okhttp" }
+ktor-client-core = { group = "io.ktor", name = "ktor-client-core", version.ref = "ktor" }
+ktor-client-okhttp = { group = "io.ktor", name = "ktor-client-okhttp", version.ref = "ktor" }
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 commons-compress = { group = "org.apache.commons", name = "commons-compress", version.ref = "commons-compress" }
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }

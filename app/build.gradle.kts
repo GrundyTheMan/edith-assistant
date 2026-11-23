@@ -152,6 +152,8 @@ dependencies {
     implementation(libs.datastore.core)
     implementation(libs.coroutines.core)
     implementation(libs.okhttp)
+    implementation(libs.ktor.client.core)       // K1.4: the HTTP API the shared code will use ...
+    implementation(libs.ktor.client.okhttp)     // ... on Android, running over the same OkHttp (policy, pinning, socket tags unchanged)
     // C24: iCloud mail over IMAP and SMTP
     implementation(libs.jakarta.mail.api)
     implementation(libs.angus.mail)
