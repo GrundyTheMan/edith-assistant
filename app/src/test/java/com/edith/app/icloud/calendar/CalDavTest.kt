@@ -99,7 +99,7 @@ class CalDavTest {
         val home = (client().discover() as DavResult.Ok).value
         assertEquals("Reminders' VTODO list skipped, the home itself too", listOf("Home", "Work", "Holidays"), home.calendars.map { it.name })
         assertEquals(listOf(true, true, false), home.calendars.map { it.canWrite })
-        assertEquals(partition.url("/12345/calendars/work/"), home.defaultHref)
+        assertEquals(io.ktor.http.Url(partition.url("/12345/calendars/work/").toString()), home.defaultHref)
         assertEquals("#FF2968FF", home.calendars[0].color)
         assertTrue("the password followed the redirect to the partition host", requests.filter { it.url.port == partition.port }.all { it.headers["Authorization"] == auth })
         val listing = requests.first { it.url.encodedPath == "/12345/calendars/" }

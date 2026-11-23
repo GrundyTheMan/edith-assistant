@@ -1,5 +1,6 @@
 package com.edith.app.ring
 
+import com.edith.app.core.net.HttpClients
 import com.edith.app.testing.FakeClock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -126,7 +127,7 @@ class FakeRing {
         return RingEndpoints(oauth = base, clients = "$base/clients_api", snapshots = base, liveView = "$base/integrations/v1/liveview")
     }
 
-    fun api() = RingApi(lazy { OkHttpClient() }, endpoints)
+    fun api() = RingApi(lazy { HttpClients.over(OkHttpClient()) }, endpoints)
     fun count(path: String) = requests.count { it.url.encodedPath == path }
     fun shutdown() = server.close()
 

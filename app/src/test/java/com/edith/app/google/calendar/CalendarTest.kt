@@ -1,5 +1,6 @@
 package com.edith.app.google.calendar
 
+import com.edith.app.core.net.HttpClients
 import android.app.Activity
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.DateTimeUnit
@@ -106,7 +107,7 @@ class CalendarTest {
         h.play.default = GoogleAuthorizer.Result.Granted("token")
         runBlocking { h.accounts.addGoogle(Activity()) }
         val id = h.accounts.accounts.value.single().first.id
-        client = CalendarClient(lazy { OkHttpClient() }, (h.accounts.connection(id) as GoogleConnection).auth, dispatchers, { zone }, server.url("/calendar/v3").toString(), id)
+        client = CalendarClient(lazy { HttpClients.over(OkHttpClient()) }, (h.accounts.connection(id) as GoogleConnection).auth, dispatchers, { zone }, server.url("/calendar/v3").toString(), id)
         routes["GET /calendar/v3/users/me/calendarList"] = { json(CALENDAR_LIST) }
         routes["GET /calendar/v3/calendars/primary%40gmail.com/events"] = { json(PRIMARY_EVENTS) }
         routes["GET /calendar/v3/calendars/family"] = { json(FAMILY_EVENTS) }

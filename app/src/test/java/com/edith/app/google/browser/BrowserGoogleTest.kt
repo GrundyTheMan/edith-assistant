@@ -1,5 +1,6 @@
 package com.edith.app.google.browser
 
+import com.edith.app.core.net.HttpClients
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import com.edith.app.accounts.AccountSecrets
@@ -60,7 +61,7 @@ class BrowserGoogleTest {
     @After fun tearDown() = server.close()
 
     private fun oauth() = BrowserOAuth(
-        lazy { OkHttpClient() }, dispatchers, clientId = "desktop.apps.googleusercontent.com",
+        lazy { HttpClients.over(OkHttpClient()) }, dispatchers, clientId = "desktop.apps.googleusercontent.com",
         tokenUrl = server.url("/token").toString(), revokeUrl = server.url("/revoke").toString(),
     )
 

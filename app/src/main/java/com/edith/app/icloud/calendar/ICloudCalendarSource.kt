@@ -13,7 +13,7 @@ import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import io.ktor.http.Url
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.plus
 import kotlin.time.Duration.Companion.hours
@@ -158,7 +158,7 @@ class ICloudCalendarSource(
      * `DELETE` (with `If-Match`) removes every occurrence. Only when the owner asked for the whole series.
      */
     override suspend fun deleteSeries(event: CalendarEvent): Outcome<Unit> {
-        val href = event.id.substringBefore('#').toHttpUrlOrNull() ?: return Outcome.Failure(AppError.ToolFailed("calendar", CHANGED))
+        val href = runCatching { Url(event.id.substringBefore('#')) }.getOrNull() ?: return Outcome.Failure(AppError.ToolFailed("calendar", CHANGED))
         val current = when (val r = dav().get(href)) { is DavResult.Ok -> r.value; else -> return failure(r) }
         return when (val r = dav().delete(href, current.etag)) {
             is DavResult.Ok -> Outcome.Success(Unit)
@@ -170,7 +170,7 @@ class ICloudCalendarSource(
     private fun defaultOf(h: DavHome): DavCalendar? =
         h.calendars.firstOrNull { it.href == h.defaultHref && it.canWrite } ?: h.calendars.firstOrNull { it.canWrite }
 
-    private fun resourceOf(event: CalendarEvent) = if ('#' in event.id) null else event.id.toHttpUrlOrNull()
+    private fun resourceOf(event: CalendarEvent) = if ('#' in event.id) null else runCatching { Url(event.id) }.getOrNull()
 
     private suspend fun <T> failure(r: DavResult<*>): Outcome<T> {
         if (r is DavResult.Failed || r == DavResult.Unauthorized) home = null   // discover again next time

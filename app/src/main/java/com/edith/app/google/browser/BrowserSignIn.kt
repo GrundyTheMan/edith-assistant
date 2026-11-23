@@ -21,7 +21,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import io.ktor.http.Url
 import java.io.IOException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -167,7 +167,7 @@ class BrowserSignIn(
         }
         if (!lock.tryLock()) return null
         try {
-            val port = pending.redirectUri.toHttpUrlOrNull()?.port
+            val port = runCatching { Url(pending.redirectUri) }.getOrNull()?.port
             val receiver = port?.let { p ->
                 try { openReceiver(oauth.provider.localhostRedirect, p) } catch (e: IOException) { null }   // taken: the paste still works
             }

@@ -4,7 +4,6 @@ import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import com.edith.app.home.DeviceEvent
 import com.edith.app.home.EventKind
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -18,14 +17,16 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
-import okhttp3.Call
-import okhttp3.Callback
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
+import io.ktor.client.HttpClient
+import io.ktor.client.plugins.timeout
+import io.ktor.client.request.header
+import io.ktor.client.request.request
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsBytes
+import io.ktor.http.ContentType
+import io.ktor.http.HttpMethod
+import io.ktor.http.URLBuilder
+import io.ktor.http.content.TextContent
 import java.io.IOException
 import kotlin.time.Instant
 import java.util.concurrent.TimeUnit
@@ -91,7 +92,7 @@ data class RingCamera(
  * keeps the tokens and decides when to refresh. Tokens, passwords, pictures and response bodies are never logged.
  */
 class RingApi(
-    private val http: Lazy<OkHttpClient>,
+    private val http: Lazy<HttpClient>,
     private val endpoints: RingEndpoints = RingEndpoints(),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -141,9 +142,7 @@ class RingApi(
                 put("os", "android")
             })
         }
-        val request = Request.Builder().url("${endpoints.clients}/session")
-            .header("authorization", "Bearer $accessToken").header("Accept", "application/json")
-            .post(body.toString().toRequestBody(JSON)).build()
+        val request = Req(HttpMethod.Post, "${endpoints.clients}/session", mapOf("authorization" to "Bearer $accessToken", "Accept" to "application/json"), body.toString())
         return call(request, hardwareId, "the session") { Unit }
     }
 
@@ -160,8 +159,7 @@ class RingApi(
             put("sdp", offerSdp)
             put("protocol", "webrtc")
         }
-        val request = Request.Builder().url("${endpoints.liveView}/start").headers(authHeaders(accessToken, hardwareId))
-            .header("Accept", "application/json").post(body.toString().toRequestBody(JSON)).build()
+        val request = Req(HttpMethod.Post, "${endpoints.liveView}/start", authHeaders(accessToken, hardwareId) + ("Accept" to "application/json"), body.toString())
         return call(request, hardwareId, "the live view") { text ->
             ((json.parseToJsonElement(text) as? JsonObject)?.get("sdp") as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: throw SerializationException("no sdp")
         }
@@ -170,8 +168,7 @@ class RingApi(
     /** Ends a live view, so the camera stops streaming. */
     suspend fun liveEnd(accessToken: String, hardwareId: String, sessionId: String): RingReply<Unit> {
         val body = buildJsonObject { put("session_id", sessionId) }
-        val request = Request.Builder().url("${endpoints.liveView}/end").headers(authHeaders(accessToken, hardwareId))
-            .header("Accept", "application/json").post(body.toString().toRequestBody(JSON)).build()
+        val request = Req(HttpMethod.Post, "${endpoints.liveView}/end", authHeaders(accessToken, hardwareId) + ("Accept" to "application/json"), body.toString())
         return call(request, hardwareId, "the live view") { Unit }
     }
 
@@ -188,19 +185,13 @@ class RingApi(
 
     /** A fresh picture: Ring has the camera take one now (`extras=force`) and returns the JPEG. */
     suspend fun snapshot(accessToken: String, hardwareId: String, cameraId: String, afterMs: Long): RingReply<ByteArray> {
-        val url = "${endpoints.snapshots}/snapshots/next/$cameraId".toHttpUrl().newBuilder()
-            .addQueryParameter("after-ms", afterMs.toString()).addQueryParameter("extras", "force").build()
-        val request = Request.Builder().url(url).headers(authHeaders(accessToken, hardwareId)).header("accept", "image/jpeg").get().build()
+        val request = Req(HttpMethod.Get, "${endpoints.snapshots}/snapshots/next/$cameraId?after-ms=$afterMs&extras=force", authHeaders(accessToken, hardwareId) + ("accept" to "image/jpeg"))
         return try {
-            http.value.newBuilder().callTimeout(SNAPSHOT_CALL_S, TimeUnit.SECONDS).build().newCall(request).await().use { r ->
-                when {
-                    r.code == 401 -> RingReply.Unauthorized
-                    !r.isSuccessful -> RingReply.Failed("Ring answered HTTP ${r.code} for the picture")
-                    else -> {
-                        val bytes = r.body?.bytes() ?: ByteArray(0)
-                        if (bytes.isEmpty()) RingReply.Failed("Ring sent an empty picture") else RingReply.Ok(bytes)
-                    }
-                }
+            val r = send(request, SNAPSHOT_CALL_S)
+            when {
+                r.code == 401 -> RingReply.Unauthorized
+                !r.ok -> RingReply.Failed("Ring answered HTTP ${r.code} for the picture")
+                else -> if (r.bytes.isEmpty()) RingReply.Failed("Ring sent an empty picture") else RingReply.Ok(r.bytes)
             }
         } catch (e: IOException) {
             RingReply.Failed("Ring can't be reached right now")
@@ -222,11 +213,12 @@ class RingApi(
      * only with a Ring Protect plan; without one the search still lists the events, with `had_subscription` false.
      */
     suspend fun clips(accessToken: String, hardwareId: String, camera: RingCamera, sinceMs: Long, untilMs: Long): RingReply<List<RingClipRow>> {
-        val url = "${endpoints.clients}/video_search/history".toHttpUrl().newBuilder()
-            .addQueryParameter("doorbot_id", camera.id).addQueryParameter("date_from", sinceMs.toString())
-            .addQueryParameter("date_to", untilMs.toString()).addQueryParameter("order", "desc")
-            .addQueryParameter("api_version", API_VERSION.toString()).addQueryParameter("includes[]", "pva").build()
-        return get(url.toString(), accessToken, hardwareId, "the clips") { text ->
+        val url = URLBuilder("${endpoints.clients}/video_search/history").apply {
+            parameters.append("doorbot_id", camera.id); parameters.append("date_from", sinceMs.toString())
+            parameters.append("date_to", untilMs.toString()); parameters.append("order", "desc")
+            parameters.append("api_version", API_VERSION.toString()); parameters.append("includes[]", "pva")
+        }.buildString()
+        return get(url, accessToken, hardwareId, "the clips") { text ->
             val root = json.parseToJsonElement(text) as? JsonObject ?: throw SerializationException("not an object")
             root.array("video_search").mapNotNull { clipRow(it, camera) }
         }
@@ -311,43 +303,59 @@ class RingApi(
     }
 
     private suspend fun oauth(body: JsonObject, hardwareId: String, code: String?): Raw {
-        val request = Request.Builder().url("${endpoints.oauth}/oauth/token")
-            .header("2fa-support", "true").header("2fa-code", code.orEmpty())
-            .header("hardware_id", hardwareId).header("User-Agent", USER_AGENT).header("Accept", "application/json")
-            .post(body.toString().toRequestBody(JSON)).build()
+        val request = Req(
+            HttpMethod.Post, "${endpoints.oauth}/oauth/token",
+            mapOf("2fa-support" to "true", "2fa-code" to code.orEmpty(), "hardware_id" to hardwareId, "User-Agent" to USER_AGENT, "Accept" to "application/json"),
+            body.toString(),
+        )
         return try {
-            http.value.newBuilder().callTimeout(CALL_S, TimeUnit.SECONDS).build().newCall(request).await().use { r ->
-                val text = r.body?.string().orEmpty()
-                Raw.Done(r.code, runCatching { json.parseToJsonElement(text) as? JsonObject }.getOrNull() ?: JsonObject(emptyMap()))
-            }
+            val r = send(request, CALL_S)
+            Raw.Done(r.code, runCatching { json.parseToJsonElement(r.text) as? JsonObject }.getOrNull() ?: JsonObject(emptyMap()))
         } catch (e: IOException) {
             Raw.Failed("Ring can't be reached right now")
         }
     }
 
-    private fun authHeaders(accessToken: String, hardwareId: String) = okhttp3.Headers.Builder()
-        .add("authorization", "Bearer $accessToken").add("hardware_id", hardwareId).add("User-Agent", USER_AGENT).build()
+    private fun authHeaders(accessToken: String, hardwareId: String) =
+        mapOf("authorization" to "Bearer $accessToken", "hardware_id" to hardwareId, "User-Agent" to USER_AGENT)
 
     private suspend fun <T> get(url: String, accessToken: String, hardwareId: String, what: String, parse: (String) -> T): RingReply<T> {
-        val request = Request.Builder().url(url).headers(authHeaders(accessToken, hardwareId)).header("Accept", "application/json").get().build()
+        val request = Req(HttpMethod.Get, url, authHeaders(accessToken, hardwareId) + ("Accept" to "application/json"))
         return call(request, hardwareId, what, parse)
     }
 
-    private suspend fun <T> call(request: Request, hardwareId: String, what: String, parse: (String) -> T): RingReply<T> = try {
-        http.value.newBuilder().callTimeout(CALL_S, TimeUnit.SECONDS).build().newCall(request).await().use { r ->
-            val text = r.body?.string().orEmpty()
-            when {
-                r.code == 401 -> RingReply.Unauthorized
-                r.code == 404 && hardwareId in text -> RingReply.NoSession
-                r.code == 429 -> RingReply.Failed("Ring says to slow down; try again in a few minutes")
-                !r.isSuccessful -> {
-                    // For a live view, Ring's own words (its error text, never the request) say what it didn't like.
-                    val why = if (what == "the live view") reason(text)?.let { " ($it)" }.orEmpty() else ""
-                    Log.w(LogTag.Home, "Ring: HTTP ${r.code} for $what$why")
-                    RingReply.Failed("Ring answered HTTP ${r.code} for $what$why")
-                }
-                else -> try { RingReply.Ok(parse(text)) } catch (e: SerializationException) { RingReply.Failed("Ring's answer for $what wasn't what Edith expected") }
+    /** One request: what to send, held together so [call] and [oauth] share how it is sent. */
+    private class Req(val method: HttpMethod, val url: String, val headers: Map<String, String>, val body: String? = null)
+
+    private class Answer(val code: Int, val bytes: ByteArray) {
+        val ok get() = code in 200..299
+        val text get() = bytes.decodeToString()
+    }
+
+    private suspend fun send(request: Req, timeoutS: Long): Answer {
+        val r = http.value.request(request.url) {
+            method = request.method
+            timeout { requestTimeoutMillis = timeoutS * 1000 }
+            request.headers.forEach { (k, v) -> header(k, v) }
+            request.body?.let { setBody(TextContent(it, JSON)) }
+        }
+        return Answer(r.status.value, r.bodyAsBytes())
+    }
+
+    private suspend fun <T> call(request: Req, hardwareId: String, what: String, parse: (String) -> T): RingReply<T> = try {
+        val r = send(request, CALL_S)
+        val text = r.text
+        when {
+            r.code == 401 -> RingReply.Unauthorized
+            r.code == 404 && hardwareId in text -> RingReply.NoSession
+            r.code == 429 -> RingReply.Failed("Ring says to slow down; try again in a few minutes")
+            !r.ok -> {
+                // For a live view, Ring's own words (its error text, never the request) say what it didn't like.
+                val why = if (what == "the live view") reason(text)?.let { " ($it)" }.orEmpty() else ""
+                Log.w(LogTag.Home, "Ring: HTTP ${r.code} for $what$why")
+                RingReply.Failed("Ring answered HTTP ${r.code} for $what$why")
             }
+            else -> try { RingReply.Ok(parse(text)) } catch (e: SerializationException) { RingReply.Failed("Ring's answer for $what wasn't what Edith expected") }
         }
     } catch (e: IOException) {
         RingReply.Failed("Ring can't be reached right now")
@@ -385,17 +393,8 @@ class RingApi(
         const val EVENT_LIMIT = 50
         private const val CALL_S = 20L
         private const val SNAPSHOT_CALL_S = 30L
-        private val JSON = "application/json".toMediaType()
+        private val JSON = ContentType.Application.Json
     }
-}
-
-/** Runs the call without blocking a thread; cancelling the coroutine cancels the HTTP call. */
-internal suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
-    cont.invokeOnCancellation { cancel() }
-    enqueue(object : Callback {
-        override fun onFailure(call: Call, e: IOException) = cont.resumeWithException(e)
-        override fun onResponse(call: Call, response: Response) = cont.resume(response) { _, r, _ -> r.close() }
-    })
 }
 
 /** One clip as Ring's video search lists it. [hadPlan]: it was recorded under a Ring Protect plan (false: nothing was kept). */

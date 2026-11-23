@@ -23,9 +23,14 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
-import okhttp3.Request
+import io.ktor.client.HttpClient
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
+import io.ktor.http.URLBuilder
+import io.ktor.http.appendPathSegments
+import io.ktor.http.isSuccess
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 
@@ -37,7 +42,7 @@ class MicrosoftAccounts(
     val oauth: BrowserOAuth,
     private val signInFlow: BrowserSignIn,
     private val secrets: SecretStore,
-    private val http: Lazy<OkHttpClient>,
+    private val http: Lazy<HttpClient>,
     private val dispatchers: AppDispatchers,
     private val clock: Clock,
     private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() },
@@ -109,19 +114,18 @@ class MicrosoftAccounts(
 
     /** The address from Graph's `/me` (§1): `mail`, else `userPrincipalName`. Null if it can't be read. */
     private suspend fun me(accessToken: String): String? = withContext(dispatchers.io) {
-        val request = Request.Builder()
-            .url(graphBaseUrl.trimEnd('/').toHttpUrl().newBuilder().addPathSegment("me").addQueryParameter("\$select", "mail,userPrincipalName").build())
-            .header("Authorization", "Bearer $accessToken")
-            .build()
+        val url = URLBuilder(graphBaseUrl.trimEnd('/')).apply {
+            appendPathSegments("me")
+            parameters.append("\$select", "mail,userPrincipalName")
+        }.build()
         try {
-            http.value.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    Log.w(LogTag.Accounts, "Microsoft sign-in: /me answered HTTP ${response.code}")
-                    return@withContext null
-                }
-                val me = json.decodeFromString<MeDto>(response.body.string())
-                me.mail?.takeIf { it.isNotBlank() } ?: me.userPrincipalName?.takeIf { it.isNotBlank() }
+            val response = http.value.get(url) { header(HttpHeaders.Authorization, "Bearer $accessToken") }
+            if (!response.status.isSuccess()) {
+                Log.w(LogTag.Accounts, "Microsoft sign-in: /me answered HTTP ${response.status.value}")
+                return@withContext null
             }
+            val me = json.decodeFromString<MeDto>(response.bodyAsText())
+            me.mail?.takeIf { it.isNotBlank() } ?: me.userPrincipalName?.takeIf { it.isNotBlank() }
         } catch (e: IOException) {
             Log.w(LogTag.Accounts, "Microsoft sign-in: /me didn't answer (${e::class.simpleName})")
             null

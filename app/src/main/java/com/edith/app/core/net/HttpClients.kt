@@ -39,7 +39,7 @@ class HttpClients(base: () -> OkHttpClient) {
             .build()
     }
 
-    val ktorPlain: Lazy<HttpClient> = lazy { over(plain.value, followHttpsToHttp = true) }
+    val ktorPlain: Lazy<HttpClient> = lazy { over(plain.value) }
     val ktorSecure: Lazy<HttpClient> = lazy { over(secure.value) }
 
     companion object {
@@ -55,10 +55,21 @@ class HttpClients(base: () -> OkHttpClient) {
             }
         }
 
-        /** A Ktor client that sends everything through [okHttp] as it is configured. */
-        fun over(okHttp: OkHttpClient, followHttpsToHttp: Boolean = false): HttpClient = HttpClient(OkHttp) {
+        /**
+         * A Ktor client that sends everything through [okHttp] as it is configured. Redirects follow the OkHttp client's own
+         * settings: not at all when it has `followRedirects(false)`, and never from https to http when it has `followSslRedirects(false)`
+         * (the secure client). [redirectAnyMethod]: also follow them for methods other than GET and HEAD (WebDAV's PROPFIND).
+         */
+        fun over(okHttp: OkHttpClient, redirectAnyMethod: Boolean = false): HttpClient = HttpClient(OkHttp) {
             engine { preconfigured = okHttp }
-            install(HttpRedirect) { allowHttpsDowngrade = followHttpsToHttp }
+            if (okHttp.followRedirects) {
+                install(HttpRedirect) {
+                    allowHttpsDowngrade = okHttp.followSslRedirects
+                    checkHttpMethod = !redirectAnyMethod   // Ktor follows only GET and HEAD by default
+                }
+            } else {
+                followRedirects = false
+            }
             install(HttpTimeout)   // no limits of its own: the OkHttp ones apply, and a call can set its own with `timeout { }`
             expectSuccess = false   // services read the status themselves, as they did with OkHttp
         }

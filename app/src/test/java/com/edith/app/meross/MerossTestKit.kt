@@ -1,5 +1,6 @@
 package com.edith.app.meross
 
+import com.edith.app.core.net.HttpClients
 import com.edith.app.testing.FakeClock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -48,9 +49,9 @@ class FakeMerossCloud {
     fun device(uuid: String, name: String, type: String = "msg100", online: Int = 1) = """{"uuid":"$uuid","devName":"$name","deviceType":"$type","onlineStatus":$online}"""
 
     /** Trusts every address: this pretend Meross is a local http server. [MerossApiTest] covers what the real rule refuses. */
-    fun api(clock: FakeClock = FakeClock()) = MerossApi(lazy { OkHttpClient() }, clock, base, trusted = { true })
+    fun api(clock: FakeClock = FakeClock()) = MerossApi(lazy { HttpClients.over(OkHttpClient()) }, clock, base, trusted = { true })
     /** The same, with the real rule for which addresses Meross may name. */
-    fun strictApi(clock: FakeClock = FakeClock()) = MerossApi(lazy { OkHttpClient() }, clock, base)
+    fun strictApi(clock: FakeClock = FakeClock()) = MerossApi(lazy { HttpClients.over(OkHttpClient()) }, clock, base)
     fun shutdown() = server.close()
 }
 

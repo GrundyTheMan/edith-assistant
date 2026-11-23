@@ -1,9 +1,9 @@
 package com.edith.app.printer.feed
 
-import okhttp3.MediaType
-import okhttp3.RequestBody
-import okio.BufferedSink
-import okio.source
+import io.ktor.http.ContentType
+import io.ktor.http.content.OutgoingContent
+import io.ktor.utils.io.ByteWriteChannel
+import io.ktor.utils.io.writeFully
 import java.io.InputStream
 
 /**
@@ -38,24 +38,31 @@ internal object PrinterUpload {
     }
 
     /**
-     * A request body that streams [source] and tells [onProgress] how many bytes have gone, never holding more than one buffer in
-     * memory. It stops after [size] bytes (a file that grew while it was sent is not sent past what was promised) and is not
-     * one-shot-safe to repeat: the stream is read once.
+     * Copies up to [size] bytes of [source] to [write], one buffer at a time (so never more than one buffer is held), and tells
+     * [onProgress] how many have gone. It stops after [size] bytes: a file that grew while it was sent is not sent past what was promised.
      */
-    fun body(source: InputStream, size: Long, type: MediaType?, onProgress: (Long) -> Unit): RequestBody = object : RequestBody() {
-        override fun contentType() = type
-        override fun contentLength() = size
-        override fun isOneShot() = true
-        override fun writeTo(sink: BufferedSink) {
-            var sent = 0L
-            source.source().use { s ->
-                while (sent < size) {
-                    val read = s.read(sink.buffer, minOf(CHUNK, size - sent))
-                    if (read < 0) break
-                    sent += read
-                    sink.emit()
-                    onProgress(sent)
-                }
+    suspend fun copy(source: InputStream, size: Long, onProgress: (Long) -> Unit, write: suspend (ByteArray, Int) -> Unit) {
+        var sent = 0L
+        val buffer = ByteArray(CHUNK.toInt())
+        source.use { s ->
+            while (sent < size) {
+                val read = s.read(buffer, 0, minOf(CHUNK, size - sent).toInt())
+                if (read < 0) break
+                write(buffer, read)
+                sent += read
+                onProgress(sent)
+            }
+        }
+    }
+
+    /** A request body that streams [source] through [copy], with its length declared up front. The stream is read once. */
+    fun body(source: InputStream, size: Long, type: ContentType?, onProgress: (Long) -> Unit): OutgoingContent = object : OutgoingContent.WriteChannelContent() {
+        override val contentType = type
+        override val contentLength = size
+        override suspend fun writeTo(channel: ByteWriteChannel) {
+            copy(source, size, onProgress) { bytes, count ->
+                channel.writeFully(bytes, 0, count)
+                channel.flush()
             }
         }
     }

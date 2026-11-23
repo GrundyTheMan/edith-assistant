@@ -2,7 +2,6 @@ package com.edith.app.alexa
 
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -13,24 +12,29 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
-import okhttp3.Call
-import okhttp3.Callback
-import okhttp3.FormBody
-import okhttp3.Headers
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okhttp3.MediaType.Companion.toMediaType
+import com.edith.app.core.net.HttpClients
+import io.ktor.client.plugins.timeout
+import io.ktor.client.request.forms.FormDataContent
+import io.ktor.client.request.header
+import io.ktor.client.request.request
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
+import io.ktor.http.URLBuilder
+import io.ktor.http.Url
+import io.ktor.http.content.OutgoingContent
+import io.ktor.http.content.TextContent
+import io.ktor.http.parameters
+import io.ktor.http.takeFrom
+import io.ktor.http.withCharset
 import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
 import java.io.IOException
 import java.net.URLDecoder
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
-import java.util.concurrent.TimeUnit
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /** Where an Amazon site's three services live. Tests point all three at one pretend Amazon. */
 data class AlexaEndpoints(val api: String, val www: String, val alexa: String) {
@@ -79,6 +83,9 @@ class AlexaApi(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    /** Ktor over the OkHttp client, with no redirect following: [send] follows them by hand, so it can keep the cookies set along the way. */
+    private val client by lazy { HttpClients.over(http.value.newBuilder().followRedirects(false).build()) }
+
     // ---- Sign-in ----
 
     /** A new sign-in: Amazon's page for the Alexa app's "device authorization", with a fresh device id and PKCE pair. */
@@ -113,7 +120,7 @@ class AlexaApi(
     fun authorizationCode(address: String): String? {
         val text = address.trim()
         if ("/ap/maplanding?" !in text) return null
-        val parsed = text.toHttpUrlOrNull()?.queryParameter(CODE_PARAM)
+        val parsed = runCatching { Url(text) }.getOrNull()?.parameters?.get(CODE_PARAM)
         if (parsed != null) return parsed.takeIf { it.isNotEmpty() }
         return Regex("[?&]" + Regex.escape(CODE_PARAM) + "=([^&#\\s]+)").find(text)?.groupValues?.get(1)
             ?.let { runCatching { URLDecoder.decode(it, "UTF-8") }.getOrNull() }?.takeIf { it.isNotEmpty() }
@@ -150,9 +157,7 @@ class AlexaApi(
             put("user_context_map", buildJsonObject { put("frc", start.frc) })
             put("requested_token_type", buildJsonArray { add(JsonPrimitive("bearer")); add(JsonPrimitive("mac_dms")); add(JsonPrimitive("website_cookies")) })
         }
-        val request = Request.Builder().url("${e.api}/auth/register")
-            .headers(appHeaders(start.site, "api.${start.site.site}")).header("Cookie", jar.header())
-            .header("Content-Type", "application/json").post(body.toString().toRequestBody(JSON)).build()
+        val request = Req(HttpMethod.Post, "${e.api}/auth/register", appHeaders(start.site, "api.${start.site.site}") + ("Cookie" to jar.header()), TextContent(body.toString(), JSON))
         return when (val r = send(request)) {
             is Raw.Failed -> AlexaReply.Failed(r.why)
             is Raw.Done -> {
@@ -172,12 +177,12 @@ class AlexaApi(
      */
     suspend fun session(site: AmazonSite, refreshToken: String): AlexaReply<AlexaSession> {
         val e = endpointsFor(site)
-        val form = FormBody.Builder()
-            .add("di.os.name", "iOS").add("app_version", APP_VERSION).add("domain", ".${site.site}")
-            .add("source_token", refreshToken).add("requested_token_type", "auth_cookies").add("source_token_type", "refresh_token")
-            .add("di.hw.version", "iPhone").add("di.sdk.version", "6.12.4").add("app_name", APP_NAME).add("di.os.version", "16.6").build()
-        val request = Request.Builder().url("${e.www}/ap/exchangetoken/cookies")
-            .headers(appHeaders(site, "api.${site.site}")).header("Accept", "*/*").post(form).build()
+        val form = FormDataContent(parameters {
+            append("di.os.name", "iOS"); append("app_version", APP_VERSION); append("domain", ".${site.site}")
+            append("source_token", refreshToken); append("requested_token_type", "auth_cookies"); append("source_token_type", "refresh_token")
+            append("di.hw.version", "iPhone"); append("di.sdk.version", "6.12.4"); append("app_name", APP_NAME); append("di.os.version", "16.6")
+        })
+        val request = Req(HttpMethod.Post, "${e.www}/ap/exchangetoken/cookies", appHeaders(site, "api.${site.site}") + ("Accept" to "*/*"), form)
         val jar = CookieJar()
         val exchange = send(request, jar)
         val cookies = when (exchange) {
@@ -192,9 +197,10 @@ class AlexaApi(
         }
         // The csrf token comes as a cookie from one of a few pages on the Alexa host.
         for (path in CSRF_PATHS) {
-            val page = Request.Builder().url("${e.alexa}$path").header("User-Agent", WEB_AGENT)
-                .header("Referer", "${e.alexa}/spa/index.html").header("Origin", e.alexa).header("Accept", "*/*")
-                .header("Cookie", cookies.header()).get().build()
+            val page = Req(
+                HttpMethod.Get, "${e.alexa}$path",
+                mapOf("User-Agent" to WEB_AGENT, "Referer" to "${e.alexa}/spa/index.html", "Origin" to e.alexa, "Accept" to "*/*", "Cookie" to cookies.header()),
+            )
             val r = send(page, cookies)
             if (r is Raw.Failed) return AlexaReply.Failed(r.why)
             val csrf = cookies["csrf"]
@@ -247,11 +253,15 @@ class AlexaApi(
 
     private suspend fun alexaCall(site: AmazonSite, session: AlexaSession, path: String, method: String, body: String?, timeoutS: Long): AlexaReply<String> {
         val e = endpointsFor(site)
-        val builder = Request.Builder().url("${e.alexa}$path")
-            .header("User-Agent", "$OFFICIAL_AGENT Edith").header("Accept", "application/json; charset=utf-8")
-            .header("Accept-Language", site.language.replace('_', '-')).header("Referer", "${e.alexa}/spa/index.html")
-            .header("Origin", e.alexa).header("csrf", session.csrf).header("Cookie", session.cookie)
-        val request = builder.method(method, body?.toRequestBody("application/json; charset=utf-8".toMediaType())).build()
+        val request = Req(
+            HttpMethod.parse(method), "${e.alexa}$path",
+            mapOf(
+                "User-Agent" to "$OFFICIAL_AGENT Edith", "Accept" to "application/json; charset=utf-8",
+                "Accept-Language" to site.language.replace('_', '-'), "Referer" to "${e.alexa}/spa/index.html",
+                "Origin" to e.alexa, "csrf" to session.csrf, "Cookie" to session.cookie,
+            ),
+            body?.let { TextContent(it, ContentType.Application.Json.withCharset(Charsets.UTF_8)) },
+        )
         return when (val r = send(request, null, timeoutS)) {
             is Raw.Failed -> AlexaReply.Failed(r.why)
             is Raw.Done -> when {
@@ -270,24 +280,30 @@ class AlexaApi(
         data class Failed(val why: String) : Raw
     }
 
+    /** What to send: kept so a redirect can send it again to the next address. */
+    private class Req(val method: HttpMethod, val url: String, val headers: Map<String, String>, val body: OutgoingContent? = null)
+
     /** One request, following redirects by hand so the cookies set along the way are kept in [jar]. */
-    private suspend fun send(first: Request, jar: CookieJar? = null, timeoutS: Long = CALL_S): Raw {
+    private suspend fun send(first: Req, jar: CookieJar? = null, timeoutS: Long = CALL_S): Raw {
         var request = first
         return try {
-            val client = http.value.newBuilder().followRedirects(false).callTimeout(timeoutS, TimeUnit.SECONDS).build()
             repeat(MAX_REDIRECTS + 1) {
-                client.newCall(request).await().use { r ->
-                    jar?.add(r.headers.values("Set-Cookie"))
-                    val location = r.header("Location")
-                    if (r.isRedirect && location != null) {
-                        val next = r.request.url.resolve(location) ?: return Raw.Failed("Amazon sent Edith somewhere it didn't expect")
-                        // A redirect to Amazon's sign-in page means the cookies are no good.
-                        if ("/ap/signin" in next.encodedPath) return Raw.Done(401, "", signedOut = true)
-                        if (next.scheme != "https") return Raw.Failed("Amazon sent Edith to a page that isn't secure")
-                        request = r.request.newBuilder().url(next).get().apply { jar?.let { header("Cookie", it.header()) } }.build()
-                    } else {
-                        return Raw.Done(r.code, r.body?.string().orEmpty(), signedOut = false)
-                    }
+                val r = client.request(request.url) {
+                    method = request.method
+                    timeout { requestTimeoutMillis = timeoutS * 1000 }
+                    request.headers.forEach { (k, v) -> header(k, v) }
+                    request.body?.let { setBody(it) }
+                }
+                jar?.add(r.headers.getAll("Set-Cookie").orEmpty())
+                val location = r.headers[HttpHeaders.Location]
+                if (r.status.value in REDIRECTS && location != null) {
+                    val next = runCatching { Url(request.url).resolveAgainst(location) }.getOrNull() ?: return Raw.Failed("Amazon sent Edith somewhere it didn't expect")
+                    // A redirect to Amazon's sign-in page means the cookies are no good.
+                    if ("/ap/signin" in next.encodedPath) return Raw.Done(401, "", signedOut = true)
+                    if (next.protocol.name != "https") return Raw.Failed("Amazon sent Edith to a page that isn't secure")
+                    request = Req(HttpMethod.Get, next.toString(), request.headers.let { h -> jar?.let { h + ("Cookie" to it.header()) } ?: h })
+                } else {
+                    return Raw.Done(r.status.value, r.bodyAsText(), signedOut = false)
                 }
             }
             Raw.Failed("Amazon redirected Edith too many times")
@@ -296,9 +312,12 @@ class AlexaApi(
         }
     }
 
-    private fun appHeaders(site: AmazonSite, identityDomain: String) = Headers.Builder()
-        .add("User-Agent", APP_AGENT).add("Accept-Language", site.language.replace('_', '-')).add("Accept-Charset", "utf-8")
-        .add("Accept", "application/json").add("x-amzn-identity-auth-domain", identityDomain).build()
+    private fun Url.resolveAgainst(reference: String): Url = URLBuilder(this).takeFrom(reference).build()
+
+    private fun appHeaders(site: AmazonSite, identityDomain: String) = mapOf(
+        "User-Agent" to APP_AGENT, "Accept-Language" to site.language.replace('_', '-'), "Accept-Charset" to "utf-8",
+        "Accept" to "application/json", "x-amzn-identity-auth-domain" to identityDomain,
+    )
 
     private fun parse(text: String): JsonObject = try { json.parseToJsonElement(text) as? JsonObject ?: JsonObject(emptyMap()) } catch (e: SerializationException) { JsonObject(emptyMap()) }
     private fun JsonObject.obj(key: String): JsonObject = this[key] as? JsonObject ?: JsonObject(emptyMap())
@@ -323,7 +342,8 @@ class AlexaApi(
         private val CSRF_PATHS = listOf("/api/language", "/spa/index.html", "/api/devices-v2/device?cached=false", "/templates/oobe/d-device-pick.handlebars", "/api/strings")
         private const val CALL_S = 20L
         private const val MAX_REDIRECTS = 5
-        private val JSON = "application/json".toMediaType()
+        private val REDIRECTS = setOf(300, 301, 302, 303, 307, 308)
+        private val JSON = ContentType.Application.Json
 
         /** Alexa's device list, as `alexa-remote2` asks for it (the whole query, as proven). */
         val ENDPOINTS_QUERY = """query Endpoints {
@@ -449,14 +469,4 @@ internal class CookieJar {
     }
 
     fun header(): String = entries().joinToString("; ") { "${it.first}=${it.second}" }
-}
-
-
-/** Runs the call without blocking a thread; cancelling the coroutine cancels the HTTP call. */
-private suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
-    cont.invokeOnCancellation { cancel() }
-    enqueue(object : Callback {
-        override fun onFailure(call: Call, e: IOException) = cont.resumeWithException(e)
-        override fun onResponse(call: Call, response: Response) = cont.resume(response) { _, r, _ -> r.close() }
-    })
 }

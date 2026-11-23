@@ -1,5 +1,6 @@
 package com.edith.app.google.tasks
 
+import com.edith.app.core.net.HttpClients
 import android.app.Activity
 import android.app.PendingIntent
 import com.edith.app.accounts.AccountState
@@ -68,7 +69,7 @@ class TasksTest {
         h = AccountsHarness(baseUrl = server.url("/").toString())
         runBlocking { h.accounts.addGoogle(Activity()) }
         auth = (h.accounts.connection(id) as GoogleConnection).auth
-        client = TasksClient(lazy { OkHttpClient() }, auth, AppDispatchersForTests.unconfined, server.url("/tasks/v1").toString(), id)
+        client = TasksClient(lazy { HttpClients.over(OkHttpClient()) }, auth, AppDispatchersForTests.unconfined, server.url("/tasks/v1").toString(), id)
         routes["GET /tasks/v1/users/@me/lists"] = { r -> json(if (r.url.queryParameter("pageToken") == "p2") LISTS_PAGE_2 else LISTS_PAGE_1) }
         routes["GET /tasks/v1/lists/L1/tasks"] = { r -> json(if (r.url.queryParameter("pageToken") == "n2") TASKS_PAGE_2 else TASKS_PAGE_1) }
     }
