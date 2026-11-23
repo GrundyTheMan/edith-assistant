@@ -7,7 +7,8 @@ import com.edith.app.core.log.LogTag
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
@@ -19,8 +20,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.Call
-import okhttp3.Request
+import io.ktor.client.HttpClient
+import io.ktor.client.request.header
+import io.ktor.client.request.prepareGet
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.HttpHeaders
+import io.ktor.http.isSuccess
+import io.ktor.utils.io.readAvailable
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
@@ -54,7 +60,7 @@ class VoiceDownloader(
     private val voice: OwnVoice,
     /** `filesDir/voices`. */
     private val root: File,
-    private val http: () -> Call.Factory,
+    private val http: () -> HttpClient,
     private val visible: StateFlow<Boolean>,
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher,
@@ -73,7 +79,6 @@ class VoiceDownloader(
     val state: StateFlow<OwnVoiceState> = _state.asStateFlow()
 
     private var job: Job? = null
-    @Volatile private var call: Call? = null
 
     private fun initialState(): OwnVoiceState =
         if (isInstalled()) OwnVoiceState.Ready(directorySize(dir)) else OwnVoiceState.NotDownloaded
@@ -101,7 +106,6 @@ class VoiceDownloader(
     @Synchronized fun cancel() {
         job?.cancel()
         job = null
-        call?.cancel()
         part.delete()
         tmp.deleteRecursively()
         _state.value = if (isInstalled()) OwnVoiceState.Ready(directorySize(dir)) else OwnVoiceState.NotDownloaded
@@ -111,7 +115,6 @@ class VoiceDownloader(
     @Synchronized fun delete() {
         job?.cancel()
         job = null
-        call?.cancel()
         part.delete()
         tmp.deleteRecursively()
         dir.deleteRecursively()
@@ -196,72 +199,63 @@ class VoiceDownloader(
             part.delete()
             have = 0
         }
-        val request = Request.Builder().url(voice.url).apply { if (have > 0) header("Range", "bytes=$have-") }.build()
-        val newCall = http().newCall(request)
-        call = newCall
         val leftScreen = AtomicBoolean(false)
         return coroutineScope {
-            // Leaving the screen, and cancelling the download (Cancel, Delete), must cut the blocking read at once.
-            // Unconfined: these run on whichever thread cancels or changes [visible], not on a busy IO thread.
-            val watchers = launch(Dispatchers.Unconfined) {
-                launch {
-                    visible.first { !it }
-                    leftScreen.set(true)
-                    newCall.cancel()
-                }
-                try { awaitCancellation() } finally { newCall.cancel() }
+            // The request runs as a child, so leaving the screen cuts it by cancelling just that child: Ktor then cancels the
+            // call under it. Cancel and Delete cancel the whole job, which does the same. Unconfined: the watcher runs on
+            // whichever thread changes [visible], not on a busy IO thread.
+            val work = async(io) { download(have) }
+            val watcher = launch(Dispatchers.Unconfined) {
+                visible.first { !it }
+                leftScreen.set(true)
+                work.cancel()
             }
             try {
-                download(newCall, have, leftScreen)
+                work.await().let { if (leftScreen.get() && it !is Fetch.Complete) Fetch.LeftScreen else it }
+            } catch (e: CancellationException) {
+                currentCoroutineContext().ensureActive()   // cancelled from outside: pass it on
+                if (leftScreen.get()) Fetch.LeftScreen else Fetch.Dropped(NO_NETWORK)
             } finally {
-                watchers.cancel()
-                call = null
+                watcher.cancel()
             }
         }
     }
 
-    private suspend fun download(newCall: Call, have: Long, leftScreen: AtomicBoolean): Fetch {
-        run {
-            return withContext(io) {
-                try {
-                    newCall.execute().use { response ->
-                        when {
-                            response.code == 416 -> {   // what we have is no use to the server: start again
-                                part.delete()
-                                Fetch.Dropped(NO_NETWORK)
-                            }
-                            !response.isSuccessful -> Fetch.Refused("The download failed (error ${response.code}). Try again later.")
-                            else -> {
-                                // 200 to a Range request means the server sent the whole file again.
-                                val append = response.code == 206 && have > 0
-                                val body = response.body
-                                val sink = java.io.FileOutputStream(part, append)
-                                var written = if (append) have else 0L
-                                var lastPercent = -1
-                                sink.use { out ->
-                                    val buffer = ByteArray(64 * 1024)
-                                    val input = body.byteStream()
-                                    while (written < voice.bytes) {
-                                        val n = input.read(buffer, 0, minOf(buffer.size.toLong(), voice.bytes - written).toInt())
-                                        if (n < 0) break
-                                        out.write(buffer, 0, n)
-                                        written += n
-                                        val percent = percentOf(written)
-                                        if (percent != lastPercent) {
-                                            lastPercent = percent
-                                            _state.value = OwnVoiceState.Downloading(percent)
-                                        }
-                                    }
-                                }
-                                if (written >= voice.bytes) Fetch.Complete else Fetch.Dropped(NO_NETWORK)
+    private suspend fun download(have: Long): Fetch = try {
+        http().prepareGet(voice.url) { if (have > 0) header(HttpHeaders.Range, "bytes=$have-") }.execute { response ->
+            val code = response.status.value
+            when {
+                code == 416 -> {   // what we have is no use to the server: start again
+                    part.delete()
+                    Fetch.Dropped(NO_NETWORK)
+                }
+                !response.status.isSuccess() -> Fetch.Refused("The download failed (error $code). Try again later.")
+                else -> {
+                    // 200 to a Range request means the server sent the whole file again.
+                    val append = code == 206 && have > 0
+                    var written = if (append) have else 0L
+                    var lastPercent = -1
+                    java.io.FileOutputStream(part, append).use { out ->
+                        val input = response.bodyAsChannel()
+                        val buffer = ByteArray(64 * 1024)
+                        while (written < voice.bytes) {
+                            val n = input.readAvailable(buffer, 0, minOf(buffer.size.toLong(), voice.bytes - written).toInt())
+                            if (n < 0) break
+                            out.write(buffer, 0, n)
+                            written += n
+                            val percent = percentOf(written)
+                            if (percent != lastPercent) {
+                                lastPercent = percent
+                                _state.value = OwnVoiceState.Downloading(percent)
                             }
                         }
                     }
-                } catch (e: IOException) {
-                    if (leftScreen.get()) Fetch.LeftScreen else Fetch.Dropped(NO_NETWORK)
+                    if (written >= voice.bytes) Fetch.Complete else Fetch.Dropped(NO_NETWORK)
                 }
-            }.let { if (leftScreen.get() && it !is Fetch.Complete) Fetch.LeftScreen else it }
+            }
         }
+    } catch (e: IOException) {
+        Fetch.Dropped(NO_NETWORK)
     }
 
     private fun percentOf(bytes: Long): Int = (bytes * 100 / voice.bytes).toInt().coerceIn(0, 100)
