@@ -14,3 +14,6 @@ expect suspend fun recordMemo(seconds: Int): RecordResult
 
 /** True when the app was started with the probe switched on (the cloud build starts it that way, so a screenshot shows the result with no one tapping). */
 expect fun autoProbe(): Boolean
+
+/** The address of a fake streaming chat server the cloud build starts, or null when there is none (an ordinary run). */
+expect fun chatProbeUrl(): String?

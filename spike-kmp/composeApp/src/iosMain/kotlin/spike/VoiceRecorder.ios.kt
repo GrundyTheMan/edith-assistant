@@ -50,3 +50,5 @@ actual suspend fun recordMemo(seconds: Int): RecordResult {
 }
 
 actual fun autoProbe(): Boolean = NSProcessInfo.processInfo.environment["SPIKE_AUTOPROBE"] == "1"
+
+actual fun chatProbeUrl(): String? = NSProcessInfo.processInfo.environment["SPIKE_CHAT_URL"] as String?

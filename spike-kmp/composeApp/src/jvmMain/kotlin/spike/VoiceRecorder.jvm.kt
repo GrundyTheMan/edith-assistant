@@ -28,3 +28,5 @@ actual suspend fun recordMemo(seconds: Int): RecordResult = withContext(Dispatch
 }
 
 actual fun autoProbe(): Boolean = System.getenv("SPIKE_AUTOPROBE") == "1"
+
+actual fun chatProbeUrl(): String? = System.getenv("SPIKE_CHAT_URL")

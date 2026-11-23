@@ -36,6 +36,8 @@ import coil3.compose.AsyncImage
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.TimeSource
 import kotlinx.coroutines.launch
 
 /** K0.5: a ViewModel that outlives screens; the probes write their results here and the home screen shows them. */
@@ -60,6 +62,7 @@ fun App(chat: OllamaChat = remember { OllamaChat(HttpClient()) }) {
             probes.lines += try { roomProbe() } catch (e: Exception) { "Room failed: ${e.message}" }
             probes.lines += try { dataStoreProbe() } catch (e: Exception) { "DataStore failed: ${e.message}" }
             probes.lines += mqttProbe()
+            chatProbeUrl()?.let { probes.lines += chatProbe(chat, it) }
             nav.navigate("second")
             delay(600)
             nav.popBackStack()
@@ -71,6 +74,24 @@ fun App(chat: OllamaChat = remember { OllamaChat(HttpClient()) }) {
             composable("home") { Home(chat, nav, probes) }
             composable("second") { Second(nav, probes) }
         }
+    }
+}
+
+/** Streams one reply from the cloud build's fake server and says what arrived, piece by piece, so a hang in the reader shows up as text. */
+private suspend fun chatProbe(chat: OllamaChat, url: String): String {
+    val started = TimeSource.Monotonic.markNow()
+    val got = StringBuilder()
+    return try {
+        val finished = withTimeoutOrNull(20_000) {
+            chat.stream(url, "fake", "hi").collect {
+                got.append(it)
+                println("CHAT piece after ${started.elapsedNow()}: $it")
+            }
+            true
+        }
+        if (finished == true) "Chat: streamed \"$got\" in ${started.elapsedNow()}" else "Chat: HUNG, no end after 20 s (got so far: \"$got\")"
+    } catch (e: Exception) {
+        "Chat failed: ${e::class.simpleName}: ${e.message}"
     }
 }
 
