@@ -1,9 +1,8 @@
 package com.edith.app.accounts.tools
 
 import com.edith.app.accounts.Account
-import com.edith.app.core.time.javaNow
-import com.edith.app.core.time.javaZone
-import kotlinx.datetime.toJavaLocalDate
+import com.edith.app.core.time.formatPattern
+import kotlinx.datetime.toLocalDateTime
 import com.edith.app.accounts.AccountDirectory
 import com.edith.app.accounts.AccountEntry
 import com.edith.app.accounts.Accounts
@@ -29,9 +28,7 @@ import com.edith.app.tools.framework.ToolContext
 import com.edith.app.tools.framework.ToolParam
 import com.edith.app.tools.framework.ToolResult
 import com.edith.app.tools.framework.ToolSpec
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.util.Locale
+import kotlinx.datetime.LocalDate
 
 /** A task Edith listed: where it lives (account, list) and the task as listed, for the card's "before" (C35 §3). */
 data class TaskRef(val accountId: String, val list: TaskList, val task: TaskItem)
@@ -68,12 +65,11 @@ class TaskHandles {
 
 /** How tasks are written for the model and on cards. */
 object TaskFormat {
-    private val day = DateTimeFormatter.ofPattern("EEE MMM d", Locale.US)
 
-    fun day(d: LocalDate): String = day.format(d)
+    fun day(d: LocalDate): String = formatPattern(d, "EEE MMM d", "en-US")
 
     /** "due Fri Nov 14", or "due Mon Nov 10, overdue" for an open task due before [today]. */
-    fun due(t: TaskItem, today: LocalDate): String? = t.due?.let { d -> "due ${day(d)}" + if (!t.done && d.isBefore(today)) ", overdue" else "" }
+    fun due(t: TaskItem, today: LocalDate): String? = t.due?.let { d -> "due ${day(d)}" + if (!t.done && d < today) ", overdue" else "" }
 
     /** `- Call the dentist (due Fri Nov 14) — bring the card {task_id: t3}`; subtasks indented, done ones marked. */
     fun line(t: TaskItem, handle: String, today: LocalDate, indent: Boolean): String = buildString {
@@ -153,7 +149,7 @@ private fun resolve(dir: AccountDirectory, handles: TaskHandles, handle: String?
 
 private fun listRow(ref: TaskRef, entry: AccountEntry) = "List" to "${ref.list.title} — ${entry.account.display}"
 
-private fun today(clock: Clock): LocalDate = clock.javaNow().atZone(clock.javaZone()).toLocalDate()
+private fun today(clock: Clock): LocalDate = clock.now().toLocalDateTime(clock.zone()).date
 
 /** `list_tasks` (C35 §3): the open to-dos of every account, grouped by list. */
 class ListTasksTool(private val dir: AccountDirectory, private val handles: TaskHandles) : Tool {
@@ -249,7 +245,7 @@ class AddTaskTool(private val dir: AccountDirectory, private val handles: TaskHa
 
     override suspend fun confirmation(args: ToolArgs): ConfirmationRequest? {
         val title = requireNotNull(args.string("title"))
-        val due = args.day("due", clock)?.toJavaLocalDate()
+        val due = args.day("due", clock)
         val use = target(args) as? Target.Use ?: return null
         return ConfirmationRequest(
             "Add to your to-dos?",
@@ -266,7 +262,7 @@ class AddTaskTool(private val dir: AccountDirectory, private val handles: TaskHa
 
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
         val title = requireNotNull(args.string("title"))
-        val due = args.day("due", clock)?.toJavaLocalDate()
+        val due = args.day("due", clock)
         val use = when (val t = target(args)) { is Target.Use -> t; is Target.Stop -> return t.result }
         return when (val r = requireNotNull(use.entry.tasks).insert(use.list.id, title, args.string("notes"), due, use.parent?.task?.id)) {
             is Outcome.Success -> {
@@ -300,7 +296,7 @@ class ChangeTaskTool(private val dir: AccountDirectory, private val handles: Tas
         return TaskPatch(
             title = args.string("title"),
             notes = args.stringOrEmpty("notes"),
-            due = due?.takeIf { it.isNotEmpty() }?.let { args.day("due", clock)?.toJavaLocalDate() },
+            due = due?.takeIf { it.isNotEmpty() }?.let { args.day("due", clock) },
             clearDue = due != null && due.isEmpty(),
         )
     }

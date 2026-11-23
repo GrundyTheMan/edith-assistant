@@ -1,7 +1,6 @@
 package com.edith.app.google.tasks
 
-import java.time.LocalDate
-import java.time.format.DateTimeParseException
+import kotlinx.datetime.LocalDate
 
 /**
  * Google Tasks' due dates (C35 trap 1, L29). The API keeps only a date, sent and returned as midnight UTC
@@ -14,7 +13,7 @@ object TaskDue {
         val day = due?.trim()?.take(10)?.takeIf { it.length == 10 } ?: return null
         return try {
             LocalDate.parse(day)
-        } catch (_: DateTimeParseException) {
+        } catch (_: IllegalArgumentException) {
             null
         }
     }

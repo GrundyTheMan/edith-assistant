@@ -1,6 +1,9 @@
 package com.edith.app.microsoft
 
 import com.edith.app.accounts.Account
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import com.edith.app.accounts.AccountSecrets
 import com.edith.app.accounts.AccountState
 import com.edith.app.accounts.Provider
@@ -31,9 +34,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import java.time.Instant
-import java.time.ZoneId
-import java.time.ZonedDateTime
+import kotlin.time.Instant
 import java.util.Collections
 
 /**
@@ -41,7 +42,7 @@ import java.util.Collections
  * Graph's reference (made up).
  */
 class OutlookSourcesTest {
-    private val zone = ZoneId.of("America/Detroit")
+    private val zone = TimeZone.of("America/Detroit")
     private val clock = FakeClock(Instant.parse("2026-11-02T18:00:00Z"), zone)
     private val account = Account("m1", Provider.Microsoft, "owner@outlook.com", "outlook")
     private val server = MockWebServer()
@@ -81,7 +82,7 @@ class OutlookSourcesTest {
 
     private fun mail() = OutlookMailSource({ account }, client("email", "Outlook"), { zone })
 
-    private fun at(d: Int, h: Int, m: Int = 0) = ZonedDateTime.of(2026, 11, d, h, m, 0, 0, zone)
+    private fun at(d: Int, h: Int, m: Int = 0) = LocalDateTime(2026, 11, d, h, m).toInstant(zone)
 
     private fun body(r: RecordedRequest): JsonObject = Json.parseToJsonElement(r.body!!.utf8()).jsonObject
 
@@ -130,7 +131,7 @@ class OutlookSourcesTest {
                  "end":{"dateTime":"2026-11-03T12:00:00.0000000","timeZone":"Eastern Standard Time"}}]}""")
         }
         routes["GET /graph/v1.0/me/calendars/AAMkBirthdays=/calendarView"] = { json("""{"value":[]}""") }
-        val events = (calendar().events(at(3, 0).toInstant(), at(5, 0).toInstant()) as Outcome.Success).value
+        val events = (calendar().events(at(3, 0), at(5, 0)) as Outcome.Success).value
 
         assertEquals(listOf("Standup", "Call with London", "Dentist", "Holiday", "Standup"), events.map { it.title })
         val dentist = events.first { it.id == "ev1" }
@@ -156,7 +157,7 @@ class OutlookSourcesTest {
         assertEquals("50", view.url.queryParameter("\$top"))
         assertEquals("Bearer eyJ.graph", view.headers["Authorization"])
 
-        val found = (calendar().events(at(3, 0).toInstant(), at(5, 0).toInstant(), "main st") as Outcome.Success).value
+        val found = (calendar().events(at(3, 0), at(5, 0), "main st") as Outcome.Success).value
         assertEquals("text is matched here, on subject and location", listOf("ev1"), found.map { it.id })
     }
 
@@ -166,7 +167,7 @@ class OutlookSourcesTest {
             json("""{"value":[{"id":"ev1","subject":"Dentist","start":{"dateTime":"2026-11-03T20:00:00.0000000","timeZone":"UTC"},"end":{"dateTime":"2026-11-03T21:00:00.0000000","timeZone":"UTC"}}]}""")
         }
         routes["GET /graph/v1.0/me/calendars/AAMkBirthdays=/calendarView"] = { json("""{"value":[]}""") }
-        val events = (calendar(windows = null).events(at(3, 0).toInstant(), at(4, 0).toInstant()) as Outcome.Success).value
+        val events = (calendar(windows = null).events(at(3, 0), at(4, 0)) as Outcome.Success).value
         assertEquals(at(3, 15), events.single().start)
         assertEquals("outlook.timezone=\"UTC\"", graph.last().headers["Prefer"])
     }
@@ -222,7 +223,7 @@ class OutlookSourcesTest {
             json("""{"value":[${message("AAMk1", "boss@contoso.com", "Budget", "2026-11-02T16:00:00Z", false)}],
                 "@odata.nextLink":"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?${'$'}skip=1"}""")
         }
-        val r = (mail().search(MailQuery(unreadOnly = true, after = at(2, 0).toInstant()), 5) as Outcome.Success).value
+        val r = (mail().search(MailQuery(unreadOnly = true, after = at(2, 0)), 5) as Outcome.Success).value
         val q = graph.single().url
         assertEquals("receivedDateTime ge 2026-11-02T05:00:00Z and isRead eq false", q.queryParameter("\$filter"))
         assertEquals("receivedDateTime desc", q.queryParameter("\$orderby"))
@@ -260,7 +261,7 @@ class OutlookSourcesTest {
                 ${message("new2", "boss@contoso.com", "Budget", "2026-11-02T14:00:00Z", false)},
                 ${message("new1", "boss@contoso.com", "Budget", "2026-11-02T17:00:00Z", false)}]}""")
         }
-        val r = (mail().search(MailQuery(from = "boss@contoso.com", unreadOnly = true, after = at(2, 0).toInstant()), 1) as Outcome.Success).value
+        val r = (mail().search(MailQuery(from = "boss@contoso.com", unreadOnly = true, after = at(2, 0)), 1) as Outcome.Success).value
         val q = graph.single().url
         assertEquals("\"from:boss@contoso.com\"", q.queryParameter("\$search"))
         assertNull(q.queryParameter("\$filter"))

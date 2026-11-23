@@ -5,21 +5,16 @@ import org.junit.Test
 import java.io.File
 
 /**
- * K1.3: `java.time` is being replaced by kotlinx-datetime package by package, so the packages that moved can't go back.
- * [stillOnJavaTime] shrinks as packages move (docs/design/kmp-transition.md §7); add nothing to it.
+ * K1.3: the app's main code uses kotlinx-datetime and `kotlin.time`, not `java.time`, so it can move to shared code
+ * for the iPhone. The platform-specific formatting lives in `shared/` (`formatPattern`), where java.time is allowed.
  */
 class JavaTimeGuardTest {
-    private val stillOnJavaTime = listOf("accounts", "blink", "google", "icloud", "jarvis", "microsoft", "ring")
-    private val bridge = "core/time/JavaTimeBridge.kt"
-
     @Test
-    fun movedPackagesDoNotUseJavaTime() {
+    fun mainCodeDoesNotUseJavaTime() {
         val root = File("src/main/java/com/edith/app")
         assertTrue("run from the app module: ${root.absolutePath}", root.isDirectory)
-        val offenders = root.walkTopDown().filter { it.extension == "kt" }
-            .map { it to it.relativeTo(root).invariantSeparatorsPath }
-            .filter { (file, path) -> path != bridge && stillOnJavaTime.none { path.startsWith("$it/") } && file.readText().contains("java.time") }
-            .map { it.second }.toList()
-        assertTrue("java.time in packages that already moved to kotlinx-datetime: $offenders", offenders.isEmpty())
+        val offenders = root.walkTopDown().filter { it.extension == "kt" && it.readText().contains("java.time") }
+            .map { it.relativeTo(root).invariantSeparatorsPath }.toList()
+        assertTrue("java.time in: $offenders", offenders.isEmpty())
     }
 }

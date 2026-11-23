@@ -1,5 +1,6 @@
 package com.edith.app.icloud.calendar
 
+import kotlinx.datetime.TimeZone
 import com.edith.app.accounts.Account
 import com.edith.app.accounts.sources.CalendarEvent
 import com.edith.app.accounts.sources.CalendarInfo
@@ -13,8 +14,10 @@ import com.edith.app.core.log.LogTag
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import java.time.Instant
-import java.time.ZoneId
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.plus
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Instant
 import java.util.UUID
 
 /**
@@ -25,8 +28,8 @@ import java.util.UUID
 class ICloudCalendarSource(
     private val accountOf: () -> Account,
     private val dav: () -> CalDavClient,
-    private val zone: () -> ZoneId = ZoneId::systemDefault,
-    private val now: () -> Instant = Instant::now,
+    private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() },
+    private val now: () -> Instant = kotlin.time.Clock.System::now,
     private val onUnauthorized: suspend () -> Unit = {},
 ) : CalendarSource {
     override val account: Account get() = accountOf()
@@ -69,9 +72,9 @@ class ICloudCalendarSource(
                     if (e.recurring && e.recurrenceId == null) {
                         // iCloud didn't expand this series (C24 §3): only its first instance is known here.
                         Log.w(LogTag.Accounts, "CalDAV: a repeating event came back unexpanded")
-                        if (!e.start.toInstant().isBefore(to) || !e.end.toInstant().isAfter(from)) continue
+                        if (e.start >= to || e.end <= from) continue
                     }
-                    if (!e.start.toInstant().isBefore(to) || (!e.end.toInstant().isAfter(from) && e.end != e.start)) continue
+                    if (e.start >= to || (e.end <= from && e.end != e.start)) continue
                     all += CalendarEvent(
                         id = eventId(res.href.toString(), e.recurrenceId, e.recurring),
                         calendarId = cal.href.toString(),
@@ -101,10 +104,10 @@ class ICloudCalendarSource(
         val cal = calendarId?.let { id -> h.calendars.firstOrNull { it.href.toString() == id } } ?: defaultOf(h)
             ?: return Outcome.Failure(AppError.ToolFailed("calendar", "This iCloud account has no calendar Edith can add to."))
         val start = draft.start ?: return Outcome.Failure(AppError.ToolFailed("calendar", "A new event needs a start."))
-        val end = draft.end ?: if (draft.allDay) start.plusDays(1) else start.plusHours(1)
+        val end = draft.end ?: if (draft.allDay) start.plus(1, DateTimeUnit.DAY, zone()) else start + 1.hours
         val uid = UUID.randomUUID().toString().uppercase()
         val href = cal.href.resolve("$uid.ics") ?: return Outcome.Failure(AppError.ToolFailed("calendar", "Edith couldn't name the new event."))
-        val ics = ICalendar.newEvent(uid, now(), draft.title ?: "(No title)", start, end, draft.allDay, draft.location, draft.description)
+        val ics = ICalendar.newEvent(uid, now(), draft.title ?: "(No title)", start, end, draft.allDay, draft.location, draft.description, zone())
         return when (val r = dav().put(href, ics, etag = null)) {
             is DavResult.Ok -> Outcome.Success(
                 CalendarEvent(href.toString(), cal.href.toString(), cal.name, draft.title ?: "(No title)", start, end, draft.allDay, draft.location, draft.description, accountOf().id, uid),
@@ -123,9 +126,9 @@ class ICloudCalendarSource(
                 change.title?.let { put("SUMMARY", "SUMMARY:${ICalendar.escape(it)}") }
                 change.location?.let { put("LOCATION", "LOCATION:${ICalendar.escape(it)}") }
                 change.description?.let { put("DESCRIPTION", "DESCRIPTION:${ICalendar.escape(it)}") }
-                change.start?.let { put("DTSTART", ICalendar.timeLine("DTSTART", it, change.allDay)) }
-                change.end?.let { put("DTEND", ICalendar.timeLine("DTEND", it, change.allDay)); put("DURATION", null) }
-                put("DTSTAMP", "DTSTAMP:${ICalendar.utc(now().atZone(ZoneId.of("UTC")))}")
+                change.start?.let { put("DTSTART", ICalendar.timeLine("DTSTART", it, change.allDay, zone())) }
+                change.end?.let { put("DTEND", ICalendar.timeLine("DTEND", it, change.allDay, zone())); put("DURATION", null) }
+                put("DTSTAMP", "DTSTAMP:${ICalendar.utc(now())}")
             }
             when (val r = dav().put(href, ICalendar.change(current.ics, changes), current.etag)) {
                 is DavResult.Ok -> {

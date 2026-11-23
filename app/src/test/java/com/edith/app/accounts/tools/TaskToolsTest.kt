@@ -60,8 +60,10 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.time.Instant
-import java.time.LocalDate
-import kotlinx.datetime.toJavaLocalDate
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.minus
+import kotlinx.datetime.plus
 import java.time.ZoneId
 
 /**
@@ -75,7 +77,7 @@ class TaskToolsTest {
     private val zone = ZoneId.of("America/Detroit")
     /** Friday, Nov 13 2026, 10 AM in Detroit. */
     private val clock = FakeClock(Instant.parse("2026-11-13T15:00:00Z"), zone)
-    private val today = LocalDate.of(2026, 11, 13)
+    private val today = LocalDate(2026, 11, 13)
     private val dispatchers = AppDispatchers(Dispatchers.Unconfined, Dispatchers.Unconfined, Dispatchers.Unconfined)
 
     private val personal = Account("p1", Provider.Google, "a@gmail.com", "personal")
@@ -127,8 +129,8 @@ class TaskToolsTest {
 
     private val p = FakeTasks(personal, linkedMapOf(
         myTasks to mutableListOf(
-            task(personal, myTasks, "a", "Call the dentist", "1", due = today.plusDays(1), notes = "Ask about Tuesday afternoon"),
-            task(personal, myTasks, "b", "Pay the electric bill", "2", due = today.minusDays(3)),
+            task(personal, myTasks, "a", "Call the dentist", "1", due = today.plus(1, DateTimeUnit.DAY), notes = "Ask about Tuesday afternoon"),
+            task(personal, myTasks, "b", "Pay the electric bill", "2", due = today.minus(3, DateTimeUnit.DAY)),
             task(personal, myTasks, "c", "Pack for the trip", "3"),
             task(personal, myTasks, "c1", "Socks", "1", parent = "c"),
             task(personal, myTasks, "c2", "Passport", "2", parent = "c"),
@@ -436,16 +438,16 @@ class TaskToolsTest {
 
     @Test fun `days - words, weekdays, dates, a date-time's own date, and garbage`() {
         val spec = ToolSpec("x", "x", listOf(ToolParam("due", ParamType.String, "d")))
-        fun day(v: String) = ToolArgs(JsonObject(mapOf("due" to JsonPrimitive(v))), spec).day("due", clock)?.toJavaLocalDate()
+        fun day(v: String) = ToolArgs(JsonObject(mapOf("due" to JsonPrimitive(v))), spec).day("due", clock)
         assertEquals(today, day("today"))
-        assertEquals(today.plusDays(1), day("Tomorrow"))
+        assertEquals(today.plus(1, DateTimeUnit.DAY), day("Tomorrow"))
         assertEquals("Friday on a Friday is today", today, day("friday"))
-        assertEquals(today.plusDays(7), day("next friday"))
-        assertEquals(LocalDate.of(2026, 11, 16), day("monday"))
-        assertEquals(LocalDate.of(2026, 11, 16), day("Mon"))
-        assertEquals(LocalDate.of(2026, 12, 1), day("2026-12-01"))
-        assertEquals("midnight UTC is still the 14th, not the 13th in Detroit", LocalDate.of(2026, 11, 14), day("2026-11-14T00:00:00Z"))
-        assertEquals(LocalDate.of(2026, 11, 14), day("2026-11-14T23:30:00-05:00"))
+        assertEquals(today.plus(7, DateTimeUnit.DAY), day("next friday"))
+        assertEquals(LocalDate(2026, 11, 16), day("monday"))
+        assertEquals(LocalDate(2026, 11, 16), day("Mon"))
+        assertEquals(LocalDate(2026, 12, 1), day("2026-12-01"))
+        assertEquals("midnight UTC is still the 14th, not the 13th in Detroit", LocalDate(2026, 11, 14), day("2026-11-14T00:00:00Z"))
+        assertEquals(LocalDate(2026, 11, 14), day("2026-11-14T23:30:00-05:00"))
         for (bad in listOf("someday", "2026-13-01", "2026-11-14Tnoon", "14/11/2026")) {
             try {
                 day(bad)

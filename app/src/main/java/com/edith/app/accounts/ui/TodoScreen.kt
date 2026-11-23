@@ -1,8 +1,7 @@
 package com.edith.app.accounts.ui
 
 import android.app.Activity
-import com.edith.app.core.time.javaNow
-import com.edith.app.core.time.javaZone
+import kotlinx.datetime.toLocalDateTime
 import android.app.PendingIntent
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -75,7 +74,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
-import java.time.LocalDate
+import kotlinx.datetime.LocalDate
 
 /** One list in the To-do view: "My Tasks · personal" and its tasks in Google's order. */
 data class TodoSection(val account: Account, val list: TaskList, val title: String, val tasks: List<TaskItem>)
@@ -226,7 +225,7 @@ class TodoViewModel(
         _state.value = if (sections.isEmpty() && problems.isNotEmpty() && needsPermission.isEmpty()) {
             TodoUi.Failed(problems.joinToString("\n") { it.line })
         } else {
-            TodoUi.Lists(sections, clock.javaNow().atZone(clock.javaZone()).toLocalDate(), includeDone, needsPermission = needsPermission.map { it.account }, problems = problems.map { it.line })
+            TodoUi.Lists(sections, clock.now().toLocalDateTime(clock.zone()).date, includeDone, needsPermission = needsPermission.map { it.account }, problems = problems.map { it.line })
         }
     }
 
@@ -352,7 +351,7 @@ private fun TaskRow(t: TaskItem, indent: Boolean, today: LocalDate, onToggle: ()
                 color = if (t.done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
             )
             t.due?.let { d ->
-                val overdue = !t.done && d.isBefore(today)
+                val overdue = !t.done && d < today
                 Text(
                     (if (d == today) "Due today" else "Due ${TaskFormat.day(d)}") + if (overdue) " · overdue" else "",
                     style = MaterialTheme.typography.bodySmall,

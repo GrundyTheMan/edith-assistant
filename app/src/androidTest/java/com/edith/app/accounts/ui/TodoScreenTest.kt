@@ -17,14 +17,16 @@ import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.time.LocalDate
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.minus
 
 /** C35 §5: the Agenda | To-do switch, sections, a tick box, Show done and the Grant access banner. */
 @RunWith(AndroidJUnit4::class)
 class TodoScreenTest {
     @get:Rule val compose = createComposeRule()
 
-    private val today = LocalDate.of(2026, 11, 13)
+    private val today = LocalDate(2026, 11, 13)
     private val personal = Account("a1", Provider.Google, "a@gmail.com", "personal")
     private val work = Account("b2", Provider.Google, "sam@contoso.com", "work")
     private val list = TaskList("L1", "My Tasks")
@@ -40,7 +42,7 @@ class TodoScreenTest {
     }
 
     @Test fun sectionsTickShowDoneAndGrantBanner() {
-        val tasks = listOf(t("a", "Call the dentist", due = today.minusDays(1)), t("b", "Pack", due = today), t("b1", "Socks", parent = "b"))
+        val tasks = listOf(t("a", "Call the dentist", due = today.minus(1, DateTimeUnit.DAY)), t("b", "Pack", due = today), t("b1", "Socks", parent = "b"))
         val state = TodoUi.Lists(
             sections = listOf(TodoSection(personal, list, "My Tasks · personal", tasks)),
             today = today,

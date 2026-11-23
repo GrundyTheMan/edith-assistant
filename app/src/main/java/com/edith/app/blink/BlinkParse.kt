@@ -8,10 +8,13 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import java.net.URI
-import java.time.Instant
-import java.time.OffsetDateTime
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.UtcOffset
+import kotlinx.datetime.format
+import kotlinx.datetime.format.DateTimeComponents
+import kotlinx.datetime.format.char
+import kotlinx.datetime.parse
+import kotlin.time.Instant
 
 /** Blink's three kinds of camera; each has its own addresses for a snapshot and a live view. */
 enum class BlinkKind { Camera, Mini, Doorbell }
@@ -163,13 +166,17 @@ object BlinkParse {
     /** "2026-10-29T08:34:19+00:00" or "…+0000", as ms since 1970; null when it isn't a time. */
     fun time(text: String?): Long? {
         if (text == null) return null
-        return runCatching { OffsetDateTime.parse(text, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toInstant().toEpochMilli() }.getOrNull()
-            ?: runCatching { OffsetDateTime.parse(text, DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssZ")).toInstant().toEpochMilli() }.getOrNull()
-            ?: runCatching { Instant.parse(text).toEpochMilli() }.getOrNull()
+        return runCatching { Instant.parse(text).toEpochMilliseconds() }.getOrNull()
+            ?: runCatching { Instant.parse(text, BASIC_OFFSET).toEpochMilliseconds() }.getOrNull()
     }
 
     /** The time as Blink's media list wants it: "2026-10-29T08:34:19+0000", in UTC, without milliseconds. */
-    fun since(ms: Long): String = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssZ").format(Instant.ofEpochMilli(ms).atOffset(ZoneOffset.UTC))
+    fun since(ms: Long): String = Instant.fromEpochSeconds(Math.floorDiv(ms, 1000L)).format(BASIC_OFFSET, UtcOffset.ZERO)
+
+    /** `2026-10-29T08:34:19+0000`: seconds and an offset without a colon, the way Blink wants `since` and sometimes writes times. */
+    private val BASIC_OFFSET = DateTimeComponents.Format {
+        date(LocalDate.Formats.ISO); char('T'); hour(); char(':'); minute(); char(':'); second(); offset(UtcOffset.Formats.FOUR_DIGITS)
+    }
 
     /** The `code` in the address Blink's sign-in ends on; null when there is none. */
     fun codeFrom(location: String?): String? {

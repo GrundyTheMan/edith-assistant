@@ -2,8 +2,8 @@ package com.edith.app.accounts.tasks
 
 import com.edith.app.accounts.Account
 import com.edith.app.core.error.Outcome
-import java.time.Instant
-import java.time.LocalDate
+import kotlin.time.Instant
+import kotlinx.datetime.LocalDate
 
 /** One to-do list in an account (C35): Google Tasks' task list. */
 data class TaskList(val id: String, val title: String)
@@ -77,7 +77,7 @@ object TaskOrder {
             out += t
             out += open.filter { it.parent == t.id }.sortedBy { it.position }
         }
-        return out + tasks.filter { it.done }.sortedByDescending { it.completedAt ?: Instant.EPOCH }
+        return out + tasks.filter { it.done }.sortedByDescending { it.completedAt ?: Instant.fromEpochMilliseconds(0) }
     }
 
     /**

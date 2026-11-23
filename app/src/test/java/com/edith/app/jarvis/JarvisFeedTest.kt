@@ -1,6 +1,7 @@
 package com.edith.app.jarvis
 
 import com.edith.app.accounts.Account
+import kotlinx.datetime.TimeZone
 import com.edith.app.accounts.Provider
 import com.edith.app.accounts.sources.MailQuery
 import com.edith.app.accounts.sources.OutgoingMail
@@ -26,9 +27,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.net.InetAddress
-import java.time.Instant
-import java.time.ZoneId
-import java.time.ZoneOffset
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 /**
  * C38: Jarvis's feed as Edith reads it. A TLS MockWebServer with a throwaway self-signed certificate stands in for the
@@ -55,7 +56,6 @@ class JarvisFeedTest {
     private fun link(token: String = "tok-123", pinned: String = fingerprint) = JarvisLink(server.url("/").toString().trimEnd('/'), pinned, token, "BEN-PC")
     private fun api(l: JarvisLink? = link()) = JarvisApi({ l }, http, dispatchers, onUnauthorized = { unauthorized++ })
     private fun json(body: String, code: Int = 200) = MockResponse.Builder().code(code).addHeader("Content-Type", "application/json").body(body).build()
-    private val zone: ZoneId = ZoneOffset.UTC
 
     // --- Pairing, the pure parts -------------------------------------------------------------------------------
 
@@ -162,14 +162,14 @@ class JarvisFeedTest {
     @Test fun `mail comes back as summaries, with ids that keep their colons`() = runBlocking {
         server.enqueue(json("""{"items":[{"id":"acc:1:42","account":"acc","from":{"name":"Sam","address":"sam@corp.com"},"to":["me@corp.com"],"cc":[],
             "subject":"Budget","date":1763320000000,"unread":true,"flagged":false,"answered":false,"toMe":"to","preview":"Numbers inside","score":7}],"more":true}"""))
-        val src = JarvisMailSource(account, api(), { zone })
+        val src = JarvisMailSource(account, api())
         val found = (src.search(MailQuery(text = "budget"), 10) as Outcome.Success).value
         assertTrue(found.more)
         val m = found.messages.single()
         assertEquals("acc:1:42", m.id)
         assertEquals("Sam <sam@corp.com>", m.from)
         assertEquals(account.id, m.accountId)
-        assertEquals(Instant.ofEpochMilli(1763320000000), m.date.toInstant())
+        assertEquals(Instant.fromEpochMilliseconds(1763320000000), m.date)
         val sent = server.takeRequest()
         assertEquals("budget", sent.url.queryParameter("text"))
         assertEquals("10", sent.url.queryParameter("limit"))
@@ -185,7 +185,7 @@ class JarvisFeedTest {
 
     @Test fun `a reply is saved as a draft on the message it answers, and nothing can be sent`() = runBlocking {
         server.enqueue(json("""{"saved":true,"note":"ok"}"""))
-        val src = JarvisMailSource(account, api(), { zone })
+        val src = JarvisMailSource(account, api())
         assertTrue(src.draft(OutgoingMail("sam@corp.com", "Re: Budget", "Thanks, looks fine.", replyToId = "acc:1:42")) is Outcome.Success)
         val sent = server.takeRequest()
         assertEquals("/v1/mail/drafts", sent.url.encodedPath)
@@ -200,7 +200,7 @@ class JarvisFeedTest {
     @Test fun `a new draft goes from the first shared mailbox`() = runBlocking {
         server.enqueue(json("""{"pcName":"BEN-PC","mail":[{"id":"acc","label":"Work","email":"me@corp.com"}],"calendars":[],"tasks":[]}"""))
         server.enqueue(json("""{"saved":true}"""))
-        JarvisMailSource(account, api(), { zone }).draft(OutgoingMail("sam@corp.com", "Hello", "Hi Sam"))
+        JarvisMailSource(account, api()).draft(OutgoingMail("sam@corp.com", "Hello", "Hi Sam"))
         server.takeRequest()
         val body = Json.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject
         assertEquals("acc", body["account"]!!.jsonPrimitive.content)
@@ -214,15 +214,15 @@ class JarvisFeedTest {
         server.enqueue(json("""{"pcName":"x","mail":[],"calendars":[{"id":"c:1","label":"Work"}],"tasks":[]}"""))
         repeat(3) { i ->
             val items = when (i) {
-                0 -> """[{"id":"e2","calendar":"c:1","title":"Later","start":${from.toEpochMilli() + 2 * day},"end":${from.toEpochMilli() + 2 * day + 3_600_000}},
-                        {"id":"e0","calendar":"c:1","title":"Cancelled","start":${from.toEpochMilli() + day},"end":${from.toEpochMilli() + day + 3_600_000},"cancelled":true}]"""
-                1 -> """[{"id":"e1","calendar":"c:1","title":"Earlier","start":${from.toEpochMilli() + day},"end":${from.toEpochMilli() + day + 1800_000},"location":"Room 4","joinUrl":"https://teams/x"}]"""
+                0 -> """[{"id":"e2","calendar":"c:1","title":"Later","start":${from.toEpochMilliseconds() + 2 * day},"end":${from.toEpochMilliseconds() + 2 * day + 3_600_000}},
+                        {"id":"e0","calendar":"c:1","title":"Cancelled","start":${from.toEpochMilliseconds() + day},"end":${from.toEpochMilliseconds() + day + 3_600_000},"cancelled":true}]"""
+                1 -> """[{"id":"e1","calendar":"c:1","title":"Earlier","start":${from.toEpochMilliseconds() + day},"end":${from.toEpochMilliseconds() + day + 1800_000},"location":"Room 4","joinUrl":"https://teams/x"}]"""
                 else -> "[]"
             }
             server.enqueue(json("""{"items":$items,"more":false}"""))
         }
-        val src = JarvisCalendarSource(account, api(), { zone })
-        val events = (src.events(from, from.plusSeconds(200 * 86_400L), null) as Outcome.Success).value
+        val src = JarvisCalendarSource(account, api())
+        val events = (src.events(from, from + (200 * 86_400L).seconds, null) as Outcome.Success).value
         assertEquals(listOf("Earlier", "Later"), events.map { it.title })
         assertEquals("Work", events[0].calendarName)
         assertEquals("Room 4", events[0].location)
@@ -234,11 +234,11 @@ class JarvisFeedTest {
     }
 
     @Test fun `an all-day event runs from midnight to the next midnight in the phone's zone`() {
-        val e = WireEvent("e", "c:1", "Holiday", start = Instant.parse("2026-12-25T00:00:00Z").toEpochMilli(), end = Instant.parse("2026-12-26T00:00:00Z").toEpochMilli(), allDay = true)
-            .toEvent("a", "Work", zone)
+        val e = WireEvent("e", "c:1", "Holiday", start = Instant.parse("2026-12-25T00:00:00Z").toEpochMilliseconds(), end = Instant.parse("2026-12-26T00:00:00Z").toEpochMilliseconds(), allDay = true)
+            .toEvent("a", "Work")
         assertTrue(e.allDay)
-        assertEquals("2026-12-25", e.start.toLocalDate().toString())
-        assertEquals("2026-12-26", e.end.toLocalDate().toString())
+        assertEquals("2026-12-25", e.start.toLocalDateTime(TimeZone.UTC).date.toString())
+        assertEquals("2026-12-26", e.end.toLocalDateTime(TimeZone.UTC).date.toString())
     }
 
     @Test fun `tasks come back as to-dos in Jarvis's order and can't be changed`() = runBlocking {

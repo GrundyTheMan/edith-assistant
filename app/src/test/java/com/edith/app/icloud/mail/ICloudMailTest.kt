@@ -1,6 +1,7 @@
 package com.edith.app.icloud.mail
 
 import com.edith.app.accounts.Account
+import kotlinx.datetime.TimeZone
 import com.edith.app.accounts.Provider
 import com.edith.app.accounts.sources.MailQuery
 import com.edith.app.accounts.sources.OutgoingMail
@@ -25,7 +26,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.time.Instant
-import java.time.ZoneId
 import java.util.Date
 import java.util.Properties
 
@@ -34,7 +34,7 @@ import java.util.Properties
  * mail. Edith must never mark mail as read (trap 2).
  */
 class ICloudMailTest {
-    private val zone = ZoneId.of("America/Detroit")
+    private val zone = TimeZone.of("America/Detroit")
     private val mail = GreenMail(ServerSetup.dynamicPort(ServerSetupTest.SMTP_IMAP))
     private val account = Account("i1", Provider.ICloud, "owner@icloud.com", "icloud", login = "owner")
     private var rejected = 0
@@ -90,7 +90,7 @@ class ICloudMailTest {
         inbox.messages.associate { it.subject to it.isSet(Flags.Flag.SEEN) }.also { inbox.close(false) }
     }
 
-    private val midnightNov12 = Instant.parse("2026-11-12T05:00:00Z")
+    private val midnightNov12 = kotlin.time.Instant.parse("2026-11-12T05:00:00Z")
 
     @Test fun `unread today - SEARCH narrows by day, the exact local midnight is checked here`() = runBlocking {
         val r = (source().search(MailQuery(unreadOnly = true, after = midnightNov12), 10) as Outcome.Success).value

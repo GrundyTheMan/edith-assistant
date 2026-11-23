@@ -1,10 +1,7 @@
 package com.edith.app.accounts.tools
 
 import com.edith.app.accounts.Account
-import kotlinx.datetime.toKotlinTimeZone
-import kotlin.time.toJavaInstant
-import com.edith.app.core.time.javaNow
-import com.edith.app.core.time.javaZone
+import com.edith.app.core.time.formatPattern
 import com.edith.app.accounts.AccountDirectory
 import com.edith.app.accounts.AccountEntry
 import com.edith.app.accounts.Accounts
@@ -26,12 +23,22 @@ import com.edith.app.tools.framework.ToolContext
 import com.edith.app.tools.framework.ToolParam
 import com.edith.app.tools.framework.ToolResult
 import com.edith.app.tools.framework.ToolSpec
-import java.time.Duration
-import java.time.LocalTime
-import java.time.ZoneId
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
-import java.util.Locale
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.UtcOffset
+import kotlinx.datetime.atTime
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.minus
+import kotlinx.datetime.offsetAt
+import kotlinx.datetime.plus
+import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Instant
 
 /**
  * Events Edith lists get short handles (`e1`, `e2`, …) the model passes back to change or delete them (C18). One
@@ -66,19 +73,21 @@ class CalendarHandles {
 
 /** "Fri Oct 30, 12:00–1:00 PM", "Sat Oct 31, all day", "Oct 31–Nov 2, all day" (device zone, English month names). */
 object CalendarFormat {
-    private val day = DateTimeFormatter.ofPattern("EEE MMM d", Locale.US)
-    private val time = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
-    private val timeNoAmPm = DateTimeFormatter.ofPattern("h:mm", Locale.US)
+    private fun show(t: Instant, zone: TimeZone, pattern: String) = formatPattern(t, zone, pattern, "en-US")
 
-    fun whenText(start: ZonedDateTime, end: ZonedDateTime, allDay: Boolean): String {
+    fun whenText(start: Instant, end: Instant, allDay: Boolean, zone: TimeZone): String {
+        fun day(t: Instant) = show(t, zone, "EEE MMM d")
+        fun time(t: Instant) = show(t, zone, "h:mm a")
+        val s = start.toLocalDateTime(zone)
+        val e = end.toLocalDateTime(zone)
         if (allDay) {
-            val last = end.minusDays(1)
-            return if (!last.toLocalDate().isAfter(start.toLocalDate())) "${day.format(start)}, all day"
-            else "${day.format(start)}–${day.format(last)}, all day"
+            val last = end.minus(1, DateTimeUnit.DAY, zone)
+            return if (last.toLocalDateTime(zone).date <= s.date) "${day(start)}, all day"
+            else "${day(start)}–${day(last)}, all day"
         }
-        if (start.toLocalDate() != end.toLocalDate()) return "${day.format(start)} ${time.format(start)} – ${day.format(end)} ${time.format(end)}"
-        val sameHalf = (start.hour < 12) == (end.hour < 12)
-        return "${day.format(start)}, ${if (sameHalf) timeNoAmPm.format(start) else time.format(start)}–${time.format(end)}"
+        if (s.date != e.date) return "${day(start)} ${time(start)} – ${day(end)} ${time(end)}"
+        val sameHalf = (s.hour < 12) == (e.hour < 12)
+        return "${day(start)}, ${if (sameHalf) show(start, zone, "h:mm") else time(start)}–${time(end)}"
     }
 
     /**
@@ -86,9 +95,9 @@ object CalendarFormat {
      * calendar when [showCalendar], and the account when [showAccount] (more than one account); an invite in two
      * accounts names both.
      */
-    fun line(m: MergedEvent, handle: String, showCalendar: Boolean, showAccount: Boolean): String = buildString {
+    fun line(m: MergedEvent, handle: String, showCalendar: Boolean, showAccount: Boolean, zone: TimeZone): String = buildString {
         val e = m.event
-        append(whenText(e.start, e.end, e.allDay)).append(" — ").append(e.title)
+        append(whenText(e.start, e.end, e.allDay, zone)).append(" — ").append(e.title)
         e.location?.takeIf { it.isNotBlank() }?.let { append(" (").append(it.take(60)).append(')') }
         val where = (listOf(m.account to e) + m.alsoIn).map { (a, ev) ->
             listOfNotNull(ev.calendarName.takeIf { showCalendar }, a.label.takeIf { showAccount }).joinToString(" · ")
@@ -111,22 +120,18 @@ private val END = ToolParam("end", ParamType.DateTime, "End of the period, in th
  * So `Z`/`+00:00`, and any offset the owner's own zone uses at some time of year (both of Detroit's), are read as local
  * wall-clock time. A genuinely different zone ("3pm Pacific" → `-08:00`) is kept.
  */
-/** [ToolArgs.dateTime] as a java `ZonedDateTime` (TEMPORARY, K1.3: this package is still on `java.time`). */
-private fun ToolArgs.zonedDateTime(name: String, zone: ZoneId): ZonedDateTime? =
-    dateTime(name, zone.toKotlinTimeZone())?.toJavaInstant()?.atZone(zone)
-
-internal fun ToolArgs.localTime(name: String, zone: ZoneId): ZonedDateTime? {
-    val text = string(name)?.trim() ?: return zonedDateTime(name, zone)
-    val offset = Regex("(Z|[+-]\\d\\d:?\\d\\d)$").find(text) ?: return zonedDateTime(name, zone)
+internal fun ToolArgs.localTime(name: String, zone: TimeZone): Instant? {
+    val text = string(name)?.trim() ?: return dateTime(name, zone)
+    val offset = Regex("(Z|[+-]\\d\\d:?\\d\\d)$").find(text) ?: return dateTime(name, zone)
     val local = try {
-        java.time.LocalDateTime.parse(text.removeRange(offset.range))
-    } catch (_: java.time.format.DateTimeParseException) {
-        return zonedDateTime(name, zone)
+        LocalDateTime.parse(text.removeRange(offset.range))
+    } catch (_: IllegalArgumentException) {
+        return dateTime(name, zone)
     }
-    val given = if (offset.value == "Z") java.time.ZoneOffset.UTC else java.time.ZoneOffset.of(offset.value.let { if (it.length == 5) it.substring(0, 3) + ":" + it.substring(3) else it })
+    val given = if (offset.value == "Z") UtcOffset.ZERO else UtcOffset.parse(offset.value.let { if (it.length == 5) it.substring(0, 3) + ":" + it.substring(3) else it })
     val year = local.year
-    val ownOffsets = setOf(java.time.ZoneOffset.UTC) + listOf(1, 7).map { zone.rules.getOffset(java.time.LocalDateTime.of(year, it, 1, 12, 0)) }
-    return if (given in ownOffsets) local.atZone(zone) else zonedDateTime(name, zone)
+    val ownOffsets = setOf(UtcOffset.ZERO) + listOf(1, 7).map { zone.offsetAt(LocalDateTime(year, it, 1, 12, 0).toInstant(zone)) }
+    return if (given in ownOffsets) local.toInstant(zone) else dateTime(name, zone)
 }
 
 private const val LOCAL_TIMES = "Give times in the user's local time without an offset or Z, e.g. 2026-11-03T15:00:00."
@@ -165,23 +170,23 @@ class ListCalendarEventsTool(private val dir: AccountDirectory, private val hand
         "(a whole day: 00:00 to 23:59). Results carry an event_id for changing or deleting an event. $LOCAL_TIMES"
 
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
-        val zone = ctx.clock.javaZone()
+        val zone = ctx.clock.zone()
         val from = requireNotNull(args.localTime("start", zone))
-        val to = requireNotNull(args.localTime("end", zone)).let { if (it == from) it.plusDays(1) else it }
-        if (!to.isAfter(from)) throw ArgumentError("end", "end must be after start")
+        val to = requireNotNull(args.localTime("end", zone)).let { if (it == from) it.plus(1, DateTimeUnit.DAY, zone) else it }
+        if (to <= from) throw ArgumentError("end", "end must be after start")
         val (targets, refused) = calendarTargets(dir, args.string("account"))
         refused?.let { return it }
-        val read = Reads.readAll(targets) { it.events(from.toInstant(), to.toInstant(), args.string("query")) }
-        return listResult(read, showAccount = dir.entries().count { it.calendar != null } > 1)
+        val read = Reads.readAll(targets) { it.events(from, to, args.string("query")) }
+        return listResult(read, showAccount = dir.entries().count { it.calendar != null } > 1, zone)
     }
 
-    private fun listResult(read: ReadAll<List<CalendarEvent>>, showAccount: Boolean): ToolResult {
+    private fun listResult(read: ReadAll<List<CalendarEvent>>, showAccount: Boolean, zone: TimeZone): ToolResult {
         if (read.results.isEmpty() && read.failures.isNotEmpty()) return ToolResult.Error(read.failureText())
         val events = CalendarMerge.merge(read.results)
         val showCalendar = showAccount || read.results.any { (_, list) -> list.map { it.calendarId }.distinct().size > 1 }
         val text = if (events.isEmpty()) "No events." else {
             val shown = events.take(MAX_EVENTS)
-            shown.joinToString("\n") { CalendarFormat.line(it, handles.handleFor(it.event), showCalendar, showAccount) } +
+            shown.joinToString("\n") { CalendarFormat.line(it, handles.handleFor(it.event), showCalendar, showAccount, zone) } +
                 if (events.size > shown.size) "\n…and ${events.size - shown.size} more; ask for a shorter period." else ""
         }
         return ToolResult.Ok(listOf(text, read.failureText()).filter { it.isNotEmpty() }.joinToString("\n"))
@@ -204,42 +209,42 @@ class FindFreeTimeTool(private val dir: AccountDirectory) : Tool {
     override val guidance = "For \"am I free…\" or \"when could I…\", call find_free_time."
 
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
-        val zone = ctx.clock.javaZone()
+        val zone = ctx.clock.zone()
         val from = requireNotNull(args.localTime("start", zone))
         val to = requireNotNull(args.localTime("end", zone))
-        if (!to.isAfter(from)) throw ArgumentError("end", "end must be after start")
+        if (to <= from) throw ArgumentError("end", "end must be after start")
         val minutes = (args.int("duration_minutes") ?: 30).coerceIn(5, 24 * 60)
         val (targets, _) = calendarTargets(dir, null)
-        val read = Reads.readAll(targets) { it.events(from.toInstant(), to.toInstant()) }
+        val read = Reads.readAll(targets) { it.events(from, to) }
         if (read.results.isEmpty() && read.failures.isNotEmpty()) return ToolResult.Error(read.failureText())
-        val slots = freeSlots(read.results.flatMap { it.second }, from, to, Duration.ofMinutes(minutes.toLong()), zone)
+        val slots = freeSlots(read.results.flatMap { it.second }, from, to, minutes.minutes, zone)
         val text = if (slots.isEmpty()) "No free time of $minutes minutes or more between 8 AM and 8 PM in that period."
-        else slots.take(MAX_SLOTS).joinToString("\n") { (s, e) -> "Free: " + CalendarFormat.whenText(s, e, allDay = false) }
+        else slots.take(MAX_SLOTS).joinToString("\n") { (s, e) -> "Free: " + CalendarFormat.whenText(s, e, allDay = false, zone) }
         val missing = read.failures.joinToString("\n") { it.line.removeSuffix(".") + "; its events aren't counted." }
         return ToolResult.Ok(listOf(text, missing).filter { it.isNotEmpty() }.joinToString("\n"))
     }
 
     companion object {
         const val MAX_SLOTS = 12
-        val DAY_START: LocalTime = LocalTime.of(8, 0)
-        val DAY_END: LocalTime = LocalTime.of(20, 0)
+        val DAY_START = LocalTime(8, 0)
+        val DAY_END = LocalTime(20, 0)
 
         /** Gaps of at least [min] between timed events, inside 8 AM–8 PM of each day in [from, to). */
-        fun freeSlots(events: List<CalendarEvent>, from: ZonedDateTime, to: ZonedDateTime, min: Duration, zone: ZoneId): List<Pair<ZonedDateTime, ZonedDateTime>> {
+        fun freeSlots(events: List<CalendarEvent>, from: Instant, to: Instant, min: Duration, zone: TimeZone): List<Pair<Instant, Instant>> {
             val busy = events.filter { !it.allDay }.map { it.start to it.end }.sortedBy { it.first }
-            val out = mutableListOf<Pair<ZonedDateTime, ZonedDateTime>>()
-            var day = from.withZoneSameInstant(zone).toLocalDate()
-            val lastDay = to.withZoneSameInstant(zone).toLocalDate()
-            while (!day.isAfter(lastDay)) {
-                var cursor = maxOf(day.atTime(DAY_START).atZone(zone), from)
-                val dayEnd = minOf(day.atTime(DAY_END).atZone(zone), to)
+            val out = mutableListOf<Pair<Instant, Instant>>()
+            var day = from.toLocalDateTime(zone).date
+            val lastDay = to.toLocalDateTime(zone).date
+            while (day <= lastDay) {
+                var cursor = maxOf(day.atTime(DAY_START).toInstant(zone), from)
+                val dayEnd = minOf(day.atTime(DAY_END).toInstant(zone), to)
                 for ((s, e) in busy) {
-                    if (!e.isAfter(cursor) || !s.isBefore(dayEnd)) continue
-                    if (Duration.between(cursor, s) >= min) out += cursor to s
-                    if (e.isAfter(cursor)) cursor = e
+                    if (e <= cursor || s >= dayEnd) continue
+                    if (s - cursor >= min) out += cursor to s
+                    if (e > cursor) cursor = e
                 }
-                if (dayEnd.isAfter(cursor) && Duration.between(cursor, dayEnd) >= min) out += cursor to dayEnd
-                day = day.plusDays(1)
+                if (dayEnd > cursor && dayEnd - cursor >= min) out += cursor to dayEnd
+                day = day.plus(1, DateTimeUnit.DAY)
             }
             return out
         }
@@ -250,7 +255,7 @@ class FindFreeTimeTool(private val dir: AccountDirectory) : Tool {
  * `create_calendar_event` (C18, C22): adds an event, after the owner confirms (D11). Which account it goes to is
  * [WhichAccount]'s decision; when Edith must ask, there's no card and no request.
  */
-class CreateCalendarEventTool(private val dir: AccountDirectory, private val handles: CalendarHandles, private val zone: () -> ZoneId = ZoneId::systemDefault) : Tool {
+class CreateCalendarEventTool(private val dir: AccountDirectory, private val handles: CalendarHandles, private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() }) : Tool {
     override val spec = ToolSpec(
         "create_calendar_event",
         "Add an event to the user's calendar (the user confirms first)",
@@ -273,10 +278,10 @@ class CreateCalendarEventTool(private val dir: AccountDirectory, private val han
     private fun change(args: ToolArgs): EventChange {
         val z = zone()
         val allDay = args.bool("all_day") == true
-        val start = requireNotNull(args.localTime("start", z)).let { if (allDay) it.toLocalDate().atStartOfDay(z) else it }
-        val end = args.localTime("end", z)?.let { if (allDay) it.toLocalDate().atStartOfDay(z).plusDays(1) else it }
-            ?: if (allDay) start.plusDays(1) else start.plusHours(1)
-        if (!end.isAfter(start)) throw ArgumentError("end", "end must be after start")
+        val start = requireNotNull(args.localTime("start", z)).let { if (allDay) it.toLocalDateTime(z).date.atStartOfDayIn(z) else it }
+        val end = args.localTime("end", z)?.let { if (allDay) it.toLocalDateTime(z).date.atStartOfDayIn(z).plus(1, DateTimeUnit.DAY, z) else it }
+            ?: if (allDay) start.plus(1, DateTimeUnit.DAY, z) else start + 1.hours
+        if (end <= start) throw ArgumentError("end", "end must be after start")
         return EventChange(args.string("title"), start, end, allDay, args.string("location"), args.string("description"))
     }
 
@@ -289,7 +294,7 @@ class CreateCalendarEventTool(private val dir: AccountDirectory, private val han
         return ConfirmationRequest(
             "Add to your calendar?",
             listOfNotNull(
-                "What" to requireNotNull(c.title), "When" to CalendarFormat.whenText(requireNotNull(c.start), requireNotNull(c.end), c.allDay),
+                "What" to requireNotNull(c.title), "When" to CalendarFormat.whenText(requireNotNull(c.start), requireNotNull(c.end), c.allDay, zone()),
                 c.location?.let { "Where" to it }, accountRow(use.entry.account, calendarName),
             ),
             confirmLabel = "Add",
@@ -303,7 +308,7 @@ class CreateCalendarEventTool(private val dir: AccountDirectory, private val han
         return when (val r = source.create(use.calendar?.id, c)) {
             is Outcome.Success -> {
                 handles.handleFor(r.value)
-                ToolResult.Ok("Added \"${r.value.title}\" on ${CalendarFormat.whenText(r.value.start, r.value.end, r.value.allDay)} to ${use.entry.account.display}.")
+                ToolResult.Ok("Added \"${r.value.title}\" on ${CalendarFormat.whenText(r.value.start, r.value.end, r.value.allDay, zone())} to ${use.entry.account.display}.")
             }
             is Outcome.Failure -> accountError(use.entry.account, r.error)
         }
@@ -314,7 +319,7 @@ class CreateCalendarEventTool(private val dir: AccountDirectory, private val han
 }
 
 /** `update_calendar_event` (C18): changes an event Edith listed, in its own account, after the owner sees before → after. */
-class UpdateCalendarEventTool(private val dir: AccountDirectory, private val handles: CalendarHandles, private val zone: () -> ZoneId = ZoneId::systemDefault) : Tool {
+class UpdateCalendarEventTool(private val dir: AccountDirectory, private val handles: CalendarHandles, private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() }) : Tool {
     override val spec = ToolSpec(
         "update_calendar_event",
         "Change an event from list_calendar_events: its title, time or place (the user confirms first)",
@@ -333,8 +338,8 @@ class UpdateCalendarEventTool(private val dir: AccountDirectory, private val han
     private fun change(args: ToolArgs, e: CalendarEvent): EventChange {
         val z = zone()
         val start = args.localTime("start", z)
-        val end = args.localTime("end", z) ?: start?.plus(Duration.between(e.start, e.end))
-        if (start != null && end != null && !end.isAfter(start)) throw ArgumentError("end", "end must be after start")
+        val end = args.localTime("end", z) ?: start?.plus(e.end - e.start)
+        if (start != null && end != null && end <= start) throw ArgumentError("end", "end must be after start")
         return EventChange(args.string("title"), start ?: end?.let { e.start }, end, e.allDay && start == null, args.string("location"))
     }
 
@@ -346,7 +351,7 @@ class UpdateCalendarEventTool(private val dir: AccountDirectory, private val han
             add("Event" to e.title)
             c.title?.let { add("Title" to "${e.title} → $it") }
             if (c.start != null || c.end != null) {
-                add("When" to "${CalendarFormat.whenText(e.start, e.end, e.allDay)} → ${CalendarFormat.whenText(c.start ?: e.start, c.end ?: e.end, false)}")
+                add("When" to "${CalendarFormat.whenText(e.start, e.end, e.allDay, zone())} → ${CalendarFormat.whenText(c.start ?: e.start, c.end ?: e.end, false, zone())}")
             }
             c.location?.let { add("Where" to "${e.location ?: "—"} → $it") }
             add(accountRow(entry.account, e.calendarName))
@@ -364,7 +369,7 @@ class UpdateCalendarEventTool(private val dir: AccountDirectory, private val han
         return when (val r = requireNotNull(entry.calendar).update(e, c)) {
             is Outcome.Success -> {
                 handles.update(handle, r.value)
-                ToolResult.Ok("Changed \"${r.value.title}\": now ${CalendarFormat.whenText(r.value.start, r.value.end, r.value.allDay)}" +
+                ToolResult.Ok("Changed \"${r.value.title}\": now ${CalendarFormat.whenText(r.value.start, r.value.end, r.value.allDay, zone())}" +
                     (r.value.location?.let { " at $it" } ?: "") + ".")
             }
             is Outcome.Failure -> accountError(entry.account, r.error)
@@ -373,7 +378,7 @@ class UpdateCalendarEventTool(private val dir: AccountDirectory, private val han
 }
 
 /** `delete_calendar_event` (C18): removes an event Edith listed, from its own account, after the owner confirms. */
-class DeleteCalendarEventTool(private val dir: AccountDirectory, private val handles: CalendarHandles) : Tool {
+class DeleteCalendarEventTool(private val dir: AccountDirectory, private val handles: CalendarHandles, private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() }) : Tool {
     override val spec = ToolSpec(
         "delete_calendar_event",
         "Delete an event from list_calendar_events (the user confirms first)",
@@ -405,7 +410,7 @@ class DeleteCalendarEventTool(private val dir: AccountDirectory, private val han
                 "Delete the whole repeating series?",
                 listOfNotNull(
                     "Event" to e.title,
-                    "Deletes" to "Every occurrence, past and future (one is ${CalendarFormat.whenText(e.start, e.end, e.allDay)})",
+                    "Deletes" to "Every occurrence, past and future (one is ${CalendarFormat.whenText(e.start, e.end, e.allDay, zone())})",
                     e.location?.let { "Where" to it },
                     accountRow(entry.account, e.calendarName),
                 ),
@@ -414,7 +419,7 @@ class DeleteCalendarEventTool(private val dir: AccountDirectory, private val han
         }
         return ConfirmationRequest(
             "Delete from your calendar?",
-            listOfNotNull("Event" to e.title, "When" to CalendarFormat.whenText(e.start, e.end, e.allDay), e.location?.let { "Where" to it }, accountRow(entry.account, e.calendarName)),
+            listOfNotNull("Event" to e.title, "When" to CalendarFormat.whenText(e.start, e.end, e.allDay, zone()), e.location?.let { "Where" to it }, accountRow(entry.account, e.calendarName)),
             confirmLabel = "Delete",
         )
     }
@@ -437,7 +442,7 @@ class DeleteCalendarEventTool(private val dir: AccountDirectory, private val han
             is Outcome.Success -> {
                 handles.forget(handle)
                 if (e.inSeries) ToolResult.Ok("Deleted the whole repeating series \"${e.title}\" from ${entry.account.display}.")
-                else ToolResult.Ok("Deleted \"${e.title}\" (${CalendarFormat.whenText(e.start, e.end, e.allDay)}) from ${entry.account.display}.")
+                else ToolResult.Ok("Deleted \"${e.title}\" (${CalendarFormat.whenText(e.start, e.end, e.allDay, zone())}) from ${entry.account.display}.")
             }
             is Outcome.Failure -> accountError(entry.account, r.error)
         }

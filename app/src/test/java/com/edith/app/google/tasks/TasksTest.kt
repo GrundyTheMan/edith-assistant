@@ -33,7 +33,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import java.time.LocalDate
+import kotlinx.datetime.LocalDate
 import java.util.Collections
 import java.util.TimeZone
 
@@ -104,10 +104,10 @@ class TasksTest {
 
     @Test fun `due dates stay the dates Google keeps, west of UTC too`() = runBlocking {
         val tasks = (client.tasks("L1", includeDone = false) as Outcome.Success).value
-        assertEquals(LocalDate.of(2026, 11, 14), tasks.first { it.title == "Call the dentist" }.due)
+        assertEquals(LocalDate(2026, 11, 14), tasks.first { it.title == "Call the dentist" }.due)
         assertNull(tasks.first { it.title == "Pack for the trip" }.due)
-        assertEquals(LocalDate.of(2026, 11, 5), TaskDue.fromGoogle("2026-11-05T00:00:00.000Z"))
-        assertEquals("2026-11-05T00:00:00.000Z", TaskDue.toGoogle(LocalDate.of(2026, 11, 5)))
+        assertEquals(LocalDate(2026, 11, 5), TaskDue.fromGoogle("2026-11-05T00:00:00.000Z"))
+        assertEquals("2026-11-05T00:00:00.000Z", TaskDue.toGoogle(LocalDate(2026, 11, 5)))
         assertNull(TaskDue.fromGoogle("garbage"))
         assertNull(TaskDue.fromGoogle(null))
     }
@@ -123,8 +123,8 @@ class TasksTest {
 
     @Test fun `insert sends the date at UTC midnight and a parent when given`() = runBlocking {
         routes["POST /tasks/v1/lists/L1/tasks"] = { json("""{"id":"new1","title":"Call the dentist","status":"needsAction","due":"2026-11-14T00:00:00.000Z","position":"00000000000000000000"}""") }
-        val t = (client.insert("L1", " Call the dentist ", "Ask about Tuesday", LocalDate.of(2026, 11, 14), parent = "p1") as Outcome.Success).value
-        assertEquals(LocalDate.of(2026, 11, 14), t.due)
+        val t = (client.insert("L1", " Call the dentist ", "Ask about Tuesday", LocalDate(2026, 11, 14), parent = "p1") as Outcome.Success).value
+        assertEquals(LocalDate(2026, 11, 14), t.due)
         val r = requests.last()
         assertEquals(mapOf("title" to JsonPrimitive("Call the dentist"), "notes" to JsonPrimitive("Ask about Tuesday"), "due" to JsonPrimitive("2026-11-14T00:00:00.000Z")), body(r))
         assertEquals("p1", r.url.queryParameter("parent"))
@@ -137,7 +137,7 @@ class TasksTest {
         assertEquals(mapOf("title" to JsonPrimitive("Call the vet")), body(requests.last()))
         client.patch("L1", "t1", TaskPatch(notes = "", clearDue = true))
         assertEquals(mapOf("notes" to JsonNull, "due" to JsonNull), body(requests.last()))
-        client.patch("L1", "t1", TaskPatch(due = LocalDate.of(2026, 12, 1)))
+        client.patch("L1", "t1", TaskPatch(due = LocalDate(2026, 12, 1)))
         assertEquals(mapOf("due" to JsonPrimitive("2026-12-01T00:00:00.000Z")), body(requests.last()))
     }
 

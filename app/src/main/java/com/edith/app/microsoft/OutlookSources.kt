@@ -1,5 +1,6 @@
 package com.edith.app.microsoft
 
+import kotlinx.datetime.TimeZone
 import com.edith.app.accounts.Account
 import com.edith.app.accounts.sources.CalendarEvent
 import com.edith.app.accounts.sources.CalendarInfo
@@ -21,15 +22,16 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import java.time.DateTimeException
-import java.time.Instant
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.OffsetDateTime
-import java.time.ZoneId
-import java.time.ZoneOffset
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.IllegalTimeZoneException
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.atTime
+import kotlinx.datetime.plus
+import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Instant
 
 /**
  * One Microsoft account's Outlook calendars over Graph (C23 §2). Every calendar is read (Outlook has no "checked"
@@ -40,9 +42,9 @@ import java.time.format.DateTimeFormatter
 class OutlookCalendarSource(
     private val accountOf: () -> Account,
     private val graph: GraphClient,
-    private val zone: () -> ZoneId = ZoneId::systemDefault,
+    private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() },
     /** The Windows name of a zone ("GMT Standard Time"), or null when there's none (Android's ICU on the phone). */
-    private val windowsZone: (ZoneId) -> String? = { null },
+    private val windowsZone: (TimeZone) -> String? = { null },
     private val nowMs: () -> Long = System::currentTimeMillis,
 ) : CalendarSource {
     override val account: Account get() = accountOf()
@@ -113,15 +115,15 @@ class OutlookCalendarSource(
         graph.send("DELETE", graph.url("me", "events", event.id), null) { }
 
     /** The zone to ask Graph for, by the name Graph knows, and the zone that name means. */
-    private fun askZone(): Pair<String, ZoneId> {
+    private fun askZone(): Pair<String, TimeZone> {
         val device = zone()
         val windows = runCatching { windowsZone(device) }.getOrNull()
-        return if (windows.isNullOrBlank()) "UTC" to ZoneOffset.UTC else windows to device
+        return if (windows.isNullOrBlank()) "UTC" to TimeZone.UTC else windows to device
     }
 
-    private fun prefer(asked: Pair<String, ZoneId>) = mapOf("Prefer" to "outlook.timezone=\"${asked.first}\"")
+    private fun prefer(asked: Pair<String, TimeZone>) = mapOf("Prefer" to "outlook.timezone=\"${asked.first}\"")
 
-    private fun EventDto.toEvent(cal: CalendarInfo, asked: Pair<String, ZoneId>): CalendarEvent? {
+    private fun EventDto.toEvent(cal: CalendarInfo, asked: Pair<String, TimeZone>): CalendarEvent? {
         if (isCancelled == true) return null
         val device = zone()
         val s = start ?: return null
@@ -129,12 +131,12 @@ class OutlookCalendarSource(
         val allDay = isAllDay == true
         val (startAt, endAt) = if (allDay) {
             // All-day events run midnight to midnight; only their dates count.
-            val first = localDateTime(s.dateTime)?.toLocalDate() ?: return null
-            val after = localDateTime(e.dateTime)?.toLocalDate()?.takeIf { it.isAfter(first) } ?: first.plusDays(1)
-            first.atStartOfDay(device) to after.atStartOfDay(device)
+            val first = localDateTime(s.dateTime)?.date ?: return null
+            val after = localDateTime(e.dateTime)?.date?.takeIf { it > first } ?: first.plus(1, DateTimeUnit.DAY)
+            first.atStartOfDayIn(device) to after.atStartOfDayIn(device)
         } else {
             val a = at(s, asked) ?: return null
-            val b = at(e, asked) ?: a.plusHours(1)
+            val b = at(e, asked) ?: (a + 1.hours)
             a to b
         }
         return CalendarEvent(
@@ -153,32 +155,33 @@ class OutlookCalendarSource(
     }
 
     /** A Graph `dateTime` (no offset) in the zone its `timeZone` names, converted to the device's zone. */
-    private fun at(t: DateTimeDto, asked: Pair<String, ZoneId>): ZonedDateTime? {
+    private fun at(t: DateTimeDto, asked: Pair<String, TimeZone>): Instant? {
         val local = localDateTime(t.dateTime) ?: return null
         val zoneOfAnswer = when {
             t.timeZone == null || t.timeZone == asked.first -> asked.second
-            t.timeZone.equals("UTC", ignoreCase = true) -> ZoneOffset.UTC
+            t.timeZone.equals("UTC", ignoreCase = true) -> TimeZone.UTC
             else -> try {
-                ZoneId.of(t.timeZone)
-            } catch (e: DateTimeException) {
+                TimeZone.of(t.timeZone)
+            } catch (e: IllegalTimeZoneException) {
                 Log.w(LogTag.Accounts, "Outlook sent a time in a zone Edith doesn't know; reading it as the zone she asked for")
                 asked.second
             }
         }
-        return local.atZone(zoneOfAnswer).withZoneSameInstant(zone())
+        return local.toInstant(zoneOfAnswer)
     }
 
     private fun localDateTime(value: String?): LocalDateTime? = value?.let {
-        try { LocalDateTime.parse(it) } catch (e: DateTimeException) { null }
+        try { LocalDateTime.parse(it) } catch (e: IllegalArgumentException) { null }
     }
 
     /** Only the fields that are set; times in the zone asked for (all-day: midnight to midnight). */
-    private fun EventChange.toJson(asked: Pair<String, ZoneId>): String {
-        val time = { t: ZonedDateTime ->
-            val local = if (allDay) t.toLocalDate().atStartOfDay() else t.withZoneSameInstant(asked.second).toLocalDateTime()
-            DateTimeDto(local.format(LOCAL), asked.first)
+    private fun EventChange.toJson(asked: Pair<String, TimeZone>): String {
+        val device = zone()
+        val time = { t: Instant ->
+            val local = if (allDay) t.toLocalDateTime(device).date.atTime(0, 0) else t.toLocalDateTime(asked.second)
+            DateTimeDto(LocalDateTime.Formats.ISO.format(local), asked.first)
         }
-        val endTime = end ?: if (allDay) start?.plusDays(1) else null
+        val endTime = end ?: if (allDay) start?.plus(1, DateTimeUnit.DAY, device) else null
         return graphJson.encodeToString(
             EventWriteDto.serializer(),
             EventWriteDto(
@@ -195,9 +198,9 @@ class OutlookCalendarSource(
     companion object {
         const val CACHE_MS = 5 * 60_000L
         const val MAX_RESULTS = 50
-        private val LOCAL = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")
 
-        fun utc(t: Instant): String = OffsetDateTime.ofInstant(t, ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+        /** `2026-11-02T14:00:00Z`. */
+        fun utc(t: Instant): String = t.toString()
     }
 }
 
@@ -209,7 +212,7 @@ class OutlookCalendarSource(
 class OutlookMailSource(
     private val accountOf: () -> Account,
     private val graph: GraphClient,
-    private val zone: () -> ZoneId = ZoneId::systemDefault,
+    private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() },
 ) : MailSource {
     override val account: Account get() = accountOf()
 
@@ -238,8 +241,8 @@ class OutlookMailSource(
                 val all = r.value.value.map { it.summary() }
                 val kept = if (!clientSide) all else all.filter { m ->
                     (!q.unreadOnly || m.unread) &&
-                        (q.after == null || !m.date.toInstant().isBefore(q.after)) &&
-                        (q.before == null || m.date.toInstant().isBefore(q.before))
+                        (q.after == null || m.date >= q.after) &&
+                        (q.before == null || m.date < q.before)
                 }.sortedByDescending { it.date }
                 Outcome.Success(MailSearchResult(kept.take(limit), more = kept.size > limit || r.value.nextLink != null))
             }
@@ -289,8 +292,8 @@ class OutlookMailSource(
         from = from?.text() ?: "(unknown sender)",
         to = toRecipients.joinToString(", ") { it.text() }.ifBlank { null },
         subject = subject?.takeIf { it.isNotBlank() } ?: "(no subject)",
-        date = receivedDateTime?.let { runCatching { OffsetDateTime.parse(it).atZoneSameInstant(zone()) }.getOrNull() }
-            ?: Instant.EPOCH.atZone(zone()),
+        date = receivedDateTime?.let { runCatching { Instant.parse(it) }.getOrNull() }
+            ?: Instant.fromEpochMilliseconds(0),
         snippet = bodyPreview.orEmpty(),
         messageIdHeader = internetMessageId,
         unread = isRead == false,

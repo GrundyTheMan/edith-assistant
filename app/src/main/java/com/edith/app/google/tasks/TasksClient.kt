@@ -26,8 +26,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
-import java.time.Instant
-import java.time.LocalDate
+import kotlinx.datetime.LocalDate
+import kotlin.time.Instant
 
 /**
  * One Google account's to-dos over the Google Tasks REST API (C35 §1), with a token for the Tasks scope from its

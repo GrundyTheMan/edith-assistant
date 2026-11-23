@@ -6,14 +6,15 @@ import com.edith.app.core.error.Outcome
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import java.time.Instant
-import java.time.ZoneId
-import java.time.ZonedDateTime
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Instant
 
 /** C24: the owner's default calendar (Settings → Accounts) over the provider's. */
 class DefaultCalendarTest {
-    private val zone = ZoneId.of("America/Detroit")
-    private val start = ZonedDateTime.of(2026, 11, 14, 15, 0, 0, 0, zone)
+    private val start = LocalDateTime(2026, 11, 14, 15, 0).toInstant(TimeZone.of("America/Detroit"))
 
     private class Fake : CalendarSource {
         override val account = Account("i1", Provider.ICloud, "owner@icloud.com", "icloud")
@@ -40,8 +41,8 @@ class DefaultCalendarTest {
         val cals = (s.calendars() as Outcome.Success).value
         assertEquals(listOf("Calendar", "Birthday calendar", "US Holidays"), cals.map { it.name })
         assertEquals(listOf(true, false, false), cals.map { it.isDefault })
-        s.create(null, EventChange("Test", start, start.plusHours(1)))
-        s.create("bday", EventChange("Named", start, start.plusHours(1)))
+        s.create(null, EventChange("Test", start, start + 1.hours))
+        s.create("bday", EventChange("Named", start, start + 1.hours))
         assertEquals("unnamed → the choice; named → as asked", listOf<String?>("cal", "bday"), fake.created)
     }
 
@@ -50,7 +51,7 @@ class DefaultCalendarTest {
             val fake = Fake()
             val s = DefaultCalendarSource(fake, gone)
             assertEquals("Birthday calendar", (s.calendars() as Outcome.Success).value.first { it.isDefault }.name)
-            s.create(null, EventChange("Test", start, start.plusHours(1)))
+            s.create(null, EventChange("Test", start, start + 1.hours))
             assertEquals(listOf<String?>(null), fake.created)
         }
     }

@@ -1,5 +1,6 @@
 package com.edith.app.google.calendar
 
+import kotlinx.datetime.TimeZone
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
@@ -22,11 +23,15 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
-import java.time.LocalDate
-import java.time.OffsetDateTime
-import java.time.ZoneId
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.offsetAt
+import kotlinx.datetime.plus
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Instant
 
 /**
  * One Google account's calendars over the REST API (C18 §1; per account since C22), with a token from its
@@ -37,7 +42,7 @@ class CalendarClient(
     private val http: Lazy<OkHttpClient>,
     private val auth: GoogleAccountAuth,
     private val dispatchers: AppDispatchers,
-    private val zone: () -> ZoneId = ZoneId::systemDefault,
+    private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() },
     private val baseUrl: String = BASE_URL,
     /** Stamped on every event, so a change or delete goes to the account it came from (C22). */
     private val accountId: String = "",
@@ -53,13 +58,13 @@ class CalendarClient(
     }
 
     /** Events in [from, to) across [calendars], in start order (recurring events as their instances). */
-    suspend fun events(calendars: List<CalendarInfo>, from: ZonedDateTime, to: ZonedDateTime, query: String? = null): Outcome<List<CalendarEvent>> {
+    suspend fun events(calendars: List<CalendarInfo>, from: Instant, to: Instant, query: String? = null): Outcome<List<CalendarEvent>> {
         val all = mutableListOf<CalendarEvent>()
         for (cal in calendars) {
             val r = call(setOf(GoogleScope.CalendarEvents)) { token ->
                 get(token, url("calendars/${enc(cal.id)}/events") {
-                    addQueryParameter("timeMin", rfc3339(from))
-                    addQueryParameter("timeMax", rfc3339(to))
+                    addQueryParameter("timeMin", rfc3339(from, zone()))
+                    addQueryParameter("timeMax", rfc3339(to, zone()))
                     addQueryParameter("singleEvents", "true")
                     addQueryParameter("orderBy", "startTime")
                     addQueryParameter("maxResults", MAX_RESULTS.toString())
@@ -145,18 +150,19 @@ class CalendarClient(
         val zone = zone()
         val allDay = start?.date != null
         val s = start?.parse(zone) ?: return null
-        val e = end?.parse(zone) ?: (if (allDay) s.plusDays(1) else s.plusHours(1))
+        val e = end?.parse(zone) ?: (if (allDay) s.plus(1, DateTimeUnit.DAY, zone) else s + 1.hours)
         return CalendarEvent(id ?: return null, cal.id, cal.name, summary?.takeIf { it.isNotBlank() } ?: "(No title)", s, e, allDay, location, description, accountId, iCalUID)
     }
 
-    private fun EventTimeDto.parse(zone: ZoneId): ZonedDateTime? = when {
-        dateTime != null -> OffsetDateTime.parse(dateTime).atZoneSameInstant(zone)
-        date != null -> LocalDate.parse(date).atStartOfDay(zone)
+    private fun EventTimeDto.parse(zone: TimeZone): Instant? = when {
+        dateTime != null -> Instant.parse(dateTime)
+        date != null -> LocalDate.parse(date).atStartOfDayIn(zone)
         else -> null
     }
 
     private fun EventChange.toJson(): String {
-        val time = { t: ZonedDateTime -> if (allDay) EventTimeDto(date = t.toLocalDate().toString()) else EventTimeDto(dateTime = rfc3339(t), timeZone = t.zone.id) }
+        val zone = zone()
+        val time = { t: Instant -> if (allDay) EventTimeDto(date = t.toLocalDateTime(zone).date.toString()) else EventTimeDto(dateTime = rfc3339(t, zone), timeZone = zone.id) }
         return json.encodeToString(EventWriteDto.serializer(), EventWriteDto(title, location, description, start?.let(time), end?.let(time)))
     }
 
@@ -166,7 +172,8 @@ class CalendarClient(
         private val JSON_TYPE = "application/json; charset=utf-8".toMediaType()
         private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
-        fun rfc3339(t: ZonedDateTime): String = t.toOffsetDateTime().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+        /** `2026-11-02T09:00:00-05:00`: [t] on the clock of [zone], with that zone's offset at that moment. */
+        fun rfc3339(t: Instant, zone: TimeZone): String = LocalDateTime.Formats.ISO.format(t.toLocalDateTime(zone)) + zone.offsetAt(t)
     }
 }
 

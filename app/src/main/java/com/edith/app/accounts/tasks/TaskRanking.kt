@@ -1,8 +1,6 @@
 package com.edith.app.accounts.tasks
 
 import com.edith.app.core.error.AppError
-import com.edith.app.core.time.javaNow
-import com.edith.app.core.time.javaZone
 import com.edith.app.core.error.Outcome
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
@@ -31,8 +29,8 @@ import kotlinx.serialization.json.putJsonObject
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
-import java.time.LocalDate
-import java.time.temporal.ChronoUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.toLocalDateTime
 
 /** One open top-level task and its open subtasks, in the owner's order. */
 data class Rankable(val task: TaskItem, val subtasks: List<TaskItem> = emptyList())
@@ -96,7 +94,7 @@ object TaskRanking {
 
     /** "overdue by 2 days", "today", "1 day", "5 days". */
     fun dueIn(due: LocalDate, today: LocalDate): String {
-        val days = ChronoUnit.DAYS.between(today, due)
+        val days = (due.toEpochDays() - today.toEpochDays()).toLong()
         return when {
             days < 0 -> "overdue by ${-days} day${if (days == -1L) "" else "s"}"
             days == 0L -> "today"
@@ -265,7 +263,7 @@ class TaskRanker(private val ollama: OllamaClient, private val store: RankStore,
     /** [slot] is "account|list"; [tasks] the list's tasks in Google's order. A saved ranking is used while it fits. */
     suspend fun rank(slot: String, tasks: List<TaskItem>, serverUrl: String, model: String): Result {
         val items = TaskRanking.rankable(tasks)
-        val today = clock.javaNow().atZone(clock.javaZone()).toLocalDate()
+        val today = clock.now().toLocalDateTime(clock.zone()).date
         if (items.isEmpty()) return Result.Ranked(Ranking(model, emptyList(), 0, clock.now().toEpochMilliseconds()), cached = false)
         val key = TaskRanking.key(items, model, today)
         val slotKey = "$slot|$model"
@@ -292,7 +290,7 @@ class TaskRanker(private val ollama: OllamaClient, private val store: RankStore,
     /** The saved ranking for this list as it is now, without asking the model; null when there's none or it's stale. */
     suspend fun saved(slot: String, tasks: List<TaskItem>, model: String): Ranking? {
         val items = TaskRanking.rankable(tasks)
-        val today = clock.javaNow().atZone(clock.javaZone()).toLocalDate()
+        val today = clock.now().toLocalDateTime(clock.zone()).date
         return store.get("$slot|$model", TaskRanking.key(items, model, today))
     }
 }

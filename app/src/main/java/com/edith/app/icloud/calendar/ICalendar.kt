@@ -1,14 +1,18 @@
 package com.edith.app.icloud.calendar
 
-import java.time.DateTimeException
-import java.time.Duration
-import java.time.Instant
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.ZoneId
-import java.time.ZoneOffset
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.IllegalTimeZoneException
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.format.char
+import kotlinx.datetime.plus
+import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Instant
 
 /** One `VEVENT` as Edith needs it (C24 §3). Times are in the device's zone; an all-day [end] is exclusive. */
 data class ICalEvent(
@@ -16,8 +20,8 @@ data class ICalEvent(
     val summary: String?,
     val location: String?,
     val description: String?,
-    val start: ZonedDateTime,
-    val end: ZonedDateTime,
+    val start: Instant,
+    val end: Instant,
     val allDay: Boolean,
     val cancelled: Boolean,
     /** Set on an instance of a recurring event (an expanded occurrence or an exception). */
@@ -34,8 +38,8 @@ data class ICalLine(val name: String, val params: Map<String, String>, val value
  * `TZID`, `Z` or floating, all-day `VALUE=DATE`, `DURATION`. Pure Kotlin, so it runs on the JVM in tests.
  */
 object ICalendar {
-    private val DATE = DateTimeFormatter.ofPattern("yyyyMMdd")
-    private val DATE_TIME = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss")
+    private val DATE = LocalDate.Formats.ISO_BASIC   // 20261103
+    private val DATE_TIME = LocalDateTime.Format { date(LocalDate.Formats.ISO_BASIC); char('T'); hour(); minute(); second() }   // 20261103T200000
 
     /** A few Windows zone names Outlook writes as `TZID` (L29: never read them as UTC). Others fall back to [zone]. */
     private val WINDOWS = mapOf(
@@ -95,7 +99,7 @@ object ICalendar {
         v.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\r\n", "\n").replace("\n", "\\n")
 
     /** Every `VEVENT` in [text], read in the device's [zone]. Unreadable events are left out. */
-    fun events(text: String, zone: ZoneId): List<ICalEvent> {
+    fun events(text: String, zone: TimeZone): List<ICalEvent> {
         val out = mutableListOf<ICalEvent>()
         var current: MutableList<ICalLine>? = null
         var depth = 0   // inside a VEVENT, nested components (VALARM) are skipped
@@ -114,14 +118,14 @@ object ICalendar {
         return out
     }
 
-    private fun event(props: List<ICalLine>, zone: ZoneId): ICalEvent? {
+    private fun event(props: List<ICalLine>, zone: TimeZone): ICalEvent? {
         fun get(n: String) = props.firstOrNull { it.name == n }
         val startLine = get("DTSTART") ?: return null
         val allDay = isDate(startLine)
         val start = time(startLine, zone) ?: return null
         val end = get("DTEND")?.let { time(it, zone) }
-            ?: get("DURATION")?.value?.let { d -> duration(d)?.let { start.plus(it) } }
-            ?: if (allDay) start.plusDays(1) else start
+            ?: get("DURATION")?.value?.let { d -> duration(d)?.let { start + it } }
+            ?: if (allDay) start.plus(1, DateTimeUnit.DAY, zone) else start
         return ICalEvent(
             uid = get("UID")?.value,
             summary = get("SUMMARY")?.value?.let(::unescape),
@@ -139,24 +143,24 @@ object ICalendar {
     private fun isDate(l: ICalLine) = l.params["VALUE"].equals("DATE", true) || (l.value.length == 8 && l.value.all { it.isDigit() })
 
     /** A `DTSTART`/`DTEND` in [zone]: all-day at midnight, `Z` as UTC, `TZID` in its zone, floating in [zone]. */
-    fun time(l: ICalLine, zone: ZoneId): ZonedDateTime? = try {
+    fun time(l: ICalLine, zone: TimeZone): Instant? = try {
         val v = l.value.trim()
         when {
-            isDate(l) -> LocalDate.parse(v.take(8), DATE).atStartOfDay(zone)
-            v.endsWith("Z") -> LocalDateTime.parse(v.dropLast(1), DATE_TIME).atZone(ZoneOffset.UTC).withZoneSameInstant(zone)
-            else -> LocalDateTime.parse(v, DATE_TIME).atZone(l.params["TZID"]?.let { zoneOf(it, zone) } ?: zone).withZoneSameInstant(zone)
+            isDate(l) -> LocalDate.parse(v.take(8), DATE).atStartOfDayIn(zone)
+            v.endsWith("Z") -> LocalDateTime.parse(v.dropLast(1), DATE_TIME).toInstant(TimeZone.UTC)
+            else -> LocalDateTime.parse(v, DATE_TIME).toInstant(l.params["TZID"]?.let { zoneOf(it, zone) } ?: zone)
         }
-    } catch (e: DateTimeException) {
+    } catch (e: IllegalArgumentException) {
         null
     }
 
     /** An IANA id, a known Windows name, else [fallback] (the calendar's zone), never UTC by default. */
-    fun zoneOf(tzid: String, fallback: ZoneId): ZoneId {
+    fun zoneOf(tzid: String, fallback: TimeZone): TimeZone {
         val id = tzid.trim().removePrefix("/")
         return try {
-            ZoneId.of(id)
-        } catch (e: DateTimeException) {
-            WINDOWS[id]?.let(ZoneId::of) ?: fallback
+            TimeZone.of(id)
+        } catch (e: IllegalTimeZoneException) {
+            WINDOWS[id]?.let(TimeZone::of) ?: fallback
         }
     }
 
@@ -164,20 +168,20 @@ object ICalendar {
     fun duration(v: String): Duration? {
         val s = v.trim().uppercase()
         val weeks = Regex("^([+-]?)P(\\d+)W$").find(s)
-        if (weeks != null) return Duration.ofDays(7L * weeks.groupValues[2].toLong()).let { if (weeks.groupValues[1] == "-") it.negated() else it }
-        return try { Duration.parse(s) } catch (e: DateTimeException) { null } catch (e: java.time.format.DateTimeParseException) { null }
+        if (weeks != null) return (7L * weeks.groupValues[2].toLong()).days.let { if (weeks.groupValues[1] == "-") -it else it }
+        return Duration.parseIsoStringOrNull(s)
     }
 
     // --- Writing ------------------------------------------------------------------------------------------------
 
     /** `20261103T200000Z`: timed events are written in UTC, so no VTIMEZONE is needed (C24 §3). */
-    fun utc(t: ZonedDateTime): String = t.withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime().format(DATE_TIME) + "Z"
+    fun utc(t: Instant): String = DATE_TIME.format(t.toLocalDateTime(TimeZone.UTC)) + "Z"
 
-    fun date(d: LocalDate): String = d.format(DATE)
+    fun date(d: LocalDate): String = DATE.format(d)
 
     /** The `DTSTART`/`DTEND` line for a time: `;VALUE=DATE:20261104` for all-day, else UTC. */
-    fun timeLine(name: String, t: ZonedDateTime, allDay: Boolean): String =
-        if (allDay) "$name;VALUE=DATE:${date(t.toLocalDate())}" else "$name:${utc(t)}"
+    fun timeLine(name: String, t: Instant, allDay: Boolean, zone: TimeZone): String =
+        if (allDay) "$name;VALUE=DATE:${date(t.toLocalDateTime(zone).date)}" else "$name:${utc(t)}"
 
     /** Folds a line at 75 octets (RFC 5545 §3.1), never inside a UTF-8 character. */
     fun fold(line: String): String {
@@ -197,11 +201,12 @@ object ICalendar {
         uid: String,
         stamp: Instant,
         summary: String,
-        start: ZonedDateTime,
-        end: ZonedDateTime,
+        start: Instant,
+        end: Instant,
         allDay: Boolean,
         location: String?,
         description: String?,
+        zone: TimeZone,
     ): String = buildList {
         add("BEGIN:VCALENDAR")
         add("VERSION:2.0")
@@ -209,9 +214,9 @@ object ICalendar {
         add("CALSCALE:GREGORIAN")
         add("BEGIN:VEVENT")
         add("UID:$uid")
-        add("DTSTAMP:${utc(stamp.atZone(ZoneOffset.UTC))}")
-        add(timeLine("DTSTART", start, allDay))
-        add(timeLine("DTEND", end, allDay))
+        add("DTSTAMP:${utc(stamp)}")
+        add(timeLine("DTSTART", start, allDay, zone))
+        add(timeLine("DTEND", end, allDay, zone))
         add("SUMMARY:${escape(summary)}")
         location?.let { add("LOCATION:${escape(it)}") }
         description?.let { add("DESCRIPTION:${escape(it)}") }

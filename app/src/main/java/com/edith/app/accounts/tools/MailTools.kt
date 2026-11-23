@@ -1,8 +1,7 @@
 package com.edith.app.accounts.tools
 
 import com.edith.app.accounts.AccountDirectory
-import com.edith.app.core.time.javaNow
-import com.edith.app.core.time.javaZone
+import com.edith.app.core.time.formatPattern
 import com.edith.app.accounts.AccountEntry
 import com.edith.app.accounts.Accounts
 import com.edith.app.accounts.sources.MailQuery
@@ -22,11 +21,14 @@ import com.edith.app.tools.framework.ToolContext
 import com.edith.app.tools.framework.ToolParam
 import com.edith.app.tools.framework.ToolResult
 import com.edith.app.tools.framework.ToolSpec
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.minus
+import kotlinx.datetime.plus
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
 
 /**
  * Emails Edith has found get short handles (`m1`, `m2`, …) the model passes back to read or reply to them (C19). One
@@ -57,20 +59,18 @@ class MailHandles {
 object MailDates {
     private val DAY = Regex("""^(\d{4})[/-](\d{1,2})[/-](\d{1,2})""")
 
-    fun parse(text: String, today: LocalDate, zone: ZoneId): Instant? {
+    fun parse(text: String, today: LocalDate, zone: TimeZone): Instant? {
         val t = text.trim().lowercase()
         val day = when (t) {
             "today" -> today
-            "yesterday" -> today.minusDays(1)
-            "tomorrow" -> today.plusDays(1)
-            else -> DAY.find(t)?.destructured?.let { (y, m, d) -> runCatching { LocalDate.of(y.toInt(), m.toInt(), d.toInt()) }.getOrNull() }
+            "yesterday" -> today.minus(1, DateTimeUnit.DAY)
+            "tomorrow" -> today.plus(1, DateTimeUnit.DAY)
+            else -> DAY.find(t)?.destructured?.let { (y, m, d) -> runCatching { LocalDate(y.toInt(), m.toInt(), d.toInt()) }.getOrNull() }
         } ?: return null
-        return day.atStartOfDay(zone).toInstant()
+        return day.atStartOfDayIn(zone)
     }
 }
 
-private val day = DateTimeFormatter.ofPattern("EEE MMM d", Locale.US)
-private val dayTime = DateTimeFormatter.ofPattern("EEE MMM d, h:mm a", Locale.US)
 private const val NEEDS_SEARCH = "I don't have that email. Search first (search_email) and use the message_id it gives."
 
 /** `search_email` (C19, C22): every account's mail unless `account` is given, newest first. */
@@ -99,8 +99,8 @@ class SearchEmailTool(private val dir: AccountDirectory, private val handles: Ma
 
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
         val max = (args.int("max_results") ?: 5).coerceIn(1, MAX)
-        val zone = ctx.clock.javaZone()
-        val today = ctx.clock.javaNow().atZone(zone).toLocalDate()
+        val zone = ctx.clock.zone()
+        val today = ctx.clock.now().toLocalDateTime(zone).date
         fun date(name: String) = args.string(name)?.let {
             MailDates.parse(it, today, zone) ?: throw ArgumentError(name, "$name must be a day like 2026-11-12, or today or yesterday")
         }
@@ -122,7 +122,7 @@ class SearchEmailTool(private val dir: AccountDirectory, private val handles: Ma
         val shown = found.take(max)
         val more = found.size > shown.size || read.results.any { it.second.more }
         val text = if (shown.isEmpty()) "No emails match." else shown.mapIndexed { i, (account, e) ->
-            "${i + 1}. ${day.format(e.date)} — ${e.from} — \"${e.subject}\"${if (e.unread) " (unread)" else ""} — ${e.snippet.take(120)} " +
+            "${i + 1}. ${formatPattern(e.date, zone, "EEE MMM d", "en-US")} — ${e.from} — \"${e.subject}\"${if (e.unread) " (unread)" else ""} — ${e.snippet.take(120)} " +
                 "{message_id: ${handles.handleFor(e)}}" + if (label) " [${account.label}]" else ""
         }.joinToString("\n")
         val moreText = if (more) "More emails match than are shown here; don't say this is all of them." else ""
@@ -156,7 +156,7 @@ class ReadEmailTool(private val dir: AccountDirectory, private val handles: Mail
             append("From: ").append(s.from).append('\n')
             s.to?.let { append("To: ").append(it).append('\n') }
             m.cc?.let { append("Cc: ").append(it).append('\n') }
-            append("Date: ").append(dayTime.format(s.date)).append('\n')
+            append("Date: ").append(formatPattern(s.date, ctx.clock.zone(), "EEE MMM d, h:mm a", "en-US")).append('\n')
             append("Subject: ").append(s.subject).append("\n\n")
             append(m.body.ifBlank { "(no text)" })
         })
