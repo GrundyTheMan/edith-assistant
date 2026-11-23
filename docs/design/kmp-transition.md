@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Proposed.** The owner approved the direction and asked for this plan on 2026-11-21. Nothing here is built yet except the spike (§3.3). Phase 0 ends in a go / no-go gate (G0); the owner decides there. |
+| Status | **Gate G0 passed: GO (owner, 2026-11-23). Phase 1 is next.** Earlier: **Proposed.** The owner approved the direction and asked for this plan on 2026-11-21. Nothing here is built yet except the spike (§3.3). Phase 0 ends in a go / no-go gate (G0); the owner decides there. |
 | Replaces | The plan to keep two codebases forever (Kotlin `app/` + Expo `ios-app/`). The Expo app stays the iPhone app **until the new one passes the parity table** (§11). |
 | Keeps | `app/` (Android) working and shippable at every step. |
 | Stack | Kotlin Multiplatform (KMP) + Compose Multiplatform (CMP), Ktor, Room KMP, DataStore, kotlinx-datetime. The iPhone app is a thin SwiftUI shell around a Kotlin framework. |
@@ -286,7 +286,9 @@ Goal: replace the open questions in §3.3 and §14 with measurements, using free
 | K0.7 | Warm-cache timings: Gradle and `~/.konan` caches on the runner, path filters, concurrency cancel. | Typical PR macOS time recorded (target: under 12 minutes). | S |
 | K0.8 | Verify GitHub's macOS minutes are free for this public repository (the first runs show 0 billed). | Recorded in §14 U9. | S |
 
-**Gate G0 (owner).** Go if: the spike runs on a real iPhone, streaming and Room/DataStore work on iOS, Compose screens are acceptable by hand (typing, scrolling, VoiceOver reads the
+**Gate G0: passed, GO (owner, 2026-11-23).** The owner decided with these still open, to be settled inside the phases that need them: the database surviving a restart and opening the real `edith.db` (K0.4, K1.5), sherpa-onnx, ONNX Runtime and WebRTC on iOS (K0.6b), MQTT with a login and Meross's broker, and VoiceOver and typing checked by hand (also re-tested in K3.2). If one of them fails, the fallbacks in §10 apply (native screens, Swift libraries, defer a feature).
+
+**Gate G0 (owner), the test as written.** Go if: the spike runs on a real iPhone, streaming and Room/DataStore work on iOS, Compose screens are acceptable by hand (typing, scrolling, VoiceOver reads the
 labels), and a warm iOS CI run is acceptable. Otherwise stop here: the Expo plan continues unchanged and this document is archived with what was learned.
 
 **Phase 0 progress (2026-11-21)**
@@ -473,13 +475,13 @@ Ask in the PR that needs each; recommended answer first.
 
 | ID | Question | Recommended | Needed by |
 |---|---|---|---|
-| D40 | Move to shared code (this plan)? | **Yes, as phases with gates**; the go/no-go is G0 | G0 |
+| D40 | Move to shared code (this plan)? | **Yes, as phases with gates**; the go/no-go is G0. **G0: GO, owner, 2026-11-23.** | G0 |
 | D41 | iPhone UI toolkit and platform limits: Compose Multiplatform screens everywhere; wake word only while the app is open | **Compose Multiplatform**; fall back to native screens only if K0/K3.2 checks fail | K0.5, K3.2 |
 | D42 | One `shared` module, or split it? | **One at first**; split only if builds are slow | K1.1, K5.4 |
 | D43 | iPhone bundle identifier | **Decided 2026-11-21: `com.edith.app`, the same as the Android release.** The Phase 0 device test uses `com.edith.app.spike`, so the real identifier stays unused until K4.1 (an identifier cannot be changed once an app ships). Still to check: that Apple accepts `com.edith.app` (identifiers are unique across all developers; if it is taken, fall back to a variant such as `com.edith.app.ios`). | K0.2 |
 | D44 | Minimum iPhone OS version | **iOS 17** (recent Compose Multiplatform and SwiftUI features, and the owner's phone is current) | K4.1 |
 | D45 | iCloud mail on iPhone (IMAP/SMTP has no iOS-ready library in our stack) | research in K0.6; defer to last (K4.7) | K4.7 |
-| D46 | Freeze the Expo app at G0 (§11.2)? | **Yes** | G0 |
+| D46 | Freeze the Expo app at G0 (§11.2)? | **Yes. In force from 2026-11-23.** | G0 |
 | D47 | License for the public repository | the owner decides (for example MIT, or keep all rights reserved) | any time |
 | D48 | Licensing rule for dependencies | **Permissive licences only (MIT, Apache 2.0, BSD).** A GPL library cannot go into an app that is distributed through TestFlight or the App Store without making the whole app GPL. K0.6 found one (MQTTastic Client KMP, GPL-3.0) and set it aside. Check the licence of every new dependency in its PR. | K1 onward |
 | D49 | How the iPhone app reaches Ollama over plain HTTP (App Transport Security) | The spike needs `NSAllowsArbitraryLoads` alone, which lets the app talk plain HTTP to any host. Before release (K4.5) decide: keep it (simplest, Apple may ask why), or serve Ollama over HTTPS (for example `tailscale serve`) and drop the exemption. | K4.5 |
