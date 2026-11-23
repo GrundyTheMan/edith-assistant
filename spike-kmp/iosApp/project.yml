@@ -25,8 +25,8 @@ targets:
         NSMicrophoneUsageDescription: Edith records your voice memos so the model on your PC can turn them into messages.
         NSLocalNetworkUsageDescription: Edith talks to the model on your PC over your home network.
         NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
-          # Found on a real iPhone: NSAllowsLocalNetworking does not cover a Tailscale address (100.x), so plain-HTTP Ollama was blocked (error -1022).
+          # Found on a real iPhone: a Tailscale address (100.x) is not a "local network" to iOS, so plain-HTTP Ollama was blocked (error -1022).
+          # NSAllowsArbitraryLoads must stand alone: with NSAllowsLocalNetworking also set, iOS ignores it (reproduced on the simulator).
           NSAllowsArbitraryLoads: true
     settings:
       base:
