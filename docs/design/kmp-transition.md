@@ -294,13 +294,23 @@ labels), and a warm iOS CI run is acceptable. Otherwise stop here: the Expo plan
 | WP | Status | Result |
 |---|---|---|
 | K0.1 | **done** | The microphone probe works on an iOS simulator (§3.3 runs 8-9). One Apple call, `AVAudioSession.setActive`, is not exposed to Kotlin. |
-| K0.2 | waiting for the owner | Needs the Apple and GitHub setup in `spike-kmp/DEVICE_BUILD.md`. |
-| K0.3 | waiting for K0.2 | Needs the spike installed on the phone. |
+| K0.2 | **done (2026-11-23)** | The spike is installed from TestFlight on the owner's iPhone (bundle id `com.edith.app.spike`, builds 1-5). See "Device findings" below. |
+| K0.3 | **done (2026-11-23)** | The phone streamed a reply from the owner's Ollama (qwen3.8:27b) on the PC over Tailscale, and the app showed it (build 5). See "Device findings" below. |
 | K0.4 | **half done** | Room KMP + bundled SQLite and DataStore work on the desktop and on an iOS simulator (§3.3 run 10). Not yet: survive a restart (needs the phone), open a copy of the real `edith.db` (needs the real entities: K1.5). |
 | K0.5 | **done** | Navigation, ViewModel, Coil and Material icons compile, link and run on iOS with Compose Multiplatform 1.12.2 and Kotlin 2.4.21. Not checked by eye: how the Coil image and the icon look. |
 | K0.6 | **research done; MQTT probe done** | See "K0.6 findings" below. K0.6b probe 1 (MQTT over TLS) **passed on the desktop and on an iOS simulator** with the MIT-licensed DitchOoM client. The others (sherpa-onnx speech, one ONNX Runtime, WebRTC, SwiftMail) are not yet run. |
 | K0.7 | **done** | Cold 17 m 52 s, warm 5 m 39 s with the `~/.konan` and Gradle caches (§3.3 runs 11-12). The simulator launch and screenshot take about 2.5 minutes of that; the shared-code PR job can skip them. Target met (under 12 minutes). |
 | K0.8 | **partly** | Every run on the public repository started and ran; none was refused for billing (the private repository was). That the minutes are not billed is for the owner to confirm on GitHub's billing page (§14 U9). |
+
+**Device findings (2026-11-23, builds 1-5 on the owner's iPhone).** What a real phone taught us that no simulator run did:
+
+1. **Apple's upload rules.** Uploads must be built with the iOS 26 SDK, so the workflow selects Xcode 26.3 on the `macos-15` runner. The app needs a 1024 px icon with no transparency, and an iPhone-only build (`TARGETED_DEVICE_FAMILY: 1`) avoids the iPad orientation checks. The App Store Connect API key must be rebuilt as a clean PEM in the workflow (the secret's line breaks are lost).
+2. **App Transport Security and Tailscale.** The owner's Ollama is at a Tailscale address (100.x). iOS does not treat that as a local network, so plain HTTP was refused (error -1022). Setting `NSAllowsArbitraryLoads` was not enough while `NSAllowsLocalNetworking` was also present: when that key is present, iOS ignores `NSAllowsArbitraryLoads`. **Only `NSAllowsArbitraryLoads: true` on its own worked.** The simulator workflow reproduces this with a fake streaming server on a non-local hostname. A release app needs a tighter rule (D49 below).
+3. **Tailscale on the phone sleeps.** The first requests timed out until the owner opened the Tailscale app. A real app should say "cannot reach your PC; open Tailscale" rather than "timeout".
+4. **Thinking models.** qwen3.8 streams its reasoning in `message.thinking` with an empty `content`; a reader that only looks at `content` shows nothing. The app now reads both. The real app needs separate display or a model that does not think.
+5. **Dark mode.** Compose without a `Surface` draws black text on the black dark-mode background: the reply was on screen but invisible for four builds. The app now draws on a themed surface. The real app must set its own colours.
+6. **The model name matters.** A model that is not installed gives HTTP 404; the app tells the HTTP status in words.
+7. **Ollama on the PC.** It listens on all interfaces and the firewall allows it. With a 27 B model the 16 GB GPU is nearly full, so a second model loading at the same moment stalls. Phone requests show in Ollama's `server.log` as `POST /api/chat` lines.
 
 **K0.6 findings (research, 2026-11-21).** What the Android code actually does with each library (read from the source), what the iPhone options are, and how sure we are. A web search showed the option exists; **only a build on a runner proves it works for us.**
 
@@ -472,6 +482,7 @@ Ask in the PR that needs each; recommended answer first.
 | D46 | Freeze the Expo app at G0 (§11.2)? | **Yes** | G0 |
 | D47 | License for the public repository | the owner decides (for example MIT, or keep all rights reserved) | any time |
 | D48 | Licensing rule for dependencies | **Permissive licences only (MIT, Apache 2.0, BSD).** A GPL library cannot go into an app that is distributed through TestFlight or the App Store without making the whole app GPL. K0.6 found one (MQTTastic Client KMP, GPL-3.0) and set it aside. Check the licence of every new dependency in its PR. | K1 onward |
+| D49 | How the iPhone app reaches Ollama over plain HTTP (App Transport Security) | The spike needs `NSAllowsArbitraryLoads` alone, which lets the app talk plain HTTP to any host. Before release (K4.5) decide: keep it (simplest, Apple may ask why), or serve Ollama over HTTPS (for example `tailscale serve`) and drop the exemption. | K4.5 |
 
 ## 13. Acceptance for the whole transition
 
@@ -511,7 +522,8 @@ Ask in the PR that needs each; recommended answer first.
 | U5 | Researched, not proven (K0.6): sherpa-onnx ships an iOS XCFramework build and a Swift API; the one-copy-of-ONNX-Runtime question is open. |
 | U6 | Researched, not proven: SwiftMail is the best Swift option found (about 1,160 lines of Android mail code only use a small part of IMAP/SMTP); the fallback is to defer. |
 | U7 | **Mostly answered**: DitchOoM mqtt (MIT) does a TLS round trip on an iOS simulator. Still open: username and password, and Meross's own broker. |
-| U1, U10, U12 | Not started. |
+| U10 | **Plain HTTP answered**: Ktor's Darwin engine streams plain HTTP to a Tailscale address once `NSAllowsArbitraryLoads` stands alone in App Transport Security (see "Device findings"). Pinning a self-signed certificate (Jarvis) is not tried. |
+| U1, U12 | Not started. |
 
 ## 15. How to start
 
