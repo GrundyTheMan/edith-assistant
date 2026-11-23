@@ -16,7 +16,7 @@ Tailscale). Phase 1 makes the Android app ready for sharing without changing wha
 | K1.2 iPhone-simulator tests of `shared/` in CI (`shared-ios.yml`) | **done** | #12 |
 | K1.3 `java.time` replaced by kotlinx-datetime everywhere in `app/src/main` | **done** | #13, #14 |
 | K1.4 OkHttp replaced by Ktor | **done on Android**: every service calls through Ktor; OkHttp stays only for the engine hooks listed in `OkHttpGuardTest` | #15, #16, #17, and the K1.4 PR after them |
-| K1.5 Room to Room KMP, DataStore to common | not started | |
+| K1.5 Room to Room KMP | **done**: the database is in `shared/`, schemas in `shared/schemas/` unchanged | the K1.5 PR |
 | K1.6 move W1 packages (`core`, `ollama`, `settings`, `data`, `di`) into `shared/commonMain` | not started | |
 | Gate G1 (the owner decides) | after K1.6 | |
 
@@ -85,7 +85,7 @@ Quirks: `LocalDateTime.toString()` drops zero seconds (use `LocalDateTime.Format
 
 **K1.4 is done on Android; one piece is left for K1.6.** Every service now calls through Ktor over its OkHttp client. What stays OkHttp-specific is each service's engine hook (listed, and fenced, in `OkHttpGuardTest`): Blink's cookie jar and IPv4-only lookup, iCloud's trusted-host password interceptor, Jarvis's certificate pin, the page reader's private-address check, and `HttpClients` itself. On the iPhone each needs its own answer (Darwin engine: a certificate-pinning delegate, a cookie storage, a lookup filter); that is plan K4.5. In K1.6 move `HttpClients` and the services behind an `expect`/`actual` engine in `shared/`, so `commonMain` code asks for an `HttpClient` and the Android part builds it over OkHttp.
 
-**K1.5 Storage.** Room to Room KMP with the bundled SQLite driver (the spike proved it on iOS; `data` has 7 files, `home` 1); DataStore to common. Same schema and version; `app/schemas/…/1.json` to `3.json` are the proof the existing database opens unchanged (plan §14 U4): add a test that opens a copy of the real schema, and keep the migration tests green. K0.4's second half (survives an app restart on the phone; opens a copy of the owner's real `edith.db`) lands here.
+**K1.5 is done.** The database, DAOs, converters, migrations and command log are in `shared/commonMain`; Android opens it with `EdithDatabase.create(context)` (androidMain), the desktop and iPhone with `EdithDatabase.open(path)`. The schema files in `shared/schemas/` are what an installed Android database is checked against: **never edit them by hand, and a schema change needs a version bump, a `Migration` (written against `SQLiteConnection`) and a test like `EdithDatabaseTest`'s version-1 upgrade.** Still to do from K0.4: open a copy of the owner's real `edith.db` (ask them for one), and check the same code on the iPhone (the macOS job builds it; running it on a device is the owner's). DataStore moves with the packages that use it, in K1.6.
 
 **K1.6 Move W1 into `shared/commonMain`.** `core`, `ollama`, `settings`, `data`, `di` with `AppContainer(platform: PlatformServices)`; Android seams for `SecretStore`, `Log`, files. `git mv` with the package names unchanged, so history is kept. The iPhone-simulator tests of W1 must pass (extend `shared-ios.yml`'s task list). Then tell the owner gate **G1** is theirs: Android used a few days on the new build with no regression. Do not start Phase 2 before they say go.
 

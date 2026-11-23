@@ -4,12 +4,6 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.ksp)
-}
-
-// Room writes its schema here at build time (C05). Commit app/schemas/: it's needed for future migrations.
-ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 kotlin {
@@ -120,7 +114,7 @@ android {
     testOptions.unitTests.isReturnDefaultValues = true
 
     // Room migration tests read the exported schemas (C06b MigrationTest).
-    sourceSets.getByName("androidTest").assets.directories.add("$projectDir/schemas")
+    sourceSets.getByName("androidTest").assets.directories.add("$rootDir/shared/schemas")
 
     lint {
         abortOnError = true
@@ -160,10 +154,9 @@ dependencies {
     implementation(libs.angus.activation)
     implementation(libs.paho.mqtt)   // C26: Meross (MQTT over TLS)
 
-    // C05: Room (KSP — never kapt, lessons L1)
+    // C05: Room. The database itself is in shared/ since K1.5 (its processor runs there, with KSP: never kapt, lessons L1).
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
-    ksp(libs.room.compiler)
 
     // C10: reading web pages and DuckDuckGo results
     implementation(libs.jsoup)
