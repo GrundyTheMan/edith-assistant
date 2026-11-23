@@ -1,8 +1,6 @@
 package com.edith.app.data.db
 
 import androidx.room.TypeConverter
-import com.edith.app.core.log.Log
-import com.edith.app.core.log.LogTag
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
@@ -106,13 +104,16 @@ object EnumConverters {
 
 /** `tools_used` as a JSON array of strings, via kotlinx.serialization (no Gson — 01-architecture §1). */
 object ListConverters {
+    /** Told when a stored list can't be read (it is read as empty): the app logs it. (Logging itself moves to shared code in K1.6.) */
+    var onUnreadable: (Throwable) -> Unit = {}
+
     private val serializer = ListSerializer(String.serializer())
 
     @TypeConverter
     fun fromStringList(json: String): List<String> = try {
         Json.decodeFromString(serializer, json)
     } catch (e: SerializationException) {
-        Log.w(LogTag.Chat, "Unreadable tools_used value; treating it as empty", e)
+        onUnreadable(e)
         emptyList()
     }
 

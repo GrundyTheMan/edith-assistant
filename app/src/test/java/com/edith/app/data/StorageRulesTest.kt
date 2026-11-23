@@ -35,9 +35,9 @@ class StorageRulesTest {
         assertEquals(emptyList<String>(), ListConverters.fromStringList("not json"))
     }
 
-    @Test fun `schema version 1 is exported to app schemas`() {
-        // Unit tests run with the app module as the working directory.
-        val schema = File("schemas/com.edith.app.data.db.EdithDatabase/1.json")
+    @Test fun `schema version 1 is exported to the shared schemas`() {
+        // Unit tests run with the app module as the working directory; the database (and so its schemas) is in shared/ since K1.5.
+        val schema = File("../shared/schemas/com.edith.app.data.db.EdithDatabase/1.json")
         assertTrue("missing ${schema.absolutePath}", schema.isFile)
         val json = schema.readText()
         listOf("conversations", "messages", "attachments").forEach {

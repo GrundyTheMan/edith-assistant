@@ -29,6 +29,8 @@ import com.edith.app.core.time.SystemClock
 import com.edith.app.data.chat.ChatRepository
 import com.edith.app.core.error.Outcome
 import com.edith.app.data.db.EdithDatabase
+import com.edith.app.data.db.ListConverters
+import com.edith.app.data.db.create
 import com.edith.app.data.db.MessageSource
 import com.edith.app.ollama.ModelCatalog
 import com.edith.app.ollama.KtorOllamaClient
@@ -155,7 +157,10 @@ class AppContainer(val app: Application) {
     val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + dispatchers.io)
 
     /** The database (C05). Opened once at startup by [openDatabaseInBackground]; Room does its I/O off the main thread. */
-    val database: EdithDatabase by lazy { EdithDatabase.create(app) }
+    val database: EdithDatabase by lazy {
+        ListConverters.onUnreadable = { Log.w(LogTag.Chat, "Unreadable tools_used value; treating it as empty", it) }
+        EdithDatabase.create(app)
+    }
     val chatRepository: ChatRepository by lazy { ChatRepository(database, clock, dispatchers, attachmentStore) }
 
     /** Chat turns run here, not in a ViewModel, so a reply carries on through rotation (C06, lessons L10). */
