@@ -20,12 +20,6 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-/** Interface for secret storage (encrypted at rest). */
-interface SecretStore {
-    suspend fun put(key: String, value: String?)
-    suspend fun get(key: String): String?
-}
-
 /**
  * AES/GCM 256 with a key that never leaves the Android Keystore (alias `edith_secrets`). Each value is stored as
  * base64(iv + ciphertext) in the private DataStore file `secrets` (C02 §7). Create one instance per process

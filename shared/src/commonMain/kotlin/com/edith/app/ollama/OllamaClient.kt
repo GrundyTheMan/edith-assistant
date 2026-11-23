@@ -35,8 +35,10 @@ import io.ktor.http.URLParserException
 import io.ktor.http.content.TextContent
 import io.ktor.http.isSuccess
 import io.ktor.http.withCharset
+import io.ktor.utils.io.charsets.Charsets
 import io.ktor.utils.io.readUTF8Line
-import java.io.IOException
+import com.edith.app.core.error.isSocketTimeout
+import kotlinx.io.IOException
 
 /** C03: Ollama client interface - streaming chat with tool calls, model list, model details. */
 interface OllamaClient {
@@ -199,7 +201,7 @@ class KtorOllamaClient(
         else AppError.OllamaHttp(code, message)
 
     private fun ioError(e: IOException, baseUrl: String): AppError =
-        if (e is java.net.SocketTimeoutException || e is SocketTimeoutException || e is ConnectTimeoutException) AppError.Timeout
+        if (e.isSocketTimeout() || e is SocketTimeoutException || e is ConnectTimeoutException) AppError.Timeout
         else AppError.ServerUnreachable(baseUrl, e)
 
     private fun <T> parse(text: String, serializer: KSerializer<T>): T = try {

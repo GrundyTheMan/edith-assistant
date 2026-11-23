@@ -1,10 +1,6 @@
 package com.edith.app.core.error
 
 import kotlinx.coroutines.CancellationException
-import java.net.ConnectException
-import java.net.NoRouteToHostException
-import java.net.SocketTimeoutException
-import java.net.UnknownHostException
 
 /** Everything that can go wrong, with a plain-language message that says what to do (C02 §3). */
 sealed interface AppError {
@@ -82,10 +78,10 @@ class AppErrorException(val error: AppError) : Exception(error.userMessage, erro
 /** Turns exceptions into [AppError]s at a layer boundary. */
 object ErrorMapper {
     /** [serverUrl] names the server in [AppError.ServerUnreachable] when the failure was a network one. */
-    fun map(t: Throwable, serverUrl: String = "the address in Settings"): AppError = when (t) {
-        is AppErrorException -> t.error
-        is SocketTimeoutException -> AppError.Timeout
-        is ConnectException, is UnknownHostException, is NoRouteToHostException -> AppError.ServerUnreachable(serverUrl, t)
+    fun map(t: Throwable, serverUrl: String = "the address in Settings"): AppError = when {
+        t is AppErrorException -> t.error
+        t.isSocketTimeout() -> AppError.Timeout
+        t.isUnreachable() -> AppError.ServerUnreachable(serverUrl, t)
         else -> AppError.Unknown(t)
     }
 }

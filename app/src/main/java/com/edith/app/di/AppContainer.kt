@@ -39,6 +39,7 @@ import com.edith.app.ollama.OllamaDtos
 import com.edith.app.core.permissions.AndroidLocalNetworkAccess
 import com.edith.app.core.permissions.LocalNetworkAccess
 import com.edith.app.settings.DataStoreSettingsRepository
+import com.edith.app.settings.create
 import com.edith.app.settings.ModelSelection
 import com.edith.app.settings.SettingsRepository
 import com.edith.app.tools.context.CurrentTimeTool
