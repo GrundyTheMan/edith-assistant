@@ -4,6 +4,7 @@ import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.error.AppError
 import com.edith.app.core.error.AppErrorException
 import com.edith.app.core.error.Outcome
+import com.edith.app.core.net.HttpClients
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
@@ -40,7 +41,7 @@ class OllamaClientTest {
             override fun canceled(call: Call) = callCancelled.set(true)
         })
         .build()
-    private val client = OkHttpOllamaClient(okHttp, OllamaDtos.json, dispatchers)
+    private val client = KtorOllamaClient(HttpClients.over(okHttp), OllamaDtos.json, dispatchers)
     private val baseUrl get() = server.url("/").toString()
 
     @Before fun start() = server.start()

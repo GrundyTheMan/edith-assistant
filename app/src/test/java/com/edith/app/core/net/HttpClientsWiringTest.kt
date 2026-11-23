@@ -26,9 +26,9 @@ class HttpClientsWiringTest {
     }
 
     @Test fun `only Ollama, the page reader and the printer get the plain client`() {
-        val plain = code(container).filter { "httpClients.plain" in it }
+        val plain = code(container).filter { "httpClients.plain" in it || "httpClients.ktorPlain" in it }
         assertEquals("plain: $plain", 3, plain.size)
-        assertTrue("Ollama's client: $plain", plain.any { "OkHttpOllamaClient(" in it })
+        assertTrue("Ollama's client: $plain", plain.any { "KtorOllamaClient(" in it })
         assertTrue("the page reader: $plain", plain.any { "PageReader(" in it })
         assertTrue("the 3D printer, a LAN device (C34): $plain", plain.any { "MoonrakerApi(" in it })
     }

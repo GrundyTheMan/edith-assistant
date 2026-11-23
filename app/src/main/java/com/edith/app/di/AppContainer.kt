@@ -31,7 +31,7 @@ import com.edith.app.core.error.Outcome
 import com.edith.app.data.db.EdithDatabase
 import com.edith.app.data.db.MessageSource
 import com.edith.app.ollama.ModelCatalog
-import com.edith.app.ollama.OkHttpOllamaClient
+import com.edith.app.ollama.KtorOllamaClient
 import com.edith.app.ollama.OllamaClient
 import com.edith.app.ollama.OllamaDtos
 import com.edith.app.core.permissions.AndroidLocalNetworkAccess
@@ -549,7 +549,7 @@ class AppContainer(val app: Application) {
     /**
      * The HTTP clients (C03 §5, C37), sharing one pool. Long read timeout: the first token after a model load can take
      * a while. Building TLS takes ~190 ms on the emulator, so they're lazy and first used from the IO dispatcher by
-     * [OkHttpOllamaClient] — don't read them on the main thread.
+     * [KtorOllamaClient] — don't read them on the main thread.
      *
      * **Every service takes [HttpClients.secure] (HTTPS only)**, except the three that need plain HTTP: Ollama and the
      * 3D printer (addresses the owner types on their own network) and the web-page reader (public pages, no cloud
@@ -565,7 +565,7 @@ class AppContainer(val app: Application) {
             .build()
     }
 
-    val ollama: OllamaClient by lazy { OkHttpOllamaClient(httpClients.plain, OllamaDtos.json, dispatchers) }
+    val ollama: OllamaClient by lazy { KtorOllamaClient(httpClients.ktorPlain, OllamaDtos.json, dispatchers) }
     val modelCatalog: ModelCatalog by lazy { ModelCatalog(ollama) }
 
     /** One DataStore per file per process, so the repository is created exactly once here (C04). */
