@@ -38,9 +38,7 @@ class OllamaChatTest {
             """{"model":"m","message":{"role":"assistant","content":"","thinking":"Hmm"},"done":false}""",
             """{"model":"m","message":{"role":"assistant","content":"Hi"},"done":false}""",
             """{"model":"m","message":{"role":"assistant","content":""},"done":true}""",
-        ).joinToString("
-") + "
-"
+        ).joinToString("\n") + "\n"
         assertEquals(listOf("Hmm", "Hi"), chat(thinkingReply).stream("http://pc:11434", "m", "hi").toList())
         assertEquals(listOf("Hi"), chat(thinkingReply).stream("http://pc:11434", "m", "hi", includeThinking = false).toList())
     }
