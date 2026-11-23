@@ -234,7 +234,7 @@ class AppContainer(val app: Application) {
 
     /** Downloads, checks and unpacks Edith's own voice, only while she is on screen (C36 §3). */
     val voiceDownloader: VoiceDownloader by lazy {
-        VoiceDownloader(OwnVoices.default, voicesDir, http = { httpClients.secure.value }, visible = AppVisibility.visible, scope = appScope, io = dispatchers.io, freeBytes = { VoiceDownloader.allocatableBytes(app, voicesDir) })
+        VoiceDownloader(OwnVoices.default, voicesDir, http = { httpClients.ktorSecure.value }, visible = AppVisibility.visible, scope = appScope, io = dispatchers.io, freeBytes = { VoiceDownloader.allocatableBytes(app, voicesDir) })
     }
 
     /** Edith's own voice (C36): sherpa-onnx running a Piper voice, loaded when she first speaks with it. */

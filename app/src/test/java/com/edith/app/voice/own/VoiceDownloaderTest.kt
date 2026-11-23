@@ -1,5 +1,6 @@
 package com.edith.app.voice.own
 
+import com.edith.app.core.net.HttpClients
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -133,7 +134,7 @@ class VoiceDownloaderTest {
         root: File = File(temp.root, "voices"),
         retries: Int = 3,
     ) = VoiceDownloader(
-        voice = voice, root = root, http = { OkHttpClient() }, visible = visible, scope = scope, io = Dispatchers.IO,
+        voice = voice, root = root, http = { HttpClients.over(OkHttpClient()) }, visible = visible, scope = scope, io = Dispatchers.IO,
         freeBytes = free, maxRetries = retries, retryDelayMs = 10,
     )
 
@@ -217,7 +218,8 @@ class VoiceDownloaderTest {
 
     @Test fun `a cut connection is resumed with a Range request and the result is whole`() {
         val bytes = archive(goodItems() + file("vits-piper-test/espeak-ng-data/big", "x".repeat(5000)))
-        serve(bytes) { it.onResponseBody(SocketEffect.CloseSocket()) }
+        // The first answer promises the whole file, sends the first half and cuts the connection.
+        serve(bytes) { it.addHeader("Content-Length", bytes.size.toString()).body(Buffer().write(bytes, 0, bytes.size / 2)).onResponseEnd(SocketEffect.CloseSocket()) }
         val d = downloader(voiceFor(bytes))
         d.start()
         val end = d.awaitState { it is OwnVoiceState.Ready || it is OwnVoiceState.Failed }
