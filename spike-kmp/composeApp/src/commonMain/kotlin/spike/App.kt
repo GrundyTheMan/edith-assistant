@@ -125,6 +125,7 @@ private fun Home(chat: OllamaChat, nav: NavController, probes: ProbeViewModel) {
                 scope.launch {
                     try {
                         chat.stream(server, model, prompt).collect { reply += it }
+                        if (reply.isEmpty()) error = "The model finished without sending any text."
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {

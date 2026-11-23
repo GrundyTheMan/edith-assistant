@@ -23,8 +23,11 @@ import kotlinx.serialization.json.put
 /** A thing that went wrong that the owner can be told in words. */
 class ChatException(message: String) : Exception(message)
 
-/** One line of Ollama's streaming answer: the next piece of text, and whether the reply is finished. */
-data class ChatChunk(val text: String, val done: Boolean)
+/**
+ * One line of Ollama's streaming answer: the next piece of text, whether the reply is finished, and the model's thinking text.
+ * A "thinking" model (such as qwen3.8) streams its reasoning in `thinking` with an empty `content`, so a reader that only looks at `content` sees nothing.
+ */
+data class ChatChunk(val text: String, val done: Boolean, val thinking: String = "")
 
 /** Reads one line of Ollama's `/api/chat` stream. An empty or damaged line is nothing; an `error` line is an exception. */
 fun parseChatLine(line: String): ChatChunk? {
@@ -39,14 +42,15 @@ fun parseChatLine(line: String): ChatChunk? {
     }
     obj["error"]?.jsonPrimitive?.contentOrNull?.let { throw ChatException(it) }
     val text = obj["message"]?.jsonObject?.get("content")?.jsonPrimitive?.contentOrNull ?: ""
+    val thinking = obj["message"]?.jsonObject?.get("thinking")?.jsonPrimitive?.contentOrNull ?: ""
     val done = obj["done"]?.jsonPrimitive?.booleanOrNull ?: false
-    return ChatChunk(text, done)
+    return ChatChunk(text, done, thinking)
 }
 
 /** Streams a reply from the owner's Ollama server (the same call the Android and iPhone apps make). Shared by every platform. */
 class OllamaChat(private val client: HttpClient) {
     // channelFlow, not flow: the pieces are sent from inside the HTTP call, which on some platforms is not the collector's own coroutine.
-    fun stream(baseUrl: String, model: String, prompt: String): Flow<String> = channelFlow {
+    fun stream(baseUrl: String, model: String, prompt: String, includeThinking: Boolean = true): Flow<String> = channelFlow {
         val body = buildJsonObject {
             put("model", model)
             put("stream", true)
@@ -66,6 +70,7 @@ class OllamaChat(private val client: HttpClient) {
             while (!channel.isClosedForRead) {
                 val line = channel.readLine() ?: break
                 val chunk = parseChatLine(line) ?: continue
+                if (includeThinking && chunk.thinking.isNotEmpty()) send(chunk.thinking)
                 if (chunk.text.isNotEmpty()) send(chunk.text)
                 if (chunk.done) break
             }

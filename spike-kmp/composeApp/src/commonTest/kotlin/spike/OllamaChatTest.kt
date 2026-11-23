@@ -33,6 +33,19 @@ class OllamaChatTest {
     )
 
     @Test
+    fun aThinkingModelsReasoningIsStreamedToo() = runTest {
+        val thinkingReply = listOf(
+            """{"model":"m","message":{"role":"assistant","content":"","thinking":"Hmm"},"done":false}""",
+            """{"model":"m","message":{"role":"assistant","content":"Hi"},"done":false}""",
+            """{"model":"m","message":{"role":"assistant","content":""},"done":true}""",
+        ).joinToString("
+") + "
+"
+        assertEquals(listOf("Hmm", "Hi"), chat(thinkingReply).stream("http://pc:11434", "m", "hi").toList())
+        assertEquals(listOf("Hi"), chat(thinkingReply).stream("http://pc:11434", "m", "hi", includeThinking = false).toList())
+    }
+
+    @Test
     fun streamsTheReplyPieceByPiece() = runTest {
         val seen = mutableListOf<String>()
         val pieces = chat(reply, seen = seen).stream("http://pc:11434/", "m", "hi").toList()
