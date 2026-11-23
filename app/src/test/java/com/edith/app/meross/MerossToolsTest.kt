@@ -58,7 +58,7 @@ class MerossToolsTest {
         home.register(service)
         withTimeout(3_000) { home.status.first { it == com.edith.app.tools.framework.IntegrationStatus.Connected } }
 
-        val list = HomeDevicesTool(home) { clock.now().toEpochMilli() }
+        val list = HomeDevicesTool(home) { clock.now().toEpochMilliseconds() }
         val text = list.execute(args(list), ctx).text
         assertTrue(text, "Garage Door (Garage door): Closed, last moved" in text)
 

@@ -11,8 +11,10 @@ import com.edith.app.tools.framework.ToolContext
 import com.edith.app.tools.framework.ToolParam
 import com.edith.app.tools.framework.ToolResult
 import com.edith.app.tools.framework.ToolSpec
-import java.time.LocalDate
-import java.time.format.TextStyle
+import com.edith.app.core.time.formatPattern
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -92,7 +94,7 @@ class WeatherTool(
             c.humidity?.let { "humidity $it%" },
         ).joinToString(", ")
         val ahead = forecast.days.drop(1).take(days).mapIndexed { i, d ->
-            val label = if (i == 0) "Tomorrow" else LocalDate.parse(d.date).dayOfWeek.getDisplayName(TextStyle.FULL, Locale.US)
+            val label = if (i == 0) "Tomorrow" else formatPattern(LocalDate.parse(d.date).atStartOfDayIn(TimeZone.UTC), TimeZone.UTC, "EEEE", "en-US")
             label + ": " + listOfNotNull(
                 deg(d.high)?.let { "high $it" }, deg(d.low)?.let { "low $it" }, describeWeatherCode(d.weatherCode),
                 d.rainChance?.let { "$it% chance of rain" },

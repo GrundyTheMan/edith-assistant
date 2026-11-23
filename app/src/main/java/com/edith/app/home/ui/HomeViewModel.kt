@@ -131,7 +131,7 @@ class HomeViewModel(private val home: Home, private val clock: Clock, private va
         }
         viewModelScope.launch {
             while (true) {   // the states' ages ("3 min ago") move on
-                local.value = local.value.copy(now = clock.now().toEpochMilli())
+                local.value = local.value.copy(now = clock.now().toEpochMilliseconds())
                 delay(30_000)
             }
         }
@@ -261,7 +261,7 @@ class HomeViewModel(private val home: Home, private val clock: Clock, private va
     }
 
     private fun tick() {
-        local.value = local.value.copy(now = clock.now().toEpochMilli())
+        local.value = local.value.copy(now = clock.now().toEpochMilliseconds())
     }
 
     // ---- Clips (C27) ----
@@ -271,7 +271,7 @@ class HomeViewModel(private val home: Home, private val clock: Clock, private va
     private var clipsFrom = 0L
 
     fun openClips() {
-        val now = clock.now().toEpochMilli()
+        val now = clock.now().toEpochMilliseconds()
         clipsFrom = now
         local.value = local.value.copy(clips = ClipsUi())
         loadMoreClips()
@@ -282,7 +282,7 @@ class HomeViewModel(private val home: Home, private val clock: Clock, private va
         val ui = local.value.clips ?: return
         if (clipsJob?.isActive == true || !ui.more) return
         local.value = local.value.copy(clips = ui.copy(loading = true))
-        val oldest = clock.now().toEpochMilli() - CLIPS_MAX_DAYS * DAY_MS
+        val oldest = clock.now().toEpochMilliseconds() - CLIPS_MAX_DAYS * DAY_MS
         clipsJob = viewModelScope.launch {
             var found = emptyList<DeviceClip>(); var noPlan = false; val problems = mutableListOf<String>()
             var windows = 0

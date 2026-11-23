@@ -74,7 +74,7 @@ class AlexaToolsTest {
     }
 
     @Test fun `which lights are on - the owner's question is answered from Alexa's states`() = runBlocking {
-        val tool = HomeDevicesTool(alexaHome()) { clock.now().toEpochMilli() }
+        val tool = HomeDevicesTool(alexaHome()) { clock.now().toEpochMilliseconds() }
         val text = tool.execute(args(tool, "filter" to "light"), ctx).text
         assertTrue(text, "Living room lamp (Light): On" in text)
         assertTrue(text, "Porch light (Light): Off" in text)
@@ -97,7 +97,7 @@ class AlexaToolsTest {
 
     @Test fun `a device both Alexa and a direct service report is shown once, through the direct one (D19)`() = runBlocking {
         val home = alexaHome(Direct())
-        val tool = HomeDevicesTool(home) { clock.now().toEpochMilli() }
+        val tool = HomeDevicesTool(home) { clock.now().toEpochMilliseconds() }
         val text = tool.execute(args(tool, "filter" to "front door"), ctx).text
         assertEquals(text, 1, Regex("Front door").findAll(text).count())
         assertTrue("through the direct service: $text", "Unlocked" in text)
@@ -107,7 +107,7 @@ class AlexaToolsTest {
         val home = alexaHome(Direct())
         amazon.validRefresh.clear(); amazon.expireCookies()
         service.load()   // forget the cookies held from the first read
-        val tool = HomeDevicesTool(home) { clock.now().toEpochMilli() }
+        val tool = HomeDevicesTool(home) { clock.now().toEpochMilliseconds() }
         val text = tool.execute(args(tool), ctx).text
         assertTrue("the direct service still answers: $text", "Front door (Lock)" in text)
     }

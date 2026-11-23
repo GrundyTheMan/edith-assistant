@@ -170,12 +170,12 @@ class AlexaServiceTest {
     @Test fun `a batch that gives no answer keeps each device's last state, shown with its age`() = runBlocking {
         val s = signedIn()
         val first = (s.backend.devices() as Outcome.Success).value.first { it.name == "Front door" }
-        assertEquals(clock.now().toEpochMilli(), first.stateAt)
+        assertEquals(clock.now().toEpochMilliseconds(), first.stateAt)
         clock.advance(Duration.ofMinutes(7))
         amazon.overrides["/api/phoenix/state"] = { MockResponse.Builder().code(500).build() }
         val again = (s.backend.devices() as Outcome.Success).value.first { it.name == "Front door" }
         assertNotNull(again.state)
-        assertTrue("last known, not just now", again.stateAt!! < clock.now().toEpochMilli())
+        assertTrue("last known, not just now", again.stateAt!! < clock.now().toEpochMilliseconds())
     }
 
     @Test fun `an unreachable device is shown as not responding`() = runBlocking {

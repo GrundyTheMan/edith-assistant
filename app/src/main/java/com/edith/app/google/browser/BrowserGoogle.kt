@@ -1,6 +1,7 @@
 package com.edith.app.google.browser
 
 import android.app.Activity
+import com.edith.app.core.time.javaNow
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import com.edith.app.accounts.AccountSecrets
@@ -128,7 +129,7 @@ class BrowserGoogle(
                 email == null -> GoogleSignIn.Result.Failed(NO_EMAIL)   // C22: the address decides which account it is
                 else -> {
                     Log.i(LogTag.Google, "Browser sign-in: signed in")
-                    val grant = BrowserGrant(refreshToken, t.accessToken, clock.now().plusSeconds(t.expiresInSeconds), t.scopes ?: allScopes)
+                    val grant = BrowserGrant(refreshToken, t.accessToken, clock.javaNow().plusSeconds(t.expiresInSeconds), t.scopes ?: allScopes)
                     GoogleSignIn.Result.SignedIn(email, null, grant)
                 }
             }
@@ -168,7 +169,7 @@ class BrowserGoogle(
         override suspend fun authorize(scopes: Set<GoogleScope>): GoogleAuthorizer.Result = refreshLock.withLock {
             val wanted = scopes.map { it.uri }.toSet()
             cached?.let { c ->
-                if (c.expiresAt.isAfter(clock.now().plusSeconds(MIN_VALIDITY_SECONDS)) && c.scopes.containsAll(wanted)) {
+                if (c.expiresAt.isAfter(clock.javaNow().plusSeconds(MIN_VALIDITY_SECONDS)) && c.scopes.containsAll(wanted)) {
                     return@withLock GoogleAuthorizer.Result.Granted(c.token)
                 }
             }
@@ -176,7 +177,7 @@ class BrowserGoogle(
             when (val t = oauth.refresh(refreshToken)) {
                 is BrowserOAuth.TokenResult.Tokens -> {
                     t.refreshToken?.let { secrets.put(key, it) }   // Google may rotate it
-                    val c = Cached(t.accessToken, clock.now().plusSeconds(t.expiresInSeconds), t.scopes ?: cached?.scopes ?: allScopes)
+                    val c = Cached(t.accessToken, clock.javaNow().plusSeconds(t.expiresInSeconds), t.scopes ?: cached?.scopes ?: allScopes)
                     cached = c
                     if (c.scopes.containsAll(wanted)) {
                         GoogleAuthorizer.Result.Granted(c.token)

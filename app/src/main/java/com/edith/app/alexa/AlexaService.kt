@@ -109,7 +109,7 @@ class AlexaService(
         return when (val r = registered) {
             is AlexaReply.Ok -> {
                 sessionLock.withLock {
-                    val keep = Saved(r.value.refreshToken, start.site.site, r.value.deviceSerial, clock.now().toEpochMilli())
+                    val keep = Saved(r.value.refreshToken, start.site.site, r.value.deviceSerial, clock.now().toEpochMilliseconds())
                     secrets.put(SECRET_KEY, json.encodeToString(Saved.serializer(), keep))
                     saved = keep; session = null; listed = null; lastKnown.clear()
                 }
@@ -173,12 +173,12 @@ class AlexaService(
     // ---- Devices ----
 
     private suspend fun deviceList(fresh: Boolean): Outcome<List<AlexaDevice>> {
-        listed?.let { (at, list) -> if (!fresh && clock.now().toEpochMilli() - at < LIST_CACHE_MS) return Outcome.Success(list) }
+        listed?.let { (at, list) -> if (!fresh && clock.now().toEpochMilliseconds() - at < LIST_CACHE_MS) return Outcome.Success(list) }
         return when (val r = authed<JsonElement> { site, s -> api.endpoints(site, s) }) {
             is Outcome.Failure -> r
             is Outcome.Success -> {
                 val list = AlexaParse.parseEndpoints(r.value)
-                listed = clock.now().toEpochMilli() to list
+                listed = clock.now().toEpochMilliseconds() to list
                 Outcome.Success(list)
             }
         }
@@ -186,7 +186,7 @@ class AlexaService(
 
     /** The devices with their states now: batches of five by maker, all at once, each with its own deadline. */
     private suspend fun lookup(list: List<AlexaDevice>): List<HomeDevice> {
-        val now = clock.now().toEpochMilli()
+        val now = clock.now().toEpochMilliseconds()
         val scale = (AmazonSite.of(saved?.site.orEmpty()) ?: AmazonSite.DEFAULT).scale
         val asked = list.filter(AlexaParse::shouldAskState)
         val readings = ConcurrentHashMap<String, AlexaReading>()

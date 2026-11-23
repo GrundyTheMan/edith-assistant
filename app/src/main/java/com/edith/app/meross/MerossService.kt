@@ -142,7 +142,7 @@ class MerossService(
                 is MerossReply.Failed -> return failed(r.why)
             }
             _state.value = ServiceState.Connected
-            val now = clock.now().toEpochMilli()
+            val now = clock.now().toEpochMilliseconds()
             return Outcome.Success(openers.flatMap { d -> doors(d, digests[d.uuid], now) })
         }
 
@@ -179,7 +179,7 @@ class MerossService(
             }
             return when (answer) {
                 // The opener accepted it; the door takes a while. The Home tab asks again as it moves (C25 §6).
-                is MerossReply.Ok -> Outcome.Success(DeviceState(door = if (open) DoorState.Opening else DoorState.Closing, changedAt = clock.now().toEpochMilli()))
+                is MerossReply.Ok -> Outcome.Success(DeviceState(door = if (open) DoorState.Opening else DoorState.Closing, changedAt = clock.now().toEpochMilliseconds()))
                 MerossReply.Rejected -> rejected()
                 is MerossReply.Failed -> failed(answer.why)
             }

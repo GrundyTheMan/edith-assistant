@@ -11,7 +11,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
-import java.time.Instant
+import kotlin.time.Instant
 
 class CrashReporterTest {
     @get:Rule val temp = TemporaryFolder()
@@ -70,7 +70,7 @@ class CrashReporterTest {
     }
 
     @Test fun `dismissing deletes the report`() {
-        CrashReporter.writeReport(file, Thread.currentThread(), Error("x"), "v", "d", "a", Instant.EPOCH)
+        CrashReporter.writeReport(file, Thread.currentThread(), Error("x"), "v", "d", "a", Instant.fromEpochMilliseconds(0))
         CrashReporter.dismiss(file)
         assertNull(CrashReporter.read(file))
     }

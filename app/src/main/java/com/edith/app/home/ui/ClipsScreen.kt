@@ -45,26 +45,27 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.ui.PlayerView
 import com.edith.app.home.DeviceClip
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import com.edith.app.core.time.formatPattern
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.minus
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
 import java.util.Locale
 
 /** The words for a clip's row: "Front Door · A person · 0:23". */
 internal fun clipTitle(c: DeviceClip): String =
     listOfNotNull(c.deviceName, c.kind.label, c.seconds?.let { "%d:%02d".format(Locale.US, it / 60, it % 60) }).joinToString(" · ")
 
-private val DAY = DateTimeFormatter.ofPattern("EEE d MMM, h:mm a", Locale.US)
-
 /** "Today 3:42 PM", "Yesterday 9:05 AM", or "Tue 11 Nov, 6:30 PM". */
-internal fun clipWhen(at: Long, now: Long, zone: ZoneId = ZoneId.systemDefault()): String {
-    val time = Instant.ofEpochMilli(at).atZone(zone)
-    val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
-    val clock = time.format(DateTimeFormatter.ofPattern("h:mm a", Locale.US))
-    return when (time.toLocalDate()) {
+internal fun clipWhen(at: Long, now: Long, zone: TimeZone = TimeZone.currentSystemDefault()): String {
+    val moment = Instant.fromEpochMilliseconds(at)
+    val today = Instant.fromEpochMilliseconds(now).toLocalDateTime(zone).date
+    val clock = formatPattern(moment, zone, "h:mm a", "en-US")
+    return when (moment.toLocalDateTime(zone).date) {
         today -> "Today $clock"
-        today.minusDays(1) -> "Yesterday $clock"
-        else -> time.format(DAY)
+        today.minus(1, DateTimeUnit.DAY) -> "Yesterday $clock"
+        else -> formatPattern(moment, zone, "EEE d MMM, h:mm a", "en-US")
     }
 }
 

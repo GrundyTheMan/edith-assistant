@@ -27,7 +27,7 @@ import com.edith.app.printer.ui.ControlUi
 import com.edith.app.printer.ui.PrinterUi
 import com.edith.app.printer.ui.controlKey
 import com.edith.app.printer.ui.disabledReason
-import java.time.Instant
+import kotlin.time.Instant
 
 /** What the print state is called on the chip. A state from a newer Jarvis is shown as it came. */
 internal fun printStateLabel(state: String): String = when (state) {
@@ -53,7 +53,7 @@ internal fun statusTitle(print: PrintInfo): String = when {
 @Composable
 internal fun StatusCard(ui: PrinterUi, state: PrinterState, is24Hour: Boolean, onDismissAlert: (Long) -> Unit, controls: ControlUi = ControlUi(), onSend: (PrinterCommand) -> Unit = {}) {
     val p = state.print
-    val now = Instant.ofEpochMilli(ui.now)
+    val now = Instant.fromEpochMilliseconds(ui.now)
     Column(Modifier.testTag("status-card"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text(statusTitle(p), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))

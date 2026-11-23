@@ -185,7 +185,7 @@ class PrinterFallbackTest {
         }
         printer.shutdown()
         home.refresh()
-        val tool = PrinterStatusTool(home) { clock.now().toEpochMilli() }
+        val tool = PrinterStatusTool(home) { clock.now().toEpochMilliseconds() }
         return (tool.execute(ToolArgs(buildJsonObject {}, tool.spec), ctx) as ToolResult.Ok).text
     }
 

@@ -8,14 +8,14 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.time.Instant
-import java.time.ZoneId
+import kotlinx.datetime.TimeZone
+import kotlin.time.Instant
 
 /** C33: which camera events become alerts, and when the next look is due. */
 class AlertWatcherTest {
     private class FakeClock(var ms: Long = 1_000_000_000L) : Clock {
-        override fun now(): Instant = Instant.ofEpochMilli(ms)
-        override fun zone(): ZoneId = ZoneId.of("UTC")
+        override fun now(): Instant = Instant.fromEpochMilliseconds(ms)
+        override fun zone(): TimeZone = TimeZone.UTC
     }
 
     private class FakeSource : ActivitySource {

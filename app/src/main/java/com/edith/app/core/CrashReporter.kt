@@ -6,8 +6,8 @@ import com.edith.app.EdithApp
 import com.edith.app.core.log.LogRingBuffer
 import com.edith.app.di.AppContainer
 import java.io.File
-import java.time.Instant
-import java.time.format.DateTimeFormatter
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 /** Installs a default uncaught exception handler that writes crash reports (C02 §5). */
 object CrashReporter {
@@ -28,7 +28,7 @@ object CrashReporter {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
-                writeReport(file, thread, throwable, versionName, device, androidVersion, Instant.now())
+                writeReport(file, thread, throwable, versionName, device, androidVersion, Clock.System.now())
             } catch (e: Throwable) {
                 // A failure while reporting must never hide the original crash.
             }
@@ -56,7 +56,7 @@ object CrashReporter {
         file.parentFile?.mkdirs()
         val report = buildString {
             appendLine("Edith crash report")
-            appendLine("Time (UTC): ${DateTimeFormatter.ISO_INSTANT.format(now)}")
+            appendLine("Time (UTC): $now")
             appendLine("App version: $versionName")
             appendLine("Device: $device (Android $androidVersion)")
             appendLine("Thread: ${thread.name}")

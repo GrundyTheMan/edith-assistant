@@ -24,8 +24,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.time.Instant
-import java.time.ZoneId
+import kotlin.time.Instant
+import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.datetime.TimeZone
 
 /** C05 and C06b tests against a real (in-memory) Room database. */
 @RunWith(AndroidJUnit4::class)
@@ -33,8 +34,8 @@ class ChatRepositoryTest {
     /** Each call is 1 ms later, so ordering by created_at is deterministic. */
     private val clock = object : Clock {
         var t = Instant.parse("2026-10-31T12:00:00Z")
-        override fun now(): Instant = t.also { t = t.plusMillis(1) }
-        override fun zone(): ZoneId = ZoneId.of("UTC")
+        override fun now(): Instant = t.also { t = t + 1.milliseconds }
+        override fun zone(): TimeZone = TimeZone.of("UTC")
     }
     private lateinit var db: EdithDatabase
     private lateinit var repo: ChatRepository
@@ -52,7 +53,7 @@ class ChatRepositoryTest {
         AttachmentEntity(
             messageId = messageId, number = number, direction = direction, kind = AttachmentKind.Image,
             fileName = "photo$number.jpg", mimeType = "image/jpeg", sizeBytes = 1000, storedPath = "attachments/$number.jpg",
-            createdAt = clock.now().toEpochMilli(),
+            createdAt = clock.now().toEpochMilliseconds(),
         )
 
     private fun <T> raw(sql: String, read: (android.database.Cursor) -> T): T =

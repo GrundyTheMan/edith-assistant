@@ -61,6 +61,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.time.Instant
 import java.time.LocalDate
+import kotlinx.datetime.toJavaLocalDate
 import java.time.ZoneId
 
 /**
@@ -435,7 +436,7 @@ class TaskToolsTest {
 
     @Test fun `days - words, weekdays, dates, a date-time's own date, and garbage`() {
         val spec = ToolSpec("x", "x", listOf(ToolParam("due", ParamType.String, "d")))
-        fun day(v: String) = ToolArgs(JsonObject(mapOf("due" to JsonPrimitive(v))), spec).day("due", clock)
+        fun day(v: String) = ToolArgs(JsonObject(mapOf("due" to JsonPrimitive(v))), spec).day("due", clock)?.toJavaLocalDate()
         assertEquals(today, day("today"))
         assertEquals(today.plusDays(1), day("Tomorrow"))
         assertEquals("Friday on a Friday is today", today, day("friday"))

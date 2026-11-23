@@ -13,7 +13,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.time.ZoneOffset
+import kotlinx.datetime.TimeZone
 
 /** C27 Clips: what [Home] does with the services' clips, and the words the Clips list uses. */
 class ClipsTest {
@@ -114,9 +114,9 @@ class ClipsTest {
         assertEquals("Front Door · Motion", clipTitle(DeviceClip("1", "ring", "Front Door", 0, EventKind.Motion, null)))
         val now = java.time.Instant.parse("2026-11-14T20:00:00Z").toEpochMilli()
         fun at(s: String) = java.time.Instant.parse(s).toEpochMilli()
-        assertEquals("Today 3:42 PM", clipWhen(at("2026-11-14T15:42:00Z"), now, ZoneOffset.UTC))
-        assertEquals("Yesterday 9:05 AM", clipWhen(at("2026-11-13T09:05:00Z"), now, ZoneOffset.UTC))
-        assertEquals("Wed 11 Nov, 6:30 PM", clipWhen(at("2026-11-11T18:30:00Z"), now, ZoneOffset.UTC))
+        assertEquals("Today 3:42 PM", clipWhen(at("2026-11-14T15:42:00Z"), now, TimeZone.UTC))
+        assertEquals("Yesterday 9:05 AM", clipWhen(at("2026-11-13T09:05:00Z"), now, TimeZone.UTC))
+        assertEquals("Wed 11 Nov, 6:30 PM", clipWhen(at("2026-11-11T18:30:00Z"), now, TimeZone.UTC))
         assertTrue("Ring Protect" in clipsEmptyText(ClipsUi(noPlan = true, loading = false)))
         assertEquals("Ring didn't answer: x.", clipsEmptyText(ClipsUi(problems = listOf("Ring didn't answer: x."), loading = false)))
         assertEquals("No clips in the last 60 days.", clipsEmptyText(ClipsUi(loading = false)))

@@ -35,7 +35,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
-import java.time.ZonedDateTime
+import kotlin.time.Clock
 
 /**
  * C17 on the per-account API (C22): Google accounts' states with fake sign-in and authorization (Play services path),
@@ -197,7 +197,7 @@ class GoogleAuthTest {
     }
 
     private val model = ModelInfo("gemma4:12b", setOf("tools"))
-    private fun prompt(registry: ToolRegistry) = ToolGuidanceSection { registry }.text(PromptContext(ZonedDateTime.now(), model)).orEmpty()
+    private fun prompt(registry: ToolRegistry) = ToolGuidanceSection { registry }.text(PromptContext(Clock.System.now(), model)).orEmpty()
 
     @Test fun `the tools are offered while at least one account is connected, and the prompt names every account`() = runBlocking {
         val withTools = ToolRegistry(listOf(AccountTool("list_calendar_events"), AccountTool("search_email")), listOf(accounts))

@@ -1,6 +1,8 @@
 package com.edith.app.accounts.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import com.edith.app.core.time.javaNow
+import com.edith.app.core.time.javaZone
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -124,8 +126,8 @@ class CalendarViewModel(
 
     private suspend fun load() {
         if (_state.value !is CalendarUi.Agenda) _state.value = CalendarUi.Loading
-        val zone = clock.zone()
-        val today = ZonedDateTime.ofInstant(clock.now(), zone).toLocalDate()
+        val zone = clock.javaZone()
+        val today = ZonedDateTime.ofInstant(clock.javaNow(), zone).toLocalDate()
         val from = today.atStartOfDay(zone).toInstant()
         val to = today.plusDays(DAYS.toLong()).atStartOfDay(zone).toInstant()
         val targets = dir.entries().filter { it.calendar != null && it.state != AccountState.Checking }

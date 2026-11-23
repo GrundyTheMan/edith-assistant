@@ -209,7 +209,7 @@ class ChatRepository(
 
     private suspend fun <T> io(block: suspend () -> T): T = withContext(dispatchers.io) { block() }
 
-    private fun now() = clock.now().toEpochMilli()
+    private fun now() = clock.now().toEpochMilliseconds()
 
     companion object {
         private val toolCallText = Regex("""(?s)\s*<tool_call>.*?</tool_call>\s*""")

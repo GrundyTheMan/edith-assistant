@@ -58,7 +58,7 @@ import com.edith.app.printer.ui.FilesUi
 import com.edith.app.printer.ui.HistoryUi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.time.ZoneId
+import kotlinx.datetime.TimeZone
 
 /** Decodes a picture off the main thread (L39) and keeps only the newest as a bitmap. */
 @Composable
@@ -120,7 +120,7 @@ private const val NOT_WHILE_PRINTING = "Not while printing: the printer would st
 /** Files: nothing is asked of Jarvis until Load files is pressed. Then a search, newest first, and a detail sheet for a file. */
 @Composable
 internal fun FilesCard(
-    state: PrinterState, files: FilesUi, nowMs: Long, zone: ZoneId,
+    state: PrinterState, files: FilesUi, nowMs: Long, zone: TimeZone,
     onLoad: (Boolean) -> Unit, onQuery: (String) -> Unit, onPrintedOnly: (Boolean) -> Unit, onOpen: (String) -> Unit, onCloseDetail: () -> Unit,
     ctx: ControlsCtx? = null, onPickUpload: () -> Unit = {}, onSendUpload: () -> Unit = {}, onCancelUpload: () -> Unit = {}, onClearUpload: () -> Unit = {},
 ) {
@@ -229,7 +229,7 @@ private fun FileDetailSheet(files: FilesUi, title: String, onClose: () -> Unit, 
 
 /** History: the totals and the last 50 jobs, with More for older ones. Read only. */
 @Composable
-internal fun HistoryCard(history: HistoryUi, nowMs: Long, zone: ZoneId, onMore: () -> Unit) {
+internal fun HistoryCard(history: HistoryUi, nowMs: Long, zone: TimeZone, onMore: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.testTag("history-card")) {
         history.totals?.let { t ->
             LabelValue("Jobs", "${t.jobs}")

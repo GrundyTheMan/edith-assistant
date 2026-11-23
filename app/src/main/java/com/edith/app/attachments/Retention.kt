@@ -31,7 +31,7 @@ class Retention(
     /** Prunes to [keep]: a lower setting applies at once (Settings asks first, with [wouldRemove]). */
     suspend fun prune(keep: Int): Int = lock.withLock {
         withContext(dispatchers.io) {
-            val now = clock.now().toEpochMilli()
+            val now = clock.now().toEpochMilliseconds()
             var removed = 0
             for (direction in AttachmentDirection.entries) {
                 for (old in dao.keptNewestFirst(direction).drop(keep.coerceAtLeast(0))) {
@@ -58,7 +58,7 @@ class Retention(
         lock.withLock {
             withContext(dispatchers.io) {
                 store.clearSessionAndTemp()
-                val now = clock.now().toEpochMilli()
+                val now = clock.now().toEpochMilliseconds()
                 dao.markSessionRemoved(now)
                 val referenced = dao.allStoredPaths().toSet()
                 val orphans = store.storedFiles().filter { (path, _) -> path !in referenced }
@@ -74,7 +74,7 @@ class Retention(
         withContext(dispatchers.io) {
             val paths = dao.allStoredPaths()
             paths.forEach(store::delete)
-            dao.markAllRemoved(clock.now().toEpochMilli())
+            dao.markAllRemoved(clock.now().toEpochMilliseconds())
             paths.size
         }
     }

@@ -143,7 +143,7 @@ class MerossApi(
     }
 
     private suspend fun post(url: String, params: JsonObject, token: String?): Raw {
-        val envelope = MerossProtocol.envelope(params, clock.now().toEpochMilli(), MerossProtocol.nonce(random))
+        val envelope = MerossProtocol.envelope(params, clock.now().toEpochMilliseconds(), MerossProtocol.nonce(random))
         val request = Request.Builder().url(url)
             .header("Authorization", if (token == null) "Basic" else "Basic $token")
             .header("AppVersion", APP_VERSION).header("vender", "meross").header("AppType", APP_TYPE)

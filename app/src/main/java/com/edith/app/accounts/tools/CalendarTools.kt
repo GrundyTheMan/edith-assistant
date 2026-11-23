@@ -1,6 +1,10 @@
 package com.edith.app.accounts.tools
 
 import com.edith.app.accounts.Account
+import kotlinx.datetime.toKotlinTimeZone
+import kotlin.time.toJavaInstant
+import com.edith.app.core.time.javaNow
+import com.edith.app.core.time.javaZone
 import com.edith.app.accounts.AccountDirectory
 import com.edith.app.accounts.AccountEntry
 import com.edith.app.accounts.Accounts
@@ -107,18 +111,22 @@ private val END = ToolParam("end", ParamType.DateTime, "End of the period, in th
  * So `Z`/`+00:00`, and any offset the owner's own zone uses at some time of year (both of Detroit's), are read as local
  * wall-clock time. A genuinely different zone ("3pm Pacific" → `-08:00`) is kept.
  */
+/** [ToolArgs.dateTime] as a java `ZonedDateTime` (TEMPORARY, K1.3: this package is still on `java.time`). */
+private fun ToolArgs.zonedDateTime(name: String, zone: ZoneId): ZonedDateTime? =
+    dateTime(name, zone.toKotlinTimeZone())?.toJavaInstant()?.atZone(zone)
+
 internal fun ToolArgs.localTime(name: String, zone: ZoneId): ZonedDateTime? {
-    val text = string(name)?.trim() ?: return dateTime(name, zone)
-    val offset = Regex("(Z|[+-]\\d\\d:?\\d\\d)$").find(text) ?: return dateTime(name, zone)
+    val text = string(name)?.trim() ?: return zonedDateTime(name, zone)
+    val offset = Regex("(Z|[+-]\\d\\d:?\\d\\d)$").find(text) ?: return zonedDateTime(name, zone)
     val local = try {
         java.time.LocalDateTime.parse(text.removeRange(offset.range))
     } catch (_: java.time.format.DateTimeParseException) {
-        return dateTime(name, zone)
+        return zonedDateTime(name, zone)
     }
     val given = if (offset.value == "Z") java.time.ZoneOffset.UTC else java.time.ZoneOffset.of(offset.value.let { if (it.length == 5) it.substring(0, 3) + ":" + it.substring(3) else it })
     val year = local.year
     val ownOffsets = setOf(java.time.ZoneOffset.UTC) + listOf(1, 7).map { zone.rules.getOffset(java.time.LocalDateTime.of(year, it, 1, 12, 0)) }
-    return if (given in ownOffsets) local.atZone(zone) else dateTime(name, zone)
+    return if (given in ownOffsets) local.atZone(zone) else zonedDateTime(name, zone)
 }
 
 private const val LOCAL_TIMES = "Give times in the user's local time without an offset or Z, e.g. 2026-11-03T15:00:00."
@@ -157,7 +165,7 @@ class ListCalendarEventsTool(private val dir: AccountDirectory, private val hand
         "(a whole day: 00:00 to 23:59). Results carry an event_id for changing or deleting an event. $LOCAL_TIMES"
 
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
-        val zone = ctx.clock.zone()
+        val zone = ctx.clock.javaZone()
         val from = requireNotNull(args.localTime("start", zone))
         val to = requireNotNull(args.localTime("end", zone)).let { if (it == from) it.plusDays(1) else it }
         if (!to.isAfter(from)) throw ArgumentError("end", "end must be after start")
@@ -196,7 +204,7 @@ class FindFreeTimeTool(private val dir: AccountDirectory) : Tool {
     override val guidance = "For \"am I free…\" or \"when could I…\", call find_free_time."
 
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
-        val zone = ctx.clock.zone()
+        val zone = ctx.clock.javaZone()
         val from = requireNotNull(args.localTime("start", zone))
         val to = requireNotNull(args.localTime("end", zone))
         if (!to.isAfter(from)) throw ArgumentError("end", "end must be after start")

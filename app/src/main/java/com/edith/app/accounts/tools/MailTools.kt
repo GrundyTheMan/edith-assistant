@@ -1,6 +1,8 @@
 package com.edith.app.accounts.tools
 
 import com.edith.app.accounts.AccountDirectory
+import com.edith.app.core.time.javaNow
+import com.edith.app.core.time.javaZone
 import com.edith.app.accounts.AccountEntry
 import com.edith.app.accounts.Accounts
 import com.edith.app.accounts.sources.MailQuery
@@ -97,8 +99,8 @@ class SearchEmailTool(private val dir: AccountDirectory, private val handles: Ma
 
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
         val max = (args.int("max_results") ?: 5).coerceIn(1, MAX)
-        val zone = ctx.clock.zone()
-        val today = ctx.clock.now().atZone(zone).toLocalDate()
+        val zone = ctx.clock.javaZone()
+        val today = ctx.clock.javaNow().atZone(zone).toLocalDate()
         fun date(name: String) = args.string(name)?.let {
             MailDates.parse(it, today, zone) ?: throw ArgumentError(name, "$name must be a day like 2026-11-12, or today or yesterday")
         }

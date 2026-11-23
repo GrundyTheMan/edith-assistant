@@ -2,13 +2,13 @@ package com.edith.app.printer.feed
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import java.time.Instant
-import java.time.ZoneId
+import kotlinx.datetime.TimeZone
+import kotlin.time.Instant
 import java.util.Locale
 
 class PrinterFormatTest {
     private val us = Locale.US
-    private val zone = ZoneId.of("America/Detroit")
+    private val zone = TimeZone.of("America/Detroit")
 
     @Test fun `durations round minutes down and never show 0m for an hour or more`() {
         assertEquals("1h 1m", PrinterFormat.duration(3_700.0))
@@ -65,14 +65,14 @@ class PrinterFormatTest {
     }
 
     @Test fun `ages are relative under a week and a date after`() {
-        val now = Instant.parse("2026-11-18T18:00:00Z").toEpochMilli()
+        val now = Instant.parse("2026-11-18T18:00:00Z").toEpochMilliseconds()
         fun ago(ms: Long) = PrinterFormat.age(now - ms, now, zone, us)
         assertEquals("just now", ago(20_000))
         assertEquals("2 min ago", ago(125_000))
         assertEquals("3 h ago", ago(3 * 3_600_000L + 5_000))
-        assertEquals("yesterday", PrinterFormat.age(Instant.parse("2026-11-17T20:00:00Z").toEpochMilli(), now, zone, us))
-        assertEquals("4 days ago", PrinterFormat.age(Instant.parse("2026-11-14T15:00:00Z").toEpochMilli(), now, zone, us))
-        assertEquals("Nov 3", PrinterFormat.age(Instant.parse("2026-11-03T15:00:00Z").toEpochMilli(), now, zone, us))
+        assertEquals("yesterday", PrinterFormat.age(Instant.parse("2026-11-17T20:00:00Z").toEpochMilliseconds(), now, zone, us))
+        assertEquals("4 days ago", PrinterFormat.age(Instant.parse("2026-11-14T15:00:00Z").toEpochMilliseconds(), now, zone, us))
+        assertEquals("Nov 3", PrinterFormat.age(Instant.parse("2026-11-03T15:00:00Z").toEpochMilliseconds(), now, zone, us))
         assertEquals("just now", PrinterFormat.age(now + 5_000, now, zone, us))
     }
 

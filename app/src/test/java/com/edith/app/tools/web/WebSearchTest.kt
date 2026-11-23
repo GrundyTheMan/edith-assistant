@@ -306,7 +306,7 @@ class WebSearchTest {
     @Test fun `web tools are always offered to a tool-capable model`() = runTest {
         val registry = ToolRegistry(listOf(SearchWebTool(search), ReadWebPageTool(search.pages(reader))))
         val model = ModelInfo("gemma4:12b-it-q8_0", setOf("completion", "tools"))
-        val prompt = ToolGuidanceSection { registry }.text(PromptContext(Instant.parse("2026-11-01T16:00:00Z").atZone(ZoneId.of("UTC")), model))!!
+        val prompt = ToolGuidanceSection { registry }.text(PromptContext(kotlin.time.Instant.parse("2026-11-01T16:00:00Z"), model))!!
         assertEquals(listOf("search_web", "read_web_page"), registry.available(model).map { it.spec.name })
         assertTrue(prompt, prompt.contains("search_web (") && prompt.contains("search first; read a page"))
         assertFalse(prompt.contains("isn't set up"))

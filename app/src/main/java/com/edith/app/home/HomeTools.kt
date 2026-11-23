@@ -2,6 +2,7 @@ package com.edith.app.home
 
 import com.edith.app.chat.engine.ConfirmationRequest
 import com.edith.app.core.error.Outcome
+import com.edith.app.core.time.formatPattern
 import com.edith.app.tools.framework.ParamType
 import com.edith.app.tools.framework.Tool
 import com.edith.app.tools.framework.ToolArgs
@@ -230,7 +231,7 @@ class RecentEventsTool(private val home: Home) : Tool {
             listOf(device)
         } else view.devices.filter { it.has(Capability.Events) }
         if (cameras.isEmpty()) return ToolResult.Ok("No doorbell or camera that reports events is connected.")
-        val now = ctx.clock.now().toEpochMilli()
+        val now = ctx.clock.now().toEpochMilliseconds()
         val since = now - hours * 3_600_000L
         val zone = ctx.clock.zone()
         val lines = mutableListOf<String>()
@@ -242,7 +243,7 @@ class RecentEventsTool(private val home: Home) : Tool {
                     if (shown.isEmpty()) lines += "${d.name}: nothing reported in the last $hours hours."
                     else {
                         lines += "${d.name}:"
-                        shown.forEach { lines += "- ${it.kind.label} at ${TIME.format(java.time.Instant.ofEpochMilli(it.at).atZone(zone))} (${HomeActions.age(it.at, now)})" }
+                        shown.forEach { lines += "- ${it.kind.label} at ${formatPattern(kotlin.time.Instant.fromEpochMilliseconds(it.at), zone, "EEE h:mm a", "en-US")} (${HomeActions.age(it.at, now)})" }
                     }
                 }
             }
@@ -254,6 +255,5 @@ class RecentEventsTool(private val home: Home) : Tool {
         const val DEFAULT_HOURS = 24
         const val MAX_HOURS = 72
         const val MAX_PER_CAMERA = 20
-        private val TIME = java.time.format.DateTimeFormatter.ofPattern("EEE h:mm a", java.util.Locale.US)
     }
 }

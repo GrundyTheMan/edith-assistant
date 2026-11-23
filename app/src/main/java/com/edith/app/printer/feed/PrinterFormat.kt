@@ -1,9 +1,11 @@
 package com.edith.app.printer.feed
 
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
+import com.edith.app.core.time.formatPattern
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.daysUntil
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 import java.util.Locale
 
 /**
@@ -38,11 +40,11 @@ internal object PrinterFormat {
     }
 
     /** "about 14:32" in the phone's own zone, 24 hours or 12 as the phone does. Unknown -> "—". */
-    fun eta(now: Instant, timeLeftSeconds: Double?, zone: ZoneId, is24Hour: Boolean, locale: Locale = Locale.getDefault()): String {
+    fun eta(now: Instant, timeLeftSeconds: Double?, zone: TimeZone, is24Hour: Boolean, locale: Locale = Locale.getDefault()): String {
         if (timeLeftSeconds == null || timeLeftSeconds.isNaN() || timeLeftSeconds < 0) return NONE
-        val at = now.plusSeconds(timeLeftSeconds.toLong()).atZone(zone)
+        val at = now + timeLeftSeconds.toLong().seconds
         val pattern = if (is24Hour) "HH:mm" else "h:mm a"
-        return "about ${at.format(DateTimeFormatter.ofPattern(pattern, locale))}"
+        return "about ${formatPattern(at, zone, pattern, locale.toLanguageTag())}"
     }
 
     /** A temperature reading: one decimal, "219.8 °C". */
@@ -64,18 +66,17 @@ internal object PrinterFormat {
     fun factor(factor: Double): String = percent(factor)
 
     /** "2 min ago", "3 h ago", "yesterday", "4 days ago", then a short date for a week or more. Future times read "just now". */
-    fun age(thenMs: Long, nowMs: Long, zone: ZoneId, locale: Locale = Locale.getDefault()): String {
+    fun age(thenMs: Long, nowMs: Long, zone: TimeZone, locale: Locale = Locale.getDefault()): String {
         val seconds = (nowMs - thenMs) / 1000
         if (seconds < 60) return "just now"
         if (seconds < 3600) return "${seconds / 60} min ago"
-        val then = Instant.ofEpochMilli(thenMs).atZone(zone).toLocalDate()
-        val today = Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
-        val days = ChronoUnit.DAYS.between(then, today)
+        val thenAt = Instant.fromEpochMilliseconds(thenMs)
+        val days = thenAt.toLocalDateTime(zone).date.daysUntil(Instant.fromEpochMilliseconds(nowMs).toLocalDateTime(zone).date)
         return when {
             days <= 0 -> "${seconds / 3600} h ago"
-            days == 1L -> "yesterday"
+            days == 1 -> "yesterday"
             days < 7 -> "$days days ago"
-            else -> then.format(DateTimeFormatter.ofPattern("MMM d", locale))
+            else -> formatPattern(thenAt, zone, "MMM d", locale.toLanguageTag())
         }
     }
 

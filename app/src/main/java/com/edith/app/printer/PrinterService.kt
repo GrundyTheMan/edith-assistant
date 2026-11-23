@@ -167,7 +167,7 @@ class PrinterService(
             capabilities = setOfNotNull(Capability.PrintControl, Capability.Snapshot.takeIf { hasCamera }),
             backend = ID, online = online, state = state,
             // Home treats a null stateAt as "now"; an unreachable printer has no fresh state to date.
-            stateAt = if (online && state != null) clock.now().toEpochMilli() else null,
+            stateAt = if (online && state != null) clock.now().toEpochMilliseconds() else null,
         )
     }
 

@@ -17,7 +17,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 import java.io.File
-import java.time.ZonedDateTime
+import kotlin.time.Clock
 
 /** C15 §3: labels and media in what the model sees, the media window, the capability gate, and the prompt line. */
 class AttachmentContextTest {
@@ -105,7 +105,7 @@ class AttachmentContextTest {
     }
 
     @Test fun `the prompt explains labels only when there are attachments`() {
-        val now = ZonedDateTime.now()
+        val now = Clock.System.now()
         assertNull(AttachmentsSection().text(PromptContext(now, sees, hasAttachments = false)))
         assertEquals(
             "The user can attach images and audio files; they appear as labels like [Attachment 3: receipt.jpg (image)].",

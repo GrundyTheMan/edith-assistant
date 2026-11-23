@@ -354,6 +354,14 @@ Goal: `shared/` exists, builds for Android, desktop and iOS, and the first found
 | K1.5 | **Storage**: Room to Room KMP (same schema and version; `data` 7 files, `home` 1), DataStore to common. | The existing Android database opens unchanged; migrations tests pass. | L |
 | K1.6 | Move W1 (`core`, `ollama`, `settings`, `data`, `di`) into `shared/commonMain` with `AppContainer(platform: PlatformServices)`. Android seams: `SecretStore`, `Log`, files. | W1 packages are common; Android works exactly as before; iOS simulator tests of W1 pass. | L |
 
+**Phase 1 progress (2026-11-23)**
+
+| WP | Status | Result |
+|---|---|---|
+| K1.1 | **done** | `shared/` builds for Android, desktop and iPhone; one trivial class; an import guard keeps `android.*`, `java.*` and OkHttp out of `commonMain` (PR #11). |
+| K1.2 | **done** | `shared-ios.yml` runs the shared tests on an iOS simulator (PR #12): 3 m 37 s cold. |
+| K1.3 | **first half done** | `Clock` and the new `formatPattern` (display formatting behind one function: java.time on Android and desktop, `NSDateFormatter` on the iPhone) live in `shared/`, on kotlinx-datetime 0.8.0 and Kotlin's own `kotlin.time.Instant`. `core`, `chat`, `tools`, `printer`, `home`, `ui` and `data` no longer use `java.time`; a test (`JavaTimeGuardTest`) keeps it out. Still on `java.time`: `accounts`, `google`, `microsoft`, `icloud`, `jarvis`, `blink`, `ring` (the calendar, mail and task types hold `ZonedDateTime` and `LocalDate`); they read the clock through `JavaTimeBridge.kt`, which goes when the last one moves. Not yet shown on an iPhone: the `NSDateFormatter` output (its simulator test is the next step). |
+
 **Gate G1 (owner).** Android is used for a few days on the new build with no regression; the tests listed in K1.1–K1.6 pass in CI.
 
 ### Phase 2 — Move the engine

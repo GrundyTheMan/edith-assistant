@@ -35,7 +35,7 @@ import com.edith.app.voice.capture.VoiceMemos
 import com.edith.app.voice.handsfree.HandsFree
 import com.edith.app.voice.speech.SpeechController
 import java.io.File
-import java.time.Instant
+import kotlin.time.Instant
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -195,7 +195,7 @@ class ChatViewModel(
                     id = it.id,
                     title = it.title.ifBlank { ChatUiState.NEW_CHAT_TITLE },
                     preview = it.lastMessage?.let { text -> markdownToPlainLine(text, PREVIEW_CHARS) },
-                    time = formatListTime(Instant.ofEpochMilli(it.updatedAt), clock),
+                    time = formatListTime(Instant.fromEpochMilliseconds(it.updatedAt), clock),
                     isCurrent = it.id == openId,
                     isReplying = it.id == runningIn,
                 )
@@ -474,7 +474,7 @@ class ChatViewModel(
                 id = m.id,
                 role = m.role,
                 text = m.content,
-                time = formatMessageTime(Instant.ofEpochMilli(m.createdAt), clock),
+                time = formatMessageTime(Instant.fromEpochMilliseconds(m.createdAt), clock),
                 status = m.status,
                 errorMessage = m.errorMessage,
                 toolsUsed = m.toolsUsed.map(toolLabel),

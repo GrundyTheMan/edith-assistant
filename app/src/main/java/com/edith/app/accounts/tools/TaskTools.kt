@@ -1,6 +1,9 @@
 package com.edith.app.accounts.tools
 
 import com.edith.app.accounts.Account
+import com.edith.app.core.time.javaNow
+import com.edith.app.core.time.javaZone
+import kotlinx.datetime.toJavaLocalDate
 import com.edith.app.accounts.AccountDirectory
 import com.edith.app.accounts.AccountEntry
 import com.edith.app.accounts.Accounts
@@ -150,7 +153,7 @@ private fun resolve(dir: AccountDirectory, handles: TaskHandles, handle: String?
 
 private fun listRow(ref: TaskRef, entry: AccountEntry) = "List" to "${ref.list.title} — ${entry.account.display}"
 
-private fun today(clock: Clock): LocalDate = clock.now().atZone(clock.zone()).toLocalDate()
+private fun today(clock: Clock): LocalDate = clock.javaNow().atZone(clock.javaZone()).toLocalDate()
 
 /** `list_tasks` (C35 §3): the open to-dos of every account, grouped by list. */
 class ListTasksTool(private val dir: AccountDirectory, private val handles: TaskHandles) : Tool {
@@ -246,7 +249,7 @@ class AddTaskTool(private val dir: AccountDirectory, private val handles: TaskHa
 
     override suspend fun confirmation(args: ToolArgs): ConfirmationRequest? {
         val title = requireNotNull(args.string("title"))
-        val due = args.day("due", clock)
+        val due = args.day("due", clock)?.toJavaLocalDate()
         val use = target(args) as? Target.Use ?: return null
         return ConfirmationRequest(
             "Add to your to-dos?",
@@ -263,7 +266,7 @@ class AddTaskTool(private val dir: AccountDirectory, private val handles: TaskHa
 
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
         val title = requireNotNull(args.string("title"))
-        val due = args.day("due", clock)
+        val due = args.day("due", clock)?.toJavaLocalDate()
         val use = when (val t = target(args)) { is Target.Use -> t; is Target.Stop -> return t.result }
         return when (val r = requireNotNull(use.entry.tasks).insert(use.list.id, title, args.string("notes"), due, use.parent?.task?.id)) {
             is Outcome.Success -> {
@@ -297,7 +300,7 @@ class ChangeTaskTool(private val dir: AccountDirectory, private val handles: Tas
         return TaskPatch(
             title = args.string("title"),
             notes = args.stringOrEmpty("notes"),
-            due = due?.takeIf { it.isNotEmpty() }?.let { args.day("due", clock) },
+            due = due?.takeIf { it.isNotEmpty() }?.let { args.day("due", clock)?.toJavaLocalDate() },
             clearDue = due != null && due.isEmpty(),
         )
     }

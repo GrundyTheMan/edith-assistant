@@ -1,6 +1,7 @@
 package com.edith.app.microsoft
 
 import android.app.Activity
+import com.edith.app.core.time.javaNow
 import android.app.PendingIntent
 import android.content.Intent
 import com.edith.app.accounts.Account
@@ -77,7 +78,7 @@ class MicrosoftAccounts(
                 address == null -> Result.Failed(NO_ADDRESS)
                 else -> {
                     Log.i(LogTag.Accounts, "Microsoft sign-in: signed in")
-                    Result.SignedIn(address, MicrosoftGrant(refreshToken, t.accessToken, clock.now().plusSeconds(t.expiresInSeconds)))
+                    Result.SignedIn(address, MicrosoftGrant(refreshToken, t.accessToken, clock.javaNow().plusSeconds(t.expiresInSeconds)))
                 }
             }
         }
