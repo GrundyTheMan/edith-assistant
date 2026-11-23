@@ -3,6 +3,7 @@ package com.edith.app
 import android.app.Application
 import android.os.StrictMode
 import com.edith.app.core.CrashReporter
+import com.edith.app.core.log.LogConfig
 import com.edith.app.di.AppContainer
 
 /** Application subclass that builds the dependency container and installs crash handler. */
@@ -11,6 +12,7 @@ class EdithApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        LogConfig.debug = BuildConfig.DEBUG   // before anything logs
         CrashReporter.install(this) // First, so later failures are captured
         if (BuildConfig.DEBUG) enableStrictMode()
         container = AppContainer(this)

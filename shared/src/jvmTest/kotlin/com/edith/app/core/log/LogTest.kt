@@ -1,13 +1,13 @@
 package com.edith.app.core.log
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class LogTest {
-    @Before fun clear() = LogRingBuffer.clear()
+    @BeforeTest fun clear() = LogRingBuffer.clear()
 
     @Test fun `ring buffer keeps the last 200 lines in order`() {
         repeat(250) { LogRingBuffer.append("Edith/Test", "line $it") }

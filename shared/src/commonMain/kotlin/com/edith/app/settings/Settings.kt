@@ -1,9 +1,7 @@
 package com.edith.app.settings
 
-import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.MutablePreferences
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -12,12 +10,11 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStoreFile
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import java.io.IOException
+import kotlinx.io.IOException
 
 /** Every setting Edith has (01-architecture §5.3). Defaults live here; later chunks only read/update them. */
 data class Settings(
@@ -66,7 +63,7 @@ interface SettingsRepository {
 }
 
 /** The DataStore key registry (01-architecture §5.3) — names must not change: they're the storage format. */
-internal object SettingsKeys {
+object SettingsKeys {
     val SERVER_URL = stringPreferencesKey("server_url")
     val MODEL = stringPreferencesKey("model")
     val SPEAK_REPLIES = booleanPreferencesKey("speak_replies")
@@ -83,10 +80,10 @@ internal object SettingsKeys {
 }
 
 /**
- * Settings in the Preferences DataStore `settings`. Create one per process (AppContainer does): see [create]. C22: the
+ * Settings in the Preferences DataStore `settings`. Create one per process (AppContainer does): on Android see `DataStoreSettingsRepository.create(context)`. C22: the
  * account list (`accounts`) lives in the same file, so [store] is shared with it.
  */
-class DataStoreSettingsRepository(internal val store: DataStore<Preferences>) : SettingsRepository {
+class DataStoreSettingsRepository(val store: DataStore<Preferences>) : SettingsRepository {
 
     override val settings: Flow<Settings> = store.data
         .catch { e -> if (e is IOException) emit(emptyPreferences()) else throw e }   // unreadable file → defaults
@@ -99,13 +96,10 @@ class DataStoreSettingsRepository(internal val store: DataStore<Preferences>) : 
         store.edit { prefs -> prefs.write(transform(prefs.toSettings())) }
     }
 
-    companion object {
-        fun create(context: Context): DataStoreSettingsRepository =
-            DataStoreSettingsRepository(PreferenceDataStoreFactory.create { context.preferencesDataStoreFile("settings") })
-    }
+    companion object
 }
 
-internal fun Preferences.toSettings(): Settings {
+fun Preferences.toSettings(): Settings {
     val d = Settings()
     return Settings(
         serverUrl = this[SettingsKeys.SERVER_URL] ?: d.serverUrl,
@@ -124,7 +118,7 @@ internal fun Preferences.toSettings(): Settings {
     )
 }
 
-internal fun MutablePreferences.write(s: Settings) {
+fun MutablePreferences.write(s: Settings) {
     this[SettingsKeys.SERVER_URL] = s.serverUrl
     setOrRemove(SettingsKeys.MODEL, s.model)
     this[SettingsKeys.SPEAK_REPLIES] = s.speakReplies

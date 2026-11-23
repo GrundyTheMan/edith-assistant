@@ -2,6 +2,7 @@ package com.edith.app.attachments
 
 import android.media.MediaMetadataRetriever
 import com.edith.app.core.log.Log
+import com.edith.app.data.chat.StoredFiles
 import com.edith.app.core.log.LogTag
 import com.edith.app.data.db.AttachmentKind
 import java.io.File
@@ -25,7 +26,7 @@ data class PendingAttachment(
  * - `attachments/<uuid>.<ext>` under `filesDir`: kept until retention removes it.
  * - `session/<uuid>.<ext>` under `cacheDir`: when the owner keeps 0, files last until the app next starts.
  */
-interface AttachmentStore {
+interface AttachmentStore : StoredFiles {
     /** Takes over [pending]'s file. Returns its `stored_path`. */
     fun keep(pending: PendingAttachment, session: Boolean): String
     /** Writes one of Edith's files (C16 §3). Returns its `stored_path`. */
@@ -36,7 +37,7 @@ interface AttachmentStore {
     fun file(storedPath: String?): File?
     /** An audio file's length, read once and remembered. */
     fun durationMs(storedPath: String?): Long?
-    fun delete(storedPath: String?)
+    override fun delete(storedPath: String?)
 }
 
 /** [AttachmentStore] that keeps attachments as files in the app's private storage (C16). */

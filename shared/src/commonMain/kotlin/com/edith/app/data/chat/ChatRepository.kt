@@ -1,13 +1,10 @@
 package com.edith.app.data.chat
 
-import android.database.sqlite.SQLiteConstraintException
-import androidx.room.withTransaction
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.error.AppError
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import com.edith.app.core.time.Clock
-import com.edith.app.attachments.AttachmentStore
 import com.edith.app.data.db.AttachmentDirection
 import com.edith.app.data.db.AttachmentEntity
 import com.edith.app.data.db.AttachmentKind
@@ -20,6 +17,8 @@ import com.edith.app.data.db.MessageSource
 import com.edith.app.data.db.MessageStatus
 import com.edith.app.data.db.MessageWithAttachments
 import com.edith.app.data.db.TitleSource
+import com.edith.app.data.db.inTransaction
+import com.edith.app.data.db.isConstraintViolation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
@@ -34,7 +33,7 @@ class ChatRepository(
     private val clock: Clock,
     private val dispatchers: AppDispatchers,
     /** Deletes attachment files when their messages go (C16 §2); null in tests that store no files. */
-    private val files: AttachmentStore? = null,
+    private val files: StoredFiles? = null,
 ) {
     // --- Conversations ---------------------------------------------------------------------------------------
 
@@ -195,13 +194,14 @@ class ChatRepository(
      */
     private suspend fun insert(message: MessageEntity, alsoInTransaction: suspend (messageId: Long) -> Unit = {}): Long? = io {
         try {
-            db.withTransaction {
+            db.inTransaction {
                 val id = db.messageDao().insert(message)
                 db.conversationDao().touch(message.conversationId, message.createdAt)
                 alsoInTransaction(id)
                 id
             }
-        } catch (e: SQLiteConstraintException) {
+        } catch (e: Exception) {
+            if (!e.isConstraintViolation()) throw e
             Log.w(LogTag.Chat, "Message not stored: conversation ${message.conversationId} no longer exists", e)
             null
         }

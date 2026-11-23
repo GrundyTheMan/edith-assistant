@@ -1,8 +1,11 @@
 // K1.1: the shared Kotlin Multiplatform module. A KMP library has one Android variant, no BuildConfig and no build types:
 // those stay in :app (docs/design/kmp-transition.md §3.4 in the public repo).
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.kotlin.multiplatform.library)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.room)
 }
@@ -13,8 +16,12 @@ kotlin {
         compileSdk = 37
         minSdk = 26
         withHostTest { }
+        // The app is built for Java 17, and it inlines functions from here: they must be built for the same.
+        compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
     }
-    jvm()
+    jvm {
+        compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
+    }
     iosArm64()
     iosSimulatorArm64()
 
@@ -25,7 +32,9 @@ kotlin {
             // K1.5: the database. api: the entities and DAOs carry Room's annotations and types.
             api(libs.room.runtime)
             implementation(libs.sqlite.bundled)
-            implementation(libs.kotlinx.serialization.json)
+            api(libs.kotlinx.serialization.json)   // OllamaClient takes a Json
+            api(libs.ktor.client.core)             // and an HttpClient
+            api(libs.datastore.preferences.core)   // the settings
             implementation(libs.coroutines.core)
         }
         commonTest.dependencies {

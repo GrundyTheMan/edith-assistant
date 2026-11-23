@@ -4,11 +4,12 @@ import com.edith.app.core.error.Outcome
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 
 /** C03: Model catalog - cache of installed models with their capabilities. */
 class ModelCatalog(private val client: OllamaClient) {
-    private val cache = ConcurrentHashMap<Pair<String, String>, Set<String>>()
+    private val cache = MutableStateFlow<Map<Pair<String, String>, Set<String>>>(emptyMap())
 
     /**
      * Chat-capable models with their capabilities; hides models lacking "completion" (e.g. embedding models).
@@ -34,14 +35,14 @@ class ModelCatalog(private val client: OllamaClient) {
 
     /** The model's capabilities, cached per (server, model). Failures aren't cached. */
     suspend fun capabilities(baseUrl: String, model: String): Outcome<Set<String>> {
-        cache[baseUrl to model]?.let { return Outcome.Success(it) }
+        cache.value[baseUrl to model]?.let { return Outcome.Success(it) }
         return when (val show = client.show(baseUrl, model)) {
             is Outcome.Failure -> show
-            is Outcome.Success -> show.value.capabilities.toSet().also { cache[baseUrl to model] = it }.let { Outcome.Success(it) }
+            is Outcome.Success -> show.value.capabilities.toSet().also { found -> cache.update { current -> current + ((baseUrl to model) to found) } }.let { Outcome.Success(it) }
         }
     }
 
-    fun invalidate() = cache.clear()
+    fun invalidate() { cache.value = emptyMap() }
 }
 
 /** An installed model and what it can do (its Ollama capabilities). */
