@@ -6,12 +6,23 @@ import com.edith.app.core.error.Outcome
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import kotlinx.coroutines.withContext
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.request.header
+import io.ktor.client.request.prepareGet
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.HttpHeaders
+import io.ktor.http.URLBuilder
+import io.ktor.http.URLProtocol
+import io.ktor.http.Url
+import io.ktor.http.charset
+import io.ktor.http.contentType
+import io.ktor.http.isSuccess
+import io.ktor.http.takeFrom
+import io.ktor.utils.io.readRemaining
+import kotlinx.io.readByteArray
 import okhttp3.Dns
-import okhttp3.HttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
-import okhttp3.Request
-import okio.Buffer
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
@@ -26,10 +37,13 @@ import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 
 /**
- * Downloads a page on the phone and turns it into readable text (C10 §2): OkHttp, 10 s, at most 2 MB, Jsoup for the
+ * Downloads a page on the phone and turns it into readable text (C10 §2): 10 s, at most 2 MB, Jsoup for the
  * text. Only public http(s) addresses: redirects are followed by hand so every hop's host is checked, and
  * [PublicOnlyDns] refuses names that resolve to a private address, so neither the model nor a page can point Edith at
  * the owner's PC, router or anything else on their network.
+ *
+ * The requests are Ktor ones, but the name lookup is OkHttp's [Dns] on the engine underneath: that one hook is Android-only for
+ * now (the iPhone needs its own public-address check, K4.5).
  */
 class PageReader(
     baseClient: Lazy<OkHttpClient>,
@@ -37,57 +51,82 @@ class PageReader(
     private val dns: Dns = PublicOnlyDns(),
     private val hostAllowed: (String) -> Boolean = { !PrivateNetwork.isPrivateHost(it) },
 ) {
-    private val http by lazy {
-        baseClient.value.newBuilder()
+    private val http: HttpClient by lazy {
+        val okHttp = baseClient.value.newBuilder()
             .dns(dns)
             .followRedirects(false).followSslRedirects(false)
             .connectTimeout(TIMEOUT_S, TimeUnit.SECONDS).readTimeout(TIMEOUT_S, TimeUnit.SECONDS).callTimeout(TIMEOUT_S, TimeUnit.SECONDS)
             .build()
+        HttpClient(OkHttp) {
+            engine { preconfigured = okHttp }
+            followRedirects = false   // by hand, below
+            expectSuccess = false
+        }
+    }
+
+    /** What one request came to: another address to go to, or the end of the matter. */
+    private sealed interface Step {
+        class Redirect(val to: Url) : Step
+        class Done(val outcome: Outcome<WebPage>) : Step
     }
 
     suspend fun read(url: String): Outcome<WebPage> = withContext(dispatchers.io) {
-        var current = url.toHttpUrlOrNull() ?: return@withContext fail(NOT_WEB)
+        var current = webUrl(url) ?: return@withContext fail(NOT_WEB)
         repeat(MAX_REDIRECTS + 1) {
             if (!hostAllowed(current.host)) return@withContext fail(PRIVATE)
-            val request = Request.Builder().url(current)
-                .header("User-Agent", DuckDuckGoSearch.USER_AGENT)
-                .header("Accept", "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5")
-                .build()
+            val address = current
             try {
-                http.newCall(request).execute().use { response ->
-                    if (response.isRedirect) {
-                        current = response.header("Location")?.let { current.resolve(it) } ?: return@withContext fail(httpError(response.code))
-                        return@use
-                    }
-                    if (!response.isSuccessful) {
-                        Log.w(LogTag.Tools, "Page ${current.host} HTTP ${response.code}")
-                        return@withContext fail(httpError(response.code))
-                    }
-                    val type = response.body.contentType()
-                    val kind = type?.let { "${it.type}/${it.subtype}".lowercase() }
-                    if (kind != null && kind !in HTML_TYPES && kind != "text/plain") return@withContext fail("That's a $kind file, not a web page, so it can't be read.")
-                    val bytes = Buffer().also { buf ->
-                        val source = response.body.source()
-                        while (buf.size < MAX_BYTES && source.read(buf, 8_192) != -1L) Unit
-                    }.let { if (it.size > MAX_BYTES) it.readByteArray(MAX_BYTES) else it.readByteArray() }
-                    val page = if (kind == "text/plain") {
-                        WebPage("", String(bytes, type?.charset() ?: Charsets.UTF_8))
-                    } else {
-                        readable(Jsoup.parse(bytes.inputStream(), type?.charset()?.name(), current.toString()))
-                    }
-                    return@withContext Outcome.Success(page)
+                when (val step = fetch(address)) {
+                    is Step.Redirect -> current = step.to
+                    is Step.Done -> return@withContext step.outcome
                 }
-            } catch (e: PrivateAddressException) {
-                return@withContext fail(PRIVATE)
-            } catch (e: UnknownHostException) {
-                return@withContext fail("Couldn't find ${current.host}.")
             } catch (e: IOException) {
-                Log.w(LogTag.Tools, "Page ${current.host} unreachable (${e::class.simpleName})")
-                return@withContext fail(UNREACHABLE)
+                val causes = generateSequence<Throwable>(e) { it.cause }.toList()
+                return@withContext when {
+                    causes.any { it is PrivateAddressException } -> fail(PRIVATE)
+                    causes.any { it is UnknownHostException } -> fail("Couldn't find ${address.host}.")
+                    else -> {
+                        Log.w(LogTag.Tools, "Page ${address.host} unreachable (${e::class.simpleName})")
+                        fail(UNREACHABLE)
+                    }
+                }
             }
         }
         fail("That page redirected too many times.")
     }
+
+    private suspend fun fetch(address: Url): Step =
+        http.prepareGet(address) {
+            header(HttpHeaders.UserAgent, DuckDuckGoSearch.USER_AGENT)
+            header(HttpHeaders.Accept, "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5")
+        }.execute { response ->
+            val code = response.status.value
+            if (code in REDIRECTS) {
+                val next = response.headers[HttpHeaders.Location]?.let { runCatching { URLBuilder(address).takeFrom(it).build() }.getOrNull() }
+                return@execute next?.let { Step.Redirect(it) } ?: Step.Done(fail(httpError(code)))
+            }
+            if (!response.status.isSuccess()) {
+                Log.w(LogTag.Tools, "Page ${address.host} HTTP $code")
+                return@execute Step.Done(fail(httpError(code)))
+            }
+            val type = response.contentType()
+            val kind = type?.let { "${it.contentType}/${it.contentSubtype}".lowercase() }
+            if (kind != null && kind !in HTML_TYPES && kind != "text/plain") {
+                return@execute Step.Done(fail("That's a $kind file, not a web page, so it can't be read."))
+            }
+            val bytes = response.bodyAsChannel().readRemaining(MAX_BYTES).readByteArray()
+            val charset = type?.charset()
+            val page = if (kind == "text/plain") {
+                WebPage("", String(bytes, charset ?: Charsets.UTF_8))
+            } else {
+                readable(Jsoup.parse(bytes.inputStream(), charset?.name(), address.toString()))
+            }
+            Step.Done(Outcome.Success(page))
+        }
+
+    /** [text] as an http(s) address, or null. */
+    private fun webUrl(text: String): Url? =
+        runCatching { Url(text) }.getOrNull()?.takeIf { (it.protocol == URLProtocol.HTTP || it.protocol == URLProtocol.HTTPS) && it.host.isNotEmpty() }
 
     private fun fail(message: String) = Outcome.Failure(AppError.ToolFailed("read_web_page", message))
 
@@ -97,6 +136,7 @@ class PageReader(
         const val UNREACHABLE = "That site didn't respond — try again shortly."
         const val MAX_BYTES = 2L * 1024 * 1024
         private const val MAX_REDIRECTS = 5
+        private val REDIRECTS = setOf(300, 301, 302, 303, 307, 308)
         private const val TIMEOUT_S = 10L
         private val HTML_TYPES = setOf("text/html", "application/xhtml+xml")
         private val SPACES = Regex("\\s+")

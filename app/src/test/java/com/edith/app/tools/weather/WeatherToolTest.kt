@@ -1,5 +1,6 @@
 package com.edith.app.tools.weather
 
+import com.edith.app.core.net.HttpClients
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
@@ -41,7 +42,7 @@ class WeatherToolTest {
     @Before fun start() {
         geocoding.start()
         forecasts.start()
-        client = OpenMeteoClient(lazyOf(OkHttpClient()), dispatchers, geocoding.url("/").toString(), forecasts.url("/").toString())
+        client = OpenMeteoClient(lazyOf(HttpClients.over(OkHttpClient())), dispatchers, geocoding.url("/").toString(), forecasts.url("/").toString())
     }
 
     @After fun stop() {
@@ -87,7 +88,8 @@ class WeatherToolTest {
         client.geocode("São Paulo & Co")
         val geo = geocoding.takeRequest().url
         assertEquals("São Paulo & Co", geo.queryParameter("name"))
-        assertTrue(geo.encodedQuery!!.contains("name=S%C3%A3o%20Paulo%20%26%20Co"))
+        // The accent and the & are percent-encoded; a space is %20 or + (both mean a space in a query).
+        assertTrue(geo.encodedQuery!!.contains(Regex("""name=S%C3%A3o(%20|\+)Paulo(%20|\+)%26(%20|\+)Co""")))
 
         forecasts.enqueue(ok(fixture("forecast_paris_metric.json")))
         client.forecast(48.85, 2.35, WeatherUnits.Metric, days = 0)

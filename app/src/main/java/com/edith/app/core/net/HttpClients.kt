@@ -3,6 +3,7 @@ package com.edith.app.core.net
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpRedirect
+import io.ktor.client.plugins.HttpTimeout
 import okhttp3.ConnectionSpec
 import okhttp3.OkHttpClient
 
@@ -42,10 +43,23 @@ class HttpClients(base: () -> OkHttpClient) {
     val ktorSecure: Lazy<HttpClient> = lazy { over(secure.value) }
 
     companion object {
+        /**
+         * The same client with limits on connecting, waiting for data and the whole call (what OkHttp's `newBuilder().connectTimeout(..)
+         * .readTimeout(..).callTimeout(..)` gave). Shares the engine and its connections.
+         */
+        fun HttpClient.withTimeouts(connectSeconds: Long, readSeconds: Long, callSeconds: Long): HttpClient = config {
+            install(HttpTimeout) {
+                connectTimeoutMillis = connectSeconds * 1000
+                socketTimeoutMillis = readSeconds * 1000
+                requestTimeoutMillis = callSeconds * 1000
+            }
+        }
+
         /** A Ktor client that sends everything through [okHttp] as it is configured. */
         fun over(okHttp: OkHttpClient, followHttpsToHttp: Boolean = false): HttpClient = HttpClient(OkHttp) {
             engine { preconfigured = okHttp }
             install(HttpRedirect) { allowHttpsDowngrade = followHttpsToHttp }
+            install(HttpTimeout)   // no limits of its own: the OkHttp ones apply, and a call can set its own with `timeout { }`
             expectSuccess = false   // services read the status themselves, as they did with OkHttp
         }
     }

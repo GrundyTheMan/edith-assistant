@@ -1,5 +1,6 @@
 package com.edith.app.printer
 
+import com.edith.app.core.net.HttpClients
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
 import okio.buffer
@@ -86,7 +87,7 @@ class MoonrakerApiTest {
         val main = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "fake-main") }
         try {
             val asking = main.asCoroutineDispatcher()
-            val reply = kotlinx.coroutines.withContext(asking) { MoonrakerApi(lazy { client }).get(printer.conn(), "/printer/info") }
+            val reply = kotlinx.coroutines.withContext(asking) { MoonrakerApi(lazy { HttpClients.over(client) }).get(printer.conn(), "/printer/info") }
             assertTrue(reply is PrinterReply.Ok)
             assertTrue("the body was read", readers.isNotEmpty())
             assertTrue("never on the asking thread: $readers", readers.none { it.startsWith("fake-main") })
