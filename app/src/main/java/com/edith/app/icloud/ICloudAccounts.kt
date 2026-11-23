@@ -1,5 +1,6 @@
 package com.edith.app.icloud
 
+import kotlinx.datetime.TimeZone
 import android.app.Activity
 import android.app.PendingIntent
 import android.content.Intent
@@ -30,7 +31,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import java.io.IOException
-import java.time.ZoneId
 
 /**
  * iCloud as an account provider (C24, D17): an iCloud address and an app-specific password, which the owner types into
@@ -41,7 +41,7 @@ class ICloudAccounts(
     private val secrets: SecretStore,
     private val http: Lazy<OkHttpClient>,
     private val dispatchers: AppDispatchers,
-    private val zone: () -> ZoneId = ZoneId::systemDefault,
+    private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() },
     private val servers: MailServers = MailServers(),
     private val calDavBaseUrl: String = CalDavClient.BASE_URL,
     private val checkTimeoutMs: Long = CHECK_TIMEOUT_MS,
@@ -111,7 +111,7 @@ class ICloudConnection(
     private val secrets: SecretStore,
     http: Lazy<OkHttpClient>,
     dispatchers: AppDispatchers,
-    zone: () -> ZoneId,
+    zone: () -> TimeZone,
     servers: MailServers,
     calDavBaseUrl: String,
 ) : AccountConnection {

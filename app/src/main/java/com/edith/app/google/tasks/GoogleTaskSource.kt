@@ -8,7 +8,7 @@ import com.edith.app.accounts.tasks.TaskSource
 import com.edith.app.core.error.Outcome
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.time.LocalDate
+import kotlinx.datetime.LocalDate
 
 /**
  * One Google account's to-dos (C35) over [TasksClient]. The list of lists is remembered for a minute, so a turn with

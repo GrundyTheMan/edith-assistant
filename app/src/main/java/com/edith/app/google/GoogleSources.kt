@@ -1,5 +1,6 @@
 package com.edith.app.google
 
+import kotlinx.datetime.TimeZone
 import com.edith.app.accounts.Account
 import com.edith.app.accounts.sources.CalendarEvent
 import com.edith.app.accounts.sources.CalendarInfo
@@ -17,8 +18,8 @@ import com.edith.app.google.gmail.GmailClient
 import com.edith.app.google.gmail.GmailQuery
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.time.Instant
-import java.time.ZoneId
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
 
 /**
  * One Google account's calendars (C22 §3) over C18's [CalendarClient]: checked calendars only (D15), recurring events
@@ -27,7 +28,7 @@ import java.time.ZoneId
 class GoogleCalendarSource(
     private val accountOf: () -> Account,
     private val client: CalendarClient,
-    private val zone: () -> ZoneId = ZoneId::systemDefault,
+    private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() },
     private val nowMs: () -> Long = System::currentTimeMillis,
 ) : CalendarSource {
     override val account: Account get() = accountOf()
@@ -43,7 +44,7 @@ class GoogleCalendarSource(
 
     override suspend fun events(from: Instant, to: Instant, text: String?): Outcome<List<CalendarEvent>> {
         val calendars = when (val r = calendars()) { is Outcome.Success -> r.value; is Outcome.Failure -> return r }
-        return client.events(calendars, from.atZone(zone()), to.atZone(zone()), text)
+        return client.events(calendars, from, to, text)
     }
 
     override suspend fun create(calendarId: String?, draft: EventDraft): Outcome<CalendarEvent> {
@@ -67,13 +68,13 @@ class GoogleCalendarSource(
 class GmailSource(
     private val accountOf: () -> Account,
     private val client: GmailClient,
-    private val zone: () -> ZoneId = ZoneId::systemDefault,
-    private val now: () -> Instant = Instant::now,
+    private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() },
+    private val now: () -> Instant = kotlin.time.Clock.System::now,
 ) : MailSource {
     override val account: Account get() = accountOf()
 
     override suspend fun search(q: MailQuery, max: Int): Outcome<MailSearchResult> =
-        client.search(GmailQuery.build(q, now().atZone(zone()).toLocalDate(), zone()), max)
+        client.search(GmailQuery.build(q, now().toLocalDateTime(zone()).date, zone()), max)
 
     override suspend fun read(id: String): Outcome<MailMessage> = client.read(id)
 

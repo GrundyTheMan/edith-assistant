@@ -88,10 +88,10 @@ object CalendarMerge {
      */
     fun merge(results: List<Pair<Account, List<CalendarEvent>>>): List<MergedEvent> {
         val out = mutableListOf<MergedEvent>()
-        val byInvite = HashMap<Pair<String, java.time.Instant>, Int>()
+        val byInvite = HashMap<Pair<String, kotlin.time.Instant>, Int>()
         for ((account, events) in results) {
             for (e in events) {
-                val key = e.iCalUid?.let { it to e.start.toInstant() }
+                val key = e.iCalUid?.let { it to e.start }
                 val at = key?.let { byInvite[it] }
                 if (at != null && out[at].account.id != account.id) {
                     out[at] = out[at].copy(alsoIn = out[at].alsoIn + (account to e))

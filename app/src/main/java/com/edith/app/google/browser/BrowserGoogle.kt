@@ -1,7 +1,6 @@
 package com.edith.app.google.browser
 
 import android.app.Activity
-import com.edith.app.core.time.javaNow
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import com.edith.app.accounts.AccountSecrets
@@ -16,7 +15,8 @@ import com.edith.app.google.GoogleSignIn
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.time.Instant
+import kotlin.time.Instant
+import kotlin.time.Duration.Companion.seconds
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -129,7 +129,7 @@ class BrowserGoogle(
                 email == null -> GoogleSignIn.Result.Failed(NO_EMAIL)   // C22: the address decides which account it is
                 else -> {
                     Log.i(LogTag.Google, "Browser sign-in: signed in")
-                    val grant = BrowserGrant(refreshToken, t.accessToken, clock.javaNow().plusSeconds(t.expiresInSeconds), t.scopes ?: allScopes)
+                    val grant = BrowserGrant(refreshToken, t.accessToken, (clock.now() + t.expiresInSeconds.seconds), t.scopes ?: allScopes)
                     GoogleSignIn.Result.SignedIn(email, null, grant)
                 }
             }
@@ -169,7 +169,7 @@ class BrowserGoogle(
         override suspend fun authorize(scopes: Set<GoogleScope>): GoogleAuthorizer.Result = refreshLock.withLock {
             val wanted = scopes.map { it.uri }.toSet()
             cached?.let { c ->
-                if (c.expiresAt.isAfter(clock.javaNow().plusSeconds(MIN_VALIDITY_SECONDS)) && c.scopes.containsAll(wanted)) {
+                if (c.expiresAt > clock.now() + MIN_VALIDITY_SECONDS.seconds && c.scopes.containsAll(wanted)) {
                     return@withLock GoogleAuthorizer.Result.Granted(c.token)
                 }
             }
@@ -177,7 +177,7 @@ class BrowserGoogle(
             when (val t = oauth.refresh(refreshToken)) {
                 is BrowserOAuth.TokenResult.Tokens -> {
                     t.refreshToken?.let { secrets.put(key, it) }   // Google may rotate it
-                    val c = Cached(t.accessToken, clock.javaNow().plusSeconds(t.expiresInSeconds), t.scopes ?: cached?.scopes ?: allScopes)
+                    val c = Cached(t.accessToken, (clock.now() + t.expiresInSeconds.seconds), t.scopes ?: cached?.scopes ?: allScopes)
                     cached = c
                     if (c.scopes.containsAll(wanted)) {
                         GoogleAuthorizer.Result.Granted(c.token)

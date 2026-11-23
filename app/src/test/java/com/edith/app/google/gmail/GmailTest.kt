@@ -1,6 +1,9 @@
 package com.edith.app.google.gmail
 
 import android.app.Activity
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
 import android.content.Intent
 import com.edith.app.chat.engine.TurnEvent
 import com.edith.app.core.dispatchers.AppDispatchers
@@ -56,7 +59,6 @@ import org.junit.Before
 import org.junit.Test
 import java.io.File
 import java.time.Instant
-import java.time.ZoneId
 import java.util.Base64
 import java.util.Collections
 
@@ -65,7 +67,7 @@ import java.util.Collections
  * (messages.list, messages.get with format=metadata/full, drafts.create, messages.send); they're made up.
  */
 class GmailTest {
-    private val zone = ZoneId.of("America/Detroit")
+    private val zone = TimeZone.of("America/Detroit")
     private val server = MockWebServer()
     private val requests = Collections.synchronizedList(mutableListOf<RecordedRequest>())
     private val routes = mutableMapOf<String, () -> MockResponse>()
@@ -164,24 +166,24 @@ class GmailTest {
 
     @Test fun `dates in a search become local midnight in seconds, not Gmail's Pacific midnight`() = runBlocking {
         // 2026-11-11 00:00 in Detroit (EST, -05:00) = 05:00 UTC; Gmail would have used 08:00 UTC.
-        val today = java.time.LocalDate.of(2026, 11, 11)
-        val nov11 = today.atStartOfDay(zone).toEpochSecond()
+        val today = LocalDate(2026, 11, 11)
+        val nov11 = today.atStartOfDayIn(zone).epochSeconds
         assertEquals(1794373200L, nov11)
         fun q(s: String) = GmailQuery.localDates(s, today, zone)
         assertEquals("is:unread after:$nov11 before:${nov11 + 86_400}", q("is:unread after:2026/11/11 before:2026-11-12"))
         assertEquals("from:sam newer:$nov11", q("from:sam newer:2026/11/11"))
         assertEquals("unchanged", "newer_than:1d subject:2026/11/11 after:2026/02/30", q("newer_than:1d subject:2026/11/11 after:2026/02/30"))
-        val summer = java.time.LocalDate.of(2026, 7, 4).atStartOfDay(zone).toEpochSecond()
+        val summer = LocalDate(2026, 7, 4).atStartOfDayIn(zone).epochSeconds
         assertEquals("summer uses EDT", 1783137600L, summer)
     }
 
     @Test fun `today and yesterday are worked out by Edith, not the model`() = runBlocking {
-        val today = java.time.LocalDate.of(2026, 11, 11)
-        val nov11 = today.atStartOfDay(zone).toEpochSecond()
+        val today = LocalDate(2026, 11, 11)
+        val nov11 = today.atStartOfDayIn(zone).epochSeconds
         assertEquals("after:${nov11 - 86_400} before:$nov11", GmailQuery.localDates("after:yesterday before:Today", today, zone))
         assertEquals("before:${nov11 + 86_400}", GmailQuery.localDates("before:tomorrow", today, zone))
         // The test clock says 2026-11-02 13:00 in Detroit, so "today" is Nov 2.
-        val nov2 = java.time.LocalDate.of(2026, 11, 2).atStartOfDay(zone).toEpochSecond()
+        val nov2 = LocalDate(2026, 11, 2).atStartOfDayIn(zone).epochSeconds
         tools.getValue("search_email").execute(args(tools.getValue("search_email"), "query" to "is:unread after:today"), ctx)
         assertEquals("is:unread after:$nov2", requests.first().url.queryParameter("q"))
     }

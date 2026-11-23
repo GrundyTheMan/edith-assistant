@@ -1,6 +1,11 @@
 package com.edith.app.google.calendar
 
 import android.app.Activity
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.plus
+import kotlinx.datetime.toInstant
 import android.content.Intent
 import com.edith.app.core.error.Outcome
 import com.edith.app.accounts.AccountState
@@ -62,10 +67,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import java.time.Duration
+import kotlin.time.Duration.Companion.minutes
 import java.time.Instant
-import java.time.ZoneId
-import java.time.ZonedDateTime
 import java.util.Collections
 
 /**
@@ -73,7 +76,7 @@ import java.util.Collections
  * reference (calendarList.list, events.list, events.insert/patch/delete); they're made up, not the owner's data.
  */
 class CalendarTest {
-    private val zone = ZoneId.of("America/Detroit")
+    private val zone = TimeZone.of("America/Detroit")
     private val server = MockWebServer()
     private val requests = Collections.synchronizedList(mutableListOf<RecordedRequest>())
     private val routes = mutableMapOf<String, () -> MockResponse>()
@@ -127,18 +130,18 @@ class CalendarTest {
 
     @Test fun `events are parsed in the device zone, all-day and recurring included, cancelled left out`() = runBlocking {
         val cals = (client.calendars() as Outcome.Success).value
-        val from = ZonedDateTime.of(2026, 11, 2, 0, 0, 0, 0, zone)
-        val events = (client.events(cals, from, from.plusDays(7)) as Outcome.Success).value
+        val from = LocalDateTime(2026, 11, 2, 0, 0).toInstant(zone)
+        val events = (client.events(cals, from, from.plus(7, DateTimeUnit.DAY, zone)) as Outcome.Success).value
         assertEquals(listOf("Standup", "Dentist", "Mom's birthday", "Soccer practice"), events.map { it.title })
 
         val dentist = events[1]
-        assertEquals("a Pacific-time event shown at Detroit's 1 PM", ZonedDateTime.of(2026, 11, 2, 13, 0, 0, 0, zone), dentist.start)
+        assertEquals("a Pacific-time event shown at Detroit's 1 PM", LocalDateTime(2026, 11, 2, 13, 0).toInstant(zone), dentist.start)
         assertEquals("Main St Dental", dentist.location)
         val standup = events[0]
         assertNull("no location", standup.location)
         val birthday = events[2]
         assertTrue(birthday.allDay)
-        assertEquals(ZonedDateTime.of(2026, 11, 4, 0, 0, 0, 0, zone), birthday.start)
+        assertEquals(LocalDateTime(2026, 11, 4, 0, 0).toInstant(zone), birthday.start)
         assertEquals("Sample family", events[3].calendarName)
 
         val q = requests.first { it.url.encodedPath.contains("primary") }.url
@@ -185,13 +188,13 @@ class CalendarTest {
         assertEquals("2026-11-03T00:00:00-05:00", q.queryParameter("timeMin"))
         assertEquals("2026-11-03T23:59:59-05:00", q.queryParameter("timeMax"))
         val keep = args(tool, "start" to "2026-11-03T09:00:00-08:00")
-        assertEquals("another zone's offset is kept", ZonedDateTime.of(2026, 11, 3, 12, 0, 0, 0, zone), keep.localTime("start", zone))
+        assertEquals("another zone's offset is kept", LocalDateTime(2026, 11, 3, 12, 0).toInstant(zone), keep.localTime("start", zone))
         // Live, "tomorrow at 3pm" came as 15:00-04:00 the day after daylight saving ended (Detroit was -05:00).
         val summer = args(tool, "start" to "2026-11-03T15:00:00-04:00")
-        assertEquals("the owner's own other offset is a guess: 3 PM", ZonedDateTime.of(2026, 11, 3, 15, 0, 0, 0, zone), summer.localTime("start", zone))
-        assertEquals("compact offsets too", ZonedDateTime.of(2026, 11, 3, 15, 0, 0, 0, zone), args(tool, "start" to "2026-11-03T15:00:00-0400").localTime("start", zone))
-        val utcPhone = ZoneId.of("UTC")
-        assertEquals("on a UTC phone, Z is just Z", ZonedDateTime.of(2026, 11, 3, 0, 0, 0, 0, utcPhone), args(tool, "start" to "2026-11-03T00:00:00Z").localTime("start", utcPhone))
+        assertEquals("the owner's own other offset is a guess: 3 PM", LocalDateTime(2026, 11, 3, 15, 0).toInstant(zone), summer.localTime("start", zone))
+        assertEquals("compact offsets too", LocalDateTime(2026, 11, 3, 15, 0).toInstant(zone), args(tool, "start" to "2026-11-03T15:00:00-0400").localTime("start", zone))
+        val utcPhone = TimeZone.of("UTC")
+        assertEquals("on a UTC phone, Z is just Z", LocalDateTime(2026, 11, 3, 0, 0).toInstant(utcPhone), args(tool, "start" to "2026-11-03T00:00:00Z").localTime("start", utcPhone))
     }
 
     @Test fun `no events says so`() = runBlocking {
@@ -202,13 +205,13 @@ class CalendarTest {
     }
 
     @Test fun `free time is the gaps between 8 AM and 8 PM, all-day events not blocking`() {
-        fun at(d: Int, h: Int, m: Int = 0) = ZonedDateTime.of(2026, 11, d, h, m, 0, 0, zone)
+        fun at(d: Int, h: Int, m: Int = 0) = LocalDateTime(2026, 11, d, h, m).toInstant(zone)
         val events = listOf(
             CalendarEvent("1", "p", "P", "Standup", at(2, 9), at(2, 9, 30), false),
             CalendarEvent("2", "p", "P", "Lunch", at(2, 12), at(2, 13), false),
             CalendarEvent("3", "p", "P", "Holiday", at(2, 0), at(3, 0), true),
         )
-        val slots = FindFreeTimeTool.freeSlots(events, at(2, 0), at(3, 0), Duration.ofMinutes(60), zone)
+        val slots = FindFreeTimeTool.freeSlots(events, at(2, 0), at(3, 0), 60.minutes, zone)
         assertEquals(
             listOf(at(2, 8) to at(2, 9), at(2, 9, 30) to at(2, 12), at(2, 13) to at(2, 20)),
             slots,
@@ -262,7 +265,7 @@ class CalendarTest {
     @Test fun `delete shows the event and removes it`() = runBlocking {
         ListCalendarEventsTool(dir, handles).let { it.execute(args(it, "start" to "2026-11-02", "end" to "2026-11-08"), ctx) }
         routes["DELETE /calendar/v3/calendars/primary%40gmail.com/events/standup1_20261102T140000Z"] = { MockResponse.Builder().code(204).build() }
-        val tool = DeleteCalendarEventTool(dir, handles)
+        val tool = DeleteCalendarEventTool(dir, handles) { zone }
         val a = args(tool, "event_id" to "e1")
         assertEquals(listOf("Event" to "Standup", "When" to "Mon Nov 2, 9:00–9:15 AM", "Account" to "owner@gmail.com — Blake"), tool.confirmation(a)!!.details)
         assertEquals("Deleted \"Standup\" (Mon Nov 2, 9:00–9:15 AM) from owner@gmail.com.", tool.execute(a, ctx).text)
@@ -270,7 +273,7 @@ class CalendarTest {
     }
 
     @Test fun `an unknown event id sends nothing and says to list first`() = runBlocking {
-        val tool = DeleteCalendarEventTool(dir, handles)
+        val tool = DeleteCalendarEventTool(dir, handles) { zone }
         assertNull(tool.confirmation(args(tool, "event_id" to "e99")))
         val r = tool.execute(args(tool, "event_id" to "e99"), ctx)
         assertTrue(r is ToolResult.Error && r.text.contains("list_calendar_events"))
@@ -307,11 +310,11 @@ class CalendarTest {
     }
 
     @Test fun `formats - same half of the day, crossing noon, all day, several days`() {
-        fun at(d: Int, h: Int, m: Int = 0) = ZonedDateTime.of(2026, 11, d, h, m, 0, 0, zone)
-        assertEquals("Mon Nov 2, 9:00–9:30 AM", CalendarFormat.whenText(at(2, 9), at(2, 9, 30), false))
-        assertEquals("Mon Nov 2, 11:30 AM–12:30 PM", CalendarFormat.whenText(at(2, 11, 30), at(2, 12, 30), false))
-        assertEquals("Wed Nov 4, all day", CalendarFormat.whenText(at(4, 0), at(5, 0), true))
-        assertEquals("Wed Nov 4–Fri Nov 6, all day", CalendarFormat.whenText(at(4, 0), at(7, 0), true))
+        fun at(d: Int, h: Int, m: Int = 0) = LocalDateTime(2026, 11, d, h, m).toInstant(zone)
+        assertEquals("Mon Nov 2, 9:00–9:30 AM", CalendarFormat.whenText(at(2, 9), at(2, 9, 30), false, zone))
+        assertEquals("Mon Nov 2, 11:30 AM–12:30 PM", CalendarFormat.whenText(at(2, 11, 30), at(2, 12, 30), false, zone))
+        assertEquals("Wed Nov 4, all day", CalendarFormat.whenText(at(4, 0), at(5, 0), true, zone))
+        assertEquals("Wed Nov 4–Fri Nov 6, all day", CalendarFormat.whenText(at(4, 0), at(7, 0), true, zone))
     }
 
     companion object {

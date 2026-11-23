@@ -16,9 +16,7 @@ import org.w3c.dom.Node
 import org.xml.sax.InputSource
 import java.io.IOException
 import java.io.StringReader
-import java.time.Instant
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
+import kotlin.time.Instant
 import javax.xml.parsers.DocumentBuilderFactory
 
 /** One calendar collection found by discovery (C24 §3). */
@@ -194,7 +192,6 @@ class CalDavClient(
 
         private val XML = "application/xml; charset=utf-8".toMediaType()
         private val ICS = "text/calendar; charset=utf-8".toMediaType()
-        private val DAV_TIME = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC)
 
         private const val PRINCIPAL_BODY = """<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:current-user-principal/></d:prop></d:propfind>"""
         private const val HOME_BODY = """<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><c:calendar-home-set/><c:schedule-inbox-URL/><c:schedule-default-calendar-URL/></d:prop></d:propfind>"""
@@ -203,8 +200,8 @@ class CalDavClient(
 
         /** The calendar-query (RFC 4791 §7.8): VEVENTs overlapping [from, to), expanded into instances. */
         fun queryBody(from: Instant, to: Instant): String {
-            val s = DAV_TIME.format(from)
-            val e = DAV_TIME.format(to)
+            val s = ICalendar.utc(from)
+            val e = ICalendar.utc(to)
             return """<?xml version="1.0" encoding="utf-8"?><c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">""" +
                 """<d:prop><d:getetag/><c:calendar-data><c:expand start="$s" end="$e"/></c:calendar-data></d:prop>""" +
                 """<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"><c:time-range start="$s" end="$e"/></c:comp-filter></c:comp-filter></c:filter>""" +

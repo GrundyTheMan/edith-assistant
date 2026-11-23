@@ -5,7 +5,9 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toJavaZoneId
 import kotlinx.datetime.toKotlinTimeZone
+import kotlin.time.toJavaInstant
 import kotlin.time.toKotlinInstant
 
 /**
@@ -16,6 +18,9 @@ class FakeClock(
     var instant: Instant = Instant.parse("2026-10-29T18:00:00Z"),
     private val javaZone: ZoneId = ZoneId.of("America/New_York"),
 ) : Clock {
+    constructor(instant: Instant, zone: TimeZone) : this(instant, zone.toJavaZoneId())
+    constructor(instant: kotlin.time.Instant, zone: TimeZone = TimeZone.of("America/New_York")) : this(instant.toJavaInstant(), zone.toJavaZoneId())
+
     override fun now(): kotlin.time.Instant = instant.toKotlinInstant()
     override fun zone(): TimeZone = javaZone.toKotlinTimeZone()
     fun advance(by: Duration) { instant += by }

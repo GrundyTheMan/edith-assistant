@@ -1,7 +1,8 @@
 package com.edith.app.microsoft
 
+import kotlin.time.Duration.Companion.seconds
+import kotlinx.datetime.TimeZone
 import android.app.Activity
-import com.edith.app.core.time.javaNow
 import android.app.PendingIntent
 import android.content.Intent
 import com.edith.app.accounts.Account
@@ -26,7 +27,6 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
-import java.time.ZoneId
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -40,9 +40,9 @@ class MicrosoftAccounts(
     private val http: Lazy<OkHttpClient>,
     private val dispatchers: AppDispatchers,
     private val clock: Clock,
-    private val zone: () -> ZoneId = ZoneId::systemDefault,
+    private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() },
     /** The Windows name of a zone (Android's ICU); Graph knows only some IANA names (§2). */
-    private val windowsZone: (ZoneId) -> String? = { null },
+    private val windowsZone: (TimeZone) -> String? = { null },
     private val graphBaseUrl: String = GraphClient.BASE_URL,
 ) {
     /** How a Microsoft sign-in ended. */
@@ -78,7 +78,7 @@ class MicrosoftAccounts(
                 address == null -> Result.Failed(NO_ADDRESS)
                 else -> {
                     Log.i(LogTag.Accounts, "Microsoft sign-in: signed in")
-                    Result.SignedIn(address, MicrosoftGrant(refreshToken, t.accessToken, clock.javaNow().plusSeconds(t.expiresInSeconds)))
+                    Result.SignedIn(address, MicrosoftGrant(refreshToken, t.accessToken, (clock.now() + t.expiresInSeconds.seconds)))
                 }
             }
         }

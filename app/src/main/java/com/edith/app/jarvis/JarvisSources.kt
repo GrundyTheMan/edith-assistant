@@ -19,11 +19,10 @@ import com.edith.app.accounts.tasks.TaskPatch
 import com.edith.app.accounts.tasks.TaskSource
 import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
-import java.time.Duration
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
-import java.time.ZonedDateTime
+import kotlinx.datetime.LocalDate
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Instant
 
 /** The words every read-only account says when asked to change something (C38: Jarvis's feed only reads and saves drafts). */
 /** Outlook on the PC can be slow; the HTTP call gives up at 40 s (JarvisApi), so the read waits a little longer than that. */
@@ -50,15 +49,14 @@ internal fun WireAddress.display(): String = when {
 internal class JarvisMailSource(
     override val account: Account,
     private val api: JarvisApi,
-    private val zone: () -> ZoneId = ZoneId::systemDefault,
-    private val now: () -> Instant = Instant::now,
+    private val now: () -> Instant = kotlin.time.Clock.System::now,
 ) : MailSource, Patient {
     override val patienceMs: Long get() = JARVIS_PATIENCE_MS
     override val canSend: Boolean get() = false
 
     override suspend fun search(q: MailQuery, max: Int): Outcome<MailSearchResult> {
         val words = listOfNotNull(q.text, q.subject, q.from, q.to).joinToString(" ").trim()
-        val days = q.after?.let { Duration.between(it, now()).toDays().plus(1).coerceIn(1, 365) } ?: DEFAULT_DAYS
+        val days = q.after?.let { (now() - it).inWholeDays.plus(1).coerceIn(1, 365) } ?: DEFAULT_DAYS
         val query = buildMap {
             if (words.isNotEmpty()) put("text", words)
             put("sinceDays", days.toString())
@@ -68,12 +66,12 @@ internal class JarvisMailSource(
             if (words.isNotEmpty() && days > DEFAULT_DAYS) put("archive", "1")
         }
         return api.get("mail/messages", query, Page.serializer(WireMail.serializer())).map { page ->
-            val found = page.items.map { it.toSummary(account.id, zone()) }
+            val found = page.items.map { it.toSummary(account.id) }
                 .filter { q.from == null || it.from.contains(q.from, ignoreCase = true) }
                 .filter { q.to == null || it.to.orEmpty().contains(q.to, ignoreCase = true) }
                 .filter { q.subject == null || it.subject.contains(q.subject, ignoreCase = true) }
-                .filter { q.before == null || it.date.toInstant() < q.before }
-                .filter { q.after == null || it.date.toInstant() >= q.after }
+                .filter { q.before == null || it.date < q.before }
+                .filter { q.after == null || it.date >= q.after }
             MailSearchResult(found, page.more)
         }
     }
@@ -81,7 +79,7 @@ internal class JarvisMailSource(
     override suspend fun read(id: String): Outcome<MailMessage> =
         api.get("mail/messages", emptyMap(), WireMailBody.serializer(), last = id).map { b ->
             val note = if (b.truncated) "\n\n[The rest of this email was cut off by Jarvis.]" else ""
-            MailMessage(b.message.toSummary(account.id, zone()), b.message.cc.joinToString().ifBlank { null }, b.text + note)
+            MailMessage(b.message.toSummary(account.id), b.message.cc.joinToString().ifBlank { null }, b.text + note)
         }
 
     override suspend fun draft(m: OutgoingMail): Outcome<Unit> {
@@ -106,13 +104,13 @@ internal class JarvisMailSource(
     }
 }
 
-internal fun WireMail.toSummary(accountId: String, zone: ZoneId) = MailSummary(
+internal fun WireMail.toSummary(accountId: String) = MailSummary(
     id = id,
     threadId = id,
     from = from.display(),
     to = to.joinToString().ifBlank { null },
     subject = subject,
-    date = Instant.ofEpochMilli(date).atZone(zone),
+    date = Instant.fromEpochMilliseconds(date),
     snippet = preview,
     messageIdHeader = null,
     unread = unread,
@@ -123,7 +121,6 @@ internal fun WireMail.toSummary(accountId: String, zone: ZoneId) = MailSummary(
 internal class JarvisCalendarSource(
     override val account: Account,
     private val api: JarvisApi,
-    private val zone: () -> ZoneId = ZoneId::systemDefault,
 ) : CalendarSource, Patient {
     override val patienceMs: Long get() = JARVIS_PATIENCE_MS
     override val readOnly: Boolean get() = true
@@ -142,12 +139,12 @@ internal class JarvisCalendarSource(
         val found = LinkedHashMap<String, CalendarEvent>()
         var start = from
         while (start < to) {
-            val end = minOf(start.plus(Duration.ofDays(CHUNK_DAYS)), to)
-            val page = when (val r = api.get("calendar/events", mapOf("from" to start.toEpochMilli().toString(), "to" to end.toEpochMilli().toString()), Page.serializer(WireEvent.serializer()))) {
+            val end = minOf(start + CHUNK_DAYS.days, to)
+            val page = when (val r = api.get("calendar/events", mapOf("from" to start.toEpochMilliseconds().toString(), "to" to end.toEpochMilliseconds().toString()), Page.serializer(WireEvent.serializer()))) {
                 is Outcome.Success -> r.value
                 is Outcome.Failure -> return r
             }
-            for (e in page.items) if (!e.cancelled) found[e.id] = e.toEvent(account.id, names[e.calendar] ?: "Work calendar", zone())
+            for (e in page.items) if (!e.cancelled) found[e.id] = e.toEvent(account.id, names[e.calendar] ?: "Work calendar")
             start = end
         }
         val all = found.values.sortedWith(compareBy({ it.start }, { it.title }))
@@ -165,12 +162,12 @@ internal class JarvisCalendarSource(
 }
 
 /** An all-day event runs from local midnight to the next local midnight (the contract, spec 7.4); others are instants. */
-internal fun WireEvent.toEvent(accountId: String, calendarName: String, zone: ZoneId): CalendarEvent {
-    val s: ZonedDateTime = Instant.ofEpochMilli(start).atZone(zone)
-    val e: ZonedDateTime = Instant.ofEpochMilli(end).atZone(zone)
+internal fun WireEvent.toEvent(accountId: String, calendarName: String): CalendarEvent {
+    val s = Instant.fromEpochMilliseconds(start)
+    val e = Instant.fromEpochMilliseconds(end)
     return CalendarEvent(
         id = id, calendarId = calendar, calendarName = calendarName, title = title.ifBlank { "(no title)" },
-        start = s, end = if (e.isAfter(s)) e else s.plusMinutes(30),
+        start = s, end = if (e > s) e else s + 30.minutes,
         allDay = allDay, location = location?.ifBlank { null },
         description = listOfNotNull(description?.ifBlank { null }, joinUrl?.let { "Join: $it" }).joinToString("\n").ifBlank { null },
         accountId = accountId,
@@ -191,7 +188,7 @@ internal class JarvisTaskSource(override val account: Account, private val api: 
                 TaskItem(
                     id = t.id, listId = listId, title = t.title.ifBlank { "(no title)" }, notes = t.notes?.ifBlank { null },
                     due = t.due?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
-                    done = t.done, completedAt = t.completed?.let(Instant::ofEpochMilli),
+                    done = t.done, completedAt = t.completed?.let(Instant::fromEpochMilliseconds),
                     position = "%06d".format(i),   // Jarvis sends them in Outlook's order
                     accountId = account.id,
                 )

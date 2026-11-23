@@ -1,5 +1,6 @@
 package com.edith.app.icloud.mail
 
+import kotlinx.datetime.TimeZone
 import com.edith.app.accounts.Account
 import com.edith.app.accounts.sources.MailMessage
 import com.edith.app.accounts.sources.MailQuery
@@ -38,8 +39,7 @@ import jakarta.mail.search.SearchTerm
 import jakarta.mail.search.SubjectTerm
 import kotlinx.coroutines.withContext
 import java.io.IOException
-import java.time.Instant
-import java.time.ZoneId
+import kotlin.time.Instant
 import java.util.Date
 import java.util.Properties
 
@@ -69,7 +69,7 @@ class ICloudMailSource(
     private val password: suspend () -> String?,
     private val dispatchers: AppDispatchers,
     private val servers: MailServers = MailServers(),
-    private val zone: () -> ZoneId = ZoneId::systemDefault,
+    private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() },
     /** Copy a sent email into the `\Sent` folder (only if iCloud doesn't already: checked live, C24 §2). */
     private val appendToSent: Boolean = APPEND_TO_SENT,
     private val onPasswordRejected: suspend () -> Unit = {},
@@ -90,8 +90,8 @@ class ICloudMailSource(
         }
         inbox.fetch(found.toTypedArray(), FetchProfile().apply { add(FetchProfile.Item.ENVELOPE); add(FetchProfile.Item.FLAGS); add(UIDFolder.FetchProfileItem.UID) })
         val exact = found.filter { m ->
-            val at = m.receivedDate?.toInstant() ?: return@filter true
-            (q.after == null || !at.isBefore(q.after)) && (q.before == null || at.isBefore(q.before))
+            val at = m.receivedDate?.let { Instant.fromEpochMilliseconds(it.time) } ?: return@filter true
+            (q.after == null || at >= q.after) && (q.before == null || at < q.before)
         }.sortedByDescending { it.receivedDate }
         val validity = (inbox as UIDFolder).uidValidity
         MailSearchResult(exact.take(limit).map { summary(inbox, validity, it) }, more = exact.size > limit)
@@ -205,8 +205,8 @@ class ICloudMailSource(
             q.subject?.takeIf { it.isNotBlank() }?.let { add(SubjectTerm(it.trim())) }
             q.text?.takeIf { it.isNotBlank() }?.let { add(OrTerm(SubjectTerm(it.trim()), BodyTerm(it.trim()))) }
             if (q.unreadOnly) add(FlagTerm(Flags(Flags.Flag.SEEN), false))
-            q.after?.let { add(ReceivedDateTerm(ComparisonTerm.GE, Date.from(it))) }
-            q.before?.let { add(ReceivedDateTerm(ComparisonTerm.LE, Date.from(it))) }   // whole days: checked exactly afterwards
+            q.after?.let { add(ReceivedDateTerm(ComparisonTerm.GE, Date(it.toEpochMilliseconds()))) }
+            q.before?.let { add(ReceivedDateTerm(ComparisonTerm.LE, Date(it.toEpochMilliseconds()))) }   // whole days: checked exactly afterwards
         }
         return when (terms.size) { 0 -> null; 1 -> terms[0]; else -> AndTerm(terms.toTypedArray()) }
     }
@@ -220,7 +220,7 @@ class ICloudMailSource(
             from = m.from?.firstOrNull()?.let(::display) ?: "(unknown sender)",
             to = m.getRecipients(Message.RecipientType.TO)?.joinToString(", ") { display(it) }?.ifBlank { null },
             subject = m.subject?.takeIf { it.isNotBlank() } ?: "(no subject)",
-            date = (m.receivedDate ?: m.sentDate ?: Date(0)).toInstant().atZone(zone()),
+            date = Instant.fromEpochMilliseconds((m.receivedDate ?: m.sentDate ?: Date(0)).time),
             snippet = "",   // only the envelope is fetched for a search (§2)
             messageIdHeader = messageId,
             unread = !m.isSet(Flags.Flag.SEEN),

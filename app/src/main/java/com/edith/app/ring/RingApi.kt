@@ -27,7 +27,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.IOException
-import java.time.Instant
+import kotlin.time.Instant
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -243,7 +243,7 @@ class RingApi(
     internal fun clipRow(e: JsonElement, camera: RingCamera): RingClipRow? {
         val d = e.obj() ?: return null
         val id = d["ding_id"].idText() ?: return null
-        val at = (d["created_at"] as? JsonPrimitive)?.let { it.longOrNull ?: it.contentOrNull?.let { s -> runCatching { Instant.parse(s).toEpochMilli() }.getOrNull() } } ?: return null
+        val at = (d["created_at"] as? JsonPrimitive)?.let { it.longOrNull ?: it.contentOrNull?.let { s -> runCatching { Instant.parse(s).toEpochMilliseconds() }.getOrNull() } } ?: return null
         val cv = d["cv_properties"].obj()
         val person = (cv?.get("person_detected") as? JsonPrimitive)?.booleanOrNull == true || cv?.text("detection_type") == "human"
         val kind = when {
@@ -289,7 +289,7 @@ class RingApi(
 
     internal fun event(e: JsonElement): DeviceEvent? {
         val d = e.obj() ?: return null
-        val at = d.text("created_at")?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() } ?: return null
+        val at = d.text("created_at")?.let { runCatching { Instant.parse(it).toEpochMilliseconds() }.getOrNull() } ?: return null
         val cv = d["cv_properties"].obj()
         val person = (cv?.get("person_detected") as? JsonPrimitive)?.let { it.booleanOrNull == true } == true ||
             cv?.text("detection_type") == "human"

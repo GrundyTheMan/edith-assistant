@@ -19,21 +19,24 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.time.Instant
-import java.time.LocalDate
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.minus
+import kotlinx.datetime.plus
 import java.time.ZoneId
 
 /** C35 §4: the suggested order, ported from Jarvis's taskRank.ts / rank.ts. Pure apart from the saved file. */
 class TaskRankingTest {
     @get:Rule val temp = TemporaryFolder()
 
-    private val today = LocalDate.of(2026, 11, 13)
+    private val today = LocalDate(2026, 11, 13)
     private fun t(id: String, title: String, due: LocalDate? = null, notes: String? = null, parent: String? = null, done: Boolean = false) =
         TaskItem(id, "L1", title, notes, due, done, parent = parent, position = id)
 
     private val tasks = TaskOrder.sort(listOf(
         t("a", "Water the plants"),
-        t("b", "Pay the electric bill", due = today.minusDays(2)),
-        t("c", "Pack for the trip", due = today.plusDays(1), notes = "x".repeat(400)),
+        t("b", "Pay the electric bill", due = today.minus(2, DateTimeUnit.DAY)),
+        t("c", "Pack for the trip", due = today.plus(1, DateTimeUnit.DAY), notes = "x".repeat(400)),
         t("c1", "Socks", parent = "c"),
         t("d", "Old thing", done = true),
         t("e", "Call Mom", due = today),
@@ -55,8 +58,8 @@ class TaskRankingTest {
         assertEquals(listOf("Socks"), (c["subtasks"] as JsonArray).map { it.jsonPrimitive.content })
         assertEquals("today", list[3].jsonObject["due_in"]!!.jsonPrimitive.content)
         assertNull(list[0].jsonObject["due"])
-        assertEquals("overdue by 1 day", TaskRanking.dueIn(today.minusDays(1), today))
-        assertEquals("5 days", TaskRanking.dueIn(today.plusDays(5), today))
+        assertEquals("overdue by 1 day", TaskRanking.dueIn(today.minus(1, DateTimeUnit.DAY), today))
+        assertEquals("5 days", TaskRanking.dueIn(today.plus(5, DateTimeUnit.DAY), today))
     }
 
     @Test fun `the system prompt is Jarvis's, and says the tasks are data`() {
@@ -91,7 +94,7 @@ class TaskRankingTest {
         assertNotEquals("the order", k, changed { l -> l.map { if (it.id == "a") it.copy(position = "z") else it } })
         assertNotEquals("a task ticked off", k, changed { l -> l.map { if (it.id == "e") it.copy(done = true) else it } })
         assertNotEquals("another model", k, TaskRanking.key(items, "qwen3.5:9b", today))
-        assertNotEquals("another day ('due in' changes)", k, TaskRanking.key(items, "gemma4:12b", today.plusDays(1)))
+        assertNotEquals("another day ('due in' changes)", k, TaskRanking.key(items, "gemma4:12b", today.plus(1, DateTimeUnit.DAY)))
     }
 
     @Test fun `RAISED_BY marks and ordinals`() {

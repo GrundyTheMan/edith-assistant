@@ -1,18 +1,19 @@
 package com.edith.app.icloud.calendar
 
 import org.junit.Assert.assertEquals
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.time.Instant
-import java.time.ZoneId
-import java.time.ZonedDateTime
+import kotlin.time.Instant
 
 /** C24 §3: the iCalendar Edith reads and writes (RFC 5545). Made-up events. */
 class ICalendarTest {
-    private val zone = ZoneId.of("America/Detroit")
-    private fun at(d: Int, h: Int, m: Int = 0) = ZonedDateTime.of(2026, 11, d, h, m, 0, 0, zone)
+    private val zone = TimeZone.of("America/Detroit")
+    private fun at(d: Int, h: Int, m: Int = 0) = LocalDateTime(2026, 11, d, h, m).toInstant(zone)
 
     private fun cal(vararg event: String) = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Apple Inc.//iCloud//EN\r\n" +
         event.joinToString("") { "BEGIN:VEVENT\r\n$it\r\nEND:VEVENT\r\n" } + "END:VCALENDAR\r\n"
@@ -74,7 +75,7 @@ class ICalendarTest {
     }
 
     @Test fun `a new event - UTC times, all-day dates, escaped text, folded at 75 octets`() {
-        val ics = ICalendar.newEvent("UID-1", Instant.parse("2026-11-02T18:00:00Z"), "Lunch, Sam; 1\\2", at(3, 15), at(3, 16), false, "Café", "a\nb")
+        val ics = ICalendar.newEvent("UID-1", Instant.parse("2026-11-02T18:00:00Z"), "Lunch, Sam; 1\\2", at(3, 15), at(3, 16), false, "Café", "a\nb", zone)
         val lines = ics.split("\r\n")
         assertTrue(ics.endsWith("\r\n"))
         assertTrue("DTSTART:20261103T200000Z" in lines)
@@ -86,7 +87,7 @@ class ICalendarTest {
         assertTrue("UID:UID-1" in lines)
         assertFalse("no VTIMEZONE needed", ics.contains("VTIMEZONE"))
 
-        val allDay = ICalendar.newEvent("UID-2", Instant.EPOCH, "Holiday", at(4, 0), at(5, 0), true, null, null)
+        val allDay = ICalendar.newEvent("UID-2", Instant.fromEpochMilliseconds(0), "Holiday", at(4, 0), at(5, 0), true, null, null, zone)
         assertTrue("DTSTART;VALUE=DATE:20261104" in allDay.split("\r\n"))
         assertTrue("DTEND;VALUE=DATE:20261105" in allDay.split("\r\n"))
 

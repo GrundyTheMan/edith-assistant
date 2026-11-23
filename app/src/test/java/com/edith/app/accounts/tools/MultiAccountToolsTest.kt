@@ -1,6 +1,9 @@
 package com.edith.app.accounts.tools
 
 import android.app.Activity
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import com.edith.app.accounts.Account
 import com.edith.app.accounts.AccountDirectory
 import com.edith.app.accounts.AccountEntry
@@ -62,10 +65,11 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
-import java.time.ZonedDateTime
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.offsetAt
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 import java.util.Collections
 
 /**
@@ -74,11 +78,11 @@ import java.util.Collections
  * must ask, no card and no request.
  */
 class MultiAccountToolsTest {
-    private val zone = ZoneId.of("America/Detroit")
+    private val zone = TimeZone.of("America/Detroit")
     private val clock = FakeClock(Instant.parse("2026-11-02T18:00:00Z"), zone)
     private val dispatchers = AppDispatchers(Dispatchers.Unconfined, Dispatchers.Unconfined, Dispatchers.Unconfined)
     private val ctx = ToolContext(clock, Settings(), dispatchers)
-    private fun at(d: Int, h: Int, m: Int = 0) = ZonedDateTime.of(2026, 11, d, h, m, 0, 0, zone)
+    private fun at(d: Int, h: Int, m: Int = 0) = LocalDateTime(2026, 11, d, h, m).toInstant(zone)
 
     private val personal = Account("p1", Provider.Google, "a@gmail.com", "personal")
     private val work = Account("w2", Provider.Google, "sam@contoso.com", "work")
@@ -110,7 +114,7 @@ class MultiAccountToolsTest {
     private fun entry(source: FakeCalendar, state: AccountState = AccountState.Connected) =
         AccountEntry(source.account, state, Capabilities(calendar = true, mail = true), source, null)
 
-    private fun ev(account: Account, id: String, title: String, s: ZonedDateTime, e: ZonedDateTime, uid: String? = null, cal: String = "Calendar") =
+    private fun ev(account: Account, id: String, title: String, s: Instant, e: Instant, uid: String? = null, cal: String = "Calendar") =
         CalendarEvent(id, "primary", cal, title, s, e, allDay = false, accountId = account.id, iCalUid = uid)
 
     private fun args(tool: Tool, vararg pairs: Pair<String, String>) = ToolArgs(JsonObject(pairs.associate { it.first to JsonPrimitive(it.second) }), tool.spec)
@@ -164,7 +168,7 @@ class MultiAccountToolsTest {
         val read = com.edith.app.accounts.sources.Reads.readAll(
             listOf(com.edith.app.accounts.sources.Readable(personal, AccountState.Connected, p as CalendarSource), com.edith.app.accounts.sources.Readable(work, AccountState.Connected, slow)),
             timeoutMs = 200,
-        ) { it.events(Instant.EPOCH, Instant.EPOCH) }
+        ) { it.events(Instant.fromEpochMilliseconds(0), Instant.fromEpochMilliseconds(0)) }
         assertEquals(listOf(personal), read.results.map { it.first })
         assertEquals("Couldn't read work (sam@contoso.com): it didn't answer within 10 seconds.", read.failures.single().line)
     }
@@ -188,7 +192,7 @@ class MultiAccountToolsTest {
         val u = args(update, "event_id" to "e1", "title" to "Stand-up")
         assertEquals("Account" to "work (sam@contoso.com) — Work", update.confirmation(u)!!.details.last())
         update.execute(u, ctx)
-        val delete = DeleteCalendarEventTool(dir, handles)
+        val delete = DeleteCalendarEventTool(dir, handles) { zone }
         val d = args(delete, "event_id" to "e2")
         assertEquals("Account" to "personal (a@gmail.com) — Calendar", delete.confirmation(d)!!.details.last())
         delete.execute(d, ctx)
@@ -202,7 +206,7 @@ class MultiAccountToolsTest {
         val handles = CalendarHandles()
         ListCalendarEventsTool(dir, handles).let { it.execute(args(it, "start" to "2026-11-03", "end" to "2026-11-04"), ctx) }
         dir.list = listOf(entry(w, AccountState.NeedsSignIn("needs signing in again")))
-        val delete = DeleteCalendarEventTool(dir, handles)
+        val delete = DeleteCalendarEventTool(dir, handles) { zone }
         assertNull(delete.confirmation(args(delete, "event_id" to "e1")))
         assertTrue(delete.execute(args(delete, "event_id" to "e1"), ctx).text.contains("Settings → Accounts"))
         assertTrue(w.written.isEmpty())
@@ -284,7 +288,7 @@ class MultiAccountToolsTest {
             override suspend fun version(baseUrl: String) = Outcome.Success("x")
         }
         val confirmations = Confirmations()
-        val registry = ToolRegistry(calendarTools(h.accounts, calHandles) + mailTools(h.accounts, mailHandles), listOf(h.accounts))
+        val registry = ToolRegistry(calendarTools(h.accounts, calHandles) { zone } + mailTools(h.accounts, mailHandles), listOf(h.accounts))
         val runner = ToolTurnRunner(ollama, registry, confirmations, FakeSettingsRepository(), clock, dispatchers)
         var card: ConfirmationRequest? = null
         runner.run("http://ollama", ModelInfo("gemma4:12b", setOf("tools")), listOf(OllamaMessage("user", "go"))).collect { e ->
@@ -368,7 +372,7 @@ class MultiAccountToolsTest {
         assertTrue(lines[0], lines[0].contains("\"Budget\"") && lines[0].endsWith("{message_id: m1} [work]"))
         assertTrue(lines[1], lines[1].contains("\"Dinner\"") && lines[1].endsWith("{message_id: m2} [personal]"))
         assertEquals("More emails match than are shown here; don't say this is all of them.", lines[2])
-        val nov2 = LocalDate.of(2026, 11, 2).atStartOfDay(zone).toEpochSecond()
+        val nov2 = LocalDate(2026, 11, 2).atStartOfDayIn(zone).epochSeconds
         val queries = requests.filter { it.url.encodedPath.endsWith("/messages") }.map { it.url.queryParameter("q") }
         assertEquals(listOf("is:unread after:$nov2", "is:unread after:$nov2"), queries)
     }
@@ -478,28 +482,28 @@ class MultiAccountToolsTest {
     // --- Gmail's query (C22 §3) -----------------------------------------------------------------------------------
 
     @Test fun `each search field becomes Gmail's syntax, with exact local days`() {
-        val today = LocalDate.of(2026, 11, 11)
-        val nov11 = today.atStartOfDay(zone).toInstant()
+        val today = LocalDate(2026, 11, 11)
+        val nov11 = today.atStartOfDayIn(zone)
         fun q(m: MailQuery) = GmailQuery.build(m, today, zone)
         assertEquals("from:sam", q(MailQuery(from = "sam")))
         assertEquals("from:\"Lincoln Elementary\"", q(MailQuery(from = "Lincoln \"Elementary\"")))
         assertEquals("to:owner@gmail.com", q(MailQuery(to = "owner@gmail.com")))
         assertEquals("subject:(field trip)", q(MailQuery(subject = "field trip")))
         assertEquals("is:unread", q(MailQuery(unreadOnly = true)))
-        assertEquals("after:${nov11.epochSecond} before:${nov11.epochSecond + 86_400}", q(MailQuery(after = nov11, before = nov11.plusSeconds(86_400))))
-        assertEquals("free text keeps Gmail's words, dates made local", "has:attachment after:${nov11.epochSecond}", q(MailQuery(text = "has:attachment after:today")))
+        assertEquals("after:${nov11.epochSeconds} before:${nov11.epochSeconds + 86_400}", q(MailQuery(after = nov11, before = nov11 + 86_400.seconds)))
+        assertEquals("free text keeps Gmail's words, dates made local", "has:attachment after:${nov11.epochSeconds}", q(MailQuery(text = "has:attachment after:today")))
         assertEquals("", q(MailQuery(from = " ", text = "")))
     }
 
     @Test fun `search dates are words or days, made local midnight by Edith`() {
-        val today = LocalDate.of(2026, 11, 11)
-        val nov11 = today.atStartOfDay(zone).toInstant()
+        val today = LocalDate(2026, 11, 11)
+        val nov11 = today.atStartOfDayIn(zone)
         assertEquals(nov11, MailDates.parse("today", today, zone))
-        assertEquals(nov11.minusSeconds(86_400), MailDates.parse("Yesterday", today, zone))
+        assertEquals(nov11 - 86_400.seconds, MailDates.parse("Yesterday", today, zone))
         assertEquals(nov11, MailDates.parse("2026/11/11", today, zone))
         assertEquals(nov11, MailDates.parse("2026-11-11T09:30:00", today, zone))
         assertNull(MailDates.parse("2026-02-30", today, zone))
         assertNull(MailDates.parse("last week", today, zone))
-        assertFalse(LocalDate.of(2026, 7, 4).atStartOfDay(zone).offset == ZonedDateTime.of(2026, 11, 11, 0, 0, 0, 0, zone).offset)
+        assertFalse(zone.offsetAt(LocalDateTime(2026, 7, 4, 0, 0).toInstant(zone)) == zone.offsetAt(LocalDateTime(2026, 11, 11, 0, 0).toInstant(zone)))
     }
 }

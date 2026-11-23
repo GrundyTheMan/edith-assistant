@@ -2,8 +2,7 @@ package com.edith.app.accounts.sources
 
 import com.edith.app.accounts.Account
 import com.edith.app.core.error.Outcome
-import java.time.Instant
-import java.time.ZonedDateTime
+import kotlin.time.Instant
 
 /** A calendar in one account (C22 §3). [isDefault]: where a new event goes when none is named (D15, D17). */
 data class CalendarInfo(val id: String, val name: String, val isDefault: Boolean, val canWrite: Boolean = true)
@@ -18,8 +17,8 @@ data class CalendarEvent(
     val calendarId: String,
     val calendarName: String,
     val title: String,
-    val start: ZonedDateTime,
-    val end: ZonedDateTime,
+    val start: Instant,
+    val end: Instant,
     val allDay: Boolean,
     val location: String? = null,
     val description: String? = null,
@@ -35,8 +34,8 @@ data class CalendarEvent(
 /** A new event, or the changes to one: only the fields that are set are sent. */
 data class EventChange(
     val title: String? = null,
-    val start: ZonedDateTime? = null,
-    val end: ZonedDateTime? = null,
+    val start: Instant? = null,
+    val end: Instant? = null,
     val allDay: Boolean = false,
     val location: String? = null,
     val description: String? = null,
@@ -70,7 +69,7 @@ data class MailSummary(
     val from: String,
     val to: String?,
     val subject: String,
-    val date: ZonedDateTime,
+    val date: Instant,
     val snippet: String,
     /** The `Message-ID` header, for a reply's `In-Reply-To`. */
     val messageIdHeader: String?,

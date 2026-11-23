@@ -1,7 +1,7 @@
 package com.edith.app.google
 
+import kotlinx.datetime.TimeZone
 import android.app.Activity
-import com.edith.app.core.time.javaNow
 import android.app.PendingIntent
 import android.content.Intent
 import com.edith.app.accounts.Account
@@ -28,7 +28,6 @@ import com.edith.app.google.gmail.GmailClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.StateFlow
 import okhttp3.OkHttpClient
-import java.time.ZoneId
 
 /**
  * Google as an account provider (C17, C17b; any number of accounts since C22). Each account reaches Google through
@@ -45,7 +44,7 @@ class GoogleAccounts(
     private val playServicesAvailable: () -> Boolean,
     private val http: Lazy<OkHttpClient>,
     private val dispatchers: AppDispatchers,
-    private val zone: () -> ZoneId = ZoneId::systemDefault,
+    private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() },
     private val calendarBaseUrl: String = CalendarClient.BASE_URL,
     private val gmailBaseUrl: String = GmailClient.BASE_URL,
     /** "Today" for email searches (C19's exact local days). */
@@ -112,7 +111,7 @@ class GoogleAccounts(
             accountOf = accountOf,
             auth = auth,
             calendar = GoogleCalendarSource(accountOf, CalendarClient(http, auth, dispatchers, zone, calendarBaseUrl, id), zone),
-            mail = GmailSource(accountOf, GmailClient(http, auth, dispatchers, zone, gmailBaseUrl, id), zone, clock::javaNow),
+            mail = GmailSource(accountOf, GmailClient(http, auth, dispatchers, zone, gmailBaseUrl, id), zone, clock::now),
             tasks = GoogleTaskSource(accountOf, TasksClient(http, auth, dispatchers, tasksBaseUrl, id)),
             forget = { browser.forget(id) },
             signOutPlay = { if (playServicesAvailable()) play.signOut() },

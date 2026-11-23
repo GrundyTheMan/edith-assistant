@@ -1,8 +1,6 @@
 package com.edith.app.accounts.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import com.edith.app.core.time.javaNow
-import com.edith.app.core.time.javaZone
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -59,10 +57,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import java.time.LocalDate
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
-import java.util.Locale
+import com.edith.app.core.time.SystemClock
+import com.edith.app.core.time.formatPattern
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.plus
+import kotlinx.datetime.toLocalDateTime
 
 /** One day of the agenda: its heading ("Today", "Tomorrow", "Wednesday, Nov 4") and its events. */
 data class AgendaDay(val date: LocalDate, val heading: String, val events: List<MergedEvent>)
@@ -82,6 +84,8 @@ sealed interface CalendarUi {
         val error: String? = null,
         val showAccount: Boolean = false,
         val problems: List<String> = emptyList(),
+        /** The zone the times are shown in. */
+        val zone: TimeZone = SystemClock.zone(),
     ) : CalendarUi
     data class Failed(val message: String) : CalendarUi
 }
@@ -126,10 +130,10 @@ class CalendarViewModel(
 
     private suspend fun load() {
         if (_state.value !is CalendarUi.Agenda) _state.value = CalendarUi.Loading
-        val zone = clock.javaZone()
-        val today = ZonedDateTime.ofInstant(clock.javaNow(), zone).toLocalDate()
-        val from = today.atStartOfDay(zone).toInstant()
-        val to = today.plusDays(DAYS.toLong()).atStartOfDay(zone).toInstant()
+        val zone = clock.zone()
+        val today = clock.now().toLocalDateTime(zone).date
+        val from = today.atStartOfDayIn(zone)
+        val to = today.plus(DAYS, DateTimeUnit.DAY).atStartOfDayIn(zone)
         val targets = dir.entries().filter { it.calendar != null && it.state != AccountState.Checking }
             .map { Readable(it.account, it.state, requireNotNull(it.calendar)) }
         val read = Reads.readAll(targets) { it.events(from, to) }
@@ -137,9 +141,10 @@ class CalendarViewModel(
             CalendarUi.Failed(read.failureText())
         } else {
             CalendarUi.Agenda(
-                group(CalendarMerge.merge(read.results), today),
+                group(CalendarMerge.merge(read.results), today, zone),
                 showAccount = dir.entries().count { it.calendar != null } > 1,
                 problems = read.failures.map { it.line },
+                zone = zone,
             )
         }
     }
@@ -147,23 +152,20 @@ class CalendarViewModel(
     companion object {
         /** Today and the next 7 days. */
         const val DAYS = 8
-        private val dayFormat = DateTimeFormatter.ofPattern("EEEE, MMM d", Locale.US)
-
         /** Events by day (an all-day or multi-day event appears on each day it covers), days with nothing left out. */
-        fun group(events: List<MergedEvent>, today: LocalDate): List<AgendaDay> = (0 until DAYS).mapNotNull { i ->
-            val d = today.plusDays(i.toLong())
-            val zone = events.firstOrNull()?.event?.start?.zone ?: return@mapNotNull null
-            val dayStart = d.atStartOfDay(zone)
-            val dayEnd = dayStart.plusDays(1)
-            val onDay = events.filter { it.event.start.isBefore(dayEnd) && it.event.end.isAfter(dayStart) }
+        fun group(events: List<MergedEvent>, today: LocalDate, zone: TimeZone): List<AgendaDay> = (0 until DAYS).mapNotNull { i ->
+            val d = today.plus(i, DateTimeUnit.DAY)
+            val dayStart = d.atStartOfDayIn(zone)
+            val dayEnd = d.plus(1, DateTimeUnit.DAY).atStartOfDayIn(zone)
+            val onDay = events.filter { it.event.start < dayEnd && it.event.end > dayStart }
                 .sortedWith(compareBy({ !it.event.allDay }, { it.event.start }))
             if (onDay.isEmpty()) null else AgendaDay(d, heading(d, today), onDay)
         }
 
         fun heading(d: LocalDate, today: LocalDate) = when (d) {
             today -> "Today"
-            today.plusDays(1) -> "Tomorrow"
-            else -> dayFormat.format(d)
+            today.plus(1, DateTimeUnit.DAY) -> "Tomorrow"
+            else -> formatPattern(d, "EEEE, MMM d", "en-US")
         }
 
         val Factory = viewModelFactory { c, _ -> CalendarViewModel(c.accounts, c.accounts.accounts, c.accounts.loaded, c.clock) }
@@ -242,14 +244,14 @@ fun CalendarContent(state: CalendarUi, onOpenSettings: () -> Unit, onRefresh: ()
                         }
                     }
                     items(day.events, key = { "${day.date}-${it.account.id}-${it.event.calendarId}-${it.event.id}" }) { m ->
-                        EventRow(m, state.showAccount) { open = m }
+                        EventRow(m, state.showAccount, state.zone) { open = m }
                     }
                     item { HorizontalDivider(Modifier.padding(horizontal = 16.dp)) }
                 }
             }
         }
     }
-    open?.let { m -> EventDetails(m) { open = null } }
+    open?.let { m -> EventDetails(m, (state as? CalendarUi.Agenda)?.zone ?: SystemClock.zone()) { open = null } }
 }
 
 /** One account that couldn't be read, with a way to Settings (C22 §6). */
@@ -270,17 +272,15 @@ private fun Centered(content: @Composable () -> Unit) {
     }
 }
 
-private val timeFormat = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
-
 /** "work", or "personal, work" for an invite in both. */
 private fun labels(m: MergedEvent) = (listOf(m.account) + m.alsoIn.map { it.first }).joinToString(", ") { it.label }
 
 @Composable
-private fun EventRow(m: MergedEvent, showAccount: Boolean, onClick: () -> Unit) {
+private fun EventRow(m: MergedEvent, showAccount: Boolean, zone: TimeZone, onClick: () -> Unit) {
     val e = m.event
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp)) {
         Text(
-            if (e.allDay) "All day" else timeFormat.format(e.start),
+            if (e.allDay) "All day" else formatPattern(e.start, zone, "h:mm a", "en-US"),
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(76.dp),
         )
@@ -293,14 +293,14 @@ private fun EventRow(m: MergedEvent, showAccount: Boolean, onClick: () -> Unit) 
 }
 
 @Composable
-private fun EventDetails(m: MergedEvent, onClose: () -> Unit) {
+private fun EventDetails(m: MergedEvent, zone: TimeZone, onClose: () -> Unit) {
     val e = m.event
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text(e.title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(CalendarFormat.whenText(e.start, e.end, e.allDay))
+                Text(CalendarFormat.whenText(e.start, e.end, e.allDay, zone))
                 e.location?.takeIf { it.isNotBlank() }?.let { Text(it) }
                 Text("${e.calendarName} · ${labels(m)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 e.description?.takeIf { it.isNotBlank() }?.let { Text(it.take(1_000), style = MaterialTheme.typography.bodySmall) }

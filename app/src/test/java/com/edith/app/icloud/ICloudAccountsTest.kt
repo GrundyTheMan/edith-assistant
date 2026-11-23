@@ -1,5 +1,6 @@
 package com.edith.app.icloud
 
+import kotlinx.datetime.toKotlinTimeZone
 import android.app.Activity
 import com.edith.app.accounts.AccountSecrets
 import com.edith.app.accounts.AccountState
@@ -232,7 +233,7 @@ END:VCALENDAR
             override suspend fun version(baseUrl: String) = Outcome.Success("x")
         }
         val confirmations = Confirmations()
-        val registry = ToolRegistry(calendarTools(h.accounts, calHandles) + mailTools(h.accounts, mailHandles), listOf(h.accounts))
+        val registry = ToolRegistry(calendarTools(h.accounts, calHandles) { zone.toKotlinTimeZone() } + mailTools(h.accounts, mailHandles), listOf(h.accounts))
         val runner = ToolTurnRunner(ollama, registry, confirmations, FakeSettingsRepository(), clock, dispatchers)
         var card: ConfirmationRequest? = null
         runner.run("http://ollama", ModelInfo("gemma4:12b", setOf("tools")), listOf(OllamaMessage("user", "go"))).collect { e ->

@@ -1,6 +1,9 @@
 package com.edith.app.icloud.calendar
 
 import com.edith.app.accounts.Account
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import com.edith.app.accounts.Provider
 import com.edith.app.accounts.sources.EventChange
 import com.edith.app.core.error.AppError
@@ -20,9 +23,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import java.time.Instant
-import java.time.ZoneId
-import java.time.ZonedDateTime
+import kotlin.time.Instant
 import java.util.Collections
 
 /**
@@ -30,7 +31,7 @@ import java.util.Collections
  * host (`pNN-caldav.icloud.com`). Multistatus answers follow RFC 4791/6638 (made up).
  */
 class CalDavTest {
-    private val zone = ZoneId.of("America/Detroit")
+    private val zone = TimeZone.of("America/Detroit")
     private val main = MockWebServer()
     private val partition = MockWebServer()
     private val requests = Collections.synchronizedList(mutableListOf<RecordedRequest>())
@@ -41,7 +42,7 @@ class CalDavTest {
     private val account = Account("i1", Provider.ICloud, "owner@icloud.com", "icloud")
 
     private fun xml(body: String, code: Int = 207) = MockResponse.Builder().code(code).body(body).addHeader("Content-Type", "application/xml; charset=utf-8").build()
-    private fun at(d: Int, h: Int, m: Int = 0) = ZonedDateTime.of(2026, 11, d, h, m, 0, 0, zone)
+    private fun at(d: Int, h: Int, m: Int = 0) = LocalDateTime(2026, 11, d, h, m).toInstant(zone)
 
     @Before fun setUp() {
         main.dispatcher = object : Dispatcher() {
@@ -123,7 +124,7 @@ class CalDavTest {
     }
 
     @Test fun `events - instances of a series, an all-day one, cancelled left out, labelled by calendar`() = runBlocking {
-        val events = (source().events(at(3, 0).toInstant(), at(10, 0).toInstant()) as Outcome.Success).value
+        val events = (source().events(at(3, 0), at(10, 0)) as Outcome.Success).value
         assertEquals(listOf("Standup", "Dentist", "Standup", "Holiday"), events.map { it.title })
         val dentist = events[1]
         assertEquals(at(3, 15), dentist.start)
@@ -154,7 +155,7 @@ class CalDavTest {
     @Test fun `update - GET, then PUT with If-Match - a 412 reads again once, twice says it changed`() = runBlocking {
         resources["/12345/calendars/home/dentist.ics"] = "\"v1\"" to report("").let { DENTIST }
         val s = source()
-        val event = (s.events(at(3, 0).toInstant(), at(10, 0).toInstant()) as Outcome.Success).value.first { it.title == "Dentist" }
+        val event = (s.events(at(3, 0), at(10, 0)) as Outcome.Success).value.first { it.title == "Dentist" }
 
         putAnswers = ArrayDeque(listOf(412, 204))
         val renamed = (s.update(event, EventChange(title = "Dentist (moved)")) as Outcome.Success).value
@@ -173,7 +174,7 @@ class CalDavTest {
     @Test fun `delete uses If-Match, and one occurrence of a series is refused without a request`() = runBlocking {
         resources["/12345/calendars/home/dentist.ics"] = "\"v1\"" to DENTIST
         val s = source()
-        val events = (s.events(at(3, 0).toInstant(), at(10, 0).toInstant()) as Outcome.Success).value
+        val events = (s.events(at(3, 0), at(10, 0)) as Outcome.Success).value
         assertEquals(Outcome.Success(Unit), s.delete(events.first { it.title == "Dentist" }))
         assertEquals("\"v1\"", writes.single().headers["If-Match"])
 

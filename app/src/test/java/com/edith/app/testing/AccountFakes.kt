@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
 import java.time.ZoneId
+import kotlinx.datetime.toKotlinTimeZone
 
 /** [AccountStore] for JVM tests. */
 class InMemoryAccountStore(initial: List<Account> = emptyList()) : AccountStore {
@@ -113,7 +114,7 @@ class AccountsHarness(
         playServicesAvailable = { playAvailable },
         http = lazy { OkHttpClient() },
         dispatchers = AppDispatchersForTests.unconfined,
-        zone = { zone },
+        zone = { zone.toKotlinTimeZone() },
         calendarBaseUrl = url("/calendar/v3"),
         gmailBaseUrl = url("/gmail/v1/users/me"),
         clock = clock,
@@ -129,12 +130,12 @@ class AccountsHarness(
         http = lazy { OkHttpClient.Builder().readTimeout(180, java.util.concurrent.TimeUnit.SECONDS).build() },
         dispatchers = AppDispatchersForTests.unconfined,
         clock = clock,
-        zone = { zone },
+        zone = { zone.toKotlinTimeZone() },
         windowsZone = { z -> if (z.id == "America/Detroit") "Eastern Standard Time" else null },
         graphBaseUrl = url("/graph/v1.0"),
     )
 
-    val icloud = com.edith.app.icloud.ICloudAccounts(secrets, lazy { OkHttpClient() }, AppDispatchersForTests.unconfined, { zone }, icloudMail, url("/"))
+    val icloud = com.edith.app.icloud.ICloudAccounts(secrets, lazy { OkHttpClient() }, AppDispatchersForTests.unconfined, { zone.toKotlinTimeZone() }, icloudMail, url("/"))
 
     val accounts = Accounts(store, google, scope, microsoft, icloud)
 }

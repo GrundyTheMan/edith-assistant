@@ -1,5 +1,6 @@
 package com.edith.app.google.gmail
 
+import kotlinx.datetime.TimeZone
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
@@ -24,9 +25,12 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.jsoup.Jsoup
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.minus
+import kotlinx.datetime.plus
+import kotlin.time.Instant
 import java.util.Base64
 
 /**
@@ -38,7 +42,7 @@ class GmailClient(
     private val http: Lazy<OkHttpClient>,
     private val auth: GoogleAccountAuth,
     private val dispatchers: AppDispatchers,
-    private val zone: () -> ZoneId = ZoneId::systemDefault,
+    private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() },
     private val baseUrl: String = BASE_URL,
     /** Stamped on every message, so a reply goes from the account the email came to (C22). */
     private val accountId: String = "",
@@ -138,7 +142,7 @@ class GmailClient(
         from = header("From") ?: "(unknown sender)",
         to = header("To"),
         subject = header("Subject")?.takeIf { it.isNotBlank() } ?: "(no subject)",
-        date = Instant.ofEpochMilli(internalDate?.toLongOrNull() ?: 0).atZone(zone()),
+        date = Instant.fromEpochMilliseconds(internalDate?.toLongOrNull() ?: 0),
         snippet = Jsoup.parse(snippet.orEmpty()).text(),   // Gmail's snippets carry HTML entities
         messageIdHeader = header("Message-ID") ?: header("Message-Id"),
         unread = "UNREAD" in labelIds,
@@ -166,28 +170,28 @@ object GmailQuery {
      *   yesterday's date for "today" in the live check).
      * A date that doesn't exist is left as it is (Gmail then answers 400, which the tool explains).
      */
-    fun localDates(query: String, today: LocalDate, zone: ZoneId): String = DATE.replace(query) { m ->
+    fun localDates(query: String, today: LocalDate, zone: TimeZone): String = DATE.replace(query) { m ->
         val (op, word, y, mo, d) = m.destructured
         val day = when (word.lowercase()) {
             "today" -> today
-            "yesterday" -> today.minusDays(1)
-            "tomorrow" -> today.plusDays(1)
-            else -> runCatching { LocalDate.of(y.toInt(), mo.toInt(), d.toInt()) }.getOrNull()
+            "yesterday" -> today.minus(1, DateTimeUnit.DAY)
+            "tomorrow" -> today.plus(1, DateTimeUnit.DAY)
+            else -> runCatching { LocalDate(y.toInt(), mo.toInt(), d.toInt()) }.getOrNull()
         }
-        day?.let { "$op:${it.atStartOfDay(zone).toEpochSecond()}" } ?: m.value
+        day?.let { "$op:${it.atStartOfDayIn(zone).epochSeconds}" } ?: m.value
     }
 
     /**
      * A provider-neutral search (C22 §3) in Gmail's syntax. Dates are already exact instants (local midnight, from the
      * tool), so they go as epoch seconds; free text keeps Gmail's own words, with any dates in it made local too.
      */
-    fun build(q: MailQuery, today: LocalDate, zone: ZoneId): String = buildList {
+    fun build(q: MailQuery, today: LocalDate, zone: TimeZone): String = buildList {
         q.from?.takeIf { it.isNotBlank() }?.let { add("from:${term(it)}") }
         q.to?.takeIf { it.isNotBlank() }?.let { add("to:${term(it)}") }
         q.subject?.takeIf { it.isNotBlank() }?.let { add("subject:${group(it)}") }
         if (q.unreadOnly) add("is:unread")
-        q.after?.let { add("after:${it.epochSecond}") }
-        q.before?.let { add("before:${it.epochSecond}") }
+        q.after?.let { add("after:${it.epochSeconds}") }
+        q.before?.let { add("before:${it.epochSeconds}") }
         q.text?.takeIf { it.isNotBlank() }?.let { add(localDates(it.trim(), today, zone)) }
     }.joinToString(" ")
 
