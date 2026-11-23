@@ -14,7 +14,8 @@ import com.edith.app.settings.SettingsRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import java.util.Collections
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 
 /**
  * Decision D12: after the first finished reply in a chat, Edith writes the chat a short title with one extra,
@@ -28,10 +29,12 @@ class ConversationTitler(
     private val scope: CoroutineScope,
 ) : ReplyListener {
     /** One attempt per conversation per app run, so a model that can't title doesn't cost a call every reply. */
-    private val attempted: MutableSet<Long> = Collections.synchronizedSet(mutableSetOf())
+    private val attempted = MutableStateFlow<Set<Long>>(emptySet())
 
     override fun onFinished(conversationId: Long, messageId: Long?, text: String) {
-        if (!attempted.add(conversationId)) return
+        var first = false
+        attempted.update { if (conversationId in it) it else { first = true; it + conversationId } }
+        if (!first) return
         scope.launch { titleIfNeeded(conversationId) }
     }
 

@@ -106,11 +106,6 @@ sealed interface ToolResult {
     data class Error(override val text: kotlin.String) : ToolResult
 }
 
-/** A JPEG a tool brought back, and the file name it's kept under. */
-class ToolImage(val fileName: kotlin.String, val jpeg: ByteArray) {
-    override fun toString() = "ToolImage($fileName, ${jpeg.size} bytes)"
-}
-
 /** What a running tool is given: the clock, the settings and the dispatchers. */
 data class ToolContext(val clock: Clock, val settings: Settings, val dispatchers: AppDispatchers)
 

@@ -80,7 +80,7 @@ class AttachmentSendTest {
 
     private fun pending(name: String, kind: AttachmentKind, bytes: ByteArray) = PendingAttachment(
         kind, name, if (kind == AttachmentKind.Image) "image/jpeg" else "audio/wav",
-        File(work, "p-$name").apply { writeBytes(bytes) }, bytes.size.toLong(), durationMs = if (kind == AttachmentKind.Audio) 1_000 else null,
+        File(work, "p-$name").apply { writeBytes(bytes) }.path, bytes.size.toLong(), durationMs = if (kind == AttachmentKind.Audio) 1_000 else null,
     )
 
     private suspend fun awaitDone() = withTimeout(10_000) { engine.state.first { it is EngineState.Idle || it is EngineState.Failed } }

@@ -1,10 +1,10 @@
 package com.edith.app.chat.engine
 
 import com.edith.app.data.chat.ChatRepository
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 /** D12 title rules that don't need a database or a model. */
 class ConversationTitleTest {

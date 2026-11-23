@@ -59,7 +59,7 @@ class RetentionTest {
     private var n = 0
     private fun pending(): PendingAttachment {
         val f = File(work, "p${n++}.jpg").apply { writeBytes(byteArrayOf(1, 2, 3)) }
-        return PendingAttachment(AttachmentKind.Image, f.name, "image/jpeg", f, 3)
+        return PendingAttachment(AttachmentKind.Image, f.name, "image/jpeg", f.path, 3)
     }
 
     /** One owner message with one photo; returns its row. */

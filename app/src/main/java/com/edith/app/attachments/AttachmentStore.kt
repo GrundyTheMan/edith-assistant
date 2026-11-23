@@ -2,37 +2,23 @@ package com.edith.app.attachments
 
 import android.media.MediaMetadataRetriever
 import com.edith.app.core.log.Log
-import com.edith.app.data.chat.StoredFiles
 import com.edith.app.core.log.LogTag
-import com.edith.app.data.db.AttachmentKind
 import java.io.File
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-/** A prepared attachment waiting in the input row (C15 §2): its file is in `cacheDir/pending/` until it's sent. */
-data class PendingAttachment(
-    val kind: AttachmentKind,
-    val fileName: String,
-    val mimeType: String,
-    val file: File,
-    val sizeBytes: Long,
-    /** Audio only. */
-    val durationMs: Long? = null,
-)
+/** The prepared attachment's file. */
+val PendingAttachment.file: File get() = File(path)
 
 /**
  * Where attachments' files live (C16 §1). Each is named by a `stored_path` kept on its row:
  * - `attachments/<uuid>.<ext>` under `filesDir`: kept until retention removes it.
  * - `session/<uuid>.<ext>` under `cacheDir`: when the owner keeps 0, files last until the app next starts.
  */
-interface AttachmentStore : StoredFiles {
-    /** Takes over [pending]'s file. Returns its `stored_path`. */
-    fun keep(pending: PendingAttachment, session: Boolean): String
-    /** Writes one of Edith's files (C16 §3). Returns its `stored_path`. */
-    fun write(fileName: String, content: String, session: Boolean): String
-    /** Writes a picture a tool brought back (C25: a camera snapshot). Returns its `stored_path`. */
-    fun writeBytes(fileName: String, bytes: ByteArray, session: Boolean): String = throw IOException("This store can't keep pictures")
+interface AttachmentStore : AttachmentWriter {
+    override fun discard(pending: PendingAttachment) { pending.file.delete() }
+    override fun writeBytes(fileName: String, bytes: ByteArray, session: Boolean): String = throw IOException("This store can't keep pictures")
     /** The file, or null if it's gone (removed, or a session file from an earlier run). */
     fun file(storedPath: String?): File?
     /** An audio file's length, read once and remembered. */
