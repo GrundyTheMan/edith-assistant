@@ -1,7 +1,6 @@
 package com.edith.app.printer
 
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -9,18 +8,20 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import okhttp3.Call
-import okhttp3.Callback
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
+import io.ktor.client.HttpClient
+import io.ktor.client.plugins.timeout
+import io.ktor.client.request.header
+import io.ktor.client.request.request
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsBytes
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
+import io.ktor.http.URLParserException
+import io.ktor.http.content.ByteArrayContent
 import java.io.IOException
 import java.net.URI
 import java.net.URISyntaxException
-import java.util.concurrent.TimeUnit
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /** Where a printer's Moonraker (the API) and its web server (the cameras) are. */
 data class PrinterUrls(val api: String, val web: String)
@@ -68,7 +69,7 @@ sealed interface PrinterReply<out T> {
  * these unwrap the result. A printer is only reachable on the home network, so a call that gets no answer at all is
  * [PrinterReply.Unreachable], not an error.
  */
-class MoonrakerApi(private val http: Lazy<OkHttpClient>) {
+class MoonrakerApi(private val http: Lazy<HttpClient>) {
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun get(conn: PrinterConn, path: String, timeoutS: Long = CALL_S): PrinterReply<JsonElement> = result(request(conn, "GET", conn.urls.api + path, timeoutS))
@@ -93,19 +94,24 @@ class MoonrakerApi(private val http: Lazy<OkHttpClient>) {
     }
 
     private suspend fun request(conn: PrinterConn, method: String, url: String, timeoutS: Long, raw: Boolean = false): Raw {
-        val builder = try { Request.Builder().url(url) } catch (e: IllegalArgumentException) { return Raw.Unreachable }
-        conn.apiKey?.takeIf { it.isNotBlank() }?.let { builder.header("X-Api-Key", it) }
-        builder.header("Accept", if (raw) "image/*" else "application/json")
-        val request = builder.method(method, if (method == "POST") ByteArray(0).toRequestBody() else null).build()
         // The body is read in whatever thread the call resumes on, and Android kills the app for reading the network on the main thread
         // (`NetworkOnMainThreadException`, found with Alexa: small answers are already buffered, big or slow ones are not), so the whole
         // call and read run on the IO threads whoever asks.
         return withContext(Dispatchers.IO) {
             try {
-                http.value.newBuilder().callTimeout(timeoutS, TimeUnit.SECONDS).connectTimeout(CONNECT_S, TimeUnit.SECONDS).build().newCall(request).await().use { r ->
-                    Raw.Done(r.code, r.body?.bytes() ?: ByteArray(0), r.header("Content-Type").orEmpty().substringBefore(';').trim().lowercase())
+                val r = http.value.request(url) {
+                    this.method = HttpMethod.parse(method)
+                    timeout { requestTimeoutMillis = timeoutS * 1000; connectTimeoutMillis = CONNECT_S * 1000 }
+                    conn.apiKey?.takeIf { it.isNotBlank() }?.let { header("X-Api-Key", it) }
+                    header(HttpHeaders.Accept, if (raw) "image/*" else "application/json")
+                    if (method == "POST") setBody(ByteArrayContent(ByteArray(0)))
                 }
+                Raw.Done(r.status.value, r.bodyAsBytes(), r.headers[HttpHeaders.ContentType].orEmpty().substringBefore(';').trim().lowercase())
             } catch (e: IOException) {
+                Raw.Unreachable
+            } catch (e: IllegalArgumentException) {   // an address that isn't one
+                Raw.Unreachable
+            } catch (e: URLParserException) {
                 Raw.Unreachable
             }
         }
@@ -135,12 +141,4 @@ class MoonrakerApi(private val http: Lazy<OkHttpClient>) {
         /** A phone away from home gets no answer: don't wait long to say so. */
         const val CONNECT_S = 3L
     }
-}
-
-private suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
-    cont.invokeOnCancellation { cancel() }
-    enqueue(object : Callback {
-        override fun onFailure(call: Call, e: IOException) = cont.resumeWithException(e)
-        override fun onResponse(call: Call, response: Response) = cont.resume(response) { _, r, _ -> r.close() }
-    })
 }

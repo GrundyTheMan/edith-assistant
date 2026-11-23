@@ -1,5 +1,6 @@
 package com.edith.app.printer
 
+import com.edith.app.core.net.HttpClients
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -96,7 +97,7 @@ class FakeMoonraker {
     /** What the owner would type: this server's address, with a port other than Moonraker's, so it serves the API and the web both. */
     val address: String get() = server.url("/").toString().trimEnd('/')
 
-    fun api() = MoonrakerApi(lazy { OkHttpClient() })
+    fun api() = MoonrakerApi(lazy { HttpClients.over(OkHttpClient()) })
     fun conn(key: String? = null) = PrinterConn(PrinterAddress.parse(address).getOrThrow(), key)
     fun count(path: String) = requests.count { it.url.encodedPath == path }
     fun posts(): List<String> = requests.filter { it.method == "POST" }.map { it.url.encodedPath }

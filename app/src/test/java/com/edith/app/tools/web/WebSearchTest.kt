@@ -1,5 +1,6 @@
 package com.edith.app.tools.web
 
+import com.edith.app.core.net.HttpClients
 import com.edith.app.chat.engine.PromptContext
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.error.AppError
@@ -55,7 +56,8 @@ class WebSearchTest {
     private lateinit var reader: PageReader
     private val ctx = ToolContext(FakeClock(Instant.parse("2026-11-01T16:00:00Z"), ZoneId.of("America/Detroit")), Settings(), dispatchers)
     private val key = "test-key-not-real-7f3a"
-    private val client = lazyOf(OkHttpClient())
+    private val okHttp = lazyOf(OkHttpClient())
+    private val client = lazyOf(HttpClients.over(okHttp.value))
 
     @Before fun start() {
         web.start()
@@ -64,7 +66,7 @@ class WebSearchTest {
         ddg = DuckDuckGoSearch(client, dispatchers, htmlUrl = web.url("/html/").toString(), liteUrl = web.url("/lite/").toString())
         search = WebSearch(ddg, ollama, setup)
         // The test server is on this machine: allow it by name, keep everything else checked.
-        reader = PageReader(client, dispatchers, dns = Dns.SYSTEM, hostAllowed = { it == web.hostName || !PrivateNetwork.isPrivateHost(it) })
+        reader = PageReader(okHttp, dispatchers, dns = Dns.SYSTEM, hostAllowed = { it == web.hostName || !PrivateNetwork.isPrivateHost(it) })
     }
 
     @After fun stop() {

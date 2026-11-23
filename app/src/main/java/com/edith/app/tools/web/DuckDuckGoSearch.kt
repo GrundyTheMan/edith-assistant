@@ -6,14 +6,17 @@ import com.edith.app.core.error.Outcome
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import kotlinx.coroutines.withContext
-import okhttp3.FormBody
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okhttp3.OkHttpClient
-import okhttp3.Request
+import com.edith.app.core.net.HttpClients.Companion.withTimeouts
+import io.ktor.client.HttpClient
+import io.ktor.client.request.forms.submitForm
+import io.ktor.client.request.header
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
+import io.ktor.http.Url
+import io.ktor.http.parameters
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import java.io.IOException
-import java.util.concurrent.TimeUnit
 
 /**
  * DuckDuckGo's results pages, which need no key (D3) — the same approach as Jarvis. Not DuckDuckGo's "instant answer"
@@ -23,7 +26,7 @@ import java.util.concurrent.TimeUnit
  * or a bot check can break them; [BLOCKED] says so plainly.
  */
 class DuckDuckGoSearch(
-    baseClient: Lazy<OkHttpClient>,
+    baseClient: Lazy<HttpClient>,
     private val dispatchers: AppDispatchers,
     private val htmlUrl: String = "https://html.duckduckgo.com/html/",
     private val liteUrl: String = "https://lite.duckduckgo.com/lite/",
@@ -32,11 +35,7 @@ class DuckDuckGoSearch(
     override val displayName = "DuckDuckGo"
     override val needsApiKey = false
 
-    private val http by lazy {
-        baseClient.value.newBuilder()
-            .connectTimeout(TIMEOUT_S, TimeUnit.SECONDS).readTimeout(TIMEOUT_S, TimeUnit.SECONDS).callTimeout(TIMEOUT_S, TimeUnit.SECONDS)
-            .build()
-    }
+    private val http by lazy { baseClient.value.withTimeouts(TIMEOUT_S, TIMEOUT_S, TIMEOUT_S) }
 
     override suspend fun search(query: String, maxResults: Int): Outcome<List<SearchHit>> = withContext(dispatchers.io) {
         var blocked = false
@@ -63,13 +62,9 @@ class DuckDuckGoSearch(
         }
     }
 
-    private fun post(url: String, query: String): Pair<Int, String> {
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", USER_AGENT)
-            .post(FormBody.Builder().add("q", query).build())
-            .build()
-        return http.newCall(request).execute().use { it.code to it.body.string() }
+    private suspend fun post(url: String, query: String): Pair<Int, String> {
+        val response = http.submitForm(url, formParameters = parameters { append("q", query) }) { header(HttpHeaders.UserAgent, USER_AGENT) }
+        return response.status.value to response.bodyAsText()
     }
 
     companion object {
@@ -98,8 +93,9 @@ class DuckDuckGoSearch(
         /** The real address: DuckDuckGo wraps results in `//duckduckgo.com/l/?uddg=<url>`; its own links (ads) are dropped. */
         internal fun resultUrl(href: String): String? {
             val absolute = if (href.startsWith("//")) "https:$href" else href
-            val parsed = absolute.toHttpUrlOrNull() ?: return null
-            val real = parsed.queryParameter("uddg")?.toHttpUrlOrNull() ?: parsed
+            fun web(text: String): Url? = runCatching { Url(text) }.getOrNull()?.takeIf { (it.protocol.name == "http" || it.protocol.name == "https") && it.host.isNotEmpty() }
+            val parsed = web(absolute) ?: return null
+            val real = parsed.parameters["uddg"]?.let(::web) ?: parsed
             return real.toString().takeUnless { real.host == "duckduckgo.com" || real.host.endsWith(".duckduckgo.com") }
         }
 

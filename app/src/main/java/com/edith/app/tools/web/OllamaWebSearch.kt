@@ -8,13 +8,16 @@ import com.edith.app.core.log.LogTag
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import com.edith.app.core.net.HttpClients.Companion.withTimeouts
+import io.ktor.client.HttpClient
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.content.TextContent
 import java.io.IOException
-import java.util.concurrent.TimeUnit
 
 /**
  * Ollama's web search and web fetch APIs (D3; docs.ollama.com/capabilities/web-search, checked 2026-11-01):
@@ -24,7 +27,7 @@ import java.util.concurrent.TimeUnit
  * Optional (D3): used only while the owner has a key saved, see [WebSearch].
  */
 class OllamaWebSearch(
-    baseClient: Lazy<OkHttpClient>,
+    baseClient: Lazy<HttpClient>,
     private val dispatchers: AppDispatchers,
     private val apiKey: suspend () -> String?,
     private val baseUrl: String = "https://ollama.com/",
@@ -33,11 +36,7 @@ class OllamaWebSearch(
     override val displayName = "Ollama web search"
     override val needsApiKey = true
 
-    private val http by lazy {
-        baseClient.value.newBuilder()
-            .connectTimeout(TIMEOUT_S, TimeUnit.SECONDS).readTimeout(TIMEOUT_S, TimeUnit.SECONDS).callTimeout(TIMEOUT_S, TimeUnit.SECONDS)
-            .build()
-    }
+    private val http by lazy { baseClient.value.withTimeouts(TIMEOUT_S, TIMEOUT_S, TIMEOUT_S) }
 
     override suspend fun search(query: String, maxResults: Int): Outcome<List<SearchHit>> = search(query, maxResults, apiKey())
 
@@ -54,19 +53,16 @@ class OllamaWebSearch(
 
     private suspend fun <T> post(path: String, body: String, key: String?, parse: (String) -> T): Outcome<T> = withContext(dispatchers.io) {
         if (key.isNullOrBlank()) return@withContext Outcome.Failure(AppError.ToolFailed("web search", NO_KEY))
-        val request = Request.Builder()
-            .url(baseUrl.toHttpUrl().newBuilder().addPathSegments(path).build())
-            .header("Authorization", "Bearer $key")
-            .post(body.toRequestBody(JSON))
-            .build()
         try {
-            http.newCall(request).execute().use { response ->
-                when (response.code) {
-                    in 200..299 -> Outcome.Success(parse(response.body.string()))
-                    401, 403 -> failure(path, response.code, REJECTED)
-                    429 -> failure(path, response.code, LIMITED)
-                    else -> failure(path, response.code, UNAVAILABLE)
-                }
+            val response = http.post(baseUrl.trimEnd('/') + "/" + path) {
+                header(HttpHeaders.Authorization, "Bearer $key")
+                setBody(TextContent(body, JSON))
+            }
+            when (val code = response.status.value) {
+                in 200..299 -> Outcome.Success(parse(response.bodyAsText()))
+                401, 403 -> failure(path, code, REJECTED)
+                429 -> failure(path, code, LIMITED)
+                else -> failure(path, code, UNAVAILABLE)
             }
         } catch (e: IOException) {
             Log.w(LogTag.Tools, "Ollama $path unreachable (${e::class.simpleName})")   // no URL, headers or key
@@ -88,7 +84,7 @@ class OllamaWebSearch(
         const val LIMITED = "Search limit reached — try later."
         const val UNAVAILABLE = WebSearch.UNAVAILABLE
         private const val TIMEOUT_S = 15L
-        private val JSON = "application/json".toMediaType()
+        private val JSON = ContentType.Application.Json
         private val json = Json { ignoreUnknownKeys = true; explicitNulls = false; encodeDefaults = true }
     }
 }

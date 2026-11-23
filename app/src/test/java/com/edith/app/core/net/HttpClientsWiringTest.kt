@@ -41,7 +41,7 @@ class HttpClientsWiringTest {
         val lines = code(container)
         for (name in expected) {
             val line = lines.firstOrNull { name in it && "httpClients" in it }
-            assertTrue("$name isn't given httpClients.secure in AppContainer", line != null && "httpClients.secure" in line)
+            assertTrue("$name isn't given httpClients.secure in AppContainer", line != null && ("httpClients.secure" in line || "httpClients.ktorSecure" in line))
         }
     }
 

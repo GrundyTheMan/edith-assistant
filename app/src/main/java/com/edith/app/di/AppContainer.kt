@@ -186,11 +186,11 @@ class AppContainer(val app: Application) {
      * stays in [secretStore].
      */
     val webSearchSetup: WebSearchSetup by lazy { WebSearchSetup(secretStore) }
-    val ollamaWeb: OllamaWebSearch by lazy { OllamaWebSearch(httpClients.secure, dispatchers, apiKey = { webSearchSetup.key() }) }
-    private val webSearch: WebSearch by lazy { WebSearch(DuckDuckGoSearch(httpClients.secure, dispatchers), ollamaWeb, webSearchSetup) }
+    val ollamaWeb: OllamaWebSearch by lazy { OllamaWebSearch(httpClients.ktorSecure, dispatchers, apiKey = { webSearchSetup.key() }) }
+    private val webSearch: WebSearch by lazy { WebSearch(DuckDuckGoSearch(httpClients.ktorSecure, dispatchers), ollamaWeb, webSearchSetup) }
 
     /** Weather data (C09): Open-Meteo, keyless. Shares the app's HTTP client, with its own 10 s timeouts. */
-    val openMeteo: OpenMeteoClient by lazy { OpenMeteoClient(httpClients.secure, dispatchers) }
+    val openMeteo: OpenMeteoClient by lazy { OpenMeteoClient(httpClients.ktorSecure, dispatchers) }
 
     /** Tool confirmations waiting for the owner's tap (C08 §6, D11). */
     val confirmations = Confirmations()
@@ -434,7 +434,7 @@ class AppContainer(val app: Application) {
     val alexa: AlexaService by lazy { AlexaService(secretStore, AlexaApi(httpClients.secure), clock) }
 
     /** A 3D printer's Moonraker on the home Wi-Fi (C34): its address and API key are kept encrypted in [secretStore]. */
-    val printer: PrinterService by lazy { PrinterService(secretStore, MoonrakerApi(httpClients.plain), clock, com.edith.app.printer.feed.FeedPrinterRead(printerFeed)) }
+    val printer: PrinterService by lazy { PrinterService(secretStore, MoonrakerApi(httpClients.ktorPlain), clock, com.edith.app.printer.feed.FeedPrinterRead(printerFeed)) }
 
     val home: Home by lazy {
         Home(

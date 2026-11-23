@@ -9,56 +9,50 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import okhttp3.HttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
-import okhttp3.Request
+import com.edith.app.core.net.HttpClients.Companion.withTimeouts
+import io.ktor.client.HttpClient
+import io.ktor.client.request.get
+import io.ktor.client.request.parameter
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.isSuccess
 import java.io.IOException
-import java.util.concurrent.TimeUnit
 
 /**
  * Open-Meteo (C09 §1–2): free, keyless, structured JSON. DTOs mirror responses captured live on 2026-11-01
  * (`src/test/resources/weather/`), never a guessed shape (L5). Base URLs are injectable for tests.
  */
 class OpenMeteoClient(
-    baseClient: Lazy<OkHttpClient>,
+    baseClient: Lazy<HttpClient>,
     private val dispatchers: AppDispatchers,
     private val geocodingUrl: String = "https://geocoding-api.open-meteo.com/",
     private val forecastUrl: String = "https://api.open-meteo.com/",
 ) {
     /** Built lazily on the IO dispatcher, like the Ollama client; 10 s is plenty for a small JSON reply. */
-    private val http by lazy {
-        baseClient.value.newBuilder()
-            .connectTimeout(TIMEOUT_S, TimeUnit.SECONDS).readTimeout(TIMEOUT_S, TimeUnit.SECONDS).callTimeout(TIMEOUT_S, TimeUnit.SECONDS)
-            .build()
-    }
+    private val http by lazy { baseClient.value.withTimeouts(TIMEOUT_S, TIMEOUT_S, TIMEOUT_S) }
 
     suspend fun geocode(name: String): Outcome<List<Place>> = get(
-        geocodingUrl.toHttpUrl().newBuilder().addPathSegments("v1/search")
-            .addQueryParameter("name", name)   // OkHttp URL-encodes
-            .addQueryParameter("count", "10").addQueryParameter("language", "en").addQueryParameter("format", "json")
-            .build(),
+        geocodingUrl, "v1/search",
+        "name" to name,   // Ktor URL-encodes
+        "count" to "10", "language" to "en", "format" to "json",
     ) { body -> json.decodeFromString(GeocodingResponse.serializer(), body).results.orEmpty().map { it.toPlace() } }
 
     suspend fun forecast(latitude: Double, longitude: Double, units: WeatherUnits, days: Int): Outcome<Forecast> = get(
-        forecastUrl.toHttpUrl().newBuilder().addPathSegments("v1/forecast")
-            .addQueryParameter("latitude", latitude.toString()).addQueryParameter("longitude", longitude.toString())
-            .addQueryParameter("current", "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,precipitation")
-            .addQueryParameter("daily", "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max")
-            .addQueryParameter("temperature_unit", units.temperatureParam).addQueryParameter("wind_speed_unit", units.windParam)
-            .addQueryParameter("timezone", "auto").addQueryParameter("forecast_days", (days + 1).coerceIn(1, 4).toString())
-            .build(),
+        forecastUrl, "v1/forecast",
+        "latitude" to latitude.toString(), "longitude" to longitude.toString(),
+        "current" to "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,precipitation",
+        "daily" to "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+        "temperature_unit" to units.temperatureParam, "wind_speed_unit" to units.windParam,
+        "timezone" to "auto", "forecast_days" to (days + 1).coerceIn(1, 4).toString(),
     ) { body -> json.decodeFromString(ForecastResponse.serializer(), body).toForecast() }
 
-    private suspend fun <T> get(url: HttpUrl, parse: (String) -> T): Outcome<T> = withContext(dispatchers.io) {
+    private suspend fun <T> get(base: String, path: String, vararg query: Pair<String, String>, parse: (String) -> T): Outcome<T> = withContext(dispatchers.io) {
         try {
-            http.newCall(Request.Builder().url(url).build()).execute().use { response ->
-                if (!response.isSuccessful) {
-                    Log.w(LogTag.Tools, "Open-Meteo HTTP ${response.code} for ${url.encodedPath}")
-                    return@withContext Outcome.Failure(AppError.ToolFailed("weather", "the weather service answered HTTP ${response.code}"))
-                }
-                Outcome.Success(parse(response.body.string()))
+            val response = http.get(base.trimEnd('/') + "/" + path) { query.forEach { (k, v) -> parameter(k, v) } }
+            if (!response.status.isSuccess()) {
+                Log.w(LogTag.Tools, "Open-Meteo HTTP ${response.status.value} for /$path")
+                return@withContext Outcome.Failure(AppError.ToolFailed("weather", "the weather service answered HTTP ${response.status.value}"))
             }
+            Outcome.Success(parse(response.bodyAsText()))
         } catch (e: IOException) {
             Log.w(LogTag.Tools, "Open-Meteo unreachable (${e::class.simpleName})")
             Outcome.Failure(AppError.ToolFailed("weather", "the weather service didn't respond"))
