@@ -2,9 +2,11 @@ package com.edith.app.chat.engine
 
 import com.edith.app.core.time.Clock
 import com.edith.app.ollama.ModelInfo
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
+import com.edith.app.core.time.formatPattern
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.offsetAt
 import java.util.Locale
+import kotlin.time.Instant
 
 /**
  * Edith's personality — 00-product §5, verbatim, as the owner approved it. Don't edit it; capabilities belong in
@@ -25,12 +27,18 @@ fun interface PromptSection {
 }
 
 /** [hasAttachments]: the messages sent with this prompt include attachments (C15). */
-data class PromptContext(val now: ZonedDateTime, val model: ModelInfo, val hasAttachments: Boolean = false)
+data class PromptContext(
+    val now: Instant,
+    val model: ModelInfo,
+    val hasAttachments: Boolean = false,
+    /** The owner's time zone, which [now] is shown in. */
+    val zone: TimeZone = TimeZone.UTC,
+)
 
 /** Builds the system prompt fresh for every request: [PERSONA], a blank line, then each active section. */
 class PromptBuilder(private val clock: Clock, private val sections: () -> List<PromptSection>) {
     fun system(model: ModelInfo, hasAttachments: Boolean = false): String {
-        val ctx = PromptContext(ZonedDateTime.ofInstant(clock.now(), clock.zone()), model, hasAttachments)
+        val ctx = PromptContext(clock.now(), model, hasAttachments, clock.zone())
         val active = sections().mapNotNull { it.text(ctx)?.takeIf(String::isNotBlank) }
         return if (active.isEmpty()) PERSONA else PERSONA + "\n\n" + active.joinToString("\n")
     }
@@ -39,8 +47,8 @@ class PromptBuilder(private val clock: Clock, private val sections: () -> List<P
 /** "Current date and time: Thursday, October 29, 2026, 2:30 PM (America/Detroit)." (C06), in the device's language. */
 class DateTimeSection(private val locale: () -> Locale = Locale::getDefault) : PromptSection {
     override fun text(ctx: PromptContext): String {
-        val formatted = ctx.now.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy, h:mm a", locale()))
+        val formatted = formatPattern(ctx.now, ctx.zone, "EEEE, MMMM d, yyyy, h:mm a", locale().toLanguageTag())
         // The offset too (C18): without it gemma4 guessed -04:00 the day after daylight saving ended.
-        return "Current date and time: $formatted (${ctx.now.zone.id}, UTC${ctx.now.offset.id.replace("Z", "+00:00")})."
+        return "Current date and time: $formatted (${ctx.zone.id}, UTC${ctx.zone.offsetAt(ctx.now).toString().replace("Z", "+00:00")})."
     }
 }

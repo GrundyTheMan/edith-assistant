@@ -9,6 +9,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.time.Instant
 import java.time.ZoneId
+import kotlin.time.toKotlinInstant
 import java.util.Locale
 
 /** C07 §3: the Markdown subset and the time formats. */
@@ -63,7 +64,7 @@ class ChatFormattingTest {
 
     private val detroit = ZoneId.of("America/Detroit")
     private val now = FakeClock(Instant.parse("2026-10-31T18:30:00Z"), detroit)   // Sat Oct 31, 2:30 PM local
-    private fun local(text: String) = java.time.LocalDateTime.parse(text).atZone(detroit).toInstant()
+    private fun local(text: String) = java.time.LocalDateTime.parse(text).atZone(detroit).toInstant().toKotlinInstant()
 
     @Test fun `message times go by calendar day in the owner's zone`() {
         assertEquals("2:06 PM", formatMessageTime(local("2026-10-31T14:06"), now, Locale.US))

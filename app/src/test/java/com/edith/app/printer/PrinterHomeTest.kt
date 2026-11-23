@@ -129,13 +129,13 @@ class PrinterHomeTest {
     // ---- The tools ----
 
     @Test fun `how's the print going - the answer has the job and the temperatures`() = runBlocking {
-        val tool = PrinterStatusTool(printerHome()) { clock.now().toEpochMilli() }
+        val tool = PrinterStatusTool(printerHome()) { clock.now().toEpochMilliseconds() }
         val text = (tool.execute(args(tool.spec), ctx) as ToolResult.Ok).text
         assertEquals("3D printer: Printing Benchy, 42%, about 30 min left, Nozzle 215/220°C, Bed 60/60°C.", text)
     }
 
     @Test fun `home_devices lists the printer too`() = runBlocking {
-        val tool = HomeDevicesTool(printerHome()) { clock.now().toEpochMilli() }
+        val tool = HomeDevicesTool(printerHome()) { clock.now().toEpochMilliseconds() }
         val text = (tool.execute(args(tool.spec, "filter" to "printer"), ctx) as ToolResult.Ok).text
         assertTrue(text, "3D printer (3D printer): Printing Benchy, 42%" in text)
     }
@@ -172,7 +172,7 @@ class PrinterHomeTest {
 
     @Test fun `no printer connected says so`() = runBlocking {
         val home = Home(MemoryHomePrefs(), MemoryCommandLog(), scope, clock)
-        val tool = PrinterStatusTool(home) { clock.now().toEpochMilli() }
+        val tool = PrinterStatusTool(home) { clock.now().toEpochMilliseconds() }
         assertTrue((tool.execute(args(tool.spec), ctx) as ToolResult.Ok).text.contains("No 3D printer is connected"))
     }
 
@@ -180,7 +180,7 @@ class PrinterHomeTest {
 
     @Test fun `away from home the Home tab has no banner, and the tools say so with the last report`() = runBlocking {
         val home = printerHome()
-        val tool = PrinterStatusTool(home) { clock.now().toEpochMilli() }
+        val tool = PrinterStatusTool(home) { clock.now().toEpochMilliseconds() }
         assertTrue(home.refresh().problems.isEmpty())
         printer.shutdown()
         clock.advance(java.time.Duration.ofMinutes(5))
@@ -190,7 +190,7 @@ class PrinterHomeTest {
         assertFalse(d.online)
         val text = (tool.execute(args(tool.spec), ctx) as ToolResult.Ok).text
         assertTrue(text, text.startsWith("3D printer: not reachable now (it works on the home Wi-Fi). Last reported 5 min ago: Printing Benchy"))
-        val devices = HomeDevicesTool(home) { clock.now().toEpochMilli() }
+        val devices = HomeDevicesTool(home) { clock.now().toEpochMilliseconds() }
         assertTrue((devices.execute(args(devices.spec), ctx) as ToolResult.Ok).text.contains("not reachable (it works on the home Wi-Fi, or it is off)"))
     }
 
@@ -202,7 +202,7 @@ class PrinterHomeTest {
             withTimeout(3_000) { h.backends.first { it.size == 1 } }
             withTimeout(3_000) { h.status.first { it == IntegrationStatus.Connected } }
         }
-        val tool = PrinterStatusTool(home) { clock.now().toEpochMilli() }
+        val tool = PrinterStatusTool(home) { clock.now().toEpochMilliseconds() }
         assertEquals("3D printer: not reachable. It works on the home Wi-Fi, or it is off.", (tool.execute(args(tool.spec), ctx) as ToolResult.Ok).text)
     }
 }

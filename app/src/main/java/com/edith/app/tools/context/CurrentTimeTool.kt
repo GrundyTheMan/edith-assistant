@@ -7,9 +7,10 @@ import com.edith.app.tools.framework.ToolContext
 import com.edith.app.tools.framework.ToolParam
 import com.edith.app.tools.framework.ToolResult
 import com.edith.app.tools.framework.ToolSpec
-import java.time.DateTimeException
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import com.edith.app.core.time.formatPattern
+import kotlinx.datetime.IllegalTimeZoneException
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.offsetAt
 import java.util.Locale
 
 /**
@@ -34,16 +35,16 @@ class CurrentTimeTool(private val locale: () -> Locale = { Locale.US }) : Tool {
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
         val requested = args.string("timezone")
         val zone = try {
-            requested?.let { ZoneId.of(it) } ?: ctx.clock.zone()
-        } catch (_: DateTimeException) {
+            requested?.let { TimeZone.of(it) } ?: ctx.clock.zone()
+        } catch (_: IllegalTimeZoneException) {
             return ToolResult.Error("Unknown time zone '$requested'. Use an IANA name such as America/New_York.")
         }
-        val now = ctx.clock.now().atZone(zone)
-        val offset = now.offset.totalSeconds.let { s ->
+        val now = ctx.clock.now()
+        val offset = zone.offsetAt(now).totalSeconds.let { s ->
             if (s == 0) "UTC" else "UTC%s%d%s".format(if (s < 0) "-" else "+", kotlin.math.abs(s) / 3600,
                 (kotlin.math.abs(s) % 3600 / 60).let { m -> if (m == 0) "" else ":%02d".format(m) })
         }
-        val text = now.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy, h:mm a", locale()))
+        val text = formatPattern(now, zone, "EEEE, MMMM d, yyyy, h:mm a", locale().toLanguageTag())
         return ToolResult.Ok("$text, ${zone.id} ($offset)")
     }
 }

@@ -1,6 +1,7 @@
 package com.edith.app.google
 
 import android.app.Activity
+import com.edith.app.core.time.javaNow
 import android.app.PendingIntent
 import android.content.Intent
 import com.edith.app.accounts.Account
@@ -111,7 +112,7 @@ class GoogleAccounts(
             accountOf = accountOf,
             auth = auth,
             calendar = GoogleCalendarSource(accountOf, CalendarClient(http, auth, dispatchers, zone, calendarBaseUrl, id), zone),
-            mail = GmailSource(accountOf, GmailClient(http, auth, dispatchers, zone, gmailBaseUrl, id), zone, clock::now),
+            mail = GmailSource(accountOf, GmailClient(http, auth, dispatchers, zone, gmailBaseUrl, id), zone, clock::javaNow),
             tasks = GoogleTaskSource(accountOf, TasksClient(http, auth, dispatchers, tasksBaseUrl, id)),
             forget = { browser.forget(id) },
             signOutPlay = { if (playServicesAvailable()) play.signOut() },

@@ -143,7 +143,7 @@ class FakeHomeBackend(
         pending.removeAll(due)
     }
 
-    private fun now() = clock.now().toEpochMilli()
+    private fun now() = clock.now().toEpochMilliseconds()
 
     private fun device(id: String, name: String, room: String?, type: DeviceType, caps: Set<Capability>, state: DeviceState) =
         HomeDevice(id, name, room, type, caps, this.id, online = true, state = state, stateAt = null)

@@ -69,10 +69,10 @@ class ToolFrameworkTest {
         assertEquals(5, args.int("days"))
         assertEquals(true, args.bool("detailed"))
         assertEquals(42.36, args.double("lat")!!, 0.0001)
-        val zone = ZoneId.of("America/Detroit")
-        assertEquals(Instant.parse("2026-10-30T16:00:00Z"), args.dateTime("at", zone)!!.toInstant())   // no offset → device zone
-        assertEquals(Instant.parse("2026-10-30T12:00:00Z"),
-            ToolArgs(json("""{"location":"x","at":"2026-10-30T08:00:00-04:00"}"""), spec).dateTime("at", zone)!!.toInstant())
+        val zone = kotlinx.datetime.TimeZone.of("America/Detroit")
+        assertEquals(kotlin.time.Instant.parse("2026-10-30T16:00:00Z"), args.dateTime("at", zone))   // no offset → device zone
+        assertEquals(kotlin.time.Instant.parse("2026-10-30T12:00:00Z"),
+            ToolArgs(json("""{"location":"x","at":"2026-10-30T08:00:00-04:00"}"""), spec).dateTime("at", zone))
         assertEquals("Boston", ToolArgs(json("""{"LOCATION":"Boston"}"""), spec).string("location"))
     }
 
@@ -123,7 +123,7 @@ class ToolFrameworkTest {
     @Test fun `tool guidance lists the offered tools, or says she can't look things up`() {
         val reg = ToolRegistry(listOf(CurrentTimeTool()))
         val section = ToolGuidanceSection { reg }
-        val now = Instant.parse("2026-10-31T16:00:00Z").atZone(ZoneId.of("UTC"))
+        val now = kotlin.time.Instant.parse("2026-10-31T16:00:00Z")
         assertEquals(
             "You can use these tools when they help: get_current_time (get the current date and time, here or in another time zone).\n" +
                 ToolGuidanceSection.HOW_TO_USE,

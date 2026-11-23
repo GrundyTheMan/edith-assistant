@@ -143,7 +143,7 @@ class RingService(
         saved = s
     }
 
-    private fun expiry(t: RingTokens) = clock.now().toEpochMilli() + (t.expiresInSeconds - 60).coerceAtLeast(30) * 1000
+    private fun expiry(t: RingTokens) = clock.now().toEpochMilliseconds() + (t.expiresInSeconds - 60).coerceAtLeast(30) * 1000
 
     private class Access(val token: String, val expiresAt: Long)
 
@@ -154,7 +154,7 @@ class RingService(
     private suspend fun accessToken(stale: String? = null): Pair<String, String>? = refreshLock.withLock {
         val s = saved ?: return null
         val a = access
-        if (a != null && a.token != stale && clock.now().toEpochMilli() < a.expiresAt) return a.token to s.hardwareId
+        if (a != null && a.token != stale && clock.now().toEpochMilliseconds() < a.expiresAt) return a.token to s.hardwareId
         when (val r = api.refresh(s.refreshToken, s.hardwareId)) {
             is RingRefresh.Ok -> {
                 r.tokens.refreshToken?.takeIf { it != s.refreshToken }?.let { keep(s.copy(refreshToken = it)) }
@@ -234,7 +234,7 @@ class RingService(
         override val snapshotTimeoutMs: Long = 35_000
 
         override suspend fun devices(): Outcome<List<HomeDevice>> {
-            val now = clock.now().toEpochMilli()
+            val now = clock.now().toEpochMilliseconds()
             return when (val l = listCameras()) {
                 is Outcome.Failure -> l
                 is Outcome.Success -> Outcome.Success(l.value.map { device(it, now) }.sortedBy { it.name })
@@ -259,7 +259,7 @@ class RingService(
             if (!camera.motionDetection) {
                 return Outcome.Failure(AppError.ToolFailed("Ring", "Motion detection is off for ${camera.name}, which stops Ring taking pictures from it"))
             }
-            return authed { t, h -> api.snapshot(t, h, deviceId, afterMs = clock.now().toEpochMilli() - 1000) }
+            return authed { t, h -> api.snapshot(t, h, deviceId, afterMs = clock.now().toEpochMilliseconds() - 1000) }
         }
 
         override val hasLive: Boolean get() = rtc != null

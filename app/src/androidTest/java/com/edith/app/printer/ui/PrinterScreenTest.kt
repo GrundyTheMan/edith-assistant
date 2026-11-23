@@ -38,7 +38,7 @@ import androidx.compose.runtime.setValue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.time.ZoneId
+import kotlinx.datetime.TimeZone
 
 /** C39 E4: the six states of the Printer page (part 6.2) and the Status card, drawn without a ViewModel. */
 @RunWith(AndroidJUnit4::class)
@@ -46,7 +46,7 @@ class PrinterScreenTest {
     @get:Rule val compose = createComposeRule()
 
     private val now = 1_800_000_000_000L
-    private fun ui(screen: PrinterScreenState, dismissed: Long? = null) = PrinterUi(screen, "FlashForge AD5X", emptySet(), dismissed, now, ZoneId.of("UTC"))
+    private fun ui(screen: PrinterScreenState, dismissed: Long? = null) = PrinterUi(screen, "FlashForge AD5X", emptySet(), dismissed, now, TimeZone.UTC)
     private fun live(state: PrinterState) = PrinterScreenState.Live(StateAnswer(rev = 1, state = state), now, 0)
     private fun show(ui: PrinterUi, actions: PrinterActions = PrinterActions()) = compose.setContent { EdithTheme { PrinterContent(ui, is24Hour = true, a = actions) } }
 
@@ -137,7 +137,7 @@ class PrinterScreenTest {
     /** The cards are in a lazy list: one far down is not drawn until it is scrolled to. */
     private fun scrollTo(tag: String) = compose.onNodeWithTag("printer-list").performScrollToNode(androidx.compose.ui.test.hasTestTag(tag))
 
-    private fun open(state: PrinterState) = PrinterUi(live(state), "FlashForge AD5X", emptySet(), null, now, ZoneId.of("UTC"))
+    private fun open(state: PrinterState) = PrinterUi(live(state), "FlashForge AD5X", emptySet(), null, now, TimeZone.UTC)
 
     @Test fun theTemperatureCardShowsEachHeaterAndTheChart() {
         val lines = listOf(ChartLine("extruder", "Nozzle", listOf(20.0, 100.0, 219.8), listOf(220.0, 220.0, 220.0)))
@@ -192,7 +192,7 @@ class PrinterScreenTest {
 
     private fun control(armed: Boolean = false, may: Boolean = true) = ControlUi(mayControl = may, armed = armed, armUntilMs = if (armed) System.currentTimeMillis() + 103_000 else null)
     private val quickOk = mapOf("pause" to com.edith.app.printer.feed.QuickCheck(true), "cancel" to com.edith.app.printer.feed.QuickCheck(true))
-    private fun withQuick(state: PrinterState) = PrinterUi(PrinterScreenState.Live(StateAnswer(rev = 1, state = state, quick = quickOk), now, 0), "FlashForge AD5X", emptySet(), null, now, ZoneId.of("UTC"))
+    private fun withQuick(state: PrinterState) = PrinterUi(PrinterScreenState.Live(StateAnswer(rev = 1, state = state, quick = quickOk), now, 0), "FlashForge AD5X", emptySet(), null, now, TimeZone.UTC)
 
     @Test fun theConfirmSheetShowsJarvisWordsAndTwoDifferentButtons() {
         var yes = 0; var no = 0
@@ -251,7 +251,7 @@ class PrinterScreenTest {
     }
 
     @Test fun theServersReasonShowsWhenItWillNotTakeAPause() {
-        val ui = PrinterUi(PrinterScreenState.Live(StateAnswer(rev = 1, state = printing, quick = mapOf("pause" to com.edith.app.printer.feed.QuickCheck(false, "The printer is busy."), "cancel" to com.edith.app.printer.feed.QuickCheck(true))), now, 0), "FlashForge AD5X", emptySet(), null, now, ZoneId.of("UTC"))
+        val ui = PrinterUi(PrinterScreenState.Live(StateAnswer(rev = 1, state = printing, quick = mapOf("pause" to com.edith.app.printer.feed.QuickCheck(false, "The printer is busy."), "cancel" to com.edith.app.printer.feed.QuickCheck(true))), now, 0), "FlashForge AD5X", emptySet(), null, now, TimeZone.UTC)
         compose.setContent { EdithTheme { PrinterContent(ui, true, PrinterActions(), CardsUi(), control(armed = true)) } }
         compose.onNodeWithTag("job-main").assertIsNotEnabled()
         compose.onNodeWithText("The printer is busy.").assertIsDisplayed()
@@ -282,7 +282,7 @@ class PrinterScreenTest {
         cameras = listOf(PrinterCamera("video", "Camera")),
     )
     private fun richUi(state: PrinterState = rich) = PrinterUi(
-        PrinterScreenState.Live(StateAnswer(rev = 1, state = state), now, 0), "FlashForge AD5X", emptySet(), null, now, ZoneId.of("UTC"),
+        PrinterScreenState.Live(StateAnswer(rev = 1, state = state), now, 0), "FlashForge AD5X", emptySet(), null, now, TimeZone.UTC,
         listOf(com.edith.app.printer.feed.Preset("PLA", 220, 60)),
     )
     private fun controlsContent(c: ControlUi, sent: MutableList<com.edith.app.printer.feed.PrinterCommand>, state: PrinterState = rich, cards: CardsUi = CardsUi()) =

@@ -17,6 +17,10 @@ kotlin {
     iosSimulatorArm64()
 
     sourceSets {
+        commonMain.dependencies {
+            // The dates and times of every shared package (K1.3). api: app/ uses the same types.
+            api(libs.kotlinx.datetime)
+        }
         commonTest.dependencies {
             implementation(kotlin("test"))
         }

@@ -5,14 +5,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
-import java.time.Instant
-import java.time.ZoneId
-import java.time.ZoneOffset
+import kotlinx.datetime.TimeZone
+import kotlin.time.Instant
 
 /** A clock on the test scheduler's virtual time, so delays and the fake's lag move together. */
 class SchedulerClock(private val s: TestCoroutineScheduler) : Clock {
-    override fun now(): Instant = Instant.ofEpochMilli(START + s.currentTime)
-    override fun zone(): ZoneId = ZoneOffset.UTC
+    override fun now(): Instant = Instant.fromEpochMilliseconds(START + s.currentTime)
+    override fun zone(): TimeZone = TimeZone.UTC
 
     companion object {
         const val START = 1_800_000_000_000L

@@ -55,9 +55,9 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import com.edith.app.core.time.formatPattern
+import kotlinx.datetime.TimeZone
+import kotlin.time.Instant
 import java.util.Locale
 
 /** One service in Settings → Home: its name, where it stands, and how it signs in (C25 §7, C26–C31). */
@@ -359,7 +359,6 @@ private fun SignInDialog(form: SignInForm, onSignIn: (Map<String, String>, (Sign
     )
 }
 
-private val logTime = DateTimeFormatter.ofPattern("MMM d, h:mm:ss a", Locale.US)
 
 /** The owner's audit view (C20 §5): every command Edith sent, newest first. */
 @Composable
@@ -374,7 +373,7 @@ private fun CommandLogDialog(log: List<LoggedCommand>, onClose: () -> Unit) {
                     Column {
                         Text("${e.deviceName}: ${e.action.replace('_', ' ')}${e.value?.let { " $it" } ?: ""}", fontWeight = FontWeight.Medium)
                         Text(
-                            "${logTime.format(Instant.ofEpochMilli(e.at).atZone(ZoneId.systemDefault()))} · " +
+                            "${formatPattern(Instant.fromEpochMilliseconds(e.at), TimeZone.currentSystemDefault(), "MMM d, h:mm:ss a", "en-US")} · " +
                                 (if (e.source == CommandSource.HomeTab) "Home tab" else "Chat") + " · " +
                                 (if (e.ok) e.result else "Failed: ${e.result}"),
                             style = MaterialTheme.typography.bodySmall,

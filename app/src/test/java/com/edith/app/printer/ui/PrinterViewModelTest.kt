@@ -34,6 +34,7 @@ import org.junit.Before
 import org.junit.Test
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.datetime.toKotlinTimeZone
 
 /** C39 E4: what the Printer page shows for each state (the words are the chunk's, part 6.2), and its ViewModel. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -45,7 +46,7 @@ class PrinterViewModelTest {
     @Before fun setUp() = Dispatchers.setMain(UnconfinedTestDispatcher())
     @After fun tearDown() = Dispatchers.resetMain()
 
-    private fun ui(screen: PrinterScreenState, dismissed: Long? = null) = PrinterUi(screen, "AD5X", PrinterCards.COLLAPSED_AT_FIRST, dismissed, nowMs, zone)
+    private fun ui(screen: PrinterScreenState, dismissed: Long? = null) = PrinterUi(screen, "AD5X", PrinterCards.COLLAPSED_AT_FIRST, dismissed, nowMs, zone.toKotlinTimeZone())
     private fun answer(state: PrinterState, rev: Long = 1) = StateAnswer(rev = rev, state = state)
     private fun live(state: PrinterState) = PrinterScreenState.Live(answer(state), nowMs, 0)
 

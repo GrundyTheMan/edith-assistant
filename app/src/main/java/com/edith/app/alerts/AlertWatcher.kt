@@ -34,7 +34,7 @@ class AlertWatcher(
     data class Round(val alerts: List<Alert>, val nextInMs: Long)
 
     suspend fun check(choices: AlertChoices): Round {
-        val now = clock.now().toEpochMilli()
+        val now = clock.now().toEpochMilliseconds()
         tracks.keys.retainAll(choices.backends) // switched off: forget, so switching on again learns afresh
         val alerts = mutableListOf<Alert>()
         for (backend in choices.backends) {

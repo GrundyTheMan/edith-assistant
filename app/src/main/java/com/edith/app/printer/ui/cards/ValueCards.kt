@@ -149,7 +149,7 @@ internal fun SystemCard(state: PrinterState, ctx: ControlsCtx? = null) {
 
 /** Queue: the printer's list of waiting jobs. */
 @Composable
-internal fun QueueCard(state: PrinterState, nowMs: Long, zone: java.time.ZoneId, ctx: ControlsCtx? = null) {
+internal fun QueueCard(state: PrinterState, nowMs: Long, zone: kotlinx.datetime.TimeZone, ctx: ControlsCtx? = null) {
     val q = state.queue ?: return
     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.testTag("queue-card")) {
         Text(

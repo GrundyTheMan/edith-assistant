@@ -22,7 +22,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.time.ZoneId
+import kotlinx.datetime.TimeZone
 
 /** How strongly the connection chip should look: from "all well" to "something is wrong". */
 internal enum class Tone { Good, Warn, Bad, Muted }
@@ -39,7 +39,7 @@ internal data class PrinterUi(
     val dismissedAlert: Long? = null,
     /** The phone's clock, in ms; moves every 30 s so the ages on the page stay right. */
     val now: Long = 0,
-    val zone: ZoneId = ZoneId.systemDefault(),
+    val zone: TimeZone = TimeZone.currentSystemDefault(),
     /** The temperature presets Jarvis offers this phone (edited in Jarvis). */
     val presets: List<com.edith.app.printer.feed.Preset> = emptyList(),
 ) {
@@ -178,7 +178,7 @@ internal class PrinterViewModel(
 
     init { control.onSent = data::commandSent }
 
-    private val local = MutableStateFlow(Local(clock.now().toEpochMilli()))
+    private val local = MutableStateFlow(Local(clock.now().toEpochMilliseconds()))
     private var ticking: Job? = null
 
     val ui: StateFlow<PrinterUi> = combine(session.state, session.shared, prefs.collapsed, local) { screen, shared, collapsed, l ->
@@ -187,14 +187,14 @@ internal class PrinterViewModel(
 
     /** The page is on screen. */
     fun attach() {
-        local.update { it.copy(now = clock.now().toEpochMilli(), dismissedAlert = null) }
+        local.update { it.copy(now = clock.now().toEpochMilliseconds(), dismissedAlert = null) }
         session.attach()
         data.attached()
         ticking?.cancel()
         ticking = viewModelScope.launch {
             while (isActive) {
                 delay(TICK_MS)
-                local.update { it.copy(now = clock.now().toEpochMilli()) }
+                local.update { it.copy(now = clock.now().toEpochMilliseconds()) }
             }
         }
     }

@@ -1,6 +1,7 @@
 package com.edith.app.microsoft
 
 import android.app.Activity
+import com.edith.app.core.time.javaNow
 import com.edith.app.accounts.Account
 import com.edith.app.accounts.AccountSecrets
 import com.edith.app.accounts.AccountState
@@ -146,7 +147,7 @@ class MicrosoftAccountAuth(
 
     /** A token good for another minute: the cached one, else a refresh (one at a time per account). Never logged. */
     suspend fun accessToken(force: Boolean = false): Outcome<String> = refreshLock.withLock {
-        cached?.takeIf { !force && it.expiresAt.isAfter(clock.now().plusSeconds(MIN_VALIDITY_SECONDS)) }?.let {
+        cached?.takeIf { !force && it.expiresAt.isAfter(clock.javaNow().plusSeconds(MIN_VALIDITY_SECONDS)) }?.let {
             return@withLock connected(it.token)
         }
         val refreshToken = secrets.get(key) ?: run {
@@ -156,7 +157,7 @@ class MicrosoftAccountAuth(
         when (val t = oauth.refresh(refreshToken)) {
             is BrowserOAuth.TokenResult.Tokens -> {
                 t.refreshToken?.let { secrets.put(key, it) }   // trap 1: the new one first, before anything else
-                cached = Cached(t.accessToken, clock.now().plusSeconds(t.expiresInSeconds))
+                cached = Cached(t.accessToken, clock.javaNow().plusSeconds(t.expiresInSeconds))
                 connected(t.accessToken)
             }
             BrowserOAuth.TokenResult.InvalidGrant, BrowserOAuth.TokenResult.ConsentRequired -> {

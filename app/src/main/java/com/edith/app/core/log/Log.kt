@@ -1,8 +1,9 @@
 package com.edith.app.core.log
 
 import com.edith.app.BuildConfig
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
+import com.edith.app.core.time.SystemClock
+import com.edith.app.core.time.formatPattern
+import kotlinx.datetime.TimeZone
 import android.util.Log as AndroidLog
 
 /** Fixed log tags (C02 §4). Filter with e.g. `adb logcat -s Edith/Ollama:*`. */
@@ -22,10 +23,9 @@ enum class LogTag(val value: String) {
 object LogRingBuffer {
     const val CAPACITY = 200
     private val buffer = ArrayDeque<String>(CAPACITY)
-    private val timeFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")
 
     fun append(tag: String, msg: String) {
-        val line = "${LocalDateTime.now().format(timeFormat)} [$tag] $msg"
+        val line = "${formatPattern(SystemClock.now(), TimeZone.currentSystemDefault(), "yyyy-MM-dd HH:mm:ss.SSS", "en-US")} [$tag] $msg"
         synchronized(buffer) {
             buffer.addLast(line)
             if (buffer.size > CAPACITY) buffer.removeFirst()

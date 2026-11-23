@@ -196,7 +196,7 @@ internal class PrinterControl(
         val timeout = PrinterSettle.timeoutMs(command)
         val before = (session.state.value as? PrinterScreenState.Live)?.data?.state
         if (timeout > 0 && before != null) {
-            pending[key] = PendingCommand(command, before, clock.now().toEpochMilli())
+            pending[key] = PendingCommand(command, before, clock.now().toEpochMilliseconds())
             timeouts.remove(key)?.cancel()
             timeouts[key] = scope.launch { delay(timeout); finish(key) }
             publishPending()
@@ -228,7 +228,7 @@ internal class PrinterControl(
         armLocal = null
         _ui.update { it.copy(armed = a.arm.armed, armUntilMs = a.arm.until, offsetMs = offsetMs) }
         if (a.arm.armed && a.state.connection != Connections.READY) disarmQuietly()
-        val now = clock.now().toEpochMilli()
+        val now = clock.now().toEpochMilliseconds()
         for ((key, p) in pending.toMap()) {
             val saw = p.sawMotion || a.state.toolhead.liveVelocity >= 1.0
             val updated = p.copy(sawMotion = saw)

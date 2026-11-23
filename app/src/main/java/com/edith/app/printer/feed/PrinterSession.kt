@@ -87,7 +87,7 @@ internal class PrinterSession(
     }
 
     private fun live(a: StateAnswer, stale: Boolean = false): PrinterScreenState.Live {
-        val now = clock.now().toEpochMilli()
+        val now = clock.now().toEpochMilliseconds()
         return PrinterScreenState.Live(a, now, a.serverTime - now, stale)
     }
 

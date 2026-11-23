@@ -104,7 +104,7 @@ class MerossServiceTest {
         bus.replies[Triple("u1", "SET", "Appliance.GarageDoor.State")] = MerossReply.Ok(JsonObject(emptyMap()))
         val opening = (backend.command(door.id, DeviceCommand.Open) as Outcome.Success).value
         assertEquals(DoorState.Opening, opening.door)
-        assertEquals(clock.now().toEpochMilli(), opening.changedAt)
+        assertEquals(clock.now().toEpochMilliseconds(), opening.changedAt)
         assertEquals(DoorState.Closing, (backend.command(door.id, DeviceCommand.Close) as Outcome.Success).value.door)
         val sets = bus.seen.filter { it.method == "SET" }
         assertEquals("""{"state":{"channel":0,"open":1,"uuid":"u1"}}""", sets[0].payload.toString())

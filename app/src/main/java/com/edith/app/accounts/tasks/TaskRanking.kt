@@ -1,6 +1,8 @@
 package com.edith.app.accounts.tasks
 
 import com.edith.app.core.error.AppError
+import com.edith.app.core.time.javaNow
+import com.edith.app.core.time.javaZone
 import com.edith.app.core.error.Outcome
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
@@ -263,8 +265,8 @@ class TaskRanker(private val ollama: OllamaClient, private val store: RankStore,
     /** [slot] is "account|list"; [tasks] the list's tasks in Google's order. A saved ranking is used while it fits. */
     suspend fun rank(slot: String, tasks: List<TaskItem>, serverUrl: String, model: String): Result {
         val items = TaskRanking.rankable(tasks)
-        val today = clock.now().atZone(clock.zone()).toLocalDate()
-        if (items.isEmpty()) return Result.Ranked(Ranking(model, emptyList(), 0, clock.now().toEpochMilli()), cached = false)
+        val today = clock.javaNow().atZone(clock.javaZone()).toLocalDate()
+        if (items.isEmpty()) return Result.Ranked(Ranking(model, emptyList(), 0, clock.now().toEpochMilliseconds()), cached = false)
         val key = TaskRanking.key(items, model, today)
         val slotKey = "$slot|$model"
         store.get(slotKey, key)?.let { return Result.Ranked(it, cached = true) }
@@ -282,7 +284,7 @@ class TaskRanker(private val ollama: OllamaClient, private val store: RankStore,
             Log.w(LogTag.Accounts, "The model's to-do order couldn't be read (${content.length} characters)")
             return Result.Unusable
         }
-        val ranking = Ranking(model, order, items.size, clock.now().toEpochMilli())
+        val ranking = Ranking(model, order, items.size, clock.now().toEpochMilliseconds())
         store.put(slotKey, key, ranking)
         return Result.Ranked(ranking, cached = false)
     }
@@ -290,7 +292,7 @@ class TaskRanker(private val ollama: OllamaClient, private val store: RankStore,
     /** The saved ranking for this list as it is now, without asking the model; null when there's none or it's stale. */
     suspend fun saved(slot: String, tasks: List<TaskItem>, model: String): Ranking? {
         val items = TaskRanking.rankable(tasks)
-        val today = clock.now().atZone(clock.zone()).toLocalDate()
+        val today = clock.javaNow().atZone(clock.javaZone()).toLocalDate()
         return store.get("$slot|$model", TaskRanking.key(items, model, today))
     }
 }

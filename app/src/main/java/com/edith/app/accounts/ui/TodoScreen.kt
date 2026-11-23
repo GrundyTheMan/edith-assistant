@@ -1,6 +1,8 @@
 package com.edith.app.accounts.ui
 
 import android.app.Activity
+import com.edith.app.core.time.javaNow
+import com.edith.app.core.time.javaZone
 import android.app.PendingIntent
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -224,7 +226,7 @@ class TodoViewModel(
         _state.value = if (sections.isEmpty() && problems.isNotEmpty() && needsPermission.isEmpty()) {
             TodoUi.Failed(problems.joinToString("\n") { it.line })
         } else {
-            TodoUi.Lists(sections, clock.now().atZone(clock.zone()).toLocalDate(), includeDone, needsPermission = needsPermission.map { it.account }, problems = problems.map { it.line })
+            TodoUi.Lists(sections, clock.javaNow().atZone(clock.javaZone()).toLocalDate(), includeDone, needsPermission = needsPermission.map { it.account }, problems = problems.map { it.line })
         }
     }
 

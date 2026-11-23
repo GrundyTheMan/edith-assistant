@@ -156,7 +156,7 @@ class Home(
                 async { b to (withTimeoutOrNull(b.timeoutMs ?: timeoutMs) { safely(b) { b.devices() } } ?: Outcome.Failure(AppError.Timeout)) }
             }.awaitAll()
         }
-        val now = clock.now().toEpochMilli()
+        val now = clock.now().toEpochMilliseconds()
         val devices = mutableListOf<HomeDevice>()
         val problems = mutableListOf<HomeProblem>()
         val stale = mutableSetOf<String>()
@@ -194,7 +194,7 @@ class Home(
         val backend = backends.value.firstOrNull { it.id == device.backend }
         val outcome = if (backend == null) Outcome.Failure(AppError.ToolFailed(device.backend, "that service isn't connected"))
         else withTimeoutOrNull(backend.timeoutMs ?: timeoutMs) { safely(backend) { backend.command(device.id, command) } } ?: Outcome.Failure(AppError.Timeout)
-        val now = clock.now().toEpochMilli()
+        val now = clock.now().toEpochMilliseconds()
         val (action, value) = HomeActions.logParts(command)
         val result = when (outcome) {
             is Outcome.Success -> {
@@ -288,7 +288,7 @@ class Home(
             ?: return Outcome.Failure(AppError.ToolFailed(backendId, "that service isn't connected"))
         val wait = backend.timeoutMs ?: timeoutMs
         if (backend.hasClips) {
-            val page = withTimeoutOrNull(wait) { safely(backend) { backend.clips(sinceMs, clock.now().toEpochMilli()) } }
+            val page = withTimeoutOrNull(wait) { safely(backend) { backend.clips(sinceMs, clock.now().toEpochMilliseconds()) } }
                 ?: return Outcome.Failure(AppError.Timeout)
             when (page) {
                 is Outcome.Failure -> return page
@@ -333,11 +333,11 @@ class Home(
         rechecks.remove(device.key)?.cancel()
         rechecks[device.key] = scope.launch {
             for (at in recheckAfterMs(device)) {
-                delay((sentAt + at - clock.now().toEpochMilli()).coerceAtLeast(0))
+                delay((sentAt + at - clock.now().toEpochMilliseconds()).coerceAtLeast(0))
                 val state = withTimeoutOrNull(backend.timeoutMs ?: timeoutMs) { safely(backend) { backend.state(device.id) } }
                 if (state is Outcome.Success) {
                     val current = known[device.key] ?: device
-                    update(current.copy(state = state.value, stateAt = clock.now().toEpochMilli(), online = true))
+                    update(current.copy(state = state.value, stateAt = clock.now().toEpochMilliseconds(), online = true))
                     if (HomeActions.shows(state.value, command)) break
                 }
             }

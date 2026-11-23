@@ -42,8 +42,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withTimeout
-import java.time.Instant
-import java.time.ZoneId
+import kotlin.time.Instant
+import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.datetime.TimeZone
 import java.util.Collections
 
 /** An Ollama whose replies are scripts: words streamed with a delay, or an error. */
@@ -88,10 +89,10 @@ class MemorySettings : SettingsRepository {
 }
 
 /** Starts at [start] and moves 1 ms per reading, so stored messages have distinct, ordered times. */
-class TickingClock(start: Instant = Instant.parse("2026-10-31T16:00:00Z"), private val zone: ZoneId = ZoneId.of("America/Detroit")) : Clock {
+class TickingClock(start: Instant = Instant.parse("2026-10-31T16:00:00Z"), private val zone: TimeZone = TimeZone.of("America/Detroit")) : Clock {
     @Volatile var t: Instant = start
-    override fun now(): Instant = t.also { t = t.plusMillis(1) }
-    override fun zone(): ZoneId = zone
+    override fun now(): Instant = t.also { t = t + 1.milliseconds }
+    override fun zone(): TimeZone = zone
 }
 
 /**

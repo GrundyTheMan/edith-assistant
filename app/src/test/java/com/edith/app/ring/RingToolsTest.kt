@@ -80,13 +80,13 @@ class RingToolsTest {
     }
 
     @Test fun `home_devices lists the cameras`() = runBlocking {
-        val tool = HomeDevicesTool(home()) { clock.now().toEpochMilli() }
+        val tool = HomeDevicesTool(home()) { clock.now().toEpochMilliseconds() }
         val text = tool.execute(args(tool), ctx).text
         assertTrue(text, "Front Door (Doorbell)" in text && "Driveway (Camera)" in text)
     }
 
     @Test fun `a dead Ring sign-in shows as a problem line, and the tools say so`() = runBlocking {
-        val tool = HomeDevicesTool(home()) { clock.now().toEpochMilli() }
+        val tool = HomeDevicesTool(home()) { clock.now().toEpochMilliseconds() }
         ring.validRefresh.clear(); ring.validAccess.clear()
         val text = tool.execute(args(tool), ctx).text
         assertTrue(text, "Ring:" in text && "signing in again" in text)

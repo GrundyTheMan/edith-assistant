@@ -112,7 +112,7 @@ class PahoMerossBus(
                 }
                 val session = object : MerossSession {
                     override suspend fun request(deviceUuid: String, method: String, namespace: String, payload: JsonObject): MerossReply<JsonObject> {
-                        val (text, id) = MerossProtocol.message(method, namespace, payload, deviceUuid, creds.key, replyTopic, clock.now().epochSecond)
+                        val (text, id) = MerossProtocol.message(method, namespace, payload, deviceUuid, creds.key, replyTopic, clock.now().epochSeconds)
                         val wait = CompletableDeferred<JsonObject>()
                         pending[id] = wait
                         return try {

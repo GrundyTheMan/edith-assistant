@@ -35,8 +35,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.time.Instant
-import java.time.ZoneId
+import kotlin.time.Instant
+import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.datetime.TimeZone
 import java.util.Collections
 
 /** C06 engine tests: real in-memory Room, a scripted Ollama, the real prompt/context builders. */
@@ -45,8 +46,8 @@ class ChatEngineTest {
 
     private val clock = object : Clock {
         var t = Instant.parse("2026-10-31T12:00:00Z")
-        override fun now(): Instant = t.also { t = t.plusMillis(1) }
-        override fun zone(): ZoneId = ZoneId.of("America/Detroit")
+        override fun now(): Instant = t.also { t = t + 1.milliseconds }
+        override fun zone(): TimeZone = TimeZone.of("America/Detroit")
     }
     private val ollama = ScriptedOllama()
     private var networkGranted = true

@@ -131,7 +131,7 @@ class BrowserSignIn(
                 return Result.Failed(Why.NoListener)
             }
             val pkce = oauth.pkce()
-            val pending = Pending(pkce.verifier, oauth.newState(), receiver.redirectUri, clock.now().toEpochMilli(), provider.id, accountId)
+            val pending = Pending(pkce.verifier, oauth.newState(), receiver.redirectUri, clock.now().toEpochMilliseconds(), provider.id, accountId)
             savePending(pending)   // survives Edith being killed while the owner is in the browser
             val url = oauth.authUrl(pending.redirectUri, pkce.challenge, pending.state, loginHint, scope ?: provider.scope)
             val channel = beginWaiting(provider.id)   // before the browser opens, so an early paste or cancel isn't lost
@@ -159,7 +159,7 @@ class BrowserSignIn(
      */
     suspend fun resumePending(oauthFor: (provider: String) -> BrowserOAuth?): Resumed? {
         val pending = loadPending() ?: return null
-        val age = (clock.now().toEpochMilli() - pending.startedAtMillis).milliseconds
+        val age = (clock.now().toEpochMilliseconds() - pending.startedAtMillis).milliseconds
         val oauth = oauthFor(pending.provider)?.takeIf { it.isConfigured }
         if (age < Duration.ZERO || age >= PENDING_LIFETIME || oauth == null) {
             clearPending()

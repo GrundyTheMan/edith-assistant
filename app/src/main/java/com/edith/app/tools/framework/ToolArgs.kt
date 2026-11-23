@@ -5,12 +5,17 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.OffsetDateTime
-import java.time.ZoneId
-import java.time.ZonedDateTime
-import java.time.format.DateTimeParseException
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.isoDayNumber
+import kotlinx.datetime.plus
+import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
 
 /** A required argument is missing or can't be read; the loop sends the model a plain error instead (C08 §5). */
 class ArgumentError(val argument: String, message: String) : Exception(message)
@@ -48,24 +53,8 @@ class ToolArgs(val raw: JsonObject, private val spec: ToolSpec) {
     } ?: missing(name)
 
     /** ISO-8601 with an offset, or without one (then in [zone]), or a bare date (then its start). */
-    fun dateTime(name: String, zone: ZoneId): ZonedDateTime? = string(name)?.let { text ->
-        try {
-            OffsetDateTime.parse(text).atZoneSameInstant(zone)
-        } catch (_: DateTimeParseException) {
-            try {
-                ZonedDateTime.parse(text).withZoneSameInstant(zone)
-            } catch (_: DateTimeParseException) {
-                try {
-                    LocalDateTime.parse(text).atZone(zone)
-                } catch (_: DateTimeParseException) {
-                    try {
-                        LocalDate.parse(text).atStartOfDay(zone)
-                    } catch (_: DateTimeParseException) {
-                        throw ArgumentError(name, "$name must be a date and time like 2026-10-30T12:00")
-                    }
-                }
-            }
-        }
+    fun dateTime(name: String, zone: TimeZone): Instant? = string(name)?.let { text ->
+        parseMoment(text, zone) ?: throw ArgumentError(name, "$name must be a date and time like 2026-10-30T12:00")
     }
 
     /**
@@ -75,7 +64,7 @@ class ToolArgs(val raw: JsonObject, private val spec: ToolSpec) {
      * Michigan, L29). Relative words count from [clock]'s today. Anything else is an [ArgumentError].
      */
     fun day(name: String, clock: Clock): LocalDate? = string(name)?.let { raw ->
-        parseDay(raw, clock.now().atZone(clock.zone()).toLocalDate())
+        parseDay(raw, clock.now().toLocalDateTime(clock.zone()).date)
             ?: throw ArgumentError(name, "$name must be a day like 2026-11-14, or today, tomorrow or a weekday")
     }
 
@@ -96,34 +85,34 @@ class ToolArgs(val raw: JsonObject, private val spec: ToolSpec) {
 
         private val DATE_PREFIX = Regex("^(\\d{4}-\\d{2}-\\d{2})(T.*)?$")
 
+        /** An offset date-time, a zoned one (the `[Zone]` suffix is dropped: the offset says the moment), a local one (then in [zone]) or a bare date; null when it is none. */
+        fun parseMoment(text: String, zone: TimeZone): Instant? =
+            runCatching { Instant.parse(text.substringBefore('[')) }.getOrNull()
+                ?: runCatching { LocalDateTime.parse(text).toInstant(zone) }.getOrNull()
+                ?: runCatching { LocalDate.parse(text).atStartOfDayIn(zone) }.getOrNull()
+
         /** [day]'s rules on a text, with [today] given; null when it isn't a day. */
         fun parseDay(raw: String, today: LocalDate): LocalDate? {
             val text = raw.trim().lowercase().replace(Regex("\\s+"), " ")
             when (text) {
                 "today" -> return today
-                "tomorrow" -> return today.plusDays(1)
-                "yesterday" -> return today.minusDays(1)
+                "tomorrow" -> return today.plus(1, DateTimeUnit.DAY)
+                "yesterday" -> return today.plus(-1, DateTimeUnit.DAY)
             }
             val next = text.startsWith("next ")
             val word = text.removePrefix("next ").removePrefix("this ")
-            java.time.DayOfWeek.entries.firstOrNull { it.name.lowercase() == word || it.name.lowercase().take(3) == word }?.let { dow ->
-                var ahead = (dow.value - today.dayOfWeek.value + 7) % 7
+            DayOfWeek.entries.firstOrNull { it.name.lowercase() == word || it.name.lowercase().take(3) == word }?.let { dow ->
+                var ahead = (dow.isoDayNumber - today.dayOfWeek.isoDayNumber + 7) % 7
                 if (ahead == 0 && next) ahead = 7
-                return today.plusDays(ahead.toLong())
+                return today.plus(ahead, DateTimeUnit.DAY)
             }
             val m = DATE_PREFIX.find(raw.trim()) ?: return null
             m.groupValues[2].takeIf { it.isNotEmpty() }?.let { rest ->
                 // A date-time: it must still be one, but only its date as written counts.
                 val dt = m.groupValues[1] + rest
-                val ok = runCatching { OffsetDateTime.parse(dt) }.isSuccess || runCatching { LocalDateTime.parse(dt) }.isSuccess ||
-                    runCatching { ZonedDateTime.parse(dt) }.isSuccess
-                if (!ok) return null
+                if (parseMoment(dt, TimeZone.UTC) == null) return null
             }
-            return try {
-                LocalDate.parse(m.groupValues[1])
-            } catch (_: DateTimeParseException) {
-                null
-            }
+            return runCatching { LocalDate.parse(m.groupValues[1]) }.getOrNull()
         }
     }
 }

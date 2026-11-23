@@ -164,7 +164,7 @@ class BlinkService(
         saved = s
     }
 
-    private fun expiry(t: BlinkTokens) = clock.now().toEpochMilli() + (t.expiresInSeconds - 60).coerceAtLeast(30) * 1000
+    private fun expiry(t: BlinkTokens) = clock.now().toEpochMilliseconds() + (t.expiresInSeconds - 60).coerceAtLeast(30) * 1000
 
     private class Access(val token: String, val expiresAt: Long)
 
@@ -175,7 +175,7 @@ class BlinkService(
         val s = saved ?: return null
         val where = BlinkTier(s.tier, s.accountId)
         val a = access
-        if (a != null && a.token != stale && clock.now().toEpochMilli() < a.expiresAt) return a.token to where
+        if (a != null && a.token != stale && clock.now().toEpochMilliseconds() < a.expiresAt) return a.token to where
         when (val r = api.refresh(s.refreshToken, s.hardwareId)) {
             is BlinkRefresh.Ok -> {
                 if (r.tokens.refreshToken != s.refreshToken) keep(s.copy(refreshToken = r.tokens.refreshToken))
@@ -262,7 +262,7 @@ class BlinkService(
         override val snapshotTimeoutMs: Long = 45_000
 
         override suspend fun devices(): Outcome<List<HomeDevice>> {
-            val now = clock.now().toEpochMilli()
+            val now = clock.now().toEpochMilliseconds()
             return when (val l = listCameras()) {
                 is Outcome.Failure -> l
                 is Outcome.Success -> Outcome.Success(l.value.map { device(it, now) })
