@@ -16,6 +16,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "Edith"
 include(":app")
+include(":shared")
 
 // Log every build to build-logs/ (gradle/build-log.settings.gradle.kts).
 apply(from = "gradle/build-log.settings.gradle.kts")
