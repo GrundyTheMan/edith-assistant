@@ -14,7 +14,11 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -49,7 +53,9 @@ class ProbeViewModel : ViewModel() {
 /** The spike: a home screen with the chat, the microphone probe and the storage probes, and a second screen to prove navigation. */
 @Composable
 fun App(chat: OllamaChat = remember { OllamaChat(HttpClient()) }) {
-    MaterialTheme {
+    // Without a Surface the text stays black even when the phone is in dark mode, and the screen is black: black on black.
+    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         val nav = rememberNavController()
         val probes = viewModel { ProbeViewModel() }
         // The cloud build starts the app with the probes on, so its screenshot shows what each piece did with no one tapping.
@@ -73,6 +79,7 @@ fun App(chat: OllamaChat = remember { OllamaChat(HttpClient()) }) {
         NavHost(nav, startDestination = "home") {
             composable("home") { Home(chat, nav, probes) }
             composable("second") { Second(nav, probes) }
+        }
         }
     }
 }
