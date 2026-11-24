@@ -5,9 +5,9 @@ import com.edith.app.core.error.Outcome
 import com.edith.app.core.time.Clock
 import com.edith.app.home.EventKind
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import com.edith.app.testing.assertEquals
+import com.edith.app.testing.assertTrue
+import kotlin.test.Test
 import kotlinx.datetime.TimeZone
 import kotlin.time.Instant
 
@@ -57,7 +57,7 @@ class AlertWatcherTest {
         assertTrue(w.check(blinkMotion()).alerts.isEmpty())
     }
 
-    @Test fun `at most three alerts per look, the newest, shown oldest first`() = runTest {
+    @Test fun `at most three alerts per look the newest shown oldest first`() = runTest {
         val w = watcher()
         w.check(blinkMotion())
         clock.ms += 45_000
@@ -67,7 +67,7 @@ class AlertWatcherTest {
         assertTrue("the dropped ones are not queued for later", w.check(blinkMotion()).alerts.isEmpty())
     }
 
-    @Test fun `a kind that is off is not announced, and switching it on later does not announce the past`() = runTest {
+    @Test fun `a kind that is off is not announced and switching it on later does not announce the past`() = runTest {
         val ringPerson = AlertChoices(setOf(AlertChoices.key("ring", AlertKind.Person)))
         val w = watcher()
         w.check(ringPerson)
@@ -95,7 +95,7 @@ class AlertWatcherTest {
         assertEquals(AlertKind.Motion, w.check(blinkMotion()).alerts.single().kind)
     }
 
-    @Test fun `a failed look waits twice as long each time, up to five minutes, and a good one resets it`() = runTest {
+    @Test fun `a failed look waits twice as long each time up to five minutes and a good one resets it`() = runTest {
         val w = watcher()
         source.answers["blink"] = fail
         assertEquals(90_000L, w.check(blinkMotion()).nextInMs)
