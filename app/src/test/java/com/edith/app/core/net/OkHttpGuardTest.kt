@@ -15,7 +15,7 @@ class OkHttpGuardTest {
     private val androidHooks = setOf(
         "core/net/HttpClients.kt", "core/net/TaggedSocketFactory.kt", "di/AppContainer.kt",
         "alexa/AlexaApi.kt", "blink/BlinkApi.kt", "icloud/ICloudAccounts.kt", "icloud/calendar/CalDavClient.kt",
-        "jarvis/JarvisAccounts.kt", "jarvis/JarvisApi.kt", "tools/web/PageReader.kt",
+        "jarvis/JarvisAccounts.kt", "jarvis/JarvisApi.kt", "tools/web/PageReaderAndroid.kt",
     )
 
     @Test

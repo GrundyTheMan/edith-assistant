@@ -15,7 +15,7 @@ import com.edith.app.core.time.formatPattern
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
-import java.util.Locale
+import com.edith.app.core.locale.deviceLanguageTag
 import kotlin.math.roundToInt
 
 /**
@@ -25,7 +25,7 @@ import kotlin.math.roundToInt
 class WeatherTool(
     private val client: OpenMeteoClient,
     private val device: LocationProvider? = null,
-    private val locale: () -> Locale = Locale::getDefault,
+    private val languageTag: () -> String = ::deviceLanguageTag,
 ) : Tool {
     override val spec = ToolSpec(
         name = "get_weather",
@@ -56,7 +56,7 @@ class WeatherTool(
             is Outcome.Failure -> return ToolResult.Error(UNAVAILABLE)
         }
         val choice = PlaceResolver.choose(places, query.hint) ?: return ToolResult.Error("Couldn't find a place called $location.")
-        val units = WeatherUnits.from(ctx.settings.units, locale())
+        val units = WeatherUnits.from(ctx.settings.units, languageTag())
         val forecast = when (val r = client.forecast(choice.place.latitude, choice.place.longitude, units, days)) {
             is Outcome.Success -> r.value
             is Outcome.Failure -> return ToolResult.Error(UNAVAILABLE)
@@ -72,7 +72,7 @@ class WeatherTool(
             is Outcome.Failure -> return ToolResult.Error((r.error as? AppError.ToolFailed)?.detail ?: LocationProvider.NO_FIX)
         }
         val name = device.placeName(at) ?: CURRENT_LOCATION
-        val units = WeatherUnits.from(ctx.settings.units, locale())
+        val units = WeatherUnits.from(ctx.settings.units, languageTag())
         val forecast = when (val r = client.forecast(at.latitude, at.longitude, units, days)) {
             is Outcome.Success -> r.value
             is Outcome.Failure -> return ToolResult.Error(UNAVAILABLE)
@@ -84,7 +84,7 @@ class WeatherTool(
     private fun isHere(location: String?) = location.isNullOrBlank() || location.lowercase().trim().trimEnd('.', '?', '!') in HERE
 
     /** "Fowlerville, Michigan (US) — now 72°F (feels like 66°F), partly cloudy, wind 16 mph, humidity 46%. Tomorrow: …" */
-    internal fun describe(choice: PlaceResolver.Choice, forecast: Forecast, units: WeatherUnits, days: Int): String {
+    fun describe(choice: PlaceResolver.Choice, forecast: Forecast, units: WeatherUnits, days: Int): String {
         val c = forecast.current
         fun deg(v: Double?) = v?.let { "${it.roundToInt()}${units.degrees}" }
         val now = listOfNotNull(

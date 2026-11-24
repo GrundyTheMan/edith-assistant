@@ -8,7 +8,7 @@ import com.edith.app.core.log.LogTag
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import com.edith.app.core.net.HttpClients.Companion.withTimeouts
+import com.edith.app.core.net.withTimeouts
 import io.ktor.client.HttpClient
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -17,7 +17,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.content.TextContent
-import java.io.IOException
+import kotlinx.io.IOException
 
 /**
  * Ollama's web search and web fetch APIs (D3; docs.ollama.com/capabilities/web-search, checked 2026-11-01):

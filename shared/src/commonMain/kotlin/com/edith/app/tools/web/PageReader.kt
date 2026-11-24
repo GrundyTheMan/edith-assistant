@@ -7,7 +7,6 @@ import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import kotlinx.coroutines.withContext
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
@@ -16,25 +15,22 @@ import io.ktor.http.URLBuilder
 import io.ktor.http.URLProtocol
 import io.ktor.http.Url
 import io.ktor.http.charset
+import io.ktor.utils.io.charsets.Charset
+import io.ktor.utils.io.charsets.Charsets
+import io.ktor.utils.io.charsets.decode
+import kotlinx.io.Buffer
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.http.takeFrom
 import io.ktor.utils.io.readRemaining
 import kotlinx.io.readByteArray
-import okhttp3.Dns
-import okhttp3.OkHttpClient
-import org.jsoup.Jsoup
-import org.jsoup.nodes.Element
-import org.jsoup.nodes.Node
-import org.jsoup.nodes.TextNode
-import org.jsoup.select.NodeTraversor
-import org.jsoup.select.NodeVisitor
-import java.io.IOException
-import java.net.Inet4Address
-import java.net.Inet6Address
-import java.net.InetAddress
-import java.net.UnknownHostException
-import java.util.concurrent.TimeUnit
+import com.fleeksoft.ksoup.Ksoup
+import com.fleeksoft.ksoup.nodes.Element
+import com.fleeksoft.ksoup.nodes.Node
+import com.fleeksoft.ksoup.nodes.TextNode
+import com.fleeksoft.ksoup.select.NodeTraversor
+import com.fleeksoft.ksoup.select.NodeVisitor
+import kotlinx.io.IOException
 
 /**
  * Downloads a page on the phone and turns it into readable text (C10 §2): 10 s, at most 2 MB, Jsoup for the
@@ -42,28 +38,14 @@ import java.util.concurrent.TimeUnit
  * [PublicOnlyDns] refuses names that resolve to a private address, so neither the model nor a page can point Edith at
  * the owner's PC, router or anything else on their network.
  *
- * The requests are Ktor ones, but the name lookup is OkHttp's [Dns] on the engine underneath: that one hook is Android-only for
- * now (the iPhone needs its own public-address check, K4.5).
+ * The client comes from the platform (`PageReader.over` on Android), because that is where the name lookup is checked: it must
+ * not follow redirects itself, and must refuse names that resolve to a private address (reporting them with a [PrivateAddress]).
  */
 class PageReader(
-    baseClient: Lazy<OkHttpClient>,
+    private val http: Lazy<HttpClient>,
     private val dispatchers: AppDispatchers,
-    private val dns: Dns = PublicOnlyDns(),
     private val hostAllowed: (String) -> Boolean = { !PrivateNetwork.isPrivateHost(it) },
 ) {
-    private val http: HttpClient by lazy {
-        val okHttp = baseClient.value.newBuilder()
-            .dns(dns)
-            .followRedirects(false).followSslRedirects(false)
-            .connectTimeout(TIMEOUT_S, TimeUnit.SECONDS).readTimeout(TIMEOUT_S, TimeUnit.SECONDS).callTimeout(TIMEOUT_S, TimeUnit.SECONDS)
-            .build()
-        HttpClient(OkHttp) {
-            engine { preconfigured = okHttp }
-            followRedirects = false   // by hand, below
-            expectSuccess = false
-        }
-    }
-
     /** What one request came to: another address to go to, or the end of the matter. */
     private sealed interface Step {
         class Redirect(val to: Url) : Step
@@ -83,8 +65,8 @@ class PageReader(
             } catch (e: IOException) {
                 val causes = generateSequence<Throwable>(e) { it.cause }.toList()
                 return@withContext when {
-                    causes.any { it is PrivateAddressException } -> fail(PRIVATE)
-                    causes.any { it is UnknownHostException } -> fail("Couldn't find ${address.host}.")
+                    causes.any { it is PrivateAddress } -> fail(PRIVATE)
+                    causes.any { it.isUnknownHost() } -> fail("Couldn't find ${address.host}.")
                     else -> {
                         Log.w(LogTag.Tools, "Page ${address.host} unreachable (${e::class.simpleName})")
                         fail(UNREACHABLE)
@@ -96,7 +78,7 @@ class PageReader(
     }
 
     private suspend fun fetch(address: Url): Step =
-        http.prepareGet(address) {
+        http.value.prepareGet(address) {
             header(HttpHeaders.UserAgent, DuckDuckGoSearch.USER_AGENT)
             header(HttpHeaders.Accept, "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5")
         }.execute { response ->
@@ -117,9 +99,9 @@ class PageReader(
             val bytes = response.bodyAsChannel().readRemaining(MAX_BYTES).readByteArray()
             val charset = type?.charset()
             val page = if (kind == "text/plain") {
-                WebPage("", String(bytes, charset ?: Charsets.UTF_8))
+                WebPage("", decode(bytes, charset))
             } else {
-                readable(Jsoup.parse(bytes.inputStream(), charset?.name(), address.toString()))
+                readable(Ksoup.parse(decode(bytes, charset), address.toString()))
             }
             Step.Done(Outcome.Success(page))
         }
@@ -127,6 +109,9 @@ class PageReader(
     /** [text] as an http(s) address, or null. */
     private fun webUrl(text: String): Url? =
         runCatching { Url(text) }.getOrNull()?.takeIf { (it.protocol == URLProtocol.HTTP || it.protocol == URLProtocol.HTTPS) && it.host.isNotEmpty() }
+
+    private fun decode(bytes: ByteArray, charset: Charset?): String =
+        if (charset == null || charset == Charsets.UTF_8) bytes.decodeToString() else charset.newDecoder().decode(Buffer().apply { write(bytes) })
 
     private fun fail(message: String) = Outcome.Failure(AppError.ToolFailed("read_web_page", message))
 
@@ -137,7 +122,6 @@ class PageReader(
         const val MAX_BYTES = 2L * 1024 * 1024
         private const val MAX_REDIRECTS = 5
         private val REDIRECTS = setOf(300, 301, 302, 303, 307, 308)
-        private const val TIMEOUT_S = 10L
         private val HTML_TYPES = setOf("text/html", "application/xhtml+xml")
         private val SPACES = Regex("\\s+")
 
@@ -155,7 +139,10 @@ class PageReader(
          * The page's text, one block (heading, paragraph, list item…) per line: scripts, styles, navigation, footers
          * and asides removed; the `article` or `main` element when there is one.
          */
-        internal fun readable(doc: org.jsoup.nodes.Document): WebPage {
+        /** The readable text of an HTML string (a mail body, for one). */
+        fun readableHtml(html: String): WebPage = readable(Ksoup.parse(html))
+
+        fun readable(doc: com.fleeksoft.ksoup.nodes.Document): WebPage {
             doc.select("script, style, noscript, template, svg, iframe, nav, footer, aside, form, header").remove()
             val root: Element = doc.selectFirst("article") ?: doc.selectFirst("main") ?: doc.body()
             val text = StringBuilder()
@@ -163,12 +150,12 @@ class PageReader(
                 override fun head(node: Node, depth: Int) {
                     when (node) {
                         is TextNode -> text.append(node.text())
-                        is Element -> if (node.isBlock || node.nameIs("br")) text.append('\n')
+                        is Element -> if (node.isBlock() || node.nameIs("br")) text.append('\n')
                     }
                 }
 
                 override fun tail(node: Node, depth: Int) {
-                    if (node is Element && node.isBlock) text.append('\n')
+                    if (node is Element && node.isBlock()) text.append('\n')
                 }
             }, root)
             val lines = text.lines().map { it.replace(SPACES, " ").trim() }.filter { it.isNotEmpty() }
@@ -177,17 +164,11 @@ class PageReader(
     }
 }
 
-/** Refuses names that resolve to any private address, checked on the addresses OkHttp will actually connect to. */
-class PublicOnlyDns(private val base: Dns = Dns.SYSTEM) : Dns {
-    override fun lookup(hostname: String): List<InetAddress> {
-        val addresses = base.lookup(hostname)
-        if (addresses.any(PrivateNetwork::isPrivateAddress)) throw PrivateAddressException(hostname)
-        return addresses
-    }
-}
+/** Marks the exception a platform's name lookup throws for an address on a private network: the page is not fetched. */
+interface PrivateAddress
 
-/** A page's address is on a private network, so it isn't fetched. */
-class PrivateAddressException(host: String) : UnknownHostException("$host is on a private network")
+/** The failure was "no such host". */
+internal expect fun Throwable.isUnknownHost(): Boolean
 
 /** Loopback, link-local and private ranges, and names that only mean something on a LAN. No regexes (L25). */
 object PrivateNetwork {
@@ -204,19 +185,7 @@ object PrivateNetwork {
         return isPrivateV4(first, second)
     }
 
-    fun isPrivateAddress(address: InetAddress): Boolean {
-        if (address.isLoopbackAddress || address.isAnyLocalAddress || address.isLinkLocalAddress ||
-            address.isSiteLocalAddress || address.isMulticastAddress
-        ) return true
-        val b = address.address.map { it.toInt() and 0xff }
-        return when (address) {
-            is Inet4Address -> isPrivateV4(b[0], b[1])
-            is Inet6Address -> b[0] and 0xfe == 0xfc   // fc00::/7, unique local
-            else -> false
-        }
-    }
-
-    private fun isPrivateV4(a: Int, b: Int) =
+    fun isPrivateV4(a: Int, b: Int) =
         a == 10 || a == 127 || a == 0 || (a == 169 && b == 254) || (a == 192 && b == 168) || (a == 172 && b in 16..31) ||
             (a == 100 && b in 64..127) || a >= 224
 }

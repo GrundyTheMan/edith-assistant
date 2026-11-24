@@ -9,13 +9,13 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import com.edith.app.core.net.HttpClients.Companion.withTimeouts
+import com.edith.app.core.net.withTimeouts
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
-import java.io.IOException
+import kotlinx.io.IOException
 
 /**
  * Open-Meteo (C09 §1–2): free, keyless, structured JSON. DTOs mirror responses captured live on 2026-11-01

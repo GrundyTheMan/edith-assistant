@@ -1,7 +1,8 @@
 package com.edith.app.tools.weather
 
 import com.edith.app.settings.Units
-import java.util.Locale
+import com.edith.app.core.locale.deviceLanguageTag
+import com.edith.app.core.locale.regionOf
 
 /** A place found by looking up a name. */
 data class Place(
@@ -36,10 +37,10 @@ enum class WeatherUnits(val temperatureParam: String, val windParam: String, val
         /** The countries that use Fahrenheit and miles per hour day to day. */
         private val IMPERIAL_COUNTRIES = setOf("US", "LR", "MM")
 
-        fun from(setting: Units, locale: Locale = Locale.getDefault()): WeatherUnits = when (setting) {
+        fun from(setting: Units, languageTag: String = deviceLanguageTag()): WeatherUnits = when (setting) {
             Units.Imperial -> Imperial
             Units.Metric -> Metric
-            Units.Auto -> if (locale.country.uppercase() in IMPERIAL_COUNTRIES) Imperial else Metric
+            Units.Auto -> if (regionOf(languageTag) in IMPERIAL_COUNTRIES) Imperial else Metric
         }
     }
 }
