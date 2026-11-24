@@ -34,7 +34,7 @@ class ConfirmationsTest {
         assertEquals(true, answer.await())
     }
 
-    @Test fun `an answer for a request that isn't waiting is ignored, and a second answer doesn't change the first`() = runTest {
+    @Test fun `an answer for a request that isn't waiting is ignored and a second answer doesn't change the first`() = runTest {
         val confirmations = Confirmations()
         assertFalse(confirmations.resolve("nobody", true, ApprovalChannel.Tap))
         val answer = confirmations.register(card(screenOnly = false))

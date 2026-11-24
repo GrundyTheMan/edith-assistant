@@ -22,7 +22,7 @@ class PromptAndContextTest {
 
     // --- PromptBuilder ------------------------------------------------------------------------------------------
 
-    @Test fun `system prompt is the persona verbatim, a blank line, then the date line`() {
+    @Test fun `system prompt is the persona verbatim a blank line then the date line`() {
         val prompt = PromptBuilder(clock) { listOf(DateTimeSection { "en-US" }) }.system(model)
         assertEquals(PERSONA + "\n\nCurrent date and time: Thursday, October 29, 2026, 2:30 PM (America/Detroit, UTC-04:00).", prompt)
         assertTrue(PERSONA.startsWith("You are Edith, a highly sophisticated, warm, and genuinely complimentary personal assistant."))
@@ -51,7 +51,7 @@ class PromptAndContextTest {
     private fun build(vararg history: MessageWithAttachments) =
         ContextBuilder().build(history.toList(), "SYSTEM", model).map { it.role to it.content }
 
-    @Test fun `system first, then completed user and assistant messages in order`() {
+    @Test fun `system first then completed user and assistant messages in order`() {
         assertEquals(
             listOf("system" to "SYSTEM", "user" to "Hi", "assistant" to "Hello!", "user" to "Weather?"),
             build(user("Hi"), edith("Hello!"), user("Weather?")),
@@ -65,7 +65,7 @@ class PromptAndContextTest {
         )
     }
 
-    @Test fun `tool-call text is stripped, unclosed too, and empty results are dropped`() {
+    @Test fun `tool-call text is stripped unclosed too and empty results are dropped`() {
         assertEquals(
             listOf("system" to "SYSTEM", "user" to "Weather?", "assistant" to "Let me check.", "user" to "And?"),
             build(user("Weather?"), edith("Let me check.<tool_call>{\"name\":\"get_weather\"}</tool_call>"),
