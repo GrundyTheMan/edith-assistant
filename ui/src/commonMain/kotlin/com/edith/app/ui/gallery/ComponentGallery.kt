@@ -11,6 +11,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.edith.app.chat.ui.AttachmentUi
+import com.edith.app.chat.ui.ChatFeatures
+import com.edith.app.chat.ui.InputRow
+import com.edith.app.chat.ui.MessageItem
+import com.edith.app.chat.ui.MessageUi
+import com.edith.app.data.db.AttachmentKind
+import com.edith.app.data.db.MessageRole
+import com.edith.app.data.db.MessageStatus
 import com.edith.app.chat.ui.renderMarkdown
 import com.edith.app.ui.about.AboutSection
 import com.edith.app.ui.components.CrashBanner
@@ -39,6 +47,15 @@ private fun Samples(title: String) {
             }
             VoiceBanner(onOpenSettings = {}, onDismiss = {})
             CrashBanner(report = "java.lang.IllegalStateException: sample", onDismiss = {})
+            val mine = MessageUi(1, MessageRole.User, "What's the weather like?", "2:30 PM", MessageStatus.Complete, null, emptyList(), emptyList(), isLatest = false, isLatestAssistant = false)
+            val reply = MessageUi(
+                2, MessageRole.Assistant, "It is **sunny** and 21 degrees.", "2:31 PM", MessageStatus.Complete, null, listOf("get_weather"),
+                listOf(AttachmentUi(1, "beach-list.md", AttachmentKind.File, id = 9, fromEdith = true, mimeType = "text/markdown", preview = "- towel")),
+                isLatest = true, isLatestAssistant = true,
+            )
+            MessageItem(mine, maxBubbleWidth = 280.dp, busy = false, speaking = false, onPlay = {}, onStopPlayback = {}, onRegenerate = {})
+            MessageItem(reply, maxBubbleWidth = 280.dp, busy = false, speaking = false, onPlay = {}, onStopPlayback = {}, onRegenerate = {})
+            InputRow(draft = "", canSend = false, features = ChatFeatures(attach = true, record = true, dictation = true), onDraftChange = {}, onSend = {})
             val link = MaterialTheme.colorScheme.primary
             val code = MaterialTheme.colorScheme.surfaceVariant
             for (block in renderMarkdown("**Bold**, *italic*, `code` and https://example.com\n\n- a list item\n- another", link, code)) {

@@ -30,6 +30,7 @@ kotlin {
             implementation(compose.foundation)
             implementation(compose.material3)
             implementation(compose.ui)
+            implementation(libs.coil.compose)   // K3.2: attachment thumbnails (Coil 3 is multiplatform)
             implementation(libs.compose.icons.extended)   // K3.1: every icon the Android app uses must exist here (IconsTest)
         }
         commonTest.dependencies {

@@ -72,9 +72,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.edith.app.chat.engine.ConfirmationRequest
 import com.edith.app.attachments.ReplyFormat
+import com.edith.app.core.time.SystemClock
 import com.edith.app.data.db.MessageRole
 import com.edith.app.data.db.MessageStatus
-import java.io.File
 import kotlinx.coroutines.delay
 
 /** How far Edith's action row is pulled up onto her bubble's bottom edge (the owner's "almost on top of the edge"). */
@@ -97,7 +97,7 @@ fun MessageItem(
     onRegenerate: () -> Unit,
     playingAttachmentId: Long? = null,
     onToggleAttachment: (AttachmentUi) -> Unit = {},
-    onOpenImage: (File) -> Unit = {},
+    onOpenImage: (String) -> Unit = {},
     fileActions: FileActions = FileActions(),
 ) {
     val mine = message.role == MessageRole.User
@@ -418,10 +418,10 @@ fun InputRow(
 
 @Composable
 private fun RowScope.RecordingControls(recording: RecordingUi, level: () -> Float, voice: VoiceActions) {
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var now by remember { mutableLongStateOf(SystemClock.now().toEpochMilliseconds()) }
     LaunchedEffect(recording.startedAtMs) {
         while (true) {
-            now = System.currentTimeMillis()
+            now = SystemClock.now().toEpochMilliseconds()
             delay(250)
         }
     }
@@ -430,7 +430,7 @@ private fun RowScope.RecordingControls(recording: RecordingUi, level: () -> Floa
     Icon(Icons.Filled.FiberManualRecord, contentDescription = null, tint = RecordRed, modifier = Modifier.size(14.dp))
     Spacer(Modifier.width(8.dp))
     Text(
-        "%d:%02d".format(seconds / 60, seconds % 60),
+        minutesAndSeconds(seconds),
         style = MaterialTheme.typography.titleMedium,
         modifier = Modifier.testTag(RECORDING_TIME_TAG),
     )

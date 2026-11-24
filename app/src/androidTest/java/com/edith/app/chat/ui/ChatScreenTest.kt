@@ -204,16 +204,16 @@ class ChatScreenTest {
         val actions = ChatActions(
             onAttachPhoto = { calls += "photo" }, onAttachAudio = { calls += "audio" },
             onRemoveAttachment = { calls += "remove $it" }, onToggleAttachment = { calls += "play ${it.fileName}" },
-            onOpenImage = { calls += "open ${it.name}" },
+            onOpenImage = { calls += "open ${java.io.File(it).name}" },
         )
         val image = com.edith.app.data.db.AttachmentKind.Image
         val audio = com.edith.app.data.db.AttachmentKind.Audio
         val message = MessageUi(
             1, com.edith.app.data.db.MessageRole.User, "", "9:00 AM", com.edith.app.data.db.MessageStatus.Complete, null, emptyList(),
             listOf(
-                AttachmentUi(1, "list.jpg", image, id = 11, file = photo),
-                AttachmentUi(2, "note.wav", audio, id = 12, file = photo, durationMs = 65_000),
-                AttachmentUi(3, "old.jpg", image, id = 13, file = null),
+                AttachmentUi(1, "list.jpg", image, id = 11, path = photo.path),
+                AttachmentUi(2, "note.wav", audio, id = 12, path = photo.path, durationMs = 65_000),
+                AttachmentUi(3, "old.jpg", image, id = 13, path = null),
             ),
             isLatest = true, isLatestAssistant = false,
         )
@@ -229,7 +229,7 @@ class ChatScreenTest {
         compose.onNodeWithText("Preparing…").assertIsDisplayed()
         compose.onNodeWithContentDescription("Send").assertIsNotEnabled()   // still preparing
 
-        state = base.copy(pending = listOf(PendingUi(5, "receipt.jpg", image, photo, ready = true)))
+        state = base.copy(pending = listOf(PendingUi(5, "receipt.jpg", image, photo.path, ready = true)))
         compose.onNodeWithText("receipt.jpg").assertIsDisplayed()
         compose.onNodeWithContentDescription("Send").assertIsEnabled()      // attachments alone can be sent
         compose.onNodeWithContentDescription("Remove receipt.jpg").performClick()
@@ -258,10 +258,10 @@ class ChatScreenTest {
             2, com.edith.app.data.db.MessageRole.Assistant, "Here's your list.\n\n[Attached file: beach-list.md]", "9:01 AM",
             com.edith.app.data.db.MessageStatus.Complete, null, emptyList(),
             listOf(
-                AttachmentUi(4, "beach-list.md", file, id = 14, file = list, fromEdith = true, mimeType = "text/markdown", preview = "- towel\n- sunscreen\n- hat"),
-                AttachmentUi(1, "receipt.jpg", image, id = 11, file = photo, fromEdith = true, isResend = true),
-                AttachmentUi(2, "old.jpg", image, id = 12, file = null, fromEdith = true, isResend = true),
-                AttachmentUi(5, "notes.md", file, id = 15, file = null, fromEdith = true),
+                AttachmentUi(4, "beach-list.md", file, id = 14, path = list.path, fromEdith = true, mimeType = "text/markdown", preview = "- towel\n- sunscreen\n- hat"),
+                AttachmentUi(1, "receipt.jpg", image, id = 11, path = photo.path, fromEdith = true, isResend = true),
+                AttachmentUi(2, "old.jpg", image, id = 12, path = null, fromEdith = true, isResend = true),
+                AttachmentUi(5, "notes.md", file, id = 15, path = null, fromEdith = true),
             ),
             isLatest = true, isLatestAssistant = true,
         )
