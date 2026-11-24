@@ -42,6 +42,11 @@ kotlin {
             implementation(kotlin("test"))
             implementation(libs.coroutines.test)
         }
+        // K2 G2: the chat engine's end-to-end tests need a Room database, which the Android host test cannot build without a Context.
+        // They are plain common Kotlin in src/engineTest, compiled for the desktop and the iPhone (each has its own inMemoryTestDatabase()).
+        val engineTests = file("src/engineTest/kotlin")
+        jvmTest { kotlin.srcDir(engineTests) }
+        iosTest { kotlin.srcDir(engineTests) }
     }
 }
 

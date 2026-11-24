@@ -1,8 +1,6 @@
 package com.edith.app.testing
 
 import kotlin.concurrent.Volatile
-import androidx.sqlite.driver.bundled.BundledSQLiteDriver
-import androidx.room.Room
 import com.edith.app.chat.CurrentConversation
 import com.edith.app.chat.engine.ChatEngine
 import com.edith.app.chat.engine.ContextBuilder
@@ -46,14 +44,14 @@ import kotlinx.coroutines.withTimeout
 import kotlin.time.Instant
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.datetime.TimeZone
-import java.util.Collections
+
 
 /** An Ollama whose replies are scripts: words streamed with a delay, or an error. */
 class ScriptedOllama : OllamaClient {
     var words = listOf("Hello", " there", ",", " friend", "!")
     var wordDelayMs = 40L
     var failure: AppError? = null
-    val calls: MutableList<ChatCall> = Collections.synchronizedList(mutableListOf())
+    val calls: SyncList<ChatCall> = SyncList()
     @Volatile var streamCancelled = false
 
     override fun chatStream(baseUrl: String, request: ChatCall): Flow<ChatEvent> = flow {
@@ -70,7 +68,7 @@ class ScriptedOllama : OllamaClient {
 
     /** The titler's non-streaming call (D12). */
     var titleReply: Outcome<OllamaMessage> = Outcome.Success(OllamaMessage("assistant", "\"Picking a Number.\""))
-    val titleCalls: MutableList<ChatCall> = Collections.synchronizedList(mutableListOf())
+    val titleCalls: SyncList<ChatCall> = SyncList()
     override suspend fun chat(baseUrl: String, request: ChatCall): Outcome<OllamaMessage> {
         titleCalls += request
         return titleReply
@@ -105,7 +103,7 @@ class ChatTestKit(listeners: List<ReplyListener> = emptyList()) {
     val ollama = ScriptedOllama()
     val settings = MemorySettings()
     @Volatile var networkGranted = true
-    val db: EdithDatabase = Room.inMemoryDatabaseBuilder<EdithDatabase>().setDriver(BundledSQLiteDriver()).setQueryCoroutineContext(Dispatchers.Default).build()
+    val db: EdithDatabase = inMemoryTestDatabase()
     val repo = ChatRepository(db, clock, AppDispatchers(Dispatchers.Default, Dispatchers.IO, Dispatchers.Default))
     val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val engine = ChatEngine(
