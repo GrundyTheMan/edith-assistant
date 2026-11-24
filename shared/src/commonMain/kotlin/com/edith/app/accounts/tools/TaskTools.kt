@@ -5,7 +5,7 @@ import com.edith.app.core.time.formatPattern
 import kotlinx.datetime.toLocalDateTime
 import com.edith.app.accounts.AccountDirectory
 import com.edith.app.accounts.AccountEntry
-import com.edith.app.accounts.Accounts
+import com.edith.app.accounts.ACCOUNTS_INTEGRATION_ID
 import com.edith.app.accounts.sources.ReadAll
 import com.edith.app.accounts.sources.Readable
 import com.edith.app.accounts.sources.Reads
@@ -17,6 +17,8 @@ import com.edith.app.accounts.tasks.TaskRanker
 import com.edith.app.accounts.tasks.TaskRanking
 import com.edith.app.accounts.tasks.TaskSource
 import com.edith.app.chat.engine.ConfirmationRequest
+import com.edith.app.core.util.PlatformLock
+import com.edith.app.core.util.synchronized
 import com.edith.app.core.error.Outcome
 import com.edith.app.core.time.Clock
 import com.edith.app.settings.Settings
@@ -40,23 +42,24 @@ data class TaskRef(val accountId: String, val list: TaskList, val task: TaskItem
 class TaskHandles {
     private val handles = LinkedHashMap<String, TaskRef>()
     private var next = 1
+    private val lock = PlatformLock()
 
-    @Synchronized fun handleFor(ref: TaskRef): String {
+    fun handleFor(ref: TaskRef): String = lock.synchronized {
         handles.entries.firstOrNull { it.value.accountId == ref.accountId && it.value.list.id == ref.list.id && it.value.task.id == ref.task.id }?.let {
             it.setValue(ref)
-            return it.key
+            return@synchronized it.key
         }
         val h = "t${next++}"
         handles[h] = ref
         if (handles.size > MAX_HANDLES) handles.remove(handles.keys.first())
-        return h
+        h
     }
 
-    @Synchronized fun ref(handle: String?): TaskRef? = handle?.trim()?.let { handles[it] }
+    fun ref(handle: String?): TaskRef? = lock.synchronized { handle?.trim()?.let { handles[it] } }
 
-    @Synchronized fun update(handle: String, task: TaskItem) { handles[handle]?.let { handles[handle] = it.copy(task = task) } }
+    fun update(handle: String, task: TaskItem) { lock.synchronized { handles[handle]?.let { handles[handle] = it.copy(task = task) } } }
 
-    @Synchronized fun forget(handle: String) { handles.remove(handle) }
+    fun forget(handle: String) { lock.synchronized { handles.remove(handle) } }
 
     companion object {
         const val MAX_HANDLES = 500
@@ -165,7 +168,7 @@ class ListTasksTool(private val dir: AccountDirectory, private val handles: Task
     )
     override val statusLabel = "Checking your to-dos…"
     override val displayName = "to-dos"
-    override val integrationId = Accounts.ID
+    override val integrationId = ACCOUNTS_INTEGRATION_ID
     override val guidance = "For the user's to-do list, call list_tasks. Results carry a task_id for changing, ticking off, moving or " +
         "deleting a task. $UNTRUSTED"
 
@@ -222,7 +225,7 @@ class AddTaskTool(private val dir: AccountDirectory, private val handles: TaskHa
     )
     override val statusLabel = "Adding to your to-dos…"
     override val displayName = "to-dos"
-    override val integrationId = Accounts.ID
+    override val integrationId = ACCOUNTS_INTEGRATION_ID
     override val guidance = "To add, change, tick off, move or delete a to-do, call the tool straight away: the app asks the user to confirm on " +
         "screen, so don't ask in chat first. Give due dates as words (today, tomorrow, friday) or YYYY-MM-DD; to-dos have no time of day."
 
@@ -289,7 +292,7 @@ class ChangeTaskTool(private val dir: AccountDirectory, private val handles: Tas
     )
     override val statusLabel = "Changing your to-dos…"
     override val displayName = "to-dos"
-    override val integrationId = Accounts.ID
+    override val integrationId = ACCOUNTS_INTEGRATION_ID
 
     private fun patch(args: ToolArgs): TaskPatch {
         val due = args.stringOrEmpty("due")
@@ -342,7 +345,7 @@ class CompleteTaskTool(private val dir: AccountDirectory, private val handles: T
     )
     override val statusLabel = "Changing your to-dos…"
     override val displayName = "to-dos"
-    override val integrationId = Accounts.ID
+    override val integrationId = ACCOUNTS_INTEGRATION_ID
 
     private fun done(args: ToolArgs) = args.bool("done") != false
 
@@ -381,7 +384,7 @@ class DeleteTaskTool(private val dir: AccountDirectory, private val handles: Tas
     )
     override val statusLabel = "Changing your to-dos…"
     override val displayName = "to-dos"
-    override val integrationId = Accounts.ID
+    override val integrationId = ACCOUNTS_INTEGRATION_ID
 
     override suspend fun confirmation(args: ToolArgs): ConfirmationRequest? {
         val (ref, entry, _) = resolve(dir, handles, args.string("task_id"))
@@ -420,7 +423,7 @@ class MoveTaskTool(private val dir: AccountDirectory, private val handles: TaskH
     )
     override val statusLabel = "Changing your to-dos…"
     override val displayName = "to-dos"
-    override val integrationId = Accounts.ID
+    override val integrationId = ACCOUNTS_INTEGRATION_ID
 
     private fun where(args: ToolArgs): String {
         val to = requireNotNull(args.string("to")).lowercase()
@@ -521,7 +524,7 @@ class SuggestTaskOrderTool(private val dir: AccountDirectory, private val handle
     )
     override val statusLabel = "Thinking about your to-dos…"
     override val displayName = "to-dos"
-    override val integrationId = Accounts.ID
+    override val integrationId = ACCOUNTS_INTEGRATION_ID
     /** One model call per list (unless saved), which can take a while on a phone's server or a cold model. */
     override val timeoutMs = RANK_TIMEOUT_MS
     override val guidance = "For \"what should I do first?\", call suggest_task_order. Only when the user asks to put a list in that order, call apply_task_order."
@@ -577,7 +580,7 @@ class ApplyTaskOrderTool(
     )
     override val statusLabel = "Reordering your to-dos…"
     override val displayName = "to-dos"
-    override val integrationId = Accounts.ID
+    override val integrationId = ACCOUNTS_INTEGRATION_ID
 
     /** One list, or what to tell the model (several lists of that name in different accounts → ask which account). */
     private suspend fun one(args: ToolArgs): Pair<RankTarget?, ToolResult?> {

@@ -146,7 +146,7 @@ class TaskToolsTest {
     private val handles = TaskHandles()
     private var modelReply = """{"order":[{"n":3,"reason":"blocks the trip"},{"n":1,"reason":"due tomorrow"},{"n":2,"reason":"overdue"}]}"""
     private var modelCalls = 0
-    private val ranker by lazy { TaskRanker(rankModel, RankStore(temp.newFile("ranks.json")), clock) }
+    private val ranker by lazy { TaskRanker(rankModel, RankStore(temp.newFile("ranks.json").path), clock) }
     private val rankModel = object : OllamaClient {
         override fun chatStream(baseUrl: String, request: ChatCall): Flow<ChatEvent> = error("not used")
         override suspend fun chat(baseUrl: String, request: ChatCall): Outcome<OllamaMessage> { modelCalls++; return Outcome.Success(OllamaMessage("assistant", modelReply)) }

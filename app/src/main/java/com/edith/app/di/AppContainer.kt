@@ -471,7 +471,7 @@ class AppContainer(val app: Application) {
     val mailHandles: MailHandles by lazy { MailHandles() }
     /** C35: to-do handles (`t1`…) and the suggested order, saved in `filesDir/task-ranks.json`. */
     val taskHandles: TaskHandles by lazy { TaskHandles() }
-    val taskRanker: TaskRanker by lazy { TaskRanker(ollama, RankStore(java.io.File(app.filesDir, RankStore.FILE_NAME)), clock) }
+    val taskRanker: TaskRanker by lazy { TaskRanker(ollama, RankStore(java.io.File(app.filesDir, RankStore.FILE_NAME).path), clock) }
 
     /** Keeps the newest N attachments each way (C16, O1). */
     val retention: Retention get() = shared.retention

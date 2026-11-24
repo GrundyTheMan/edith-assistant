@@ -13,6 +13,7 @@ fun assertEquals(message: String, expected: Double, actual: Double, delta: Doubl
 fun assertEquals(expected: Float, actual: Float, delta: Float) { if (kotlin.math.abs(expected - actual) > delta) kFail("expected $expected but was $actual (delta $delta)") }
 fun assertEquals(expected: Long, actual: Long) { kotlin.test.assertEquals(expected, actual) }
 fun assertNotEquals(unexpected: Any?, actual: Any?) { kotlin.test.assertNotEquals(unexpected, actual) }
+fun assertNotEquals(message: String, unexpected: Any?, actual: Any?) { kotlin.test.assertNotEquals(unexpected, actual, message) }
 fun assertTrue(condition: Boolean) { kotlin.test.assertTrue(condition) }
 fun assertTrue(message: String, condition: Boolean) { kotlin.test.assertTrue(condition, message) }
 fun assertFalse(condition: Boolean) { kotlin.test.assertFalse(condition) }
