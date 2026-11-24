@@ -180,10 +180,29 @@ object SpeechText {
     private val BULLET = Regex("(?m)^\\s*[-*•]\\s+")
     /** `_` only at a word's edge, so snake_case names keep theirs. */
     private val EMPHASIS = Regex("\\*\\*|__|\\*|`+|~~|\\b_|_\\b")
-    /** Symbols and modifiers (skin tones), plus the joiners that build emoji. */
-    // The two joiners are written as characters (️, ‍): the regex syntax \x{...} is Java's, and the iPhone's regex engine refuses it.
-    private val EMOJI = Regex("[\\p{So}\\p{Sk}️‍]")
     private val SPACE = Regex("\\s+")
+
+    /**
+     * Removes emoji: symbols and modifiers (skin tones), plus the joiners that build them. Done by hand, not with a regex: the iPhone's regex
+     * engine reads text in UTF-16 units, so a pattern like \p{So} never matches an emoji outside the Basic Multilingual Plane (a surrogate pair), and
+     * the Java-only \x{...} syntax is refused. Every character from U+1F000 to U+1FFFF (emoji, pictographs, skin tones) goes, as does any other
+     * symbol-category character and the two joiners (U+FE0F, U+200D).
+     */
+    private fun stripEmoji(text: String): String = buildString(text.length) {
+        var i = 0
+        while (i < text.length) {
+            val c = text[i]
+            if (c.isHighSurrogate() && i + 1 < text.length && text[i + 1].isLowSurrogate()) {
+                val codePoint = 0x10000 + ((c.code - 0xD800) shl 10) + (text[i + 1].code - 0xDC00)
+                if (codePoint !in 0x1F000..0x1FFFF) append(c).append(text[i + 1])
+                i += 2
+                continue
+            }
+            val joiner = c.code == 0xFE0F || c.code == 0x200D
+            if (!joiner && c.category != CharCategory.OTHER_SYMBOL && c.category != CharCategory.MODIFIER_SYMBOL) append(c)
+            i++
+        }
+    }
 
     fun clean(text: String): String = text
         .replace(FILE_BLOCK, " ")
@@ -195,7 +214,7 @@ object SpeechText {
         .replace(QUOTE, "")
         .replace(BULLET, "")
         .replace(EMPHASIS, "")
-        .replace(EMOJI, "")
+        .let(::stripEmoji)
         .replace(SPACE, " ")
         .trim()
 }
