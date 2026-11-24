@@ -18,6 +18,17 @@ class DarwinKtorClients : KtorClients {
     override val ktorPlain: Lazy<HttpClient> = lazy { newClient(httpsOnly = false) }
     override val ktorSecure: Lazy<HttpClient> = lazy { newClient(httpsOnly = true) }
 
+    /** The page reader's client: 10 s in all, no redirects of its own (the reader follows them by hand so every hop's host is checked). */
+    fun pageReaderClient(): HttpClient = HttpClient(Darwin) {
+        install(HttpTimeout) {
+            connectTimeoutMillis = 10_000
+            socketTimeoutMillis = 10_000
+            requestTimeoutMillis = 10_000
+        }
+        followRedirects = false
+        expectSuccess = false
+    }
+
     private fun newClient(httpsOnly: Boolean) = HttpClient(Darwin) {
         install(HttpTimeout) {
             connectTimeoutMillis = 5_000
