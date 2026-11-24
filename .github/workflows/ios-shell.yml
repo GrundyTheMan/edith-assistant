@@ -1,0 +1,88 @@
+# K4.1: builds the iPhone app (iosApp/) for an iOS simulator without signing, starts it and takes a picture, so a change to the shell or to
+# the shared screens that would not run on an iPhone shows up in the pull request. TestFlight is ios-testflight.yml (started by hand).
+name: iPhone app
+
+on:
+  pull_request:
+    paths: ['iosApp/**', 'ui/**', 'shared/**', 'gradle/**', 'build.gradle.kts', 'settings.gradle.kts', 'gradle.properties', '.github/workflows/ios-shell.yml']
+  push:
+    branches: [master]
+    paths: ['iosApp/**', 'ui/**', 'shared/**', 'gradle/**', 'build.gradle.kts', 'settings.gradle.kts', 'gradle.properties', '.github/workflows/ios-shell.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: ios-shell-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      # The Kotlin/Native compiler and its dependencies: without this cache every run downloads them again (same key as shared-ios.yml).
+      - uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: konan-${{ runner.os }}-
+
+      # Gradle configures every module, and :app refuses to configure without the sherpa-onnx library (C36).
+      - uses: actions/cache@v6
+        with:
+          path: app/libs
+          key: sherpa-${{ hashFiles('scripts/fetch-sherpa.sh') }}
+
+      - name: Fetch the sherpa-onnx library
+        run: scripts/fetch-sherpa.sh
+
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          cd iosApp && xcodegen generate
+
+      - name: Build the app for the iPhone simulator (no signing)
+        run: |
+          set -eo pipefail
+          start=$SECONDS
+          xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/xcode ARCHS=arm64 EXCLUDED_ARCHS=x86_64 CODE_SIGNING_ALLOWED=NO build | tail -60
+          echo "iPhone app build: $((SECONDS - start)) s" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Start it in a simulator and take a picture
+        run: |
+          mkdir -p build/shot
+          udid=$(xcrun simctl list devices available | grep -m1 "iPhone" | grep -oE '[0-9A-F]{8}-[0-9A-F-]{27}')
+          xcrun simctl boot "$udid"
+          xcrun simctl install "$udid" build/xcode/Build/Products/Debug-iphonesimulator/iosApp.app
+          xcrun simctl launch --stdout="$RUNNER_TEMP/app-out.txt" --stderr="$RUNNER_TEMP/app-err.txt" "$udid" com.example.edithkmpspike
+          # The first start on a fresh simulator is slow (the GPU shaders compile): give it time before judging the picture.
+          sleep 40
+          xcrun simctl io "$udid" screenshot build/shot/iphone-app.png
+          echo "--- what the app printed (first 30 lines, then the last 10) ---"; cat "$RUNNER_TEMP/app-out.txt" "$RUNNER_TEMP/app-err.txt" 2>/dev/null | { head -30; echo ...; tail -10; }
+          # A crash is a failure, never noise: the process must still be running, with no Kotlin exception in its output.
+          if grep -q "Uncaught Kotlin exception" "$RUNNER_TEMP/app-out.txt" "$RUNNER_TEMP/app-err.txt" 2>/dev/null; then echo "The app threw a Kotlin exception."; exit 1; fi
+          xcrun simctl spawn "$udid" launchctl list | grep -i "UIKitApplication" || { echo "the app is NOT running"; exit 1; }
+          mkdir -p build/crash
+          for f in $(ls -t ~/Library/Logs/DiagnosticReports/*iosApp* 2>/dev/null | head -2); do echo "== crash report $f"; head -80 "$f"; cp "$f" build/crash/; exit 1; done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: iphone-app
+          path: |
+            build/shot/**
+            build/crash/**

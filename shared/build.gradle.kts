@@ -38,6 +38,10 @@ kotlin {
             implementation(libs.ksoup)             // reading web pages and search results
             implementation(libs.coroutines.core)
         }
+        iosMain.dependencies {
+            implementation(libs.ktor.client.darwin)   // K4.1: the iPhone HTTP engine
+            implementation(libs.okio)                 // K4.1: DataStore on the iPhone takes an okio path
+        }
         commonTest.dependencies {
             implementation(kotlin("test"))
             implementation(libs.coroutines.test)

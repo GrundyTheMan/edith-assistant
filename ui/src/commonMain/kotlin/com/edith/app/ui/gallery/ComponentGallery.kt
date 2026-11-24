@@ -31,7 +31,13 @@ import com.edith.app.ui.theme.EdithTheme
  */
 @Composable
 fun ComponentGallery() {
-    Column(Modifier.verticalScroll(rememberScrollState())) {
+    Column(Modifier.verticalScroll(rememberScrollState())) { ComponentGalleryContent() }
+}
+
+/** The same samples without a scroll of their own, for a screen that scrolls them with other content (a scrolling Column inside another one crashes: infinite height). */
+@Composable
+fun ComponentGalleryContent() {
+    Column {
         EdithTheme(darkTheme = false) { Samples("Light") }
         EdithTheme(darkTheme = true) { Samples("Dark") }
     }
