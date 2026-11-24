@@ -1,9 +1,9 @@
 package com.edith.app.printer.feed
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import com.edith.app.testing.assertEquals
+import com.edith.app.testing.assertNull
+import com.edith.app.testing.assertTrue
+import kotlin.test.Test
 
 /** C39 E9: the Macros card's list, the console's history, and the one-line input check. */
 class PrinterMacroConsoleTest {
@@ -24,7 +24,7 @@ class PrinterMacroConsoleTest {
 
     // --- The macro list ---------------------------------------------------------------------------------------------------
 
-    @Test fun `groups come in Jarvis's order with Jarvis's titles, and empty groups are left out`() {
+    @Test fun `groups come in Jarvis's order with Jarvis's titles and empty groups are left out`() {
         val s = MacroList.sections(answer, "")
         assertEquals(listOf("Filament and nozzle", "Printing", "Bed and calibration", "Other"), s.map { it.title })
         assertEquals(listOf("LOAD_FILAMENT", "UNLOAD_FILAMENT"), s[0].macros.map { it.name })
@@ -78,7 +78,7 @@ class PrinterMacroConsoleTest {
         assertEquals(listOf("M105"), ConsoleHistory.push(emptyList(), "  M105 "))
     }
 
-    @Test fun `the up arrow goes to older lines and stops at the oldest, the down arrow comes back to an empty box`() {
+    @Test fun `the up arrow goes to older lines and stops at the oldest the down arrow comes back to an empty box`() {
         val h = listOf("c", "b", "a")
         var i = -1
         i = ConsoleHistory.older(h, i); assertEquals("c", ConsoleHistory.at(h, i))
@@ -97,7 +97,7 @@ class PrinterMacroConsoleTest {
         assertEquals("""{"kind":"gcode","script":"M105"}""", PrinterInput.consoleLine("  M105  ")!!.toJson())
     }
 
-    @Test fun `an empty line, a line break or more than 200 characters sends nothing`() {
+    @Test fun `an empty line a line break or more than 200 characters sends nothing`() {
         assertNull(PrinterInput.consoleLine(""))
         assertNull(PrinterInput.consoleLine("   "))
         assertNull(PrinterInput.consoleLine("G28\nM105"))

@@ -1,7 +1,7 @@
 package com.edith.app.printer.feed
 
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import com.edith.app.testing.assertEquals
+import kotlin.test.Test
 import kotlinx.datetime.TimeZone
 import kotlin.time.Instant
 
@@ -26,7 +26,7 @@ class PrinterFormatTest {
         assertEquals("—", PrinterFormat.duration(Double.NaN))
     }
 
-    @Test fun `time left always says about, and unknown is a dash`() {
+    @Test fun `time left always says about and unknown is a dash`() {
         assertEquals("about 1h 14m", PrinterFormat.timeLeft(4_440.0))
         assertEquals("about 45s", PrinterFormat.timeLeft(45.0))
         assertEquals("—", PrinterFormat.timeLeft(null))
@@ -38,14 +38,14 @@ class PrinterFormatTest {
         assertEquals(null, PrinterFormat.timeLeftSource(null))
     }
 
-    @Test fun `the finish time is in the phone's zone, 24 hours or 12`() {
+    @Test fun `the finish time is in the phone's zone 24 hours or 12`() {
         val now = Instant.parse("2026-11-18T18:00:00Z")   // 13:00 in Detroit
         assertEquals("about 14:32", PrinterFormat.eta(now, 5_520.0, zone, is24Hour = true, languageTag = us))
         assertEquals("about 2:32 PM", PrinterFormat.eta(now, 5_520.0, zone, is24Hour = false, languageTag = us))
         assertEquals("—", PrinterFormat.eta(now, null, zone, true, us))
     }
 
-    @Test fun `temperatures have one decimal, targets are whole, positions two`() {
+    @Test fun `temperatures have one decimal targets are whole positions two`() {
         assertEquals("219.8 °C", PrinterFormat.temperature(219.8, us))
         assertEquals("24.0 °C", PrinterFormat.temperature(23.96, us))
         assertEquals("220 °C", PrinterFormat.target(219.6))
@@ -76,7 +76,7 @@ class PrinterFormatTest {
         assertEquals("just now", PrinterFormat.age(now + 5_000, now, zone, us))
     }
 
-    @Test fun `the Controls countdown uses the server's clock, not the phone's`() {
+    @Test fun `the Controls countdown uses the server's clock not the phone's`() {
         // The phone's clock is 5 minutes slow: serverTime - phone = +300 000 ms.
         assertEquals("1:43", PrinterFormat.countdown(untilMs = 1_203_000, nowMs = 800_000, offsetMs = 300_000))
         assertEquals("0:00", PrinterFormat.countdown(untilMs = 1_000, nowMs = 5_000, offsetMs = 0))

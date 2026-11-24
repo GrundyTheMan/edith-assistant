@@ -7,25 +7,26 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertSame
-import org.junit.Assert.assertTrue
-import org.junit.Test
-import java.time.Instant
+import com.edith.app.testing.assertEquals
+import com.edith.app.testing.assertFalse
+import com.edith.app.testing.assertNull
+import com.edith.app.testing.assertSame
+import com.edith.app.testing.assertTrue
+import kotlin.test.Test
+import kotlin.time.Instant
+import kotlin.time.Duration.Companion.seconds
 
 /** C39 E3: the session that follows the printer while the page is on screen. A fake feed and fake routes; virtual time. */
 class PrinterSessionTest {
     private val shared = SharedPrinter(name = "AD5X", control = true)
-    private val clock = FakeClock(Instant.ofEpochMilli(1_000_000))
+    private val clock = FakeClock(Instant.fromEpochMilliseconds(1_000_000))
 
     private fun TestScope.session(feed: PrinterFeedSource) = PrinterSession(feed, clock, backgroundScope as CoroutineScope)
     private fun ready(routes: FakePrinterRoutes) = PrinterAccess.Ready(routes, shared)
     private fun PrinterSession.live() = state.value as PrinterScreenState.Live
     private fun PrinterSession.away() = state.value as PrinterScreenState.JarvisAway
 
-    @Test fun `the first question has no revision and does not wait, the next waits for a change`() = runTest {
+    @Test fun `the first question has no revision and does not wait the next waits for a change`() = runTest {
         val routes = FakePrinterRoutes()
         val s = session(FakePrinterFeed(ready(routes)))
         assertEquals(PrinterScreenState.Connecting, s.state.value)
@@ -43,7 +44,7 @@ class PrinterSessionTest {
         s.attach(); runCurrent()
         routes.say(5); runCurrent()
         val first = s.state.value
-        clock.advance(java.time.Duration.ofSeconds(20))
+        clock.advance(20.seconds)
         routes.say(5); runCurrent()
         assertSame(first, s.state.value)
         routes.say(6); runCurrent()
@@ -51,7 +52,7 @@ class PrinterSessionTest {
         assertEquals(4, routes.asked.size)
     }
 
-    @Test fun `a new epoch means Jarvis restarted so take the answer even with a lower revision, and send the new epoch`() = runTest {
+    @Test fun `a new epoch means Jarvis restarted so take the answer even with a lower revision and send the new epoch`() = runTest {
         val routes = FakePrinterRoutes()
         val s = session(FakePrinterFeed(ready(routes)))
         s.attach(); runCurrent()
@@ -111,7 +112,7 @@ class PrinterSessionTest {
         assertEquals(2, routes.asked.size)
     }
 
-    @Test fun `when Jarvis can't be reached the last page stays, and the wait grows 2 4 8 up to 30 seconds`() = runTest {
+    @Test fun `when Jarvis can't be reached the last page stays and the wait grows 2 4 8 up to 30 seconds`() = runTest {
         val routes = FakePrinterRoutes()
         val s = session(FakePrinterFeed(ready(routes)))
         s.attach(); runCurrent()
@@ -160,7 +161,7 @@ class PrinterSessionTest {
         assertTrue("the page still shows the printer", s.state.value is PrinterScreenState.Live)
     }
 
-    @Test fun `an unreachable Jarvis at the start is shown, then tried again`() = runTest {
+    @Test fun `an unreachable Jarvis at the start is shown then tried again`() = runTest {
         val routes = FakePrinterRoutes()
         val s = session(FakePrinterFeed(PrinterAccess.Away(PrinterWords.UNREACHABLE), ready(routes)))
         s.attach(); runCurrent()
@@ -180,7 +181,7 @@ class PrinterSessionTest {
         assertEquals(PrinterWords.UNAUTHORIZED, s.away().why)
     }
 
-    @Test fun `leaving stops the asking, and coming back shows the old page marked stale until a new answer`() = runTest {
+    @Test fun `leaving stops the asking and coming back shows the old page marked stale until a new answer`() = runTest {
         val routes = FakePrinterRoutes()
         val s = session(FakePrinterFeed(ready(routes)))
         s.attach(); runCurrent()

@@ -1,8 +1,8 @@
 package com.edith.app.printer.feed
 
-import org.junit.Test
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
+import kotlin.test.Test
+import com.edith.app.testing.assertEquals
+import com.edith.app.testing.assertTrue
 import kotlinx.serialization.ExperimentalSerializationApi
 
 class PrinterCommandTest {

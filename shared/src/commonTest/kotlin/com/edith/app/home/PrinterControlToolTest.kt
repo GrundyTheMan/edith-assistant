@@ -16,16 +16,16 @@ import com.edith.app.tools.framework.ToolArgs
 import com.edith.app.tools.framework.ToolContext
 import com.edith.app.tools.framework.ToolResult
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import com.edith.app.testing.assertEquals
+import com.edith.app.testing.assertFalse
+import com.edith.app.testing.assertNotEquals
+import com.edith.app.testing.assertNotNull
+import com.edith.app.testing.assertNull
+import com.edith.app.testing.assertTrue
+import kotlin.test.Test
 
 /** C39 E10: `printer_control` in chat. Jarvis's words on the card, a card for every call, cancel by a tap only, never offered without control. */
 class PrinterControlToolTest {
@@ -43,7 +43,7 @@ class PrinterControlToolTest {
 
     // --- The card ---------------------------------------------------------------------------------------------------------
 
-    @Test fun `the card says what Jarvis says`() = runBlocking {
+    @Test fun `the card says what Jarvis says`() = runTest {
         val t = tool()
         routes.commandAnswers += CommandAnswer.Checked(pauseCheck)
         val card = t.confirmation(args(t, "action" to "pause"))!!
@@ -52,7 +52,7 @@ class PrinterControlToolTest {
         assertEquals(listOf("Printer" to "FlashForge AD5X"), card.details)
     }
 
-    @Test fun `the card comes from a dry run through the chat path and sends nothing`() = runBlocking {
+    @Test fun `the card comes from a dry run through the chat path and sends nothing`() = runTest {
         val t = tool()
         routes.commandAnswers += CommandAnswer.Checked(pauseCheck)
         t.confirmation(args(t, "action" to "pause"))
@@ -62,7 +62,7 @@ class PrinterControlToolTest {
         assertEquals(PrinterCommand.Pause, call.command)
     }
 
-    @Test fun `cancelling needs a tap on the screen, and its two buttons say different things`() = runBlocking {
+    @Test fun `cancelling needs a tap on the screen and its two buttons say different things`() = runTest {
         val t = tool()
         routes.commandAnswers += CommandAnswer.Checked(cancelCheck)
         val cancel = t.confirmation(args(t, "action" to "cancel"))!!
@@ -75,7 +75,7 @@ class PrinterControlToolTest {
         assertNotEquals(pause.confirmLabel, pause.denyLabel)
     }
 
-    @Test fun `every action gets a card, even when Jarvis sends no question`() = runBlocking {
+    @Test fun `every action gets a card even when Jarvis sends no question`() = runTest {
         val t = tool()
         for ((action, title) in listOf("pause" to "Pause the print?", "resume" to "Resume the print?")) {
             routes.commandAnswers += CommandAnswer.Checked(Check(true, Risks.NONE))
@@ -85,7 +85,7 @@ class PrinterControlToolTest {
         assertEquals("Set the printer's light to 100%?", t.confirmation(args(t, "action" to "light"))!!.title)
     }
 
-    @Test fun `a refused dry run gives no card`() = runBlocking {
+    @Test fun `a refused dry run gives no card`() = runTest {
         val t = tool()
         routes.commandAnswers += CommandAnswer.Checked(Check(allowed = false, risk = Risks.NONE, reason = "Nothing is printing."))
         assertNull(t.confirmation(args(t, "action" to "pause")))
@@ -93,7 +93,7 @@ class PrinterControlToolTest {
 
     // --- Doing it ---------------------------------------------------------------------------------------------------------
 
-    @Test fun `after the yes it is sent as confirmed through the chat path, under a request id`() = runBlocking {
+    @Test fun `after the yes it is sent as confirmed through the chat path under a request id`() = runTest {
         val t = tool()
         routes.commandAnswers += CommandAnswer.Sent("PAUSE", Risks.NONE)
         val r = t.execute(args(t, "action" to "pause"), ctx)
@@ -104,26 +104,26 @@ class PrinterControlToolTest {
         assertEquals("Done: paused the print. Jarvis sent PAUSE.", ok(r))
     }
 
-    @Test fun `each action says what was done`() = runBlocking {
+    @Test fun `each action says what was done`() = runTest {
         val t = tool()
         assertEquals("Done: resumed the print. Jarvis sent RESUME.", ok(t.also { routes.commandAnswers += CommandAnswer.Sent("RESUME", Risks.NONE) }.execute(args(t, "action" to "resume"), ctx)))
         routes.commandAnswers += CommandAnswer.Sent("CANCEL_PRINT", Risks.DANGER)
         assertEquals("Done: cancelled the print. Jarvis sent CANCEL_PRINT.", ok(t.execute(args(t, "action" to "cancel"), ctx)))
     }
 
-    @Test fun `Jarvis's refusal is told to the model in Jarvis's words`() = runBlocking {
+    @Test fun `Jarvis's refusal is told to the model in Jarvis's words`() = runTest {
         val t = tool()
         routes.commandAnswers += CommandAnswer.Refused("Nothing is printing.")
         assertEquals("Nothing is printing.", err(t.execute(args(t, "action" to "pause"), ctx)))
     }
 
-    @Test fun `any other failure is told in plain words`() = runBlocking {
+    @Test fun `any other failure is told in plain words`() = runTest {
         val t = tool()
         routes.commandAnswers += CommandAnswer.Failed(PrinterWords.PRINTER_UNREACHABLE, "PRINTER_UNREACHABLE")
         assertEquals(PrinterWords.PRINTER_UNREACHABLE, err(t.execute(args(t, "action" to "pause"), ctx)))
     }
 
-    @Test fun `a second ask after the yes is not sent a third time`() = runBlocking {
+    @Test fun `a second ask after the yes is not sent a third time`() = runTest {
         val t = tool()
         routes.commandAnswers += CommandAnswer.NeedsConfirm(pauseCheck)
         assertTrue(err(t.execute(args(t, "action" to "pause"), ctx)).contains("Jarvis asked again"))
@@ -132,7 +132,7 @@ class PrinterControlToolTest {
 
     // --- The light --------------------------------------------------------------------------------------------------------
 
-    @Test fun `the light goes to the level asked, clamped to 0 to 100, and to 100 with no level`() = runBlocking {
+    @Test fun `the light goes to the level asked clamped to 0 to 100 and to 100 with no level`() = runTest {
         val t = tool()
         suspend fun level(vararg more: Pair<String, String>): Double {
             routes.commandAnswers += CommandAnswer.Sent("LIGHT", Risks.NONE)
@@ -147,13 +147,13 @@ class PrinterControlToolTest {
         assertEquals("below 0 is clamped", 0.0, level("level" to "-20"), 0.0)
     }
 
-    @Test fun `a light level that is not a number is not sent`() = runBlocking {
+    @Test fun `a light level that is not a number is not sent`() = runTest {
         val t = tool()
         assertEquals("The light level must be a number from 0 to 100.", err(t.execute(args(t, "action" to "light", "level" to "bright"), ctx)))
         assertTrue(routes.commandCalls.isEmpty())
     }
 
-    @Test fun `an unknown action is not sent`() = runBlocking {
+    @Test fun `an unknown action is not sent`() = runTest {
         val t = tool()
         assertEquals("The action must be pause, resume, cancel or light.", err(t.execute(args(t, "action" to "explode"), ctx)))
         assertNull(t.confirmation(args(t, "action" to "explode")))
@@ -167,8 +167,8 @@ class PrinterControlToolTest {
         assertFalse(tool(may = false).offered())
     }
 
-    @Test fun `it says why when there is no Jarvis, no printer, no control, or Jarvis cannot be reached`() = runBlocking {
-        fun words(access: PrinterAccess) = runBlocking { val t = tool(access); err(t.execute(args(t, "action" to "pause"), ctx)) }
+    @Test fun `it says why when there is no Jarvis no printer no control or Jarvis cannot be reached`() = runTest {
+        suspend fun words(access: PrinterAccess): String { val t = tool(access); return err(t.execute(args(t, "action" to "pause"), ctx)) }
         assertTrue(words(PrinterAccess.NoJarvis).contains("hasn't paired"))
         assertEquals(PrinterWords.NOT_SHARED, words(PrinterAccess.NotShared))
         assertEquals(PrinterWords.CONTROL_OFF, words(PrinterAccess.Ready(routes, shared.copy(control = false))))

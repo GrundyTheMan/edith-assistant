@@ -8,17 +8,17 @@ import com.edith.app.testing.FakeClock
 import com.edith.app.tools.context.CurrentTimeTool
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertSame
-import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
-import org.junit.Test
-import java.time.Instant
-import java.time.ZoneId
+import com.edith.app.testing.assertEquals
+import com.edith.app.testing.assertNull
+import com.edith.app.testing.assertSame
+import com.edith.app.testing.assertTrue
+import com.edith.app.testing.fail
+import kotlin.test.Test
+import kotlin.time.Instant
+import kotlinx.datetime.TimeZone
 
 /** C08 tests 6, 7, 10 (prompt), 13 and the tool JSON shape: the parts that don't need a model or a device. */
 class ToolFrameworkTest {
@@ -76,7 +76,7 @@ class ToolFrameworkTest {
         assertEquals("Boston", ToolArgs(json("""{"LOCATION":"Boston"}"""), spec).string("location"))
     }
 
-    @Test fun `missing optional is null, missing required and bad values are argument errors`() {
+    @Test fun `missing optional is null missing required and bad values are argument errors`() {
         val args = ToolArgs(json("""{"city":"Boston","days":"2.5","detailed":"maybe"}"""), spec)
         assertNull(args.double("lat"))
         expectArgumentError("location") { args.string("location") }   // "city" isn't a declared alias: not guessed
@@ -90,7 +90,7 @@ class ToolFrameworkTest {
 
     // --- §3 ToolRegistry (tests 6, 10, 13) -------------------------------------------------------------------
 
-    @Test fun `names are repaired - prefix, case, dashes, one typo on long names`() {
+    @Test fun `names are repaired - prefix case dashes one typo on long names`() {
         val weather = tool("get_weather")
         val time = tool("get_current_time")
         val reg = ToolRegistry(listOf(weather, time))
@@ -104,7 +104,7 @@ class ToolFrameworkTest {
         assertNull("short names get no typo repair", ToolRegistry(listOf(tool("time"))).let { it.resolve("tme", it.available(withTools)) })
     }
 
-    @Test fun `only connected integrations' tools are offered, and none to a model without tools`() {
+    @Test fun `only connected integrations' tools are offered and none to a model without tools`() {
         val google = object : Integration {
             override val id = "google"
             override val status = MutableStateFlow(IntegrationStatus.NotConnected)
@@ -120,7 +120,7 @@ class ToolFrameworkTest {
 
     // --- §4 prompt section (test 10) -------------------------------------------------------------------------
 
-    @Test fun `tool guidance lists the offered tools, or says she can't look things up`() {
+    @Test fun `tool guidance lists the offered tools or says she can't look things up`() {
         val reg = ToolRegistry(listOf(CurrentTimeTool()))
         val section = ToolGuidanceSection { reg }
         val now = kotlin.time.Instant.parse("2026-10-31T16:00:00Z")
@@ -135,8 +135,8 @@ class ToolFrameworkTest {
 
     // --- §7a get_current_time --------------------------------------------------------------------------------
 
-    @Test fun `current time here, elsewhere, and an unknown zone`() = runBlocking {
-        val ctx = ToolContext(FakeClock(Instant.parse("2026-10-29T18:30:00Z"), ZoneId.of("America/Detroit")), Settings(),
+    @Test fun `current time here elsewhere and an unknown zone`() = runTest {
+        val ctx = ToolContext(FakeClock(Instant.parse("2026-10-29T18:30:00Z"), TimeZone.of("America/Detroit")), Settings(),
             AppDispatchers(Dispatchers.Unconfined, Dispatchers.Unconfined, Dispatchers.Unconfined))
         val t = CurrentTimeTool()
         fun args(o: String) = ToolArgs(json(o), t.spec)

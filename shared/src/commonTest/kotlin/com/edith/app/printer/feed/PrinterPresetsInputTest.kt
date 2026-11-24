@@ -1,9 +1,9 @@
 package com.edith.app.printer.feed
 
 import com.edith.app.printer.feed.PrinterInput.PresetRow
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Test
+import com.edith.app.testing.assertEquals
+import com.edith.app.testing.assertNull
+import kotlin.test.Test
 
 /** C39 E10b: the temperature presets the owner edits, checked the way Jarvis checks them (its `parseSettings`). */
 class PrinterPresetsInputTest {
@@ -24,7 +24,7 @@ class PrinterPresetsInputTest {
         assertNull(PrinterInput.presetsProblem(emptyList()))
     }
 
-    @Test fun `the temperatures are 0 up to 300 for the nozzle and 0 up to 120 for the bed, both ends allowed`() {
+    @Test fun `the temperatures are 0 up to 300 for the nozzle and 0 up to 120 for the bed both ends allowed`() {
         assertEquals(Preset("X", 0, 0), PrinterInput.presets(listOf(row("X", "0", "0")))!!.single())
         assertEquals(Preset("X", 300, 120), PrinterInput.presets(listOf(row("X", "300", "120")))!!.single())
         assertEquals("The nozzle temperature of X must be from 0 to 300 °C.", PrinterInput.presetsProblem(listOf(row("X", "301", "60"))))
@@ -32,13 +32,13 @@ class PrinterPresetsInputTest {
         assertEquals("The bed temperature of X must be from 0 to 120 °C.", PrinterInput.presetsProblem(listOf(row("X", "220", "121"))))
     }
 
-    @Test fun `an empty or non-numeric box is a problem, not a zero`() {
+    @Test fun `an empty or non-numeric box is a problem not a zero`() {
         assertEquals("The nozzle temperature of X must be from 0 to 300 °C.", PrinterInput.presetsProblem(listOf(row("X", "", "60"))))
         assertEquals("The bed temperature of X must be from 0 to 120 °C.", PrinterInput.presetsProblem(listOf(row("X", "220", "warm"))))
         assertNull(PrinterInput.presets(listOf(row("X", "", "60"))))
     }
 
-    @Test fun `every preset needs a name of at most 30 characters, and no two are alike in any case`() {
+    @Test fun `every preset needs a name of at most 30 characters and no two are alike in any case`() {
         assertEquals("Every preset needs a name.", PrinterInput.presetsProblem(listOf(row("   "))))
         assertEquals("A preset's name is at most 30 characters.", PrinterInput.presetsProblem(listOf(row("N".repeat(31)))))
         assertNull(PrinterInput.presetsProblem(listOf(row("N".repeat(30)))))

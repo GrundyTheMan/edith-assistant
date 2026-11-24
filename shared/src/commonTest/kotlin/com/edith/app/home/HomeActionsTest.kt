@@ -1,8 +1,8 @@
 package com.edith.app.home
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import com.edith.app.testing.assertEquals
+import com.edith.app.testing.assertTrue
+import kotlin.test.Test
 
 /** C25 §4: actions to commands, what a device can do, the card rules (C20 §2, D10) and the words for states. */
 class HomeActionsTest {

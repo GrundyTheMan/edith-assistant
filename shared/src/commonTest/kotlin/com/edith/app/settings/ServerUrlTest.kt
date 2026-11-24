@@ -1,8 +1,8 @@
 package com.edith.app.settings
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import com.edith.app.testing.assertEquals
+import com.edith.app.testing.assertTrue
+import kotlin.test.Test
 
 class ServerUrlTest {
     private fun valid(input: String) = (ServerUrl.normalize(input) as ServerUrl.Result.Valid).url
