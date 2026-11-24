@@ -71,7 +71,7 @@ jobs:
           # The first start on a fresh simulator is slow (the GPU shaders compile): give it time before judging the picture.
           sleep 40
           xcrun simctl io "$udid" screenshot build/shot/iphone-app.png
-          echo "--- what the app printed ---"; cat "$RUNNER_TEMP/app-out.txt" "$RUNNER_TEMP/app-err.txt" 2>/dev/null | tail -40
+          echo "--- what the app printed (first 30 lines, then the last 10) ---"; cat "$RUNNER_TEMP/app-out.txt" "$RUNNER_TEMP/app-err.txt" 2>/dev/null | { head -30; echo ...; tail -10; }
           # A crash is a failure, never noise: the process must still be running, with no Kotlin exception in its output.
           if grep -q "Uncaught Kotlin exception" "$RUNNER_TEMP/app-out.txt" "$RUNNER_TEMP/app-err.txt" 2>/dev/null; then echo "The app threw a Kotlin exception."; exit 1; fi
           xcrun simctl spawn "$udid" launchctl list | grep -i "UIKitApplication" || { echo "the app is NOT running"; exit 1; }

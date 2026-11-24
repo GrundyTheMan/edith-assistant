@@ -23,7 +23,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.edith.app.diagnostics.EngineCheck
-import com.edith.app.ui.gallery.ComponentGallery
+import com.edith.app.ui.gallery.ComponentGalleryContent
 import kotlinx.coroutines.launch
 
 /**
@@ -67,6 +67,6 @@ fun EngineCheckScreen(check: EngineCheck) {
                 }
             }
         }
-        ComponentGallery()
+        ComponentGalleryContent()
     }
 }
