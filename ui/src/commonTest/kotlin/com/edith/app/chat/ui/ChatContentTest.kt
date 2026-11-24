@@ -2,6 +2,8 @@ package com.edith.app.chat.ui
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -54,6 +56,15 @@ class ChatContentTest {
         // With an empty draft the field is named by its placeholder ("Message Edith"); a typed one is read by its value.
         setContent { EdithTheme { ChatContent(state = chat, draft = "", actions = ChatActions()) } }
         assertEveryClickableIsNamed()
+    }
+
+    @Test fun tappingTheMessagesTakesTheFocusAwayFromTheField() = runComposeUiTest {
+        // On the iPhone the keyboard follows the focus: without this it could not be closed, and it covered the tab bar.
+        setContent { EdithTheme { ChatContent(state = chat, draft = "", actions = ChatActions()) } }
+        onNodeWithTag(INPUT_TAG).performClick()
+        onNodeWithTag(INPUT_TAG).assertIsFocused()
+        onNodeWithTag(MESSAGE_LIST_TAG).performClick()
+        onNodeWithTag(INPUT_TAG).assertIsNotFocused()
     }
 
     @Test fun aSharedScreenForEmptyChatsSaysSoOnceLoaded() = runComposeUiTest {
