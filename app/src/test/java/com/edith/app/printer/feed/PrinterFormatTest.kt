@@ -4,10 +4,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import kotlinx.datetime.TimeZone
 import kotlin.time.Instant
-import java.util.Locale
+
 
 class PrinterFormatTest {
-    private val us = Locale.US
+    private val us = "en-US"
     private val zone = TimeZone.of("America/Detroit")
 
     @Test fun `durations round minutes down and never show 0m for an hour or more`() {
@@ -40,8 +40,8 @@ class PrinterFormatTest {
 
     @Test fun `the finish time is in the phone's zone, 24 hours or 12`() {
         val now = Instant.parse("2026-11-18T18:00:00Z")   // 13:00 in Detroit
-        assertEquals("about 14:32", PrinterFormat.eta(now, 5_520.0, zone, is24Hour = true, locale = us))
-        assertEquals("about 2:32 PM", PrinterFormat.eta(now, 5_520.0, zone, is24Hour = false, locale = us))
+        assertEquals("about 14:32", PrinterFormat.eta(now, 5_520.0, zone, is24Hour = true, languageTag = us))
+        assertEquals("about 2:32 PM", PrinterFormat.eta(now, 5_520.0, zone, is24Hour = false, languageTag = us))
         assertEquals("—", PrinterFormat.eta(now, null, zone, true, us))
     }
 
@@ -61,7 +61,7 @@ class PrinterFormatTest {
     }
 
     @Test fun `a number follows the phone's locale`() {
-        assertEquals("219,8 °C", PrinterFormat.temperature(219.8, Locale.GERMANY))
+        assertEquals("219,8 °C", PrinterFormat.temperature(219.8, "de-DE"))
     }
 
     @Test fun `ages are relative under a week and a date after`() {

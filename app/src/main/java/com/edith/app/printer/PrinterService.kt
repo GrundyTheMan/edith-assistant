@@ -28,11 +28,6 @@ import kotlinx.serialization.json.Json
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
 
-/** What Jarvis says about the printer, as the Home tab shows it: null when Jarvis is not paired, does not share it, or cannot reach it (C39). */
-fun interface JarvisPrinterRead {
-    suspend fun read(): DeviceState?
-}
-
 /**
  * A 3D printer running Klipper with Moonraker (C34, D19), on the home Wi-Fi: the owner types its address (and an API key if it
  * has one), and the printer shows on the Home tab as one device with its job, temperatures and camera. It can pause, resume

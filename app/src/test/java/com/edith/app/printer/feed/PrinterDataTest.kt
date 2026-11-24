@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.util.Locale
+
 
 class PrinterDataTest {
     private fun state(nozzle: Double, bed: Double, target: Double = 0.0) = PrinterState(
@@ -104,7 +104,7 @@ class PrinterDataTest {
     }
 
     @Test fun `sizes are written for people`() {
-        assertEquals("2.4 MB", FileList.size(2_400_000, Locale.US))
+        assertEquals("2.4 MB", FileList.size(2_400_000, "en-US"))
         assertEquals("900 KB", FileList.size(900_000))
         assertEquals("120 B", FileList.size(120))
     }

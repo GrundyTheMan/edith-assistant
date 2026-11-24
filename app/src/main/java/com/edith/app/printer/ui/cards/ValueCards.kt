@@ -84,19 +84,20 @@ internal fun FansCard(state: PrinterState, ctx: ControlsCtx? = null) {
 @Composable
 internal fun LimitsCard(state: PrinterState, locale: Locale = Locale.getDefault(), ctx: ControlsCtx? = null) {
     val t = state.toolhead
+    val tag = locale.toLanguageTag()
     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.testTag("limits-card")) {
         LabelValue("Speed", PrinterFormat.factor(t.speedFactor))
         LabelValue("Flow", PrinterFormat.factor(t.extrudeFactor))
         LabelValue("Velocity", "${Math.round(t.maxVelocity)} mm/s")
         LabelValue("Acceleration", "${Math.round(t.maxAccel)} mm/s²")
-        LabelValue("Square corner velocity", "${PrinterFormat.position(t.squareCornerVelocity, locale)} mm/s")
-        LabelValue("Minimum cruise ratio", PrinterFormat.position(t.minimumCruiseRatio, locale))
+        LabelValue("Square corner velocity", "${PrinterFormat.position(t.squareCornerVelocity, tag)} mm/s")
+        LabelValue("Minimum cruise ratio", PrinterFormat.position(t.minimumCruiseRatio, tag))
         state.retraction?.let { r ->
             Text("Retraction", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
-            LabelValue("Length", "${PrinterFormat.position(r.length, locale)} mm")
-            LabelValue("Speed", "${PrinterFormat.position(r.speed, locale)} mm/s")
-            LabelValue("Extra length", "${PrinterFormat.position(r.extraLength, locale)} mm")
-            LabelValue("Unretract speed", "${PrinterFormat.position(r.unretractSpeed, locale)} mm/s")
+            LabelValue("Length", "${PrinterFormat.position(r.length, tag)} mm")
+            LabelValue("Speed", "${PrinterFormat.position(r.speed, tag)} mm/s")
+            LabelValue("Extra length", "${PrinterFormat.position(r.extraLength, tag)} mm")
+            LabelValue("Unretract speed", "${PrinterFormat.position(r.unretractSpeed, tag)} mm/s")
         }
         if (ctx?.mayControl == true) LimitControls(state, ctx)
     }

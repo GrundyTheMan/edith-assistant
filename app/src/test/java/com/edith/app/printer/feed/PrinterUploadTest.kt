@@ -1,5 +1,7 @@
 package com.edith.app.printer.feed
 
+import kotlinx.io.asSource
+import kotlinx.io.buffered
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -60,7 +62,7 @@ class PrinterUploadTest {
 
     private fun write(source: InputStream, size: Long, progress: MutableList<Long> = mutableListOf()): ByteArray {
         val sink = ByteArrayOutputStream()
-        runBlocking { PrinterUpload.copy(source, size, { progress += it }) { bytes, count -> sink.write(bytes, 0, count) } }
+        runBlocking { PrinterUpload.copy(source.asSource().buffered(), size, { progress += it }) { bytes, count -> sink.write(bytes, 0, count) } }
         return sink.toByteArray()
     }
 
@@ -98,13 +100,13 @@ class PrinterUploadTest {
         }
         var lastProgress = 0L
         var biggestChunk = 0
-        runBlocking { PrinterUpload.copy(endless, PrinterUpload.MAX_BYTES, { sent -> lastProgress = sent }) { _, count -> biggestChunk = maxOf(biggestChunk, count) } }
+        runBlocking { PrinterUpload.copy(endless.asSource().buffered(), PrinterUpload.MAX_BYTES, { sent -> lastProgress = sent }) { _, count -> biggestChunk = maxOf(biggestChunk, count) } }
         assertEquals(PrinterUpload.MAX_BYTES, lastProgress)
         assertTrue("it was handed on a buffer at a time (biggest: $biggestChunk)", biggestChunk <= 64 * 1024)
     }
 
     @Test fun `the body says how long it is`() {
-        val body = PrinterUpload.body(ByteArrayInputStream(ByteArray(10)), 10, null) {}
+        val body = PrinterUpload.body(ByteArrayInputStream(ByteArray(10)).asSource().buffered(), 10, null) {}
         assertEquals(10L, body.contentLength)
     }
 }
