@@ -16,7 +16,7 @@ import com.edith.app.tools.framework.ToolParam
 import com.edith.app.tools.framework.ToolResult
 
 /** Every calendar and email tool's optional `account` parameter (C22 §4). */
-internal val ACCOUNT_PARAM = ToolParam(
+public val ACCOUNT_PARAM = ToolParam(
     "account", ParamType.String, "The account's name or address, only when the user named one",
     aliases = listOf("account_name", "mailbox"),
 )
@@ -181,7 +181,7 @@ object WhichAccount {
 }
 
 /** A failure in one account, said so the model tells the owner what to do (L6). */
-internal fun accountError(account: Account, e: AppError): ToolResult = ToolResult.Error(
+public fun accountError(account: Account, e: AppError): ToolResult = ToolResult.Error(
     when {
         e is AppError.GoogleAuth && (e.detail == AccountErrors.NEEDS_PERMISSION || e.detail == Reads.NEEDS_SIGN_IN) ->
             "${account.display} needs signing in again or your permission. Tell the user to open Settings → Accounts and tap it."
@@ -193,7 +193,7 @@ internal fun accountError(account: Account, e: AppError): ToolResult = ToolResul
 )
 
 /** The entry for an item's own account (C22: replies, changes and deletes stay there), or why it can't be used. */
-internal fun ownAccount(dir: AccountDirectory, accountId: String): Pair<AccountEntry?, ToolResult?> {
+public fun ownAccount(dir: AccountDirectory, accountId: String): Pair<AccountEntry?, ToolResult?> {
     val entry = dir.entries().firstOrNull { it.account.id == accountId }
         ?: return null to ToolResult.Error("That item's account isn't connected any more.")
     if (entry.state != AccountState.Connected) {
@@ -202,7 +202,7 @@ internal fun ownAccount(dir: AccountDirectory, accountId: String): Pair<AccountE
     return entry to null
 }
 
-internal fun stateWords(s: AccountState): String = when (s) {
+public fun stateWords(s: AccountState): String = when (s) {
     AccountState.Connected -> "connected"
     AccountState.Checking -> "still connecting"
     is AccountState.NeedsSignIn -> s.reason.substringBefore(" (")
