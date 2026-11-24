@@ -96,7 +96,7 @@ class TasksClient(
             patch.notes?.let { n -> if (n.isBlank()) put("notes", JsonNull) else put("notes", n.trim()) }
             when {
                 patch.clearDue -> put("due", JsonNull)
-                patch.due != null -> put("due", TaskDue.toGoogle(patch.due))
+                patch.due != null -> put("due", TaskDue.toGoogle(requireNotNull(patch.due)))
             }
         }
         return one { token -> send(token, "PATCH", taskUrl(listId, taskId), body.toString()) { parseTask(it, listId) } }

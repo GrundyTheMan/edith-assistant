@@ -2,7 +2,7 @@ package com.edith.app.accounts
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import java.security.SecureRandom
+import kotlin.random.Random
 
 /** Who runs an account's mail and calendar (D17). Microsoft is C23, iCloud C24. */
 @Serializable
@@ -41,7 +41,7 @@ data class Account(
         const val SIGN_IN_PLAY = "play"
         const val SIGN_IN_BROWSER = "browser"
 
-        private val random = SecureRandom()
+        private val random = Random.Default   // an id is a label, not a secret
 
         /** A new random id ("a1b2c3") that isn't one of [taken]. */
         fun newId(taken: Collection<String> = emptyList()): String {

@@ -91,7 +91,7 @@ class ICloudMailSource(
         inbox.fetch(found.toTypedArray(), FetchProfile().apply { add(FetchProfile.Item.ENVELOPE); add(FetchProfile.Item.FLAGS); add(UIDFolder.FetchProfileItem.UID) })
         val exact = found.filter { m ->
             val at = m.receivedDate?.let { Instant.fromEpochMilliseconds(it.time) } ?: return@filter true
-            (q.after == null || at >= q.after) && (q.before == null || at < q.before)
+            q.after.let { a -> a == null || at >= a } && q.before.let { b -> b == null || at < b }
         }.sortedByDescending { it.receivedDate }
         val validity = (inbox as UIDFolder).uidValidity
         MailSearchResult(exact.take(limit).map { summary(inbox, validity, it) }, more = exact.size > limit)
