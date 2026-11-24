@@ -30,7 +30,6 @@ import org.junit.Before
 import org.junit.Test
 import java.time.Instant
 import java.time.ZoneId
-import java.util.Locale
 
 /** C09: the real Open-Meteo fixtures (captured 2026-11-01), place resolution, codes, units, and the tool end to end. */
 class WeatherToolTest {
@@ -55,7 +54,7 @@ class WeatherToolTest {
     private fun ctx(units: Units = Units.Auto) = ToolContext(
         FakeClock(Instant.parse("2026-11-01T04:00:00Z"), ZoneId.of("America/Detroit")), Settings(units = units), dispatchers,
     )
-    private fun tool(locale: Locale = Locale.US) = WeatherTool(client) { locale }
+    private fun tool(languageTag: String = "en-US") = WeatherTool(client) { languageTag }
     private fun args(json: String) = ToolArgs(Json.parseToJsonElement(json).jsonObject, tool().spec)
 
     // --- the captured responses parse ---------------------------------------------------------------------
@@ -101,12 +100,12 @@ class WeatherToolTest {
     }
 
     @Test fun `units follow the setting, or the phone's country when automatic (D7)`() {
-        assertEquals(WeatherUnits.Imperial, WeatherUnits.from(Units.Auto, Locale.US))
-        assertEquals(WeatherUnits.Metric, WeatherUnits.from(Units.Auto, Locale.UK))
-        assertEquals(WeatherUnits.Metric, WeatherUnits.from(Units.Auto, Locale.CANADA))
-        assertEquals(WeatherUnits.Imperial, WeatherUnits.from(Units.Auto, Locale.Builder().setLanguage("en").setRegion("LR").build()))
-        assertEquals(WeatherUnits.Metric, WeatherUnits.from(Units.Metric, Locale.US))
-        assertEquals(WeatherUnits.Imperial, WeatherUnits.from(Units.Imperial, Locale.FRANCE))
+        assertEquals(WeatherUnits.Imperial, WeatherUnits.from(Units.Auto, "en-US"))
+        assertEquals(WeatherUnits.Metric, WeatherUnits.from(Units.Auto, "en-GB"))
+        assertEquals(WeatherUnits.Metric, WeatherUnits.from(Units.Auto, "en-CA"))
+        assertEquals(WeatherUnits.Imperial, WeatherUnits.from(Units.Auto, "en-LR"))
+        assertEquals(WeatherUnits.Metric, WeatherUnits.from(Units.Metric, "en-US"))
+        assertEquals(WeatherUnits.Imperial, WeatherUnits.from(Units.Imperial, "fr-FR"))
     }
 
     // --- place resolution ---------------------------------------------------------------------------------
@@ -165,7 +164,7 @@ class WeatherToolTest {
     @Test fun `metric for a metric locale`() = runTest {
         geocoding.enqueue(ok("""{"results":[{"name":"Paris","latitude":48.85341,"longitude":2.3488,"country_code":"FR","country":"France","admin1":"Île-de-France","population":2138551}]}"""))
         forecasts.enqueue(ok(fixture("forecast_paris_metric.json")))
-        val text = (tool(Locale.FRANCE).execute(args("""{"place":"Paris, France"}"""), ctx()) as ToolResult.Ok).text
+        val text = (tool("fr-FR").execute(args("""{"place":"Paris, France"}"""), ctx()) as ToolResult.Ok).text
         assertTrue(text, text.startsWith("Paris, Île-de-France (FR) — now ") && text.contains("°C") && text.contains("km/h"))
     }
 
@@ -206,7 +205,7 @@ class WeatherToolTest {
 
     @Test fun `here uses the phone's location, named on the phone`() = runTest {
         val device = FakeLocation()
-        val tool = WeatherTool(client, device) { Locale.US }
+        val tool = WeatherTool(client, device) { "en-US" }
         forecasts.enqueue(ok(fixture("forecast_fowlerville_imperial.json")))
         assertEquals(ToolResult.Ok("Fowlerville, Michigan (US) — now 50°F (feels like 46°F), overcast, wind 6 mph, humidity 70%."),
             tool.execute(args("""{"location":"here"}"""), ctx()))
@@ -222,12 +221,12 @@ class WeatherToolTest {
 
     @Test fun `here without a place name, and location failures, give plain text`() = runTest {
         forecasts.enqueue(ok(fixture("forecast_fowlerville_imperial.json")))
-        val unnamed = (WeatherTool(client, FakeLocation(name = null)) { Locale.US }.execute(args("{}"), ctx()) as ToolResult.Ok).text
+        val unnamed = (WeatherTool(client, FakeLocation(name = null)) { "en-US" }.execute(args("{}"), ctx()) as ToolResult.Ok).text
         assertTrue(unnamed, unnamed.startsWith("Your current location — now 50°F"))
         assertFalse("coordinates never reach the model", unnamed.contains("42.66"))
 
         val off = FakeLocation(at = Outcome.Failure(AppError.ToolFailed("location", LocationProvider.LOCATION_OFF)))
-        assertEquals(ToolResult.Error(LocationProvider.LOCATION_OFF), WeatherTool(client, off) { Locale.US }.execute(args("""{"location":"here"}"""), ctx()))
+        assertEquals(ToolResult.Error(LocationProvider.LOCATION_OFF), WeatherTool(client, off) { "en-US" }.execute(args("""{"location":"here"}"""), ctx()))
         assertEquals("no forecast without a location", 1, forecasts.requestCount)
     }
 

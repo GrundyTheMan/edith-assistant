@@ -44,6 +44,7 @@ import com.edith.app.settings.ModelSelection
 import com.edith.app.settings.SettingsRepository
 import com.edith.app.tools.context.CurrentTimeTool
 import com.edith.app.core.permissions.ToolPermissions
+import com.edith.app.core.permissions.android
 import com.edith.app.tools.framework.Confirmations
 import com.edith.app.tools.location.AndroidLocationProvider
 import com.edith.app.tools.location.LocationProvider
@@ -53,6 +54,7 @@ import com.edith.app.tools.framework.ToolTurnRunner
 import com.edith.app.tools.web.DuckDuckGoSearch
 import com.edith.app.tools.web.OllamaWebSearch
 import com.edith.app.tools.web.PageReader
+import com.edith.app.tools.web.over
 import com.edith.app.tools.web.ReadWebPageTool
 import com.edith.app.tools.web.SearchWebTool
 import com.edith.app.tools.web.WebSearch
@@ -172,7 +174,7 @@ class AppContainer(val app: Application) {
         ToolRegistry(
             tools = listOf(
                 CurrentTimeTool(), WeatherTool(openMeteo, deviceLocation),
-                SearchWebTool(webSearch), ReadWebPageTool(webSearch.pages(PageReader(httpClients.plain, dispatchers))),
+                SearchWebTool(webSearch), ReadWebPageTool(webSearch.pages(PageReader.over(httpClients.plain, dispatchers))),
                 // C18/C22: calendars across every account; C19/C22: email (send only after the owner confirms: D5)
                 *calendarTools(accounts, calendarHandles, clock::zone).toTypedArray(),
                 *mailTools(accounts, mailHandles).toTypedArray(),

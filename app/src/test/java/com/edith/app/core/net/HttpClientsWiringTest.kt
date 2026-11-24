@@ -29,7 +29,7 @@ class HttpClientsWiringTest {
         val plain = code(container).filter { "httpClients.plain" in it || "httpClients.ktorPlain" in it }
         assertEquals("plain: $plain", 3, plain.size)
         assertTrue("Ollama's client: $plain", plain.any { "KtorOllamaClient(" in it })
-        assertTrue("the page reader: $plain", plain.any { "PageReader(" in it })
+        assertTrue("the page reader: $plain", plain.any { "PageReader.over(" in it })
         assertTrue("the 3D printer, a LAN device (C34): $plain", plain.any { "MoonrakerApi(" in it })
     }
 

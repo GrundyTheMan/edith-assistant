@@ -1,13 +1,13 @@
+@file:OptIn(ExperimentalUuidApi::class)
+
 package com.edith.app.core.permissions
 
-import android.content.Context
-import android.content.pm.PackageManager
-import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.util.UUID
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * Runtime permissions a tool needs, asked with Android's own dialog at the moment of use (C11, 01-architecture §9).
@@ -16,7 +16,7 @@ import java.util.UUID
  * stopping the reply cancels the wait.
  */
 class ToolPermissions(private val isGranted: (String) -> Boolean) {
-    data class Request(val permission: String, val id: String = UUID.randomUUID().toString()) {
+    data class Request(val permission: String, val id: String = Uuid.random().toString()) {
         internal val answer = CompletableDeferred<Boolean>()
     }
 
@@ -42,9 +42,5 @@ class ToolPermissions(private val isGranted: (String) -> Boolean) {
         _pending.value?.takeIf { it.id == id }?.answer?.complete(granted)
     }
 
-    companion object {
-        fun android(context: Context) = ToolPermissions { permission ->
-            ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
-        }
-    }
+    companion object
 }

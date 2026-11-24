@@ -44,18 +44,6 @@ class HttpClients(base: () -> OkHttpClient) {
 
     companion object {
         /**
-         * The same client with limits on connecting, waiting for data and the whole call (what OkHttp's `newBuilder().connectTimeout(..)
-         * .readTimeout(..).callTimeout(..)` gave). Shares the engine and its connections.
-         */
-        fun HttpClient.withTimeouts(connectSeconds: Long, readSeconds: Long, callSeconds: Long): HttpClient = config {
-            install(HttpTimeout) {
-                connectTimeoutMillis = connectSeconds * 1000
-                socketTimeoutMillis = readSeconds * 1000
-                requestTimeoutMillis = callSeconds * 1000
-            }
-        }
-
-        /**
          * A Ktor client that sends everything through [okHttp] as it is configured. Redirects follow the OkHttp client's own
          * settings: not at all when it has `followRedirects(false)`, and never from https to http when it has `followSslRedirects(false)`
          * (the secure client). [redirectAnyMethod]: also follow them for methods other than GET and HEAD (WebDAV's PROPFIND).

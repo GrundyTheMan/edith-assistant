@@ -26,7 +26,7 @@ import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import okhttp3.Dns
 import okhttp3.OkHttpClient
-import org.jsoup.Jsoup
+import com.fleeksoft.ksoup.Ksoup
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -66,7 +66,7 @@ class WebSearchTest {
         ddg = DuckDuckGoSearch(client, dispatchers, htmlUrl = web.url("/html/").toString(), liteUrl = web.url("/lite/").toString())
         search = WebSearch(ddg, ollama, setup)
         // The test server is on this machine: allow it by name, keep everything else checked.
-        reader = PageReader(okHttp, dispatchers, dns = Dns.SYSTEM, hostAllowed = { it == web.hostName || !PrivateNetwork.isPrivateHost(it) })
+        reader = PageReader.over(okHttp, dispatchers, dns = Dns.SYSTEM, hostAllowed = { it == web.hostName || !PrivateNetwork.isPrivateHost(it) })
     }
 
     @After fun stop() {
@@ -111,8 +111,8 @@ class WebSearchTest {
     @Test fun `blocked, empty and unreachable searches say so plainly`() = runTest {
         repeat(2) { web.enqueue(status(202, fixture("ddg_challenge.html"))) }
         assertEquals(DuckDuckGoSearch.BLOCKED, ddg.search("x", 5).detail())
-        assertTrue(DuckDuckGoSearch.isChallenge(Jsoup.parse(fixture("ddg_challenge.html"))))
-        assertFalse(DuckDuckGoSearch.isChallenge(Jsoup.parse(fixture("ddg_html.html"))))
+        assertTrue(DuckDuckGoSearch.isChallenge(Ksoup.parse(fixture("ddg_challenge.html"))))
+        assertFalse(DuckDuckGoSearch.isChallenge(Ksoup.parse(fixture("ddg_html.html"))))
 
         repeat(2) { web.enqueue(ok("<html><body><div class='no-results'>No results.</div></body></html>")) }
         assertEquals(Outcome.Success(emptyList<SearchHit>()), ddg.search("zzqqxx", 5))
@@ -280,8 +280,8 @@ class WebSearchTest {
         assertTrue(runCatching { lan.lookup("sneaky.example") }.exceptionOrNull() is PrivateAddressException)
         assertEquals(1, PublicOnlyDns { listOf(InetAddress.getByName("93.184.216.34")) }.lookup("example.com").size)
         listOf("10.1.2.3", "127.0.0.1", "100.64.0.1", "169.254.9.9", "172.31.0.1", "fd00::1", "fe80::1", "::1", "::ffff:10.0.0.1", "224.0.0.1")
-            .forEach { assertTrue(it, PrivateNetwork.isPrivateAddress(InetAddress.getByName(it))) }
-        listOf("8.8.8.8", "172.15.0.1", "2606:4700::1111").forEach { assertFalse(it, PrivateNetwork.isPrivateAddress(InetAddress.getByName(it))) }
+            .forEach { assertTrue(it, isPrivateAddress(InetAddress.getByName(it))) }
+        listOf("8.8.8.8", "172.15.0.1", "2606:4700::1111").forEach { assertFalse(it, isPrivateAddress(InetAddress.getByName(it))) }
         assertFalse(PrivateNetwork.isPrivateHost("nba.com"))
         assertFalse(PrivateNetwork.isPrivateHost("172.15.0.1"))
         assertEquals("Reading nba.com…", tool.statusLabelFor(args(tool, """{"url":"https://www.nba.com/game"}""")))

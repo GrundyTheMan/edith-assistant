@@ -160,6 +160,7 @@ dependencies {
 
     // C10: reading web pages and DuckDuckGo results
     implementation(libs.jsoup)
+    testImplementation(libs.ksoup)   // K2.2: the moved web tools hand tests ksoup documents
     implementation(libs.onnxruntime.android)   // C14: openWakeWord models (D4)
     // C36 (D21): sherpa-onnx runs the Piper voice. Not in Git; scripts/fetch-sherpa.sh puts it in app/libs/.
     implementation(files(sherpaAar))

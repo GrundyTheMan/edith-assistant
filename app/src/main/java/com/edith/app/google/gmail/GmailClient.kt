@@ -246,7 +246,7 @@ object MailText {
 
     private fun decode(part: PartDto): String = part.body?.data?.let { String(Base64.getUrlDecoder().decode(it.trimEnd('=')), Charsets.UTF_8) }.orEmpty()
 
-    internal fun htmlToText(html: String): String = PageReader.readable(Jsoup.parse(html)).content
+    internal fun htmlToText(html: String): String = PageReader.readableHtml(html).content
 
     /**
      * Removes the quoted earlier messages where it's obvious: from an "On … wrote:" line (Gmail, Apple Mail) or an

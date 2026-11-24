@@ -1,12 +1,14 @@
+@file:OptIn(ExperimentalUuidApi::class)
+
 package com.edith.app.tools.framework
 
-import com.edith.app.BuildConfig
 import com.edith.app.chat.engine.PlainTurnRunner
 import com.edith.app.chat.engine.TurnEvent
 import com.edith.app.chat.engine.TurnRunner
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.permissions.ToolPermissions
 import com.edith.app.core.log.Log
+import com.edith.app.core.log.LogConfig
 import com.edith.app.core.log.LogTag
 import com.edith.app.core.time.Clock
 import com.edith.app.ollama.ChatCall
@@ -25,8 +27,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withTimeout
-import java.util.Base64
-import java.util.UUID
+import kotlin.io.encoding.Base64
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * The tool loop (C08 §5), following Ollama's protocol exactly (03-ollama-reference §4):
@@ -50,7 +53,7 @@ class ToolTurnRunner(
 
     override fun run(baseUrl: String, model: ModelInfo, messages: List<OllamaMessage>): Flow<TurnEvent> = flow {
         val offered = registry.available(model)
-        if (BuildConfig.DEBUG) Log.d(LogTag.Tools, "Offering tools: ${offered.joinToString { it.spec.name }.ifEmpty { "none" }}")
+        if (LogConfig.debug) Log.d(LogTag.Tools, "Offering tools: ${offered.joinToString { it.spec.name }.ifEmpty { "none" }}")
         val toolsJson = offered.map { it.spec.toOllama() }.ifEmpty { null }
         val ctx = ToolContext(clock, settings.current(), dispatchers)
         val history = messages.toMutableList()
@@ -87,7 +90,7 @@ class ToolTurnRunner(
                 val pictures = (result as? ToolResult.Ok)?.images.orEmpty()
                 images += pictures
                 // The model sees a picture only if it can (C25 §4, C15's vision check); the owner always does.
-                val seen = if (model.canSee && pictures.isNotEmpty()) pictures.map { Base64.getEncoder().encodeToString(it.jpeg) } else null
+                val seen = if (model.canSee && pictures.isNotEmpty()) pictures.map { Base64.encode(it.jpeg) } else null
                 history += OllamaMessage("tool", result.text.take(limit), images = seen, toolName = name ?: call.function.name)
             }
         }
@@ -146,7 +149,7 @@ class ToolTurnRunner(
                     return name to ToolResult.Error(need.deniedResult)
                 }
             }
-            val request = tool.confirmation(args)?.copy(id = UUID.randomUUID().toString(), toolName = name)
+            val request = tool.confirmation(args)?.copy(id = Uuid.random().toString(), toolName = name)
             if (request != null) {
                 val answer = confirmations.register(request)   // before the screen can show it
                 emit(TurnEvent.NeedsConfirmation(request))
@@ -173,7 +176,7 @@ class ToolTurnRunner(
 
     /** Debug builds log arguments and the start of the result; release builds only the name and outcome. */
     private fun log(name: String, call: OllamaToolCall, outcome: String) {
-        if (BuildConfig.DEBUG) Log.d(LogTag.Tools, "Tool $name(${call.function.arguments}) -> ${outcome.take(120)}")
+        if (LogConfig.debug) Log.d(LogTag.Tools, "Tool $name(${call.function.arguments}) -> ${outcome.take(120)}")
         else Log.i(LogTag.Tools, "Tool $name -> ${if (outcome.startsWith("error")) "error" else "ok"}")
     }
 

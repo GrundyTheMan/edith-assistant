@@ -35,6 +35,7 @@ kotlin {
             api(libs.kotlinx.serialization.json)   // OllamaClient takes a Json
             api(libs.ktor.client.core)             // and an HttpClient
             api(libs.datastore.preferences.core)   // the settings
+            implementation(libs.ksoup)             // reading web pages and search results
             implementation(libs.coroutines.core)
         }
         commonTest.dependencies {
