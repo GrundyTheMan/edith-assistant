@@ -31,6 +31,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.edith.app.ui.about.AboutSection
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -208,20 +209,17 @@ fun SettingsContent(
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
         extraSections()
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
-        Text("About", style = MaterialTheme.typography.titleMedium)
-        Text("Edith ${BuildConfig.VERSION_NAME}")
-        Text("Ollama ${state.ollamaVersion ?: "— not reachable"}")
-        if (crashReport != null) {
-            TextButton(onClick = { showCrashReport = true }, contentPadding = ButtonPaddingNone) { Text("View last crash report") }
-        } else {
-            Text("No crash reports", style = MaterialTheme.typography.bodySmall)
-        }
+        // K3.0: the first shared screen part (ui/): same words, same layout as before.
+        AboutSection(
+            edithVersion = BuildConfig.VERSION_NAME,
+            ollamaVersion = state.ollamaVersion,
+            hasCrashReport = crashReport != null,
+            onViewCrashReport = { showCrashReport = true },
+        )
     }
 
     if (showCrashReport && crashReport != null) CrashReportDialog(crashReport, onClose = { showCrashReport = false })
 }
-
-private val ButtonPaddingNone = androidx.compose.foundation.layout.PaddingValues(0.dp)
 
 @Composable
 private fun PermissionCard(permission: PermissionState, onRequest: () -> Unit, onOpenSettings: () -> Unit) {
