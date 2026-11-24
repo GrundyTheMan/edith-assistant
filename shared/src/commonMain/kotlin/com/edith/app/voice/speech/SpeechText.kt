@@ -46,21 +46,21 @@ class SentenceChunker {
                 if (end < 0) {
                     // Keep only what could be the start of the closing tag.
                     val keep = if (final) 0 else partialSuffix(raw, FILE_CLOSE)
-                    raw.delete(0, raw.length - keep)
+                    raw.deleteRange(0, raw.length - keep)
                     return
                 }
-                raw.delete(0, end + FILE_CLOSE.length)
+                raw.deleteRange(0, end + FILE_CLOSE.length)
                 inFile = false
             } else {
                 val start = raw.indexOf(FILE_OPEN)
                 if (start < 0) {
                     val keep = if (final) 0 else partialSuffix(raw, FILE_OPEN)
                     buffer.append(raw, 0, raw.length - keep)
-                    raw.delete(0, raw.length - keep)
+                    raw.deleteRange(0, raw.length - keep)
                     return
                 }
                 buffer.append(raw, 0, start).append(' ')
-                raw.delete(0, start + FILE_OPEN.length)
+                raw.deleteRange(0, start + FILE_OPEN.length)
                 inFile = true
             }
         }
@@ -77,13 +77,13 @@ class SentenceChunker {
             val end = sentenceEnd(buffer)
             if (end >= 0) {
                 emit(buffer.substring(0, end))
-                buffer.delete(0, end)
+                buffer.deleteRange(0, end)
                 continue
             }
             val cut = if (buffer.length > LONG_CHARS) pauseCut(buffer) else -1
             if (cut >= 0) {
                 emit(buffer.substring(0, cut))
-                buffer.delete(0, cut)
+                buffer.deleteRange(0, cut)
                 continue
             }
             break
@@ -167,7 +167,8 @@ class SentenceChunker {
  */
 object SpeechText {
     // Every `{` and `}` is escaped and each pattern is compiled on the device in a test (L25).
-    private val FILE_BLOCK = Regex("<file\\b[^>]*>.*?(</file>|$)", RegexOption.DOT_MATCHES_ALL)
+    // [\s\S] stands for "any character, newlines too": RegexOption.DOT_MATCHES_ALL is Java-only.
+    private val FILE_BLOCK = Regex("<file\\b[^>]*>[\\s\\S]*?(</file>|$)")
     /** C16: resend tags, and the placeholders left where her files were (Play on a stored reply). */
     private val ATTACHMENT_TAG = Regex("<attachment\\b[^>]*>")
     private val FILE_PLACEHOLDER = Regex("\\[Attached file: [^\\]]*\\]")
@@ -179,9 +180,29 @@ object SpeechText {
     private val BULLET = Regex("(?m)^\\s*[-*•]\\s+")
     /** `_` only at a word's edge, so snake_case names keep theirs. */
     private val EMPHASIS = Regex("\\*\\*|__|\\*|`+|~~|\\b_|_\\b")
-    /** Symbols and modifiers (skin tones), plus the joiners that build emoji. */
-    private val EMOJI = Regex("[\\p{So}\\p{Sk}\\x{FE0F}\\x{200D}]")
     private val SPACE = Regex("\\s+")
+
+    /**
+     * Removes emoji: symbols and modifiers (skin tones), plus the joiners that build them. Done by hand, not with a regex: the iPhone's regex
+     * engine reads text in UTF-16 units, so a pattern like \p{So} never matches an emoji outside the Basic Multilingual Plane (a surrogate pair), and
+     * the Java-only \x{...} syntax is refused. Every character from U+1F000 to U+1FFFF (emoji, pictographs, skin tones) goes, as does any other
+     * symbol-category character and the two joiners (U+FE0F, U+200D).
+     */
+    private fun stripEmoji(text: String): String = buildString(text.length) {
+        var i = 0
+        while (i < text.length) {
+            val c = text[i]
+            if (c.isHighSurrogate() && i + 1 < text.length && text[i + 1].isLowSurrogate()) {
+                val codePoint = 0x10000 + ((c.code - 0xD800) shl 10) + (text[i + 1].code - 0xDC00)
+                if (codePoint !in 0x1F000..0x1FFFF) append(c).append(text[i + 1])
+                i += 2
+                continue
+            }
+            val joiner = c.code == 0xFE0F || c.code == 0x200D
+            if (!joiner && c.category != CharCategory.OTHER_SYMBOL && c.category != CharCategory.MODIFIER_SYMBOL) append(c)
+            i++
+        }
+    }
 
     fun clean(text: String): String = text
         .replace(FILE_BLOCK, " ")
@@ -193,7 +214,7 @@ object SpeechText {
         .replace(QUOTE, "")
         .replace(BULLET, "")
         .replace(EMPHASIS, "")
-        .replace(EMOJI, "")
+        .let(::stripEmoji)
         .replace(SPACE, " ")
         .trim()
 }

@@ -7,18 +7,6 @@ import android.media.MediaRecorder
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 
-/** Listens for the wake word: [MicWakeListener] on the phone, a fake in tests. */
-interface WakeListener {
-    /**
-     * Starts listening. [onWake] is called (on the listener's own thread) each time the wake word is heard, until
-     * [stop]. [onFailed] is called if listening stops on its own (the models wouldn't load, the microphone failed).
-     * False if the microphone couldn't be opened.
-     */
-    fun start(threshold: Float, onWake: () -> Unit, onFailed: () -> Unit): Boolean
-    /** Stops and releases the microphone. Safe to call when not listening. */
-    fun stop()
-}
-
 /**
  * Reads the microphone (16 kHz mono PCM, 80 ms at a time) on its own thread and scores it with a [WakeWordDetector]
  * (C14 §1, Listening). The audio is only scored, never stored or sent (C14 §4). The detector is created on first use

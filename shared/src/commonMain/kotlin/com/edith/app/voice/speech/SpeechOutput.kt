@@ -3,6 +3,10 @@ package com.edith.app.voice.speech
 import com.edith.app.chat.engine.ReplyListener
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
+import com.edith.app.core.time.SystemClock
+import com.edith.app.core.util.PlatformLock
+import com.edith.app.core.util.synchronized
+import kotlin.concurrent.Volatile
 import com.edith.app.settings.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,7 +31,7 @@ class SpeechOutput(
     private val engine: TtsEngine,
     settings: SettingsRepository,
     scope: CoroutineScope,
-    private val nowMs: () -> Long = System::currentTimeMillis,
+    private val nowMs: () -> Long = { SystemClock.now().toEpochMilliseconds() },
 ) : SpeechController, ReplyListener, TtsEngine.Listener {
     private val _speaking = MutableStateFlow<Long?>(null)
     override val speakingMessageId: StateFlow<Long?> = _speaking.asStateFlow()
@@ -38,7 +42,7 @@ class SpeechOutput(
     @Volatile private var speakReplies = true
     @Volatile private var rate = 1.0f
 
-    private val lock = Any()
+    private val lock = PlatformLock()
     private var generation = 0
     private var sequence = 0
     /** Utterances of the current generation not yet finished. */
@@ -65,7 +69,7 @@ class SpeechOutput(
     // --- Play / Stop (C07's action row) -----------------------------------------------------------------------
 
     override fun play(messageId: Long, text: String) {
-        synchronized(lock) {
+        lock.synchronized {
             newGeneration()
             if (live) liveMuted = true   // playing an older message silences the reply being written
             val pieces = SentenceChunker().run { add(text) + flush() }
@@ -75,7 +79,7 @@ class SpeechOutput(
     }
 
     override fun stop() {
-        synchronized(lock) {
+        lock.synchronized {
             if (live) liveMuted = true
             newGeneration()
             _speaking.value = null
@@ -87,7 +91,7 @@ class SpeechOutput(
      * says to tap a card on the screen; the reply carries on, and is spoken, once the owner answers).
      */
     fun announce(text: String) {
-        synchronized(lock) {
+        lock.synchronized {
             if (live && !liveMuted) chunker.flush().forEach { enqueueLive(it) }
             if (enqueue(text) && _speaking.value == null) _speaking.value = LIVE_REPLY
         }
@@ -99,7 +103,7 @@ class SpeechOutput(
     // --- Streaming replies (ReplyListener) ------------------------------------------------------------------
 
     override fun onDelta(conversationId: Long, text: String) {
-        synchronized(lock) {
+        lock.synchronized {
             if (!live) {
                 if (!speakReplies) return
                 newGeneration()
@@ -115,11 +119,11 @@ class SpeechOutput(
     }
 
     override fun onReset(conversationId: Long) {
-        synchronized(lock) { if (live) chunker.reset() }
+        lock.synchronized { if (live) chunker.reset() }
     }
 
     override fun onFinished(conversationId: Long, messageId: Long?, text: String) {
-        synchronized(lock) {
+        lock.synchronized {
             if (!live) return
             if (!liveMuted) chunker.flush().forEach { enqueueLive(it) }
             endLive()
@@ -133,7 +137,7 @@ class SpeechOutput(
     override fun onFailed(conversationId: Long) = endLiveAndStop()
 
     private fun endLiveAndStop() {
-        synchronized(lock) {
+        lock.synchronized {
             if (!live) return
             endLive()
             newGeneration()
@@ -150,7 +154,7 @@ class SpeechOutput(
     // --- The engine's callbacks -----------------------------------------------------------------------------
 
     override fun onStart(utteranceId: String) {
-        val log = synchronized(lock) {
+        val log = lock.synchronized {
             if (!isCurrent(utteranceId) || firstQueuedAtMs == 0L) return
             val now = nowMs()
             "Speech started ${now - firstTextAtMs} ms after the reply's first text (${now - firstQueuedAtMs} ms after its first sentence was ready)"
@@ -166,7 +170,7 @@ class SpeechOutput(
     override fun onInterrupted() = stop()
 
     private fun finished(utteranceId: String) {
-        synchronized(lock) {
+        lock.synchronized {
             if (!isCurrent(utteranceId)) return   // from speech that was stopped
             pending = (pending - 1).coerceAtLeast(0)
             if (pending == 0 && !live) {

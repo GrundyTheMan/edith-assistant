@@ -4,6 +4,8 @@ import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.error.Outcome
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
+import com.edith.app.core.time.SystemClock
+import com.edith.app.core.util.deleteFileQuietly
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -36,7 +38,7 @@ class VoiceMemos(
     private val stopSpeaking: () -> Unit,
     private val scope: CoroutineScope,
     private val dispatchers: AppDispatchers,
-    private val nowMs: () -> Long = System::currentTimeMillis,
+    private val nowMs: () -> Long = { SystemClock.now().toEpochMilliseconds() },
     private val maxMs: Long = MAX_MS,
 ) {
     sealed interface State {
@@ -108,7 +110,7 @@ class VoiceMemos(
             when {
                 audio == null -> _state.value = State.Idle
                 audio.durationMs < MIN_MS -> {
-                    withContext(dispatchers.io) { audio.file.delete() }
+                    withContext(dispatchers.io) { deleteFileQuietly(audio.path) }
                     _notice.value = TOO_SHORT
                     _state.value = State.Idle
                 }
@@ -126,7 +128,7 @@ class VoiceMemos(
                 is Outcome.Failure -> _notice.value = "Couldn't transcribe the recording: ${r.error.userMessage}"
             }
         } finally {
-            withContext(dispatchers.io) { audio.file.delete() }
+            withContext(dispatchers.io) { deleteFileQuietly(audio.path) }
             _state.value = State.Idle
         }
     }

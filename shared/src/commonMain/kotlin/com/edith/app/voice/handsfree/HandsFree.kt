@@ -138,7 +138,7 @@ class HandsFree(
         release()
         _state.value = State.Listening
         scope.launch {
-            val threshold = OpenWakeWord.threshold(settings.current().wakeWordSensitivity)
+            val threshold = WakeWordDetector.threshold(settings.current().wakeWordSensitivity)
             if (_state.value != State.Listening) return@launch
             if (!wake.start(threshold, ::wakeWordHeard, ::wakeListenerFailed)) stop(MIC_UNAVAILABLE)
         }
@@ -241,7 +241,7 @@ class HandsFree(
                 .first { (running, talking) ->
                     if (talking && _state.value == State.Thinking) {
                         _state.value = State.Speaking
-                        val threshold = OpenWakeWord.threshold(settings.current().wakeWordSensitivity)
+                        val threshold = WakeWordDetector.threshold(settings.current().wakeWordSensitivity)
                         wake.start(threshold, ::wakeWordHeard, ::wakeListenerFailed)   // barge-in; if it can't, she just finishes
                     }
                     !running && !talking

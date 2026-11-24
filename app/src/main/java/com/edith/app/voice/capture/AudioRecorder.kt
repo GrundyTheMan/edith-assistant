@@ -14,18 +14,6 @@ import java.util.UUID
 import kotlin.math.log10
 import kotlin.math.sqrt
 
-/** Records the microphone into a WAV (C12 §2). One recording at a time. */
-interface Recorder {
-    /** 0..1, for the level meter. */
-    val level: StateFlow<Float>
-    /** False if the microphone couldn't be opened. */
-    fun start(): Boolean
-    /** Null if nothing was recording. */
-    fun stop(): RecordedAudio?
-    /** Stops and deletes the file. */
-    fun cancel()
-}
-
 /**
  * `AudioRecord` at 16 kHz mono 16-bit, `VOICE_RECOGNITION` source (falling back to `MIC`), written on its own
  * thread to `cacheDir/recordings/<uuid>.wav`. Needs `RECORD_AUDIO`, which the chat screen asks for first.
@@ -93,11 +81,11 @@ class AudioRecorder(private val dir: File) : Recorder {
         _level.value = 0f
         if (w == null || f == null) return null   // started without a recording: nothing to give back
         w.close()
-        return RecordedAudio(f, w.durationMs)
+        return RecordedAudio(f.path, w.durationMs)
     }
 
     override fun cancel() {
-        stop()?.file?.delete()
+        stop()?.path?.let { java.io.File(it).delete() }
     }
 
     companion object {
