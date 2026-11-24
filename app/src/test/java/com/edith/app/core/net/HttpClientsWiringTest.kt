@@ -14,7 +14,9 @@ import java.io.File
  */
 class HttpClientsWiringTest {
     private val main = File("src/main/java/com/edith/app")
-    private val container = File(main, "di/AppContainer.kt").readText()
+    // K2.12: the clients are handed out in two files: the Android container and the shared one (the chat engine and its web tools).
+    private val container = File(main, "di/AppContainer.kt").readText() +
+        "\n" + File("../shared/src/commonMain/kotlin/com/edith/app/di/SharedContainer.kt").readText()
     private val mainFiles = main.walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
 
     /** Code lines only: no comments or KDoc. */

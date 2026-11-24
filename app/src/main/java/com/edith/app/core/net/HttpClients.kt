@@ -27,7 +27,7 @@ import okhttp3.OkHttpClient
  * Both share [base]'s connection pool, dispatcher, timeouts and socket factory, and are built lazily: building TLS takes
  * ~190 ms, so the first use should be on an IO thread (C03 §5).
  */
-class HttpClients(base: () -> OkHttpClient) {
+class HttpClients(base: () -> OkHttpClient) : KtorClients {
     val plain: Lazy<OkHttpClient> = lazy(base)
 
     val secure: Lazy<OkHttpClient> = lazy {
@@ -39,8 +39,8 @@ class HttpClients(base: () -> OkHttpClient) {
             .build()
     }
 
-    val ktorPlain: Lazy<HttpClient> = lazy { over(plain.value) }
-    val ktorSecure: Lazy<HttpClient> = lazy { over(secure.value) }
+    override val ktorPlain: Lazy<HttpClient> = lazy { over(plain.value) }
+    override val ktorSecure: Lazy<HttpClient> = lazy { over(secure.value) }
 
     companion object {
         /**
