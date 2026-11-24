@@ -1,6 +1,5 @@
 package com.edith.app.attachments
 
-import android.util.Base64
 import com.edith.app.chat.engine.AttachmentContext
 import com.edith.app.chat.engine.PromptContext
 import com.edith.app.chat.engine.PromptSection
@@ -11,7 +10,7 @@ import com.edith.app.data.db.MessageRole
 import com.edith.app.data.db.MessageWithAttachments
 import com.edith.app.ollama.ModelInfo
 import com.edith.app.ollama.OllamaMessage
-import java.io.File
+import kotlin.io.encoding.Base64
 
 /**
  * Attachments as the model sees them (C15 §3, C16 §5):
@@ -23,19 +22,19 @@ import java.io.File
  * - **Her resends:** the `<attachment number="N"/>` tag she wrote.
  */
 class MediaAttachmentContext(
-    private val store: AttachmentStore,
-    private val encode: (File) -> String = { Base64.encodeToString(it.readBytes(), Base64.NO_WRAP) },
-    private val readText: (File) -> String = { it.readText() },
+    private val store: AttachmentFiles,
+    private val encode: (ByteArray) -> String = { Base64.encode(it) },
+    private val readText: (ByteArray) -> String = { it.decodeToString() },
 ) : AttachmentContext {
 
     override fun toOllama(item: MessageWithAttachments, text: String, model: ModelInfo, newestIndex: Int): OllamaMessage {
         val attachments = item.attachments.sortedBy { it.number }
         if (item.message.role == MessageRole.Assistant) return OllamaMessage("assistant", edithText(text, attachments, newestIndex))
         if (attachments.isEmpty()) return OllamaMessage("user", text)
-        val labels = attachments.joinToString("\n") { a -> label(a, available = store.file(a.storedPath) != null) }
+        val labels = attachments.joinToString("\n") { a -> label(a, available = store.exists(a.storedPath)) }
         val media = if (newestIndex >= MEDIA_WINDOW) emptyList() else attachments.mapNotNull { a ->
             val usable = (a.kind == AttachmentKind.Image && model.canSee) || (a.kind == AttachmentKind.Audio && model.canHear)
-            if (usable) store.file(a.storedPath)?.let(encode) else null
+            if (usable) store.readBytes(a.storedPath)?.let(encode) else null
         }
         val content = if (text.isBlank()) labels else "$text\n$labels"
         return OllamaMessage("user", content, images = media.ifEmpty { null })
@@ -44,8 +43,8 @@ class MediaAttachmentContext(
     private fun edithText(text: String, attachments: List<AttachmentEntity>, newestIndex: Int): String {
         val files = attachments.filter { it.direction == AttachmentDirection.FromEdith && it.resendOf == null }
         var out = if (files.isEmpty() || newestIndex >= MEDIA_WINDOW) text else ReplyFormat.replacePlaceholders(text) { name ->
-            files.firstOrNull { it.fileName == name }?.let { store.file(it.storedPath) }?.let { f ->
-                "<file name=\"$name\">${readText(f).take(MAX_FILE_CHARS)}</file>"
+            files.firstOrNull { it.fileName == name }?.let { store.readBytes(it.storedPath) }?.let { bytes ->
+                "<file name=\"$name\">${readText(bytes).take(MAX_FILE_CHARS)}</file>"
             }
         }
         attachments.filter { it.resendOf != null }.forEach { out += "\n<attachment number=\"${it.number}\"/>" }

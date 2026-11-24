@@ -72,7 +72,13 @@ class ReplyFormatTest {
 
     private class Store(private val available: Set<String>) : AttachmentStore {
         override fun keep(pending: PendingAttachment, session: Boolean) = error("unused")
+        override fun discard(pending: PendingAttachment) {}
         override fun write(fileName: String, content: String, session: Boolean) = error("unused")
+        override fun writeBytes(fileName: String, bytes: ByteArray, session: Boolean) = error("unused")
+        override fun exists(storedPath: String?) = file(storedPath) != null
+        override fun readBytes(storedPath: String?): ByteArray? = file(storedPath)?.name?.encodeToByteArray()
+        override fun storedFiles(): List<StoredFile> = emptyList()
+        override fun clearSessionAndTemp() {}
         override fun file(storedPath: String?): File? = storedPath?.takeIf { it in available }?.let { File(it) }
         override fun durationMs(storedPath: String?): Long? = null
         override fun delete(storedPath: String?) {}

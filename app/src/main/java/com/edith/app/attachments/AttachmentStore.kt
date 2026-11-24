@@ -1,113 +1,39 @@
 package com.edith.app.attachments
 
 import android.media.MediaMetadataRetriever
-import com.edith.app.core.log.Log
-import com.edith.app.core.log.LogTag
 import java.io.File
-import java.io.IOException
-import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 
 /** The prepared attachment's file. */
 val PendingAttachment.file: File get() = File(path)
 
-/**
- * Where attachments' files live (C16 §1). Each is named by a `stored_path` kept on its row:
- * - `attachments/<uuid>.<ext>` under `filesDir`: kept until retention removes it.
- * - `session/<uuid>.<ext>` under `cacheDir`: when the owner keeps 0, files last until the app next starts.
- */
-interface AttachmentStore : AttachmentWriter {
-    override fun discard(pending: PendingAttachment) { pending.file.delete() }
-    override fun writeBytes(fileName: String, bytes: ByteArray, session: Boolean): String = throw IOException("This store can't keep pictures")
+/** [AttachmentFiles] with the files themselves, for what plays, shows or shares them (C16). */
+interface AttachmentStore : AttachmentFiles {
     /** The file, or null if it's gone (removed, or a session file from an earlier run). */
     fun file(storedPath: String?): File?
-    /** An audio file's length, read once and remembered. */
-    fun durationMs(storedPath: String?): Long?
-    override fun delete(storedPath: String?)
 }
 
-/** [AttachmentStore] that keeps attachments as files in the app's private storage (C16). */
-class FileAttachmentStore(private val filesDir: File, private val cacheDir: File) : AttachmentStore {
-    private val durations = ConcurrentHashMap<String, Long>()
+/** [AttachmentStore] that keeps attachments as files in the app's private storage (C16): the shared store plus Android's audio length. */
+class FileAttachmentStore private constructor(private val inner: PathAttachmentStore) : AttachmentStore, AttachmentFiles by inner {
+    constructor(filesDir: File, cacheDir: File) : this(PathAttachmentStore(filesDir.path, cacheDir.path, ::audioLengthMs))
 
-    override fun keep(pending: PendingAttachment, session: Boolean): String {
-        val path = newPath(pending.fileName, session)
-        val target = resolve(path)
-        // Moved, or copied through a .tmp and renamed, so a half-written file never has the real name.
-        if (!pending.file.renameTo(target)) {
-            val tmp = File(target.parentFile, target.name + ".tmp")
-            pending.file.copyTo(tmp, overwrite = true)
-            if (!tmp.renameTo(target)) throw IOException("Couldn't store ${pending.fileName}")
-            pending.file.delete()
-        }
-        pending.durationMs?.let { durations[path] = it }
-        return path
-    }
-
-    override fun write(fileName: String, content: String, session: Boolean): String {
-        val path = newPath(fileName, session)
-        val target = resolve(path)
-        val tmp = File(target.parentFile, target.name + ".tmp")
-        tmp.writeText(content)
-        if (!tmp.renameTo(target)) throw IOException("Couldn't store $fileName")
-        return path
-    }
-
-    override fun writeBytes(fileName: String, bytes: ByteArray, session: Boolean): String {
-        val path = newPath(fileName, session)
-        val target = resolve(path)
-        val tmp = File(target.parentFile, target.name + ".tmp")
-        tmp.writeBytes(bytes)
-        if (!tmp.renameTo(target)) throw IOException("Couldn't store $fileName")
-        return path
-    }
-
-    override fun file(storedPath: String?): File? = storedPath?.let(::resolve)?.takeIf { it.isFile }
-
-    override fun durationMs(storedPath: String?): Long? {
-        val path = storedPath ?: return null
-        durations[path]?.let { return it }
-        val f = file(path) ?: return null
-        val retriever = MediaMetadataRetriever()
-        return try {
-            retriever.setDataSource(f.path)
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()?.also { durations[path] = it }
-        } catch (e: RuntimeException) {
-            null
-        } finally {
-            retriever.release()
-        }
-    }
-
-    override fun delete(storedPath: String?) {
-        val path = storedPath ?: return
-        durations.remove(path)
-        if (resolve(path).let { it.exists() && !it.delete() }) Log.w(LogTag.Chat, "Couldn't delete an attachment file")
-    }
-
-    /** Every stored file (not session ones), for orphan cleanup and the usage line in Settings. */
-    fun storedFiles(): List<Pair<String, File>> =
-        File(filesDir, DURABLE).listFiles().orEmpty().filter { it.isFile && !it.name.endsWith(".tmp") }.map { "$DURABLE/${it.name}" to it }
-
-    /** At startup: last run's session files and any half-written ones are gone. */
-    fun clearSessionAndTemp() {
-        File(cacheDir, SESSION).listFiles()?.forEach { it.delete() }
-        File(filesDir, DURABLE).listFiles()?.filter { it.name.endsWith(".tmp") }?.forEach { it.delete() }
-    }
-
-    private fun newPath(fileName: String, session: Boolean): String {
-        val ext = fileName.substringAfterLast('.', "").lowercase().filter { it.isLetterOrDigit() }.take(8).ifEmpty { "bin" }
-        val dir = if (session) SESSION else DURABLE
-        resolve(dir).mkdirs()
-        return "$dir/${UUID.randomUUID()}.$ext"
-    }
-
-    private fun resolve(path: String): File = if (path.startsWith("$SESSION/") || path == SESSION) File(cacheDir, path) else File(filesDir, path)
+    override fun file(storedPath: String?): File? = storedPath?.let { File(inner.resolve(it)) }?.takeIf { it.isFile }
 
     companion object {
-        const val DURABLE = "attachments"
-        const val SESSION = "session"
+        const val DURABLE = PathAttachmentStore.DURABLE
+        const val SESSION = PathAttachmentStore.SESSION
 
-        fun isSession(storedPath: String?): Boolean = storedPath?.startsWith("$SESSION/") == true
+        fun isSession(storedPath: String?): Boolean = PathAttachmentStore.isSession(storedPath)
+    }
+}
+
+private fun audioLengthMs(path: String): Long? {
+    val retriever = MediaMetadataRetriever()
+    return try {
+        retriever.setDataSource(path)
+        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+    } catch (e: RuntimeException) {
+        null
+    } finally {
+        retriever.release()
     }
 }
