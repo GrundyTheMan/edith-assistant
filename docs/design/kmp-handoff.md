@@ -1,6 +1,6 @@
 # Handoff: moving Edith to one shared Kotlin codebase (written 2026-11-23, updated after K2.4)
 
-You are picking up Phase 2 (K2.4 is built and in a pull request; gate G2 is next, the owner's) of [`kmp-transition.md`](kmp-transition.md). That plan is the authority on *what* and *why*; this
+You are picking up Phase 2 (K2.4 is merged; gate G2 is next, the owner's) of [`kmp-transition.md`](kmp-transition.md). That plan is the authority on *what* and *why*; this
 page says *where it stands*, *how to work here without tripping*, and *what to do next, in order*. Read it before touching
 anything, then read the plan's §3.3 (spike), §4 (target architecture), §6 (migration order) and §7 Phase 1.
 
@@ -22,7 +22,7 @@ Tailscale). Phase 1 makes the Android app ready for sharing without changing wha
 | K2.1 `chat` engine to `shared/commonMain` | **done**, except `chat/ui` and `ReplyService` | #22 (merged) |
 | K2.2 `tools` framework and tools to `shared/commonMain` | **done**, except `DeviceLocation` (Android) and the other services' tools | #23 (merged) |
 | K2.3 `attachments` to `shared/commonMain` | **done**, except intake, audio conversion, player and file export (platform code) | #24 (merged) |
-| K2.4 `jarvis`, `printer/feed`, `home` framework to `shared/commonMain` | **done, in a pull request** (not merged until CI and the owner say so), except the platform parts listed in the plan | the K2.4 PR |
+| K2.4 `jarvis`, `printer/feed`, `home` framework to `shared/commonMain` | **done**, except the platform parts listed in the plan | #26 (merged; the iPhone simulator job ran its new shared tests) |
 | Gate G2 (the owner decides) | after K2.4 | |
 
 Phase 0 leftovers that do not block Phase 1 are in the plan's §7 progress table (K0.4 second half, the K0.6b probes: sherpa-onnx
@@ -96,13 +96,13 @@ Quirks: `LocalDateTime.toString()` drops zero seconds (use `LocalDateTime.Format
 
 **G1 is passed; K2.1 is done.** The chat engine, prompt/context builders, titler, confirmations, `ReplyFormat` and `PendingAttachment`/`AttachmentWriter` are shared. Next: K2.2 (`tools` framework and tools), K2.3 (`attachments`), K2.4 (`jarvis`, `printer/feed`, `home`); then gate G2. Patterns used: `kotlin.concurrent.atomics` (opt in with `ExperimentalAtomicApi`) and `MutableStateFlow` updates in place of `java.util.concurrent` types, `TimeSource.Monotonic` in place of `System.nanoTime`, `platformIoDispatcher` in place of `Dispatchers.IO`.
 
-**Now: K2.3 is done and in PR #24; K2.4 is next, then gate G2 (the owner's).** Procedure that worked for K2.1 to K2.3, in this order:
+**Now: K2.1 to K2.4 are done and merged (#22, #23, #24, #26); gate G2 is next and is the owner's.** Do not start Phase 3 without their go. Procedure that worked for K2.1 to K2.4, in this order:
 1. Read the plan's Phase 2 table and the files you are about to move; list their Android imports (`grep -E '^import (android|androidx|java\.|okhttp3|org\.)'`). Most files have two or three.
 2. `git mv` the files into `shared/src/commonMain/kotlin/com/edith/app/<same package>/` (package names do not change, so most of `app/` keeps compiling untouched), then fix what no longer compiles. Compile shared first: `./gradlew --no-daemon -q :shared:compileKotlinJvm :shared:compileAndroidMain`, then `:app:compileDebugKotlin :app:compileDebugUnitTestKotlin :app:compileDebugAndroidTestKotlin`.
 3. Replace the Java type with a common one, or put a small seam in: `expect`/`actual` function, or an interface the app implements (examples: `AttachmentFiles`, `LocationProvider`, `PrivateAddress`, `LocalNetworkAccess`). Keep the Android implementation in `app/` next to its old name so callers and tests change as little as possible.
 4. `scripts/check.sh` (and the UTC run) green, update the plan's Phase 2 progress table and this page in the same PR, push, open the PR, wait for both CI jobs (`check`, `ios-tests`), report to the owner, and ask before merging. They have so far answered "merge, start the next one".
 
-**K2.4 (done, in its PR; read the plan's K2.4 row for what moved and what stayed): `jarvis` client and pairing, `printer/feed` logic (wire types, 33 commands, session, settle), `home` framework (Home, services, `HomeBackend`).** Expect: the Jarvis certificate pin and cookie/address hooks are OkHttp engine hooks (see `OkHttpGuardTest`): keep the OkHttp-building part in `app/` and move the logic over a Ktor client, as was done for `PageReader.over`. The printer feed is mostly wire types and state machines (good candidates for `commonTest`). Check `home/` for `Context`, notification and `Manifest` uses. After K2.4: gate G2, which is "the shared engine passes its tests on desktop, Android and the iOS simulator, and the Android app is unchanged to use". Do not start Phase 3 (shared screens) without the owner's go.
+**K2.4 (done, #26 merged; read the plan's K2.4 row for what moved and what stayed): `jarvis` client and pairing, `printer/feed` logic (wire types, 33 commands, session, settle), `home` framework (Home, services, `HomeBackend`).** Expect: the Jarvis certificate pin and cookie/address hooks are OkHttp engine hooks (see `OkHttpGuardTest`): keep the OkHttp-building part in `app/` and move the logic over a Ktor client, as was done for `PageReader.over`. The printer feed is mostly wire types and state machines (good candidates for `commonTest`). Check `home/` for `Context`, notification and `Manifest` uses. After K2.4: gate G2, which is "the shared engine passes its tests on desktop, Android and the iOS simulator, and the Android app is unchanged to use". Do not start Phase 3 (shared screens) without the owner's go.
 
 **What K2.4 learned (apply it):**
 - **Check Kotlin/Native problems on Windows**: `./gradlew --no-daemon -q :shared:compileCommonMainKotlinMetadata` compiles `commonMain` against the common APIs only, so it lists every `java.*`, `Math`, `System`, `Charsets`, `synchronized` and `String.format` use that the JVM and Android compiles accept but the iPhone would reject, without waiting for the macOS job. Run it after every move; it is the fastest way to find them. It cannot compile `iosMain`: the two iPhone actuals of K2.4 (`core/crypto/Digests.ios.kt`, `core/locale/Decimal.ios.kt`) were written blind and are checked only by the macOS job, which also runs the `commonTest` vectors for them.
