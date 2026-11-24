@@ -19,6 +19,8 @@ import com.edith.app.data.db.open
 import com.edith.app.settings.DataStoreSettingsRepository
 import com.edith.app.settings.SettingsRepository
 import com.edith.app.tools.context.CurrentTimeTool
+import com.edith.app.tools.weather.WeatherTool
+import com.edith.app.tools.web.SearchWebTool
 import com.edith.app.tools.framework.ToolRegistry
 import com.edith.app.tools.location.Coordinates
 import com.edith.app.tools.location.LocationProvider
@@ -35,15 +37,17 @@ class IosApp(val container: SharedContainer, val secrets: SecretStore, val setti
 /**
  * Builds the shared engine for the iPhone from Apple's own parts (K4.1; plan §4.2): the Keychain for secrets, the Darwin engine for HTTP, the
  * database, settings and attachments as files under Application Support (kept by the system and backed up, not shown in the Files app).
- * Call once per launch. The first slice has one tool (the time); the others join as their services move (K2.5 to K2.8) and their screens exist.
+ * Call once per launch. Tools so far: the time, the weather in a named place ("here" needs Core Location, not built yet) and web search; the others join as their services move (K2.5 to K2.8).
  */
 fun createIosApp(): IosApp {
     val dir = applicationSupportDir()
     val secrets = IosSecretStore()
     val settings = DataStoreSettingsRepository(PreferenceDataStoreFactory.createWithPath { "$dir/settings.preferences_pb".toPath() })
     val listeners = mutableListOf<ReplyListener>()
-    val registry = ToolRegistry(listOf(CurrentTimeTool()))
     lateinit var container: SharedContainer
+    // The tools that need no permission and no account: the time, the weather in a named place, and web search. The page reader waits for the
+    // check that a name does not resolve to a private address (Android does it in its DNS lookup; the iPhone needs its own, K4.2 next).
+    val registry by lazy { ToolRegistry(listOf(CurrentTimeTool(), WeatherTool(container.openMeteo, NoLocation), SearchWebTool(container.webSearch))) }
     container = SharedContainer(
         PlatformServices(
             dispatchers = AppDispatchers.Default,
