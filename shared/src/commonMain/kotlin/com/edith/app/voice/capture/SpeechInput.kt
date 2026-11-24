@@ -17,4 +17,9 @@ interface SpeechInput {
         /** A short message for the owner. */
         fun onError(message: String)
     }
+
+    companion object {
+        const val DIDNT_CATCH = "Didn't catch that."
+        const val UNAVAILABLE = "Speech recognition isn't available on this device."
+    }
 }

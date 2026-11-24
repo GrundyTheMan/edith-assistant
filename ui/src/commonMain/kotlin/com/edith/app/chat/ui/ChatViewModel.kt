@@ -1,16 +1,14 @@
 package com.edith.app.chat.ui
 
-import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.edith.app.attachments.file
 import com.edith.app.attachments.AttachmentIntake
 import com.edith.app.attachments.AttachmentPlayer
-import com.edith.app.attachments.AttachmentStore
+import com.edith.app.attachments.AttachmentFiles
 import com.edith.app.attachments.PendingAttachment
 import com.edith.app.attachments.ReplyFormat
 import com.edith.app.chat.CurrentConversation
@@ -28,14 +26,12 @@ import com.edith.app.data.db.AttachmentKind
 import com.edith.app.data.db.MessageRole
 import com.edith.app.data.db.MessageSource
 import com.edith.app.data.db.MessageWithAttachments
-import com.edith.app.di.viewModelFactory
+import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.tools.framework.ApprovalChannel
-import com.edith.app.voice.capture.LiveSpeech
 import com.edith.app.voice.capture.SpeechInput
 import com.edith.app.voice.capture.VoiceMemos
 import com.edith.app.voice.handsfree.HandsFree
 import com.edith.app.voice.speech.SpeechController
-import java.io.File
 import kotlin.time.Instant
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -79,10 +75,10 @@ class ChatViewModel(
     private val dictation: SpeechInput? = null,
     /** Attachments (C15): preparing picked files, where sent ones are kept, and playing audio ones. */
     private val intake: AttachmentIntake? = null,
-    private val attachmentStore: AttachmentStore? = null,
+    private val attachmentStore: AttachmentFiles? = null,
     private val attachmentPlayer: AttachmentPlayer? = null,
     /** Where the chat's attachments are read from disk. */
-    private val io: CoroutineDispatcher = Dispatchers.IO,
+    private val io: CoroutineDispatcher = AppDispatchers.Default.io,
     /** Hands-free mode (C14); null when it isn't available. */
     private val handsFree: HandsFree? = null,
 ) : ViewModel() {
@@ -289,7 +285,7 @@ class ChatViewModel(
 
             override fun onFinal(text: String) {
                 dictating.value = false
-                if (text.isBlank()) voiceError.value = ChatError(LiveSpeech.DIDNT_CATCH, needsLocalNetworkPermission = false)
+                if (text.isBlank()) voiceError.value = ChatError(SpeechInput.DIDNT_CATCH, needsLocalNetworkPermission = false)
                 else fill(text)
             }
 
@@ -328,12 +324,12 @@ class ChatViewModel(
     // --- Attachments (C15) -----------------------------------------------------------------------------------
 
     /** Photos from the picker: each is prepared (scaled, upright JPEG) and appears in the input row. */
-    fun attachImages(uris: List<Uri>) = uris.forEach { attach(it, AttachmentKind.Image) }
+    fun attachImages(uris: List<String>) = uris.forEach { attach(it, AttachmentKind.Image) }
 
     /** An audio file: kept as WAV/MP3, or converted to WAV. */
-    fun attachAudio(uri: Uri) = attach(uri, AttachmentKind.Audio)
+    fun attachAudio(uri: String) = attach(uri, AttachmentKind.Audio)
 
-    private fun attach(uri: Uri, kind: AttachmentKind) {
+    private fun attach(uri: String, kind: AttachmentKind) {
         val intake = intake ?: return
         if (pending.value.size >= MAX_ATTACHMENTS) {
             voiceError.value = ChatError("You can attach up to $MAX_ATTACHMENTS files to one message.", needsLocalNetworkPermission = false)
@@ -342,7 +338,7 @@ class ChatViewModel(
         val key = nextPendingKey++
         pending.update { it + PendingItem(key, if (kind == AttachmentKind.Image) "Photo" else "Audio", kind) }
         viewModelScope.launch {
-            val result = if (kind == AttachmentKind.Image) intake.image(uri.toString()) else intake.audio(uri.toString())
+            val result = if (kind == AttachmentKind.Image) intake.image(uri) else intake.audio(uri)
             when (result) {
                 is AttachmentIntake.Result.Ready -> {
                     var kept = false
@@ -457,13 +453,13 @@ class ChatViewModel(
     private suspend fun attachmentUi(a: AttachmentEntity): AttachmentUi {
         val original = a.resendOf?.let { repo.attachment(it) }
         val shown = original ?: a
-        val file = attachmentStore?.file(shown.storedPath)
+        val path = attachmentStore?.pathOf(shown.storedPath)
         return AttachmentUi(
-            number = a.number, fileName = shown.fileName, kind = shown.kind, id = shown.id, path = file?.path,
+            number = a.number, fileName = shown.fileName, kind = shown.kind, id = shown.id, path = path,
             durationMs = if (shown.kind == AttachmentKind.Audio) attachmentStore?.durationMs(shown.storedPath) else null,
             fromEdith = a.direction == AttachmentDirection.FromEdith, isResend = a.resendOf != null,
             mimeType = shown.mimeType,
-            preview = if (shown.kind == AttachmentKind.File && file != null) previewOf(file) else null,
+            preview = if (shown.kind == AttachmentKind.File) attachmentStore?.readText(shown.storedPath)?.let(::previewOf) else null,
         )
     }
 
@@ -497,10 +493,9 @@ class ChatViewModel(
         /** Lines of Edith's file shown on its card (C16 §4). */
         const val PREVIEW_LINES = 3
 
-        /** The first [PREVIEW_LINES] lines of a file, for its card. */
-        fun previewOf(file: File): String? = runCatching {
-            file.bufferedReader().useLines { lines -> lines.take(PREVIEW_LINES).joinToString("\n") { it.take(120) } }
-        }.getOrNull()
+        /** The first [PREVIEW_LINES] lines of a file's text, for its card. */
+        fun previewOf(text: String): String? =
+            text.lineSequence().take(PREVIEW_LINES).joinToString("\n") { it.take(120) }
 
         private const val PREVIEW_CHARS = 80
         private const val BRIDGE_MAX_MS = 2_000L
@@ -521,26 +516,6 @@ class ChatViewModel(
             is EngineState.Working -> conversationId
             is EngineState.AwaitingConfirmation -> conversationId
             else -> null
-        }
-
-        val Factory = viewModelFactory { container, savedState ->
-            ChatViewModel(
-                repo = container.chatRepository,
-                engine = container.chatEngine,
-                current = container.currentConversation,
-                speech = container.speechController,
-                features = container.chatFeatures,
-                clock = container.clock,
-                toolLabel = container.toolRegistry::displayName,
-                savedState = savedState,
-                permissions = container.toolPermissions,
-                voiceMemos = container.voiceMemos.takeIf { container.chatFeatures.record },
-                dictation = container.dictation.takeIf { container.chatFeatures.dictation },
-                handsFree = container.handsFree.takeIf { container.chatFeatures.dictation },   // it needs the recognizer too
-                intake = container.attachmentIntake,
-                attachmentStore = container.attachmentStore,
-                attachmentPlayer = container.attachmentPlayer,
-            )
         }
     }
 }
