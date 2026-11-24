@@ -125,6 +125,7 @@ android {
 
 dependencies {
     implementation(project(":shared"))
+    implementation(project(":ui"))   // K3.0: the shared screens (Compose Multiplatform)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.exifinterface)
     implementation(libs.androidx.activity.compose)

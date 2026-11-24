@@ -1,13 +1,13 @@
-# K1.2: the shared Kotlin Multiplatform module (shared/) tested as iPhone code, on an iOS simulator.
+# K1.2: the shared Kotlin Multiplatform modules (shared/, and ui/ since K3.0) tested as iPhone code, on an iOS simulator.
 # macOS runners are slow, so this runs only when shared code, the build files or this workflow change, and a newer push cancels an older run.
 name: Shared iOS
 
 on:
   pull_request:
-    paths: ['shared/**', 'gradle/**', 'build.gradle.kts', 'settings.gradle.kts', 'gradle.properties', '.github/workflows/shared-ios.yml']
+    paths: ['shared/**', 'ui/**', 'gradle/**', 'build.gradle.kts', 'settings.gradle.kts', 'gradle.properties', '.github/workflows/shared-ios.yml']
   push:
     branches: [master]
-    paths: ['shared/**', 'gradle/**', 'build.gradle.kts', 'settings.gradle.kts', 'gradle.properties', '.github/workflows/shared-ios.yml']
+    paths: ['shared/**', 'ui/**', 'gradle/**', 'build.gradle.kts', 'settings.gradle.kts', 'gradle.properties', '.github/workflows/shared-ios.yml']
   workflow_dispatch:
 
 concurrency:
@@ -50,12 +50,12 @@ jobs:
       - name: Shared tests on the iOS simulator
         run: |
           start=$SECONDS
-          ./gradlew --console=plain :shared:iosSimulatorArm64Test
+          ./gradlew --console=plain :shared:iosSimulatorArm64Test :ui:iosSimulatorArm64Test
           echo "Shared iOS tests: $((SECONDS - start)) s" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Say which tests ran
         if: always()
         run: |
-          for f in shared/build/test-results/iosSimulatorArm64Test/*.xml; do
+          for f in shared/build/test-results/iosSimulatorArm64Test/*.xml ui/build/test-results/iosSimulatorArm64Test/*.xml; do
             [ -f "$f" ] && grep -E '<testsuite ' "$f" | cut -c1-300
           done || true

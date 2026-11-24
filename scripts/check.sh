@@ -7,7 +7,8 @@ start_log check "$@"
 scripts/fetch-sherpa.sh
 
 step "Build + unit tests + lint"
-gradle clean assembleDebug testDebugUnitTest lintDebug
+# :ui:jvmTest = the shared screens' UI tests on the desktop (K3.0).
+gradle clean assembleDebug testDebugUnitTest lintDebug :ui:jvmTest
 
 # Gradle prints no warning count, so say it here: "lint clean" in a PR has to match this line (04-lessons L40).
 lint_report=app/build/reports/lint-results-debug.txt
