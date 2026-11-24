@@ -5,6 +5,7 @@ import platform.Foundation.NSNumber
 import platform.Foundation.NSNumberFormatter
 import platform.Foundation.NSNumberFormatterDecimalStyle
 import platform.Foundation.currentLocale
+import platform.Foundation.numberWithDouble
 
 actual fun formatDecimal(value: Double, places: Int, languageTag: String?): String {
     val formatter = NSNumberFormatter()
