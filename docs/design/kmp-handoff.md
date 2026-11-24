@@ -21,6 +21,7 @@ Tailscale). Phase 1 makes the Android app ready for sharing without changing wha
 | Gate G1 (the owner decides) | **passed 2026-11-23** | |
 | K2.1 `chat` engine to `shared/commonMain` | **done**, except `chat/ui` and `ReplyService` | the K2.1 PR |
 | K2.2 `tools` framework and tools to `shared/commonMain` | **done**, except `DeviceLocation` (Android) and the other services' tools | the K2.2 PR |
+| K2.3 `attachments` to `shared/commonMain` | **done**, except intake, audio conversion, player and file export (platform code) | the K2.3 PR |
 
 Phase 0 leftovers that do not block Phase 1 are in the plan's §7 progress table (K0.4 second half, the K0.6b probes: sherpa-onnx
 speech and ONNX Runtime on iOS, WebRTC, SwiftMail, MQTT with a login against Meross's broker).

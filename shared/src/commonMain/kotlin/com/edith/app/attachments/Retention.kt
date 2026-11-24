@@ -18,7 +18,7 @@ import kotlinx.coroutines.withContext
  */
 class Retention(
     private val dao: AttachmentDao,
-    private val store: FileAttachmentStore,
+    private val store: AttachmentFiles,
     private val settings: SettingsRepository,
     private val clock: Clock,
     private val dispatchers: AppDispatchers,
@@ -61,8 +61,8 @@ class Retention(
                 val now = clock.now().toEpochMilliseconds()
                 dao.markSessionRemoved(now)
                 val referenced = dao.allStoredPaths().toSet()
-                val orphans = store.storedFiles().filter { (path, _) -> path !in referenced }
-                orphans.forEach { (path, _) -> store.delete(path) }
+                val orphans = store.storedFiles().filter { it.path !in referenced }
+                orphans.forEach { store.delete(it.path) }
                 if (orphans.isNotEmpty()) Log.d(LogTag.Chat, "Deleted ${orphans.size} attachment file(s) nothing referred to")
             }
         }
@@ -82,7 +82,7 @@ class Retention(
     /** "12 files, 8.4 MB" in Settings: what's kept on the phone now. */
     suspend fun usage(): Usage = withContext(dispatchers.io) {
         val files = store.storedFiles()
-        Usage(files.size, files.sumOf { it.second.length() })
+        Usage(files.size, files.sumOf { it.sizeBytes })
     }
 
     data class Usage(val files: Int, val bytes: Long)
