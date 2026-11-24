@@ -63,14 +63,14 @@ fun renderMarkdown(markdown: String, linkColor: Color, codeBackground: Color): L
 data class RenderedBlock(val text: AnnotatedString, val marker: String? = null, val tight: Boolean = false)
 
 /** One block of a reply, before styling. */
-internal sealed interface Block {
+sealed interface Block {
     data class Paragraph(val lines: List<String>) : Block
     data class Heading(val text: String) : Block
     data class Item(val marker: String, val text: String, val joinsPrevious: Boolean) : Block
     data class Code(val text: String) : Block
 }
 
-internal fun parseBlocks(markdown: String): List<Block> {
+fun parseBlocks(markdown: String): List<Block> {
     val blocks = mutableListOf<Block>()
     val paragraph = mutableListOf<String>()
     fun endParagraph() { if (paragraph.isNotEmpty()) blocks += Block.Paragraph(paragraph.toList()); paragraph.clear() }

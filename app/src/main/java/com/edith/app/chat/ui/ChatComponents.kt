@@ -260,11 +260,12 @@ private fun MarkdownText(markdown: String) {
                 block.tight -> 4.dp     // list items follow each other closely
                 else -> 10.dp           // between paragraphs
             }
-            if (block.marker == null) {
+            val marker = block.marker   // a local: a smart cast on another module's property is refused
+            if (marker == null) {
                 Text(block.text, modifier = Modifier.padding(top = gap))
             } else {
                 Row(Modifier.padding(top = gap)) {
-                    Text(block.marker, modifier = Modifier.width(if (block.marker.length > 2) 26.dp else 18.dp))
+                    Text(marker, modifier = Modifier.width(if (marker.length > 2) 26.dp else 18.dp))
                     Text(block.text)
                 }
             }

@@ -1,6 +1,5 @@
 package com.edith.app.ui.components
 
-import android.content.ClipData
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,15 +18,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.ClipEntry
-import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
 
 /**
  * Shown on the launch after a crash (C02 §5): "Edith closed unexpectedly last time." with View (the report,
@@ -75,7 +72,6 @@ fun CrashReportDialog(report: String, onClose: () -> Unit) {
 
 @Composable
 private fun rememberCopyReport(report: String): () -> Unit {
-    val clipboard = LocalClipboard.current
-    val scope = rememberCoroutineScope()
-    return { scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Edith crash report", report))) } }
+    val clipboard = LocalClipboardManager.current
+    return { clipboard.setText(AnnotatedString(report)) }
 }
