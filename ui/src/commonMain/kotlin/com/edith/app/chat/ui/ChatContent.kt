@@ -3,6 +3,11 @@ package com.edith.app.chat.ui
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -259,6 +264,13 @@ private fun MessageList(state: ChatUiState, actions: ChatActions, modifier: Modi
         state.pendingUserText != null -> "pending"
         else -> state.messages.lastOrNull()?.let { "${it.id}:${it.status}" }
     }
+    // The keyboard goes away when the owner drags the list or taps it (iOS has no Back key to close it, and it would cover the tab bar).
+    // Only a drag by the owner counts: the list also scrolls by itself when a message arrives, and then typing should carry on.
+    val focus = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(listState) {
+        listState.interactionSource.interactions.collect { if (it is DragInteraction.Start) { focus.clearFocus(); keyboard?.hide() } }
+    }
     LaunchedEffect(state.conversationId) { listState.scrollToItem(0); followBottom = true; hasUnseen = false }
     LaunchedEffect(state.pendingUserText) {
         if (state.pendingUserText != null) { followBottom = true; hasUnseen = false; listState.animateScrollToItem(0) }
@@ -268,7 +280,7 @@ private fun MessageList(state: ChatUiState, actions: ChatActions, modifier: Modi
         if (followBottom) listState.animateScrollToItem(0) else hasUnseen = true
     }
 
-    BoxWithConstraints(modifier.fillMaxWidth()) {
+    BoxWithConstraints(modifier.fillMaxWidth().pointerInput(Unit) { detectTapGestures { focus.clearFocus(); keyboard?.hide() } }) {
         val maxBubbleWidth = maxWidth * 0.78f
         if (state.loaded && state.messages.isEmpty() && state.inFlight == null && state.pendingUserText == null) {
             Text(

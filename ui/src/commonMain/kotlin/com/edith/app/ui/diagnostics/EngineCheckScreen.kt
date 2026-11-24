@@ -1,6 +1,12 @@
 package com.edith.app.ui.diagnostics
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -43,9 +49,14 @@ fun EngineCheckScreen(check: EngineCheck) {
     var running by remember { mutableStateOf(false) }
     var lines by remember { mutableStateOf<List<EngineCheck.Line>>(emptyList()) }
     LaunchedEffect(Unit) { address = check.savedServerUrl() }
+    val focus = LocalFocusManager.current
 
     // Clear of the notch and the keyboard (the first simulator picture showed the title under the clock); the tab bar below handles the home indicator.
-    Column(Modifier.windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.ime)).verticalScroll(rememberScrollState())) {
+    // Tapping anywhere outside the field closes the keyboard (iOS has no Back key, and the keyboard covers the tab bar).
+    Column(
+        Modifier.windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.ime)).verticalScroll(rememberScrollState())
+            .pointerInput(Unit) { detectTapGestures { focus.clearFocus() } },
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Edith engine check", style = MaterialTheme.typography.headlineSmall)
             Text("The shared engine, running on this phone.", style = MaterialTheme.typography.bodyMedium)
@@ -54,6 +65,8 @@ fun EngineCheckScreen(check: EngineCheck) {
                 onValueChange = { address = it },
                 label = { Text("Ollama address") },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }),
                 modifier = Modifier.fillMaxWidth(),
             )
             Button(
