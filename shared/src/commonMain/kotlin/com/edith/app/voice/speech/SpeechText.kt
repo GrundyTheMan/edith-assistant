@@ -181,7 +181,8 @@ object SpeechText {
     /** `_` only at a word's edge, so snake_case names keep theirs. */
     private val EMPHASIS = Regex("\\*\\*|__|\\*|`+|~~|\\b_|_\\b")
     /** Symbols and modifiers (skin tones), plus the joiners that build emoji. */
-    private val EMOJI = Regex("[\\p{So}\\p{Sk}\\x{FE0F}\\x{200D}]")
+    // The two joiners are written as characters (️, ‍): the regex syntax \x{...} is Java's, and the iPhone's regex engine refuses it.
+    private val EMOJI = Regex("[\\p{So}\\p{Sk}️‍]")
     private val SPACE = Regex("\\s+")
 
     fun clean(text: String): String = text
