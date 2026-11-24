@@ -21,7 +21,7 @@ Tailscale). Phase 1 makes the Android app ready for sharing without changing wha
 | Gate G1 (the owner decides) | **passed 2026-11-23** | |
 | K2.1 `chat` engine to `shared/commonMain` | **done**, except `chat/ui` and `ReplyService` | #22 (merged) |
 | K2.2 `tools` framework and tools to `shared/commonMain` | **done**, except `DeviceLocation` (Android) and the other services' tools | #23 (merged) |
-| K2.3 `attachments` to `shared/commonMain` | **done**, except intake, audio conversion, player and file export (platform code) | #24 (**open**, CI green, not merged: merge it first) |
+| K2.3 `attachments` to `shared/commonMain` | **done**, except intake, audio conversion, player and file export (platform code) | #24 (merged) |
 | K2.4 `jarvis`, `printer/feed`, `home` framework to `shared/commonMain` | **not started** | |
 | Gate G2 (the owner decides) | after K2.4 | |
 
