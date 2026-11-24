@@ -7,16 +7,15 @@ import com.edith.app.core.log.LogTag
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.io.File
 
 /** Plays an audio attachment from a chat bubble (C15 §4), one at a time. Main thread. */
-class AttachmentPlayer(private val stopSpeaking: () -> Unit) {
+class AndroidAttachmentPlayer(private val stopSpeaking: () -> Unit) : AttachmentPlayer {
     private var player: MediaPlayer? = null
     private val _playing = MutableStateFlow<Long?>(null)
     /** The attachment being played, or null. */
-    val playing: StateFlow<Long?> = _playing.asStateFlow()
+    override val playing: StateFlow<Long?> = _playing.asStateFlow()
 
-    fun play(id: Long, file: File) {
+    override fun play(id: Long, path: String) {
         stop()
         stopSpeaking()   // Edith's voice and the recording shouldn't talk over each other
         val p = MediaPlayer()
@@ -24,7 +23,7 @@ class AttachmentPlayer(private val stopSpeaking: () -> Unit) {
         _playing.value = id
         try {
             p.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-            p.setDataSource(file.path)
+            p.setDataSource(path)
             p.setOnPreparedListener { it.start() }
             p.setOnCompletionListener { if (player === it) stop() }
             p.setOnErrorListener { mp, what, extra ->
@@ -39,7 +38,7 @@ class AttachmentPlayer(private val stopSpeaking: () -> Unit) {
         }
     }
 
-    fun stop() {
+    override fun stop() {
         player?.let { runCatching { it.stop() }; it.release() }
         player = null
         _playing.value = null

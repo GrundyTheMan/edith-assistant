@@ -120,10 +120,10 @@ class AttachmentContextTest {
     }
 
     @Test fun `photos are scaled to 1536 on the longest side and never up`() {
-        assertEquals(1536 to 1152, AttachmentIntake.scaled(4000, 3000))
-        assertEquals(1152 to 1536, AttachmentIntake.scaled(3000, 4000))
-        assertEquals(800 to 600, AttachmentIntake.scaled(800, 600))
-        with(AttachmentIntake) {
+        assertEquals(1536 to 1152, AttachmentLimits.scaled(4000, 3000))
+        assertEquals(1152 to 1536, AttachmentLimits.scaled(3000, 4000))
+        assertEquals(800 to 600, AttachmentLimits.scaled(800, 600))
+        with(AttachmentLimits) {
             assertEquals("receipt.jpg", "receipt.png".withExtension("jpg"))
             assertEquals("voice note.wav", "voice note.m4a".withExtension("wav"))
             assertEquals("photo.jpg", "photo".withExtension("jpg"))

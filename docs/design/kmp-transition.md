@@ -388,6 +388,12 @@ Goal: `shared/` exists, builds for Android, desktop and iOS, and the first found
 
 After K2.4 the iPhone app can run the whole engine. **Gate G2:** the shared engine passes its tests on desktop, Android and the iOS simulator, and the Android app is unchanged to use.
 
+### Phase 2b — the rest of the engine (added 2026-11-24, see [`kmp-parity-plan.md`](kmp-parity-plan.md) §7)
+
+| WP | State | What moved, and what was found |
+|---|---|---|
+| K2.10 | **done on Android** | The platform parts of attachments became interfaces in `shared/commonMain`: `AttachmentIntake` (takes the picked item as an address string; `Result.Ready`/`Refused`) and `AttachmentPlayer` (`playing`, `play(id, path)`, `stop`); `AttachmentLimits` holds the rules as plain code (longest side 1536, JPEG 85, 5 minutes of audio, `scaled`, `withExtension`, which audio is kept as it is, minutes and seconds). Android's classes are now `AndroidAttachmentIntake` and `AndroidAttachmentPlayer` (the code is unchanged apart from `Uri.parse` of the string, and the shared rules); `FileExport` (share, save) stays Android-only until the chat screen moves (K3.2), where it becomes a screen seam. 6 new shared tests (desktop, Android host, simulator). Not done: the iPhone implementations (K4.3). |
+
 ### Phase 3 — Shared screens
 
 | WP | Work | Size |

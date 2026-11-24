@@ -31,7 +31,7 @@ class AttachmentIntakeDeviceTest {
     private val app = InstrumentationRegistry.getInstrumentation().targetContext
     private val work = File(app.cacheDir, "intake-test").apply { deleteRecursively(); mkdirs() }
     private val pending = File(work, "pending")
-    private val intake = AttachmentIntake(app.contentResolver, pending, AppDispatchers(Dispatchers.Main, Dispatchers.IO, Dispatchers.Default))
+    private val intake = AndroidAttachmentIntake(app.contentResolver, pending, AppDispatchers(Dispatchers.Main, Dispatchers.IO, Dispatchers.Default))
 
     @After fun tearDown() {
         work.deleteRecursively()
@@ -39,7 +39,7 @@ class AttachmentIntakeDeviceTest {
 
     @Test fun aLargePhotoIsScaledTo1536AndSavedAsJpeg() = runBlocking {
         val photo = jpeg(4000, 3000)
-        val result = intake.image(Uri.fromFile(photo)) as AttachmentIntake.Result.Ready
+        val result = intake.image(Uri.fromFile(photo).toString()) as AttachmentIntake.Result.Ready
         val size = bounds(result.attachment.file)
         assertEquals(1536 to 1152, size)
         assertEquals(AttachmentKind.Image, result.attachment.kind)
@@ -53,19 +53,19 @@ class AttachmentIntakeDeviceTest {
             setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_ROTATE_90.toString())
             saveAttributes()
         }
-        val result = intake.image(Uri.fromFile(photo)) as AttachmentIntake.Result.Ready
+        val result = intake.image(Uri.fromFile(photo).toString()) as AttachmentIntake.Result.Ready
         assertEquals("portrait, and scaled to 1536", 768 to 1536, bounds(result.attachment.file))
     }
 
     @Test fun notAnImageIsRefused() = runBlocking {
         val text = File(work, "notes.jpg").apply { writeText("not really a picture") }
-        assertTrue(intake.image(Uri.fromFile(text)) is AttachmentIntake.Result.Refused)
+        assertTrue(intake.image(Uri.fromFile(text).toString()) is AttachmentIntake.Result.Refused)
     }
 
     @Test fun wavAndMp3AreKeptAsTheyAre() = runBlocking {
         for ((asset, mime) in listOf("note.wav" to "audio/wav", "note.mp3" to "audio/mpeg")) {
             val source = asset(asset)
-            val result = intake.audio(Uri.fromFile(source)) as AttachmentIntake.Result.Ready
+            val result = intake.audio(Uri.fromFile(source).toString()) as AttachmentIntake.Result.Ready
             assertEquals(asset, mime, result.attachment.mimeType)
             assertTrue(asset, result.attachment.file.readBytes().contentEquals(source.readBytes()))
             assertTrue("$asset ${result.attachment.durationMs}", abs(result.attachment.durationMs!! - 12_070) < 150)
@@ -73,7 +73,7 @@ class AttachmentIntakeDeviceTest {
     }
 
     @Test fun m4aIsConvertedToMonoWavWithItsLengthKept() = runBlocking {
-        val result = intake.audio(Uri.fromFile(asset("note.m4a"))) as AttachmentIntake.Result.Ready
+        val result = intake.audio(Uri.fromFile(asset("note.m4a")).toString()) as AttachmentIntake.Result.Ready
         val a = result.attachment
         assertEquals("audio/wav", a.mimeType)
         assertTrue(a.fileName.endsWith(".wav"))
@@ -94,14 +94,14 @@ class AttachmentIntakeDeviceTest {
     }
 
     @Test fun audioOverFiveMinutesIsRefusedWithTheReason() = runBlocking {
-        val result = intake.audio(Uri.fromFile(asset("long.m4a"))) as AttachmentIntake.Result.Refused
+        val result = intake.audio(Uri.fromFile(asset("long.m4a")).toString()) as AttachmentIntake.Result.Refused
         assertTrue(result.message, result.message.contains("5:0") && result.message.contains("up to 5 minutes"))
         assertTrue("nothing left behind", pending.listFiles().isNullOrEmpty())
     }
 
     @Test fun notAudioIsRefused() = runBlocking {
         val photo = jpeg(100, 100)
-        assertTrue(intake.audio(Uri.fromFile(photo)) is AttachmentIntake.Result.Refused)
+        assertTrue(intake.audio(Uri.fromFile(photo).toString()) is AttachmentIntake.Result.Refused)
     }
 
     private fun jpeg(w: Int, h: Int): File {
