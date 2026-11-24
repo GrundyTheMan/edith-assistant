@@ -3,6 +3,9 @@ package com.edith.app.ui.diagnostics
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -39,7 +42,8 @@ fun EngineCheckScreen(check: EngineCheck) {
     var lines by remember { mutableStateOf<List<EngineCheck.Line>>(emptyList()) }
     LaunchedEffect(Unit) { address = check.savedServerUrl() }
 
-    Column(Modifier.verticalScroll(rememberScrollState())) {
+    // safeDrawing: stays clear of the notch, the home indicator and the keyboard (the first simulator picture showed the title under the clock).
+    Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing).verticalScroll(rememberScrollState())) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Edith engine check", style = MaterialTheme.typography.headlineSmall)
             Text("The shared engine, running on this phone.", style = MaterialTheme.typography.bodyMedium)
