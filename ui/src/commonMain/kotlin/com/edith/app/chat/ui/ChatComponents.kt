@@ -75,6 +75,7 @@ import com.edith.app.attachments.ReplyFormat
 import com.edith.app.core.time.SystemClock
 import com.edith.app.data.db.MessageRole
 import com.edith.app.data.db.MessageStatus
+import com.edith.app.chat.engine.PlainTurnRunner
 import kotlinx.coroutines.delay
 
 /** How far Edith's action row is pulled up onto her bubble's bottom edge (the owner's "almost on top of the edge"). */
@@ -162,6 +163,10 @@ fun MessageItem(
     }
 }
 
+/** How long Edith thinks before the bubble adds the "model may be loading" line. */
+internal const val SLOW_START_MS = 8_000L
+internal const val SLOW_HINT_TAG = "slow-hint"
+
 /** The owner's message from Send until it's stored (no time yet). */
 @Composable
 fun PendingUserItem(text: String, maxBubbleWidth: Dp) {
@@ -182,10 +187,23 @@ fun InFlightItem(inFlight: InFlight, maxBubbleWidth: Dp, onStop: () -> Unit, onA
             val request = inFlight.confirmation
             when {
                 request != null -> ConfirmationCard(request, onAnswer, Modifier.padding(top = if (inFlight.partialText.isBlank()) 0.dp else 10.dp))
-                inFlight.partialText.isBlank() -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(10.dp))
-                    Text(inFlight.label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                inFlight.partialText.isBlank() -> Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Text(inFlight.label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    // Ollama loads a model on the first message after a while, which can take a minute: say so instead of leaving a bare spinner.
+                    var slow by remember { mutableStateOf(false) }
+                    LaunchedEffect(inFlight.label) { slow = false; delay(SLOW_START_MS); slow = true }
+                    if (slow && inFlight.label == PlainTurnRunner.THINKING) {
+                        Text(
+                            "Still working. The model may be loading, which can take a minute.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            modifier = Modifier.padding(top = 6.dp).testTag(SLOW_HINT_TAG),
+                        )
+                    }
                 }
             }
         }
