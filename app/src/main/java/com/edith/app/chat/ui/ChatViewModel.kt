@@ -342,7 +342,7 @@ class ChatViewModel(
         val key = nextPendingKey++
         pending.update { it + PendingItem(key, if (kind == AttachmentKind.Image) "Photo" else "Audio", kind) }
         viewModelScope.launch {
-            val result = if (kind == AttachmentKind.Image) intake.image(uri) else intake.audio(uri)
+            val result = if (kind == AttachmentKind.Image) intake.image(uri.toString()) else intake.audio(uri.toString())
             when (result) {
                 is AttachmentIntake.Result.Ready -> {
                     var kept = false
@@ -370,7 +370,7 @@ class ChatViewModel(
     fun toggleAttachmentPlayback(attachment: AttachmentUi) {
         val player = attachmentPlayer ?: return
         if (player.playing.value == attachment.id) player.stop()
-        else attachment.path?.let { player.play(attachment.id, File(it)) }
+        else attachment.path?.let { player.play(attachment.id, it) }
     }
 
     /** Stops the reply being written; what Edith had written so far is kept (C06). */

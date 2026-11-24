@@ -10,6 +10,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
+import androidx.core.net.toUri
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
@@ -17,8 +18,8 @@ import com.edith.app.data.db.AttachmentKind
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
+import com.edith.app.attachments.AttachmentLimits.withExtension
 import kotlin.math.max
-import kotlin.math.roundToInt
 
 /**
  * Prepares what the owner picked (C15 §2), off the main thread:
@@ -29,84 +30,74 @@ import kotlin.math.roundToInt
  *
  * Files go to [pendingDir] (`cacheDir/pending/`), which is emptied at startup.
  */
-class AttachmentIntake(
+class AndroidAttachmentIntake(
     private val resolver: ContentResolver,
     private val pendingDir: File,
     private val dispatchers: AppDispatchers,
-) {
-    sealed interface Result {
-        data class Ready(val attachment: PendingAttachment) : Result
-        /** Why it can't be attached, for the owner. */
-        data class Refused(val message: String) : Result
-    }
-
-    suspend fun image(uri: Uri): Result = withContext(dispatchers.io) {
+) : AttachmentIntake {
+    override suspend fun image(uri: String): AttachmentIntake.Result = withContext(dispatchers.io) {
+        val uri = uri.toUri()
         val name = displayName(uri, "image.jpg")
         try {
-            val bitmap = decodeUpright(uri) ?: return@withContext Result.Refused("$name isn't an image Edith can open.")
+            val bitmap = decodeUpright(uri) ?: return@withContext AttachmentIntake.Result.Refused("$name isn't an image Edith can open.")
             val file = newFile("jpg")
             file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) }
             Log.d(LogTag.Chat, "Image prepared: ${bitmap.width}×${bitmap.height}, ${file.length() / 1024} KB")
             bitmap.recycle()
-            Result.Ready(PendingAttachment(AttachmentKind.Image, name.withExtension("jpg"), "image/jpeg", file.path, file.length()))
+            AttachmentIntake.Result.Ready(PendingAttachment(AttachmentKind.Image, name.withExtension("jpg"), "image/jpeg", file.path, file.length()))
         } catch (e: Exception) {
             Log.w(LogTag.Chat, "Couldn't prepare an image", e)
-            Result.Refused("$name couldn't be opened as an image.")
+            AttachmentIntake.Result.Refused("$name couldn't be opened as an image.")
         } catch (e: OutOfMemoryError) {
             Log.w(LogTag.Chat, "Image too large to prepare", e)
-            Result.Refused("$name is too large to attach.")
+            AttachmentIntake.Result.Refused("$name is too large to attach.")
         }
     }
 
-    suspend fun audio(uri: Uri): Result = withContext(dispatchers.io) {
+    override suspend fun audio(uri: String): AttachmentIntake.Result = withContext(dispatchers.io) {
+        val uri = uri.toUri()
         val name = displayName(uri, "audio.wav")
         try {
             val probe = probeAudio(uri)
-                ?: return@withContext Result.Refused("$name isn't an audio file Edith can open.")
+                ?: return@withContext AttachmentIntake.Result.Refused("$name isn't an audio file Edith can open.")
             val durationMs = probe.durationMs
             if (durationMs > MAX_AUDIO_MS) {
-                return@withContext Result.Refused("$name is ${minutes(durationMs)} long; audio can be up to 5 minutes.")
+                return@withContext AttachmentIntake.Result.Refused("$name is ${AttachmentLimits.minutes(durationMs)} long; audio can be up to 5 minutes.")
             }
             // The format from the content itself where possible: a missing name falls back to "audio.wav".
             val type = resolver.getType(uri)?.takeIf { it.startsWith("audio/") } ?: probe.mimeType.orEmpty()
-            val passthrough = when {
-                type in WAV_TYPES -> "wav"
-                type in MP3_TYPES -> "mp3"
-                type.isEmpty() && name.endsWith(".wav", ignoreCase = true) -> "wav"
-                type.isEmpty() && name.endsWith(".mp3", ignoreCase = true) -> "mp3"
-                else -> null
-            }
+            val passthrough = AttachmentLimits.audioPassthrough(type, name)
             val file: File
             val outName: String
             val mime: String
             if (passthrough != null) {
                 file = newFile(passthrough)
                 resolver.openInputStream(uri)?.use { input -> file.outputStream().use { input.copyTo(it) } }
-                    ?: return@withContext Result.Refused("$name couldn't be read.")
+                    ?: return@withContext AttachmentIntake.Result.Refused("$name couldn't be read.")
                 outName = name
                 mime = if (passthrough == "wav") "audio/wav" else "audio/mpeg"
             } else {
                 file = newFile("wav")
                 resolver.openFileDescriptor(uri, "r")?.use { AudioToWav.convert(it.fileDescriptor, file) }
-                    ?: return@withContext Result.Refused("$name couldn't be read.")
+                    ?: return@withContext AttachmentIntake.Result.Refused("$name couldn't be read.")
                 outName = name.withExtension("wav")
                 mime = "audio/wav"
                 Log.d(LogTag.Chat, "Audio converted to WAV: ${type.ifEmpty { "unknown type" }}, ${durationMs} ms, ${file.length() / 1024} KB")
             }
-            Result.Ready(PendingAttachment(AttachmentKind.Audio, outName, mime, file.path, file.length(), durationMs))
+            AttachmentIntake.Result.Ready(PendingAttachment(AttachmentKind.Audio, outName, mime, file.path, file.length(), durationMs))
         } catch (e: Exception) {
             Log.w(LogTag.Chat, "Couldn't prepare an audio file", e)
-            Result.Refused("$name couldn't be converted to audio Edith can send.")
+            AttachmentIntake.Result.Refused("$name couldn't be converted to audio Edith can send.")
         }
     }
 
     /** Deletes a prepared file that won't be sent (removed from the input row). */
-    fun discard(attachment: PendingAttachment) {
+    override fun discard(attachment: PendingAttachment) {
         attachment.file.delete()
     }
 
     /** Called once at startup: anything here is from a previous run. */
-    fun clearLeftovers() {
+    override fun clearLeftovers() {
         pendingDir.listFiles()?.forEach { it.delete() }
     }
 
@@ -169,33 +160,17 @@ class AttachmentIntake(
     }
 
     companion object {
-        const val MAX_SIDE = 1536
-        const val JPEG_QUALITY = 85
-        const val MAX_AUDIO_MS = 5 * 60 * 1000L
-        private val WAV_TYPES = setOf("audio/wav", "audio/x-wav", "audio/wave", "audio/vnd.wave")
-        private val MP3_TYPES = setOf("audio/mpeg", "audio/mp3", "audio/mpeg3")
+        private const val MAX_SIDE = AttachmentLimits.MAX_SIDE
+        private const val JPEG_QUALITY = AttachmentLimits.JPEG_QUALITY
+        private const val MAX_AUDIO_MS = AttachmentLimits.MAX_AUDIO_MS
 
-        /** [w]×[h] scaled down so the longest side is at most [MAX_SIDE] (never scaled up). */
-        fun scaled(w: Int, h: Int): Pair<Int, Int> {
-            val longest = max(w, h)
-            if (longest <= MAX_SIDE) return w to h
-            val f = MAX_SIDE.toDouble() / longest
-            return max(1, (w * f).roundToInt()) to max(1, (h * f).roundToInt())
-        }
+        private fun scaled(w: Int, h: Int) = AttachmentLimits.scaled(w, h)
 
         fun exifRotation(exif: ExifInterface): Int = when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
             ExifInterface.ORIENTATION_ROTATE_90 -> 90
             ExifInterface.ORIENTATION_ROTATE_180 -> 180
             ExifInterface.ORIENTATION_ROTATE_270 -> 270
             else -> 0
-        }
-
-        /** "receipt.png" → "receipt.jpg". */
-        fun String.withExtension(ext: String): String = substringBeforeLast('.', this) + ".$ext"
-
-        private fun minutes(ms: Long): String {
-            val s = ms / 1000
-            return "%d:%02d".format(s / 60, s % 60)
         }
     }
 }

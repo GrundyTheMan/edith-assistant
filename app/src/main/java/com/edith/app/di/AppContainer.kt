@@ -81,6 +81,8 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
+import com.edith.app.attachments.AndroidAttachmentIntake
+import com.edith.app.attachments.AndroidAttachmentPlayer
 import com.edith.app.attachments.AttachmentIntake
 import com.edith.app.attachments.AttachmentPlayer
 import com.edith.app.attachments.AttachmentsSection
@@ -342,7 +344,7 @@ class AppContainer(val app: Application) {
     private val recordingsDir: File get() = File(app.cacheDir, "recordings")
 
     /** Prepares picked photos and audio files (C15). */
-    val attachmentIntake: AttachmentIntake by lazy { AttachmentIntake(app.contentResolver, File(app.cacheDir, "pending"), dispatchers) }
+    val attachmentIntake: AttachmentIntake by lazy { AndroidAttachmentIntake(app.contentResolver, File(app.cacheDir, "pending"), dispatchers) }
 
     /** Attachments' files: `filesDir/attachments` (or `cacheDir/session` when keeping 0), C16. */
     val attachmentStore: FileAttachmentStore by lazy { FileAttachmentStore(app.filesDir, app.cacheDir) }
@@ -468,7 +470,7 @@ class AppContainer(val app: Application) {
     val retention: Retention by lazy { Retention(database.attachmentDao(), attachmentStore, settingsRepository, clock, dispatchers) }
 
     /** Plays audio attachments in the chat; starting one stops Edith's voice. */
-    val attachmentPlayer: AttachmentPlayer by lazy { AttachmentPlayer { speechOutput.stop() } }
+    val attachmentPlayer: AttachmentPlayer by lazy { AndroidAttachmentPlayer { speechOutput.stop() } }
 
     /**
      * Creates/opens edith.db on a background thread at launch (running any migration), so the first chat doesn't
