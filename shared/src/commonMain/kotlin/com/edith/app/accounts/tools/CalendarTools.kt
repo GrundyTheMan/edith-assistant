@@ -14,6 +14,8 @@ import com.edith.app.accounts.sources.ReadAll
 import com.edith.app.accounts.sources.Readable
 import com.edith.app.accounts.sources.Reads
 import com.edith.app.chat.engine.ConfirmationRequest
+import com.edith.app.core.util.PlatformLock
+import com.edith.app.core.util.synchronized
 import com.edith.app.core.error.Outcome
 import com.edith.app.tools.framework.ArgumentError
 import com.edith.app.tools.framework.ParamType
@@ -48,23 +50,24 @@ import kotlin.time.Instant
 class CalendarHandles {
     private val handles = LinkedHashMap<String, CalendarEvent>()
     private var next = 1
+    private val lock = PlatformLock()
 
-    @Synchronized fun handleFor(event: CalendarEvent): String {
+    fun handleFor(event: CalendarEvent): String = lock.synchronized {
         handles.entries.firstOrNull { it.value.accountId == event.accountId && it.value.id == event.id && it.value.calendarId == event.calendarId }?.let {
             it.setValue(event)
-            return it.key
+            return@synchronized it.key
         }
         val h = "e${next++}"
         handles[h] = event
         if (handles.size > MAX_HANDLES) handles.remove(handles.keys.first())
-        return h
+        h
     }
 
-    @Synchronized fun event(handle: String?): CalendarEvent? = handle?.trim()?.let { handles[it] }
+    fun event(handle: String?): CalendarEvent? = lock.synchronized { handle?.trim()?.let { handles[it] } }
 
-    @Synchronized fun update(handle: String, event: CalendarEvent) { handles[handle] = event }
+    fun update(handle: String, event: CalendarEvent) = lock.synchronized { handles[handle] = event }
 
-    @Synchronized fun forget(handle: String) { handles.remove(handle) }
+    fun forget(handle: String) { lock.synchronized { handles.remove(handle) } }
 
     companion object {
         const val MAX_HANDLES = 300
