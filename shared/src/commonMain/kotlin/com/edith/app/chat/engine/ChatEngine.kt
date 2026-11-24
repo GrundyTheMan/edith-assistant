@@ -3,6 +3,7 @@ package com.edith.app.chat.engine
 import com.edith.app.core.error.AppError
 import com.edith.app.core.error.AppErrorException
 import com.edith.app.core.error.ErrorMapper
+import com.edith.app.core.error.isClassLoadFailure
 import com.edith.app.core.error.Outcome
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.io.IOException
 import kotlin.concurrent.Volatile
 import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -228,7 +230,8 @@ class ChatEngine(
             val error = ErrorMapper.map(e, runCatching { settings.current().serverUrl }.getOrDefault("your server"))
             Log.w(LogTag.Chat, "Turn failed: ${error::class.simpleName}", e)
             return fail(conversationId, error, model)
-        } catch (e: LinkageError) {
+        } catch (e: Throwable) {
+            if (!e.isClassLoadFailure()) throw e
             // A class that failed to load (e.g. ExceptionInInitializerError) is a bug, but it must fail this turn,
             // not crash the app: it once did, from a regex Android couldn't compile (L25).
             Log.e(LogTag.Chat, "Turn failed: a part of Edith couldn't load", e)
@@ -259,7 +262,7 @@ class ChatEngine(
             try {
                 val path = withContext(platformIoDispatcher) { store.writeBytes(image.fileName, image.jpeg, session) }
                 ChatRepository.NewAttachment(AttachmentKind.Image, image.fileName, "image/jpeg", image.jpeg.size.toLong(), path)
-            } catch (e: java.io.IOException) {
+            } catch (e: IOException) {
                 Log.w(LogTag.Chat, "Couldn't keep a tool's picture", e)
                 null
             }
@@ -290,9 +293,9 @@ class ChatEngine(
             is ReplyFormat.Part.File -> try {
                 val path = withContext(platformIoDispatcher) { store.write(part.name, part.content, session) }
                 files += ChatRepository.NewAttachment(AttachmentKind.File, part.name, ReplyFormat.mimeType(part.name),
-                    part.content.toByteArray().size.toLong(), path)
+                    part.content.encodeToByteArray().size.toLong(), path)
                 line(ReplyFormat.placeholder(part.name))
-            } catch (e: java.io.IOException) {
+            } catch (e: IOException) {
                 Log.w(LogTag.Chat, "Couldn't keep Edith's file", e)
                 line("```\n${part.content}\n```")   // she still sees and shares the content as text
             }
