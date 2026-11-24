@@ -3,9 +3,9 @@ package com.edith.app.accounts.sources
 import com.edith.app.accounts.Account
 import com.edith.app.accounts.Provider
 import com.edith.app.core.error.Outcome
-import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlinx.coroutines.test.runTest
+import com.edith.app.testing.assertEquals
+import kotlin.test.Test
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
@@ -35,7 +35,7 @@ class DefaultCalendarTest {
         override suspend fun delete(event: CalendarEvent) = Outcome.Success(Unit)
     }
 
-    @Test fun `the chosen calendar is the default, listed first, and a new event goes there`() = runBlocking {
+    @Test fun `the chosen calendar is the default listed first and a new event goes there`() = runTest {
         val fake = Fake()
         val s = DefaultCalendarSource(fake, "cal")
         val cals = (s.calendars() as Outcome.Success).value
@@ -46,7 +46,7 @@ class DefaultCalendarTest {
         assertEquals("unnamed → the choice; named → as asked", listOf<String?>("cal", "bday"), fake.created)
     }
 
-    @Test fun `a choice that's gone or read-only falls back to the provider's default`() = runBlocking {
+    @Test fun `a choice that's gone or read-only falls back to the provider's default`() = runTest {
         for (gone in listOf("deleted", "hol")) {
             val fake = Fake()
             val s = DefaultCalendarSource(fake, gone)

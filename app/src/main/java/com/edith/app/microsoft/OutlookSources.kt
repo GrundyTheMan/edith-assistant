@@ -241,8 +241,8 @@ class OutlookMailSource(
                 val all = r.value.value.map { it.summary() }
                 val kept = if (!clientSide) all else all.filter { m ->
                     (!q.unreadOnly || m.unread) &&
-                        (q.after == null || m.date >= q.after) &&
-                        (q.before == null || m.date < q.before)
+                        q.after.let { a -> a == null || m.date >= a } &&
+                        q.before.let { b -> b == null || m.date < b }
                 }.sortedByDescending { it.date }
                 Outcome.Success(MailSearchResult(kept.take(limit), more = kept.size > limit || r.value.nextLink != null))
             }

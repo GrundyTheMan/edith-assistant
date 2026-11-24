@@ -1,4 +1,5 @@
 # The shared-code transition: one Kotlin codebase for Android and iPhone (decision D40)
+| K2.6a | **first slice done: the accounts model** | `Account`, `AccountStore` (DataStore), the source interfaces (`CalendarSource`, `MailSource`, `Reads`, `DefaultCalendar`) and `TaskSource`/task types moved to `shared/commonMain` under the same package names (so no caller changed). `SecureRandom` became `kotlin.random.Random` for the account id (a label, not a secret); `IOException` is kotlinx-io's. Five call sites in `app/` needed a local value in place of a smart cast across modules. `DefaultCalendarTest` and `ReadsPatientTest` now run on the desktop and the iPhone simulator. **Left in this item:** `Accounts` (Activity and PendingIntent become a `SignInLauncher`), task ranking, the three tool families, `WhichAccount`. **K2.8 (Jarvis) waits for this:** `JarvisAccounts` and `JarvisSources` build on `Accounts` and these sources. |
 
 | | |
 |---|---|

@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
-import java.io.IOException
+import kotlinx.io.IOException
 
 /** The connected accounts, in the order the owner added them (C22 §1). */
 interface AccountStore {

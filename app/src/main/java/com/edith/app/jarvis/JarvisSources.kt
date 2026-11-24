@@ -67,11 +67,11 @@ internal class JarvisMailSource(
         }
         return api.get("mail/messages", query, Page.serializer(WireMail.serializer())).map { page ->
             val found = page.items.map { it.toSummary(account.id) }
-                .filter { q.from == null || it.from.contains(q.from, ignoreCase = true) }
-                .filter { q.to == null || it.to.orEmpty().contains(q.to, ignoreCase = true) }
-                .filter { q.subject == null || it.subject.contains(q.subject, ignoreCase = true) }
-                .filter { q.before == null || it.date < q.before }
-                .filter { q.after == null || it.date >= q.after }
+                .filter { m -> q.from.let { f -> f == null || m.from.contains(f, ignoreCase = true) } }
+                .filter { m -> q.to.let { t -> t == null || m.to.orEmpty().contains(t, ignoreCase = true) } }
+                .filter { m -> q.subject.let { s -> s == null || m.subject.contains(s, ignoreCase = true) } }
+                .filter { m -> q.before.let { b -> b == null || m.date < b } }
+                .filter { m -> q.after.let { a -> a == null || m.date >= a } }
             MailSearchResult(found, page.more)
         }
     }
