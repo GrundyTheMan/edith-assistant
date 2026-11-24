@@ -120,7 +120,7 @@ data class ChatActions(
     val onAttachAudio: () -> Unit = {},
     val onRemoveAttachment: (Long) -> Unit = {},
     val onToggleAttachment: (AttachmentUi) -> Unit = {},
-    val onOpenImage: (File) -> Unit = {},
+    val onOpenImage: (String) -> Unit = {},
     /** Edith's file cards (C16): View, Save, Share. */
     val files: FileActions = FileActions(),
 )
@@ -204,12 +204,12 @@ fun ChatScreen(vm: ChatViewModel = viewModel(factory = ChatViewModel.Factory)) {
         if (target != null && source != null) scope.launch { copyTo(context, source, target) }
     }
     val fileActions = FileActions(
-        onView = { a -> a.file?.let { viewingFile = a.fileName to it.path } },
-        onSave = { a -> a.file?.let { savingPath = it.path; saveFile.launch(a.fileName to a.mimeType) } },
-        onShare = { a -> a.file?.let { scope.launch { share(context, it, a.fileName, a.mimeType) } } },
+        onView = { a -> a.path?.let { viewingFile = a.fileName to it } },
+        onSave = { a -> a.path?.let { savingPath = it; saveFile.launch(a.fileName to a.mimeType) } },
+        onShare = { a -> a.path?.let { scope.launch { share(context, File(it), a.fileName, a.mimeType) } } },
     )
     var viewing by rememberSaveable { mutableStateOf<String?>(null) }
-    viewing?.let { path -> ImageViewer(File(path)) { viewing = null } }
+    viewing?.let { path -> ImageViewer(path) { viewing = null } }
     // Never leave the microphone open in the background (C12 §2). A rotation isn't leaving.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -242,7 +242,7 @@ fun ChatScreen(vm: ChatViewModel = viewModel(factory = ChatViewModel.Factory)) {
             onAttachAudio = { pickAudio.launch(arrayOf("audio/*")) },
             onRemoveAttachment = vm::removeAttachment,
             onToggleAttachment = vm::toggleAttachmentPlayback,
-            onOpenImage = { viewing = it.path },
+            onOpenImage = { viewing = it },
             files = fileActions,
             onHandsFree = {
                 if (state.handsFree?.on == true) {

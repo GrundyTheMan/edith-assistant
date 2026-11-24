@@ -5,7 +5,6 @@ import com.edith.app.chat.engine.ConfirmationRequest
 import com.edith.app.data.db.AttachmentKind
 import com.edith.app.data.db.MessageRole
 import com.edith.app.data.db.MessageStatus
-import java.io.File
 
 /** Everything the chat screen shows (C07 §1). The draft lives in [ChatViewModel.draft] so typing stays instant. */
 @Immutable
@@ -84,8 +83,8 @@ data class AttachmentUi(
     val fileName: String,
     val kind: AttachmentKind,
     val id: Long = 0,
-    /** Null when it's no longer available (removed by retention, C16). */
-    val file: File? = null,
+    /** Where the file is on the device (shown through Coil as a file:// address); null when it's no longer available (removed by retention, C16). */
+    val path: String? = null,
     val durationMs: Long? = null,
     /** In Edith's reply: a file she wrote, or (with [isResend]) one of the owner's sent back (C16 §3). */
     val fromEdith: Boolean = false,
@@ -97,7 +96,7 @@ data class AttachmentUi(
 
 /** A chip above the input row (C15 §1): a picked file being prepared, or ready to send. */
 @Immutable
-data class PendingUi(val key: Long, val name: String, val kind: AttachmentKind, val file: File?, val ready: Boolean)
+data class PendingUi(val key: Long, val name: String, val kind: AttachmentKind, val path: String?, val ready: Boolean)
 
 /** A reply being written. [canStop] is false for the moment between "done" and the stored reply appearing. */
 @Immutable

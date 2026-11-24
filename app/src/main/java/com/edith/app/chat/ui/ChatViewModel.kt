@@ -189,7 +189,7 @@ class ChatViewModel(
             recording = recording?.let { RecordingUi(it.startedAtMs) },
             dictating = v.dictating,
             handsFree = hf?.first,
-            pending = v.pending.map { PendingUi(it.key, it.name, it.kind, it.attachment?.file, ready = it.attachment != null) },
+            pending = v.pending.map { PendingUi(it.key, it.name, it.kind, it.attachment?.path, ready = it.attachment != null) },
             playingAttachmentId = v.playing,
             conversations = conversations.map {
                 ConversationItem(
@@ -370,7 +370,7 @@ class ChatViewModel(
     fun toggleAttachmentPlayback(attachment: AttachmentUi) {
         val player = attachmentPlayer ?: return
         if (player.playing.value == attachment.id) player.stop()
-        else attachment.file?.let { player.play(attachment.id, it) }
+        else attachment.path?.let { player.play(attachment.id, File(it)) }
     }
 
     /** Stops the reply being written; what Edith had written so far is kept (C06). */
@@ -459,7 +459,7 @@ class ChatViewModel(
         val shown = original ?: a
         val file = attachmentStore?.file(shown.storedPath)
         return AttachmentUi(
-            number = a.number, fileName = shown.fileName, kind = shown.kind, id = shown.id, file = file,
+            number = a.number, fileName = shown.fileName, kind = shown.kind, id = shown.id, path = file?.path,
             durationMs = if (shown.kind == AttachmentKind.Audio) attachmentStore?.durationMs(shown.storedPath) else null,
             fromEdith = a.direction == AttachmentDirection.FromEdith, isResend = a.resendOf != null,
             mimeType = shown.mimeType,

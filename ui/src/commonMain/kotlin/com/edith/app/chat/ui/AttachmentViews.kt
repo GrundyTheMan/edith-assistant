@@ -55,7 +55,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
 import com.edith.app.data.db.AttachmentKind
-import java.io.File
 
 private val ThumbShape = RoundedCornerShape(12.dp)
 
@@ -75,8 +74,8 @@ fun PendingAttachments(items: List<PendingUi>, onRemove: (Long) -> Unit, modifie
                 avatar = {
                     when {
                         !item.ready -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        item.kind == AttachmentKind.Image && item.file != null ->
-                            AsyncImage(item.file, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(24.dp).clip(RoundedCornerShape(4.dp)))
+                        item.kind == AttachmentKind.Image && item.path != null ->
+                            AsyncImage(imageModel(item.path), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(24.dp).clip(RoundedCornerShape(4.dp)))
                         else -> Icon(Icons.Filled.AudioFile, contentDescription = null, modifier = Modifier.size(18.dp))
                     }
                 },
@@ -99,21 +98,21 @@ fun MessageAttachments(
     attachments: List<AttachmentUi>,
     playingId: Long?,
     onTogglePlay: (AttachmentUi) -> Unit,
-    onOpenImage: (File) -> Unit,
+    onOpenImage: (String) -> Unit,
     contentColor: Color,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         for (a in attachments) {
             when {
-                a.file == null -> Row(verticalAlignment = Alignment.CenterVertically) {
+                a.path == null -> Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(if (a.kind == AttachmentKind.Image) Icons.Filled.Image else Icons.Filled.AudioFile, contentDescription = null, tint = contentColor, modifier = Modifier.size(18.dp))
                     Text(" ${a.fileName} — no longer available", color = contentColor, style = MaterialTheme.typography.bodySmall)
                 }
                 a.kind == AttachmentKind.Image -> AsyncImage(
-                    model = a.file,
+                    model = imageModel(a.path),
                     contentDescription = "Attachment ${a.number}: ${a.fileName}",
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier.sizeIn(maxWidth = 240.dp, maxHeight = 240.dp).clip(ThumbShape).clickable(onClickLabel = "View full screen") { onOpenImage(a.file) },
+                    modifier = Modifier.sizeIn(maxWidth = 240.dp, maxHeight = 240.dp).clip(ThumbShape).clickable(onClickLabel = "View full screen") { onOpenImage(a.path) },
                 )
                 else -> Row(verticalAlignment = Alignment.CenterVertically) {
                     val playing = playingId == a.id
@@ -150,19 +149,19 @@ fun EdithAttachments(
     attachments: List<AttachmentUi>,
     playingId: Long?,
     onTogglePlay: (AttachmentUi) -> Unit,
-    onOpenImage: (File) -> Unit,
+    onOpenImage: (String) -> Unit,
     files: FileActions,
 ) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         for (a in attachments) {
             when {
-                a.isResend && a.file == null ->
+                a.isResend && a.path == null ->
                     Text("Attachment ${a.number} is no longer available.", color = muted, style = MaterialTheme.typography.bodySmall)
                 // A resend, or a picture a tool brought back (C25: a camera snapshot): shown as the picture itself.
-                a.isResend || (a.kind == AttachmentKind.Image && a.file != null) ->
+                a.isResend || (a.kind == AttachmentKind.Image && a.path != null) ->
                     MessageAttachments(listOf(a), playingId, onTogglePlay, onOpenImage, MaterialTheme.colorScheme.onSurface)
-                a.file == null -> Row(verticalAlignment = Alignment.CenterVertically) {
+                a.path == null -> Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.Description, contentDescription = null, tint = muted, modifier = Modifier.size(18.dp))
                     Text(" ${a.fileName} — no longer kept", color = muted, style = MaterialTheme.typography.bodySmall)
                 }
@@ -214,7 +213,7 @@ fun FileViewer(name: String, text: String, onClose: () -> Unit) {
 
 /** A photo full screen, with pinch-zoom and pan; ✕ or Back closes it. */
 @Composable
-fun ImageViewer(file: File, onClose: () -> Unit) {
+fun ImageViewer(path: String, onClose: () -> Unit) {
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         var scale by remember { mutableFloatStateOf(1f) }
         var offset by remember { mutableStateOf(Offset.Zero) }
@@ -224,7 +223,7 @@ fun ImageViewer(file: File, onClose: () -> Unit) {
         }
         Box(Modifier.fillMaxSize().background(Color.Black).testTag(IMAGE_VIEWER_TAG)) {
             AsyncImage(
-                model = file,
+                model = imageModel(path),
                 contentDescription = "Full-screen image",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize().transformable(transform).graphicsLayer {
@@ -241,8 +240,14 @@ fun ImageViewer(file: File, onClose: () -> Unit) {
 /** 65_000 → "1:05". */
 fun formatDuration(ms: Long): String {
     val s = ms / 1000
-    return "%d:%02d".format(s / 60, s % 60)
+    return minutesAndSeconds(s)
 }
+
+/** "1:05" for 65 seconds (String.format is not available on the iPhone). */
+internal fun minutesAndSeconds(totalSeconds: Long): String = "${totalSeconds / 60}:${(totalSeconds % 60).toString().padStart(2, '0')}"
+
+/** What Coil is given for a stored file: a file:// address (the same on Android and the iPhone). */
+internal fun imageModel(path: String): Any = "file://$path"
 
 const val PENDING_ATTACHMENTS_TAG = "pending-attachments"
 const val IMAGE_VIEWER_TAG = "image-viewer"
