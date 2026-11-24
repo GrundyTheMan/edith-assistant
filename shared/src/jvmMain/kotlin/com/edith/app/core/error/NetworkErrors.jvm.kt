@@ -8,3 +8,5 @@ import java.net.UnknownHostException
 internal actual fun Throwable.isSocketTimeout(): Boolean = this is SocketTimeoutException
 
 internal actual fun Throwable.isUnreachable(): Boolean = this is ConnectException || this is UnknownHostException || this is NoRouteToHostException
+
+internal actual fun Throwable.isCertificateProblem(): Boolean = this is java.security.cert.CertificateException

@@ -16,6 +16,8 @@ import com.edith.app.printer.feed.PrinterSession
 import com.edith.app.printer.feed.PrinterWords
 import com.edith.app.printer.feed.Connections
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.io.asSource
+import kotlinx.io.buffered
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -388,7 +390,7 @@ internal class PrinterCardData(
         uploadJob = scope.launch {
             val stream = kotlinx.coroutines.withContext(io) { runCatching(file.open).getOrNull() }
             if (stream == null) { chosen = null; setUpload(UploadUi(name = file.name, error = com.edith.app.printer.feed.PrinterUpload.UNREADABLE_WORDS)); return@launch }
-            val r = routes.upload(file.name, stream, file.size) { sent -> _ui.update { u -> u.copy(files = u.files.copy(upload = u.files.upload.copy(sent = sent))) } }
+            val r = routes.upload(file.name, stream.asSource().buffered(), file.size) { sent -> _ui.update { u -> u.copy(files = u.files.copy(upload = u.files.upload.copy(sent = sent))) } }
             when (r) {
                 is FeedResult.Ok -> {
                     chosen = null

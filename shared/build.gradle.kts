@@ -15,7 +15,7 @@ kotlin {
         namespace = "com.edith.app.shared"
         compileSdk = 37
         minSdk = 26
-        withHostTest { }
+        withHostTest { isReturnDefaultValues = true }   // the shared code logs through android.util.Log, which a host test cannot run
         // The app is built for Java 17, and it inlines functions from here: they must be built for the same.
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
     }

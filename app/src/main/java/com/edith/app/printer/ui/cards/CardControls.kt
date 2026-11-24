@@ -209,9 +209,10 @@ internal fun FanControls(state: PrinterState, ctx: ControlsCtx) {
             Text("${f.label} ${PrinterFormat.percent(f.speed)}", style = MaterialTheme.typography.labelLarge)
             ReleaseSlider((f.speed * 100).toFloat(), 0f..100f, !off, Modifier.testTag("fan-${f.id}")) { ctx.send(PrinterCommand.Fan(f.id, PrinterInput.level(it))) }
         }
-        if (state.light != null) {
-            Text("Light ${PrinterFormat.percent(state.light)}", style = MaterialTheme.typography.labelLarge)
-            ReleaseSlider((state.light * 100).toFloat(), 0f..100f, !off, Modifier.testTag("light-slider")) { ctx.send(PrinterCommand.Light(PrinterInput.level(it))) }
+        val light = state.light
+        if (light != null) {
+            Text("Light ${PrinterFormat.percent(light)}", style = MaterialTheme.typography.labelLarge)
+            ReleaseSlider((light * 100).toFloat(), 0f..100f, !off, Modifier.testTag("light-slider")) { ctx.send(PrinterCommand.Light(PrinterInput.level(it))) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CmdButton("On", PrinterCommand.Light(1.0), ctx)
                 CmdButton("Off", PrinterCommand.Light(0.0), ctx)

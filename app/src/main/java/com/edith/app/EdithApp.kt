@@ -13,6 +13,7 @@ class EdithApp : Application() {
     override fun onCreate() {
         super.onCreate()
         LogConfig.debug = BuildConfig.DEBUG   // before anything logs
+        com.edith.app.alerts.AlertCatalog.demoHome = BuildConfig.DEBUG   // the Demo home's doorbell is an alert source in debug builds only
         CrashReporter.install(this) // First, so later failures are captured
         if (BuildConfig.DEBUG) enableStrictMode()
         container = AppContainer(this)

@@ -338,7 +338,7 @@ private fun Controls(d: HomeDevice, ui: HomeUi, a: HomeTabActions, onClose: () -
                     Text("Speed", style = MaterialTheme.typography.labelLarge)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FAN_SPEEDS.forEach { (label, p) ->
-                            FilterChip(selected = d.state?.on == true && d.state.percentage == p, onClick = { a.send(d, DeviceCommand.SetPercentage(p)) }, label = { Text(label) })
+                            FilterChip(selected = d.state?.on == true && d.state?.percentage == p, onClick = { a.send(d, DeviceCommand.SetPercentage(p)) }, label = { Text(label) })
                         }
                     }
                 }

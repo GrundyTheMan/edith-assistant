@@ -2,7 +2,8 @@ package com.edith.app.printer.feed
 
 import com.edith.app.jarvis.FeedResult
 import kotlinx.coroutines.channels.Channel
-import java.io.InputStream
+import kotlinx.io.Source
+import kotlinx.io.readByteArray
 
 /** Fakes for the printer tests: routes that answer `state` from a queue (an empty queue is a held poll), and a feed with scripted access. */
 internal class Asked(val after: Long?, val epoch: Long?, val waitS: Int, val quiet: Boolean)
@@ -59,8 +60,8 @@ internal class FakePrinterRoutes : PrinterRoutes {
     var uploadAnswer: FeedResult<String> = FeedResult.Ok("")
     /** When set, an upload reads its stream, reports progress, then waits on this before answering (so a test can cancel it midway). */
     var uploadGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
-    override suspend fun upload(name: String, source: InputStream, size: Long, onProgress: (Long) -> Unit): FeedResult<String> {
-        val bytes = source.readBytes()
+    override suspend fun upload(name: String, source: Source, size: Long, onProgress: (Long) -> Unit): FeedResult<String> {
+        val bytes = source.readByteArray()
         onProgress(bytes.size.toLong())
         uploadGate?.await()
         uploadCalls += UploadCall(name, size, bytes)

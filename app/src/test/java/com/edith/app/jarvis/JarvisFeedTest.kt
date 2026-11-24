@@ -54,7 +54,7 @@ class JarvisFeedTest {
     @After fun tearDown() = server.close()
 
     private fun link(token: String = "tok-123", pinned: String = fingerprint) = JarvisLink(server.url("/").toString().trimEnd('/'), pinned, token, "BEN-PC")
-    private fun api(l: JarvisLink? = link()) = JarvisApi({ l }, http, dispatchers, onUnauthorized = { unauthorized++ })
+    private fun api(l: JarvisLink? = link()) = JarvisApi({ l }, OkHttpPinnedHttp(http), dispatchers, onUnauthorized = { unauthorized++ })
     private fun json(body: String, code: Int = 200) = MockResponse.Builder().code(code).addHeader("Content-Type", "application/json").body(body).build()
 
     // --- Pairing, the pure parts -------------------------------------------------------------------------------
@@ -88,19 +88,19 @@ class JarvisFeedTest {
 
     @Test fun `probe finds the certificate fingerprint and checks it's Jarvis`() = runBlocking {
         server.enqueue(json("""{"app":"jarvis-feed","version":1}"""))
-        val r = api(null).probe(server.url("/"))
+        val r = api(null).probe(io.ktor.http.Url(server.url("/").toString()))
         assertEquals(fingerprint, (r as Outcome.Success).value)
     }
 
     @Test fun `probe says so when the address answers but isn't Jarvis`() = runBlocking {
         server.enqueue(json("""{"hello":"world"}"""))
-        val r = api(null).probe(server.url("/")) as Outcome.Failure
+        val r = api(null).probe(io.ktor.http.Url(server.url("/").toString())) as Outcome.Failure
         assertEquals(JarvisApi.NOT_JARVIS, (r.error as AppError.ToolFailed).detail)
     }
 
     @Test fun `pairing sends the proof, never the code, and keeps what Jarvis returns`() = runBlocking {
         server.enqueue(json("""{"token":"T0KEN","deviceId":"d1","pcName":"BEN-PC","version":1}"""))
-        val r = api(null).pair(server.url("/"), fingerprint, "ABCDE-FGHJK", "Pixel 9") as Outcome.Success
+        val r = api(null).pair(io.ktor.http.Url(server.url("/").toString()), fingerprint, "ABCDE-FGHJK", "Pixel 9") as Outcome.Success
         assertEquals("T0KEN", r.value.token)
         assertEquals(fingerprint, r.value.fingerprint)
         assertEquals("BEN-PC", r.value.pcName)
@@ -115,7 +115,7 @@ class JarvisFeedTest {
 
     @Test fun `a refused code is explained`() = runBlocking {
         server.enqueue(json("""{"error":{"code":"PAIRING_REFUSED","message":"no"}}""", 403))
-        val r = api(null).pair(server.url("/"), fingerprint, "ABCDE-FGHJK", "Pixel") as Outcome.Failure
+        val r = api(null).pair(io.ktor.http.Url(server.url("/").toString()), fingerprint, "ABCDE-FGHJK", "Pixel") as Outcome.Failure
         assertEquals(JarvisApi.PAIRING_REFUSED, (r.error as AppError.ToolFailed).detail)
     }
 

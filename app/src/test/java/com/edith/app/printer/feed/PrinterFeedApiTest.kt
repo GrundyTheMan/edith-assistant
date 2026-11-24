@@ -17,6 +17,9 @@ import okhttp3.OkHttpClient
 import okhttp3.tls.HandshakeCertificates
 import okhttp3.tls.HeldCertificate
 import okio.Buffer
+import kotlinx.io.asSource
+import kotlinx.io.buffered
+import com.edith.app.jarvis.OkHttpPinnedHttp
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -34,6 +37,7 @@ import java.util.concurrent.TimeUnit
  * `JarvisFeedTest`); the fixtures are the ones `PrinterFeedWireTest` parses. Never touches the network.
  */
 class PrinterFeedApiTest {
+    private fun src(b: ByteArray) = ByteArrayInputStream(b).asSource().buffered()
     private val server = MockWebServer()
     private lateinit var certificate: HeldCertificate
     private lateinit var fingerprint: String
@@ -50,7 +54,7 @@ class PrinterFeedApiTest {
     @After fun tearDown() = server.close()
 
     private fun link(token: String = "tok-SECRET-123") = JarvisLink(server.url("/").toString().trimEnd('/'), fingerprint, token, "BEN-PC")
-    private fun feed(l: JarvisLink? = link()) = PrinterFeedApi(JarvisApi({ l }, http, testDispatchers(), onUnauthorized = { unauthorized++ }))
+    private fun feed(l: JarvisLink? = link()) = PrinterFeedApi(JarvisApi({ l }, OkHttpPinnedHttp(http), testDispatchers(), onUnauthorized = { unauthorized++ }))
     private fun fixture(name: String) = checkNotNull(javaClass.getResourceAsStream("/printer-feed/$name.json")).bufferedReader().readText()
     private fun json(body: String, code: Int = 200) = MockResponse.Builder().code(code).addHeader("Content-Type", "application/json").body(body).build()
 
@@ -195,7 +199,7 @@ class PrinterFeedApiTest {
     @Test fun `an upload streams the bytes with the file name`() = runBlocking {
         server.enqueue(json("""{"path":"benchy.gcode"}"""))
         val bytes = ByteArray(5000) { (it % 251).toByte() }
-        val r = feed().upload("benchy.gcode", ByteArrayInputStream(bytes), bytes.size.toLong())
+        val r = feed().upload("benchy.gcode", src(bytes), bytes.size.toLong())
         val sent = server.takeRequest()
         assertEquals("/v1/printer/files/upload", sent.url.encodedPath)
         assertEquals("benchy.gcode", sent.url.queryParameter("name"))
@@ -208,7 +212,7 @@ class PrinterFeedApiTest {
         server.enqueue(json("""{"path":"big.3mf"}"""))
         val bytes = ByteArray(2_500_000) { (it * 31 % 253).toByte() }
         val progress = java.util.Collections.synchronizedList(mutableListOf<Long>())
-        val r = feed().upload("big.3mf", ByteArrayInputStream(bytes), bytes.size.toLong()) { progress += it }
+        val r = feed().upload("big.3mf", src(bytes), bytes.size.toLong()) { progress += it }
         val sent = server.takeRequest()
         assertEquals(bytes.size.toLong(), sent.headers["Content-Length"]?.toLong())
         assertArrayEquals(bytes, sent.body!!.toByteArray())
@@ -218,19 +222,19 @@ class PrinterFeedApiTest {
 
     @Test fun `an upload Jarvis refuses is answered in words`() = runBlocking {
         server.enqueue(json("""{"error":{"code":"CONTROLS_OFF","message":"x"}}""", 409))
-        val off = feed().upload("a.gcode", ByteArrayInputStream(ByteArray(10)), 10)
+        val off = feed().upload("a.gcode", src(ByteArray(10)), 10)
         assertEquals(PrinterWords.CONTROLS_OFF, PrinterWords.forFailure(off))
         server.enqueue(json("""{"error":{"code":"TOO_LARGE","message":"x"}}""", 413))
-        val big = feed().upload("a.gcode", ByteArrayInputStream(ByteArray(10)), 10)
+        val big = feed().upload("a.gcode", src(ByteArray(10)), 10)
         assertEquals(PrinterWords.TOO_LARGE, PrinterWords.forFailure(big))
         server.enqueue(json("""{"error":{"code":"BAD_REQUEST","message":"x"}}""", 400))
-        val bad = feed().upload("a.gcode", ByteArrayInputStream(ByteArray(10)), 10)
+        val bad = feed().upload("a.gcode", src(ByteArray(10)), 10)
         assertEquals(PrinterWords.BAD_REQUEST, PrinterWords.forFailure(bad))
     }
 
     @Test fun `an upload with no answer from the PC says Jarvis is away`() = runBlocking {
         server.close()
-        val r = feed().upload("a.gcode", ByteArrayInputStream(ByteArray(10)), 10)
+        val r = feed().upload("a.gcode", src(ByteArray(10)), 10)
         assertEquals(FeedResult.Unreachable, r)
     }
 
@@ -274,7 +278,7 @@ class PrinterFeedApiTest {
     }
 
     @Test fun `another PC's certificate is refused with its own words`() = runBlocking {
-        val other = PrinterFeedApi(JarvisApi({ link().copy(fingerprint = "00".repeat(32)) }, http, testDispatchers()))
+        val other = PrinterFeedApi(JarvisApi({ link().copy(fingerprint = "00".repeat(32)) }, OkHttpPinnedHttp(http), testDispatchers()))
         val r = other.state(null, null, 0) as FeedResult.Err
         assertEquals("CERTIFICATE_CHANGED", r.code)
         assertTrue(PrinterWords.forError(r).contains("certificate changed"))

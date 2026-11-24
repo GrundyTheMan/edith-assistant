@@ -37,7 +37,7 @@ object Reads {
     const val TIMEOUT_MS = 10_000L
     /** The most a tool waits when a [Patient] source is involved: the source's own limit plus a little. */
     const val PATIENT_TOOL_MS = 55_000L
-    const val NEEDS_SIGN_IN = "it needs signing in again — Settings → Accounts"
+    const val NEEDS_SIGN_IN = com.edith.app.core.error.SignInWords.NEEDS_SIGN_IN
 
     suspend fun <S, T> readAll(targets: List<Readable<S>>, timeoutMs: Long = TIMEOUT_MS, read: suspend (S) -> Outcome<T>): ReadAll<T> = coroutineScope {
         val answers = targets.map { t ->

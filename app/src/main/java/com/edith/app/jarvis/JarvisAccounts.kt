@@ -50,7 +50,7 @@ class JarvisAccounts(
     /** What pairing produced, kept opaque outside this package until [keep] stores it. */
     class JarvisLinkHandle internal constructor(internal val link: JarvisLink)
 
-    private val pairingApi = JarvisApi({ null }, http, dispatchers)
+    private val pairingApi = JarvisApi({ null }, OkHttpPinnedHttp(http), dispatchers)
 
     suspend fun probe(address: String): Probe {
         val (base, problem) = JarvisPairing.address(address)
@@ -105,7 +105,7 @@ class JarvisConnection internal constructor(
 
     private val id get() = accountOf().id
 
-    private val api = JarvisApi({ link }, http, dispatchers, onUnauthorized = {
+    private val api = JarvisApi({ link }, OkHttpPinnedHttp(http), dispatchers, onUnauthorized = {
         Log.w(LogTag.Accounts, "Account $id: Jarvis no longer accepts this phone")
         _state.value = AccountState.NeedsSignIn(JarvisAccounts.NEEDS_PAIRING)
     })

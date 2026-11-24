@@ -31,7 +31,7 @@ import java.time.ZoneId
 class JarvisMailToolsTest {
     private val account = Account("w1", Provider.Jarvis, "BEN-PC", "Work")
     private val dispatchers = AppDispatchers(Dispatchers.Unconfined, Dispatchers.Unconfined, Dispatchers.Unconfined)
-    private val api = JarvisApi({ null }, lazy { OkHttpClient() }, dispatchers)   // no link: any call would fail, and none is made
+    private val api = JarvisApi({ null }, OkHttpPinnedHttp(lazy { OkHttpClient() }), dispatchers)   // no link: any call would fail, and none is made
     private val entry = AccountEntry(account, AccountState.Connected, Capabilities(calendar = false, mail = true), null, JarvisMailSource(account, api))
     private val dir = object : AccountDirectory { override fun entries() = listOf(entry) }
     private val tools = mailTools(dir, MailHandles()).associateBy { it.spec.name }

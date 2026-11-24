@@ -42,8 +42,8 @@ internal fun printStateLabel(state: String): String = when (state) {
 
 /** The title of the job: what Jarvis calls it ("Ready" when nothing is loaded). Never worked out from the file name here. */
 internal fun statusTitle(print: PrintInfo): String = when {
-    !print.title.isNullOrBlank() -> print.title
-    !print.filename.isNullOrBlank() -> print.filename
+    !print.title.isNullOrBlank() -> print.title.orEmpty()
+    !print.filename.isNullOrBlank() -> print.filename.orEmpty()
     print.state == PrinterStates.STANDBY -> "Ready"
     else -> printStateLabel(print.state)
 }
