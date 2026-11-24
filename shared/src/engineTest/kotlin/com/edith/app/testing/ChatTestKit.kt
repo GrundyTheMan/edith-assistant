@@ -104,7 +104,7 @@ class ChatTestKit(listeners: List<ReplyListener> = emptyList()) {
     val settings = MemorySettings()
     @Volatile var networkGranted = true
     val db: EdithDatabase = inMemoryTestDatabase()
-    val repo = ChatRepository(db, clock, AppDispatchers(Dispatchers.Default, Dispatchers.IO, Dispatchers.Default))
+    val repo = ChatRepository(db, clock, AppDispatchers(Dispatchers.Default, Dispatchers.Default, Dispatchers.Default))
     val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val engine = ChatEngine(
         repo, settings, ModelSelection(settings, ModelCatalog(ollama)), PromptBuilder(clock) { listOf(DateTimeSection()) },

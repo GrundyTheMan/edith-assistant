@@ -58,7 +58,7 @@ class ChatEngineTest {
 
     @BeforeTest fun setUp() {
         db = inMemoryTestDatabase()
-        repo = ChatRepository(db, clock, AppDispatchers(Dispatchers.Default, Dispatchers.IO, Dispatchers.Default))
+        repo = ChatRepository(db, clock, AppDispatchers(Dispatchers.Default, Dispatchers.Default, Dispatchers.Default))
         cid = runBlocking { repo.createConversation() }
         engineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         engine = ChatEngine(

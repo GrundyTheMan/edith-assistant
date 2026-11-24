@@ -117,7 +117,7 @@ class ToolTurnRunnerTest {
     private val model = ModelInfo("gemma4:12b-it-q8_0", setOf("completion", "tools"))
     private val settings = MemorySettings()
     private val clock = TickingClock()
-    private val dispatchers = AppDispatchers(Dispatchers.Default, Dispatchers.IO, Dispatchers.Default)
+    private val dispatchers = AppDispatchers(Dispatchers.Default, Dispatchers.Default, Dispatchers.Default)
     private val start = listOf(OllamaMessage("system", "S"), OllamaMessage("user", "Hi"))
     private val confirmations = Confirmations()
 
