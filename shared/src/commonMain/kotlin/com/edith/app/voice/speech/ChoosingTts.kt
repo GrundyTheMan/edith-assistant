@@ -12,7 +12,12 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.Volatile
+import kotlin.concurrent.atomics.AtomicInt
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.concurrent.atomics.decrementAndFetch
+import kotlin.concurrent.atomics.incrementAndFetch
+import kotlin.concurrent.atomics.updateAndFetch
 
 /** The voice that speaks right now (C36 §4). */
 enum class ActiveVoice { Phone, Own, None }
@@ -48,6 +53,7 @@ const val OWN_NOT_READY = "Edith's own voice isn't downloaded yet. Get it in Set
  * Forwards to the phone's voice or to Edith's own, whichever [chooseVoice] says (C36 §4). When the choice changes (the
  * setting, or a download finishing) it stops the old voice first. [available] and [problem] describe the choice.
  */
+@OptIn(ExperimentalAtomicApi::class)
 class ChoosingTts(
     private val phone: TtsEngine,
     private val own: TtsEngine,
@@ -57,7 +63,7 @@ class ChoosingTts(
 ) : TtsEngine {
 
     /** What is being said now, per engine, so a switch can tell [TtsEngine.Listener] that the speech ended. */
-    private val inFlight = AtomicInteger(0)
+    private val inFlight = AtomicInt(0)
     @Volatile private var listener: TtsEngine.Listener? = null
 
     /** The voice in use; the engines' own availability counts. */
@@ -95,7 +101,7 @@ class ChoosingTts(
 
     /** Stops [old] and, if it was in the middle of speech, tells the listener so the speech state is cleared. */
     private fun switchedAway(old: ActiveVoice) {
-        val speaking = inFlight.getAndSet(0) > 0
+        val speaking = inFlight.exchange(0) > 0
         when (old) {
             ActiveVoice.Phone -> phone.stop()
             ActiveVoice.Own -> own.stop()
@@ -114,14 +120,14 @@ class ChoosingTts(
             ActiveVoice.Own -> own
             ActiveVoice.None -> return false
         }
-        inFlight.incrementAndGet()
+        inFlight.incrementAndFetch()
         if (engine.speak(text, utteranceId, rate)) return true
-        inFlight.decrementAndGet()
+        inFlight.decrementAndFetch()
         return false
     }
 
     override fun stop() {
-        inFlight.set(0)
+        inFlight.store(0)
         phone.stop()
         own.stop()
     }
@@ -133,8 +139,8 @@ class ChoosingTts(
 
     private inner class Forward : TtsEngine.Listener {
         override fun onStart(utteranceId: String) { listener?.onStart(utteranceId) }
-        override fun onDone(utteranceId: String) { inFlight.updateAndGet { (it - 1).coerceAtLeast(0) }; listener?.onDone(utteranceId) }
-        override fun onError(utteranceId: String) { inFlight.updateAndGet { (it - 1).coerceAtLeast(0) }; listener?.onError(utteranceId) }
+        override fun onDone(utteranceId: String) { inFlight.updateAndFetch { (it - 1).coerceAtLeast(0) }; listener?.onDone(utteranceId) }
+        override fun onError(utteranceId: String) { inFlight.updateAndFetch { (it - 1).coerceAtLeast(0) }; listener?.onError(utteranceId) }
         override fun onInterrupted() { listener?.onInterrupted() }
     }
 }

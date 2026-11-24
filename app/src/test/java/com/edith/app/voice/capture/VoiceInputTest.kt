@@ -102,7 +102,7 @@ class VoiceInputTest {
             val message = body["messages"]!!.jsonArray.single().jsonObject
             assertEquals("user", message["role"]!!.jsonPrimitive.content)
             assertEquals(OllamaTranscriber.PROMPT, message["content"]!!.jsonPrimitive.content)
-            assertArrayEquals(audio.file.readBytes(), Base64.getDecoder().decode(message["images"]!!.jsonArray.single().jsonPrimitive.content))
+            assertArrayEquals(java.io.File(audio.path).readBytes(), Base64.getDecoder().decode(message["images"]!!.jsonArray.single().jsonPrimitive.content))
 
             server.enqueue(chatReply("[NO_SPEECH]"))
             assertEquals(Outcome.Success(""), transcriber.transcribe(audio))
@@ -117,7 +117,7 @@ class VoiceInputTest {
     private fun wav(name: String, durationMs: Long): RecordedAudio {
         val file = tmp.newFile(name)
         WavWriter(file).apply { val s = ShortArray((durationMs * 16).toInt()); write(s, s.size); close() }
-        return RecordedAudio(file, durationMs)
+        return RecordedAudio(file.path, durationMs)
     }
 
     private fun chatReply(text: String) = MockResponse.Builder().code(200).body(
@@ -135,7 +135,7 @@ class VoiceInputTest {
             return wav("memo${System.nanoTime()}.wav", durationMs).also { last = it }
         }
         override fun cancel() {
-            stop()?.file?.delete()
+            stop()?.path?.let { java.io.File(it).delete() }
         }
     }
 
@@ -173,7 +173,7 @@ class VoiceInputTest {
         assertTrue(h.memos.state.value is VoiceMemos.State.Recording)
         h.memos.stopAndSend()
         assertEquals(listOf(7L to "Remind me to call Mom"), h.sent)
-        assertFalse("deleted after transcription", recorder.last!!.file.exists())
+        assertFalse("deleted after transcription", java.io.File(recorder.last!!.path).exists())
         assertEquals(VoiceMemos.State.Idle, h.memos.state.value)
         assertNull(h.memos.notice.value)
     }
@@ -184,7 +184,7 @@ class VoiceInputTest {
         h.memos.start(1); h.memos.stopAndSend()
         assertEquals(VoiceMemos.TOO_SHORT, h.memos.notice.value)
         assertEquals("not even transcribed", 0, h.transcribed)
-        assertFalse(recorder.last!!.file.exists())
+        assertFalse(java.io.File(recorder.last!!.path).exists())
 
         recorder.durationMs = 3_000
         h.memos.start(1); h.memos.cancel()
@@ -194,12 +194,12 @@ class VoiceInputTest {
         h = Harness(this, recorder, FakeSpeech(), hears = true, transcript = Outcome.Success(""))
         h.memos.start(1); h.memos.stopAndSend()
         assertEquals(VoiceMemos.NO_SPEECH, h.memos.notice.value)
-        assertFalse(recorder.last!!.file.exists())
+        assertFalse(java.io.File(recorder.last!!.path).exists())
 
         h = Harness(this, recorder, FakeSpeech(), hears = true, transcript = Outcome.Failure(AppError.ServerUnreachable("http://pc:11434")))
         h.memos.start(1); h.memos.stopAndSend()
         assertTrue(h.memos.notice.value!!, h.memos.notice.value!!.startsWith("Couldn't transcribe the recording: Can't reach your Ollama server"))
-        assertFalse(recorder.last!!.file.exists())
+        assertFalse(java.io.File(recorder.last!!.path).exists())
 
         h.memos.start(1); h.memos.cancel(VoiceMemos.LEFT_APP)
         assertEquals(VoiceMemos.LEFT_APP, h.memos.notice.value)

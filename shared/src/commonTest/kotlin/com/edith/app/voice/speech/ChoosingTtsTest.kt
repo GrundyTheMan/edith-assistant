@@ -7,11 +7,11 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import com.edith.app.testing.assertEquals
+import com.edith.app.testing.assertFalse
+import com.edith.app.testing.assertNull
+import com.edith.app.testing.assertTrue
+import kotlin.test.Test
 
 /** C36 §4: which voice speaks, for every combination, and how [ChoosingTts] switches between two engines. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -19,7 +19,7 @@ class ChoosingTtsTest {
 
     // --- The rule ------------------------------------------------------------------------------------------
 
-    @Test fun `every combination of the setting, the phone's voice and Edith's own voice`() {
+    @Test fun `every combination of the setting the phone's voice and Edith's own voice`() {
         val expected = mapOf(
             // (setting, phone, own) -> voice
             Triple(SpeechVoice.Auto, true, true) to ActiveVoice.Phone,
@@ -104,7 +104,7 @@ class ChoosingTtsTest {
         assertTrue("idle reaches the engine that holds the audio focus", "idle" in rig.phone.events)
     }
 
-    @Test fun `with no phone voice and none downloaded nothing speaks, and the problem says to download`() = runTest(UnconfinedTestDispatcher()) {
+    @Test fun `with no phone voice and none downloaded nothing speaks and the problem says to download`() = runTest(UnconfinedTestDispatcher()) {
         val rig = Rig(this, phone = FakeTts(available = false, problem = "Speech isn't available"))
         advanceUntilIdle()
         assertFalse(rig.tts.available.value)
@@ -113,7 +113,7 @@ class ChoosingTtsTest {
         assertTrue(rig.phone.spoken.isEmpty() && rig.own.spoken.isEmpty())
     }
 
-    @Test fun `a finished download switches in auto, and Edith's own voice speaks`() = runTest(UnconfinedTestDispatcher()) {
+    @Test fun `a finished download switches in auto and Edith's own voice speaks`() = runTest(UnconfinedTestDispatcher()) {
         val rig = Rig(this, phone = FakeTts(available = false))
         advanceUntilIdle()
         assertFalse(rig.tts.available.value)

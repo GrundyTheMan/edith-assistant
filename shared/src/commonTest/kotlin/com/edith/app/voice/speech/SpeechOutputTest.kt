@@ -6,10 +6,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import com.edith.app.testing.assertEquals
+import com.edith.app.testing.assertNull
+import com.edith.app.testing.assertTrue
+import kotlin.test.Test
 
 /** C13: sentences from a stream, text fit for speech, and the voice's state (with a fake text-to-speech engine). */
 class SpeechOutputTest {
@@ -21,7 +21,7 @@ class SpeechOutputTest {
         return deltas.flatMap { c.add(it) } + c.flush()
     }
 
-    @Test fun `sentences come out as soon as they end, even when split across deltas`() {
+    @Test fun `sentences come out as soon as they end even when split across deltas`() {
         val c = SentenceChunker()
         assertEquals(emptyList<String>(), c.add("It's sunny to"))
         assertEquals(emptyList<String>(), c.add("day.")) // the next character decides
@@ -30,14 +30,14 @@ class SpeechOutputTest {
         assertEquals(listOf("Is that all?"), c.flush())
     }
 
-    @Test fun `abbreviations, decimals and times don't end a sentence`() {
+    @Test fun `abbreviations decimals and times don't end a sentence`() {
         assertEquals(
             listOf("Dr. Smith said it's 3.5 degrees at 5 p.m. on Main St. today.", "Then rain, e.g. showers."),
             chunk("Dr. Smith said it's 3.5 degrees at 5 p.m. on Main St. today. Then rain, e.g. showers."),
         )
     }
 
-    @Test fun `ellipses, question and exclamation marks end sentences`() {
+    @Test fun `ellipses question and exclamation marks end sentences`() {
         assertEquals(
             listOf("Well... I think so!", "Are you sure?", "Yes, quite sure…", "Okay."),
             chunk("Well... I think so! Are you sure? Yes, quite sure… Okay."),
@@ -53,7 +53,7 @@ class SpeechOutputTest {
         assertEquals(listOf("with a chance of light rain around three o'clock and winds from the west"), c.flush())
     }
 
-    @Test fun `a short sentence isn't cut, and commas in numbers aren't pauses`() {
+    @Test fun `a short sentence isn't cut and commas in numbers aren't pauses`() {
         assertEquals(listOf("It costs 1,000 dollars, give or take."), chunk("It costs 1,000 dollars, give or take."))
         val long = "The new umbrella from the shop downtown costs 1,000 dollars or so in total for everyone involved " +
             "here, give or take."
@@ -63,7 +63,7 @@ class SpeechOutputTest {
         )
     }
 
-    @Test fun `one-word pieces join the next sentence, and lines end sentences`() {
+    @Test fun `one-word pieces join the next sentence and lines end sentences`() {
         assertEquals(listOf("Sure. Here's the plan:", "1. Pack an umbrella", "2. Leave early"), chunk("Sure. Here's the plan:\n1. Pack an umbrella\n2. Leave early"))
     }
 
@@ -74,7 +74,7 @@ class SpeechOutputTest {
         assertEquals(emptyList<String>(), c.flush())
     }
 
-    @Test fun `Edith's files are skipped, even with tags split across deltas`() {
+    @Test fun `Edith's files are skipped even with tags split across deltas`() {
         assertEquals(
             listOf("Here's your list.", "Anything else?"),
             chunk("Here's your list. <fi", "le name=\"list.txt\">milk. eggs. bread.</fi", "le> Anything else?"),
@@ -84,7 +84,7 @@ class SpeechOutputTest {
 
     // --- SpeechText.clean -----------------------------------------------------------------------------------
 
-    @Test fun `markdown, links, addresses and emoji are removed`() {
+    @Test fun `markdown links addresses and emoji are removed`() {
         assertEquals("Weather: sunny and warm.", SpeechText.clean("## **Weather**: _sunny_ and `warm`. ☀️"))
         assertEquals("See the forecast for details.", SpeechText.clean("See [the forecast](https://open-meteo.com/en) for details."))
         assertEquals("More at a link today.", SpeechText.clean("More at https://example.com/a.b?c=1 today."))
@@ -117,7 +117,7 @@ class SpeechOutputTest {
         return SpeechOutput(tts, FakeSettingsRepository(settings), CoroutineScope(Dispatchers.Unconfined)) to tts
     }
 
-    @Test fun `a streaming reply is spoken sentence by sentence, in order, then tagged with its message`() {
+    @Test fun `a streaming reply is spoken sentence by sentence in order then tagged with its message`() {
         val (speech, tts) = output(Settings(speechRate = 1.3f))
         speech.onDelta(1, "Hello there. How")
         assertEquals(listOf("Hello there."), tts.texts())
@@ -136,7 +136,7 @@ class SpeechOutputTest {
         assertTrue(tts.idles > 0)
     }
 
-    @Test fun `stop clears the state, and a late callback from stopped speech doesn't clear newer speech`() {
+    @Test fun `stop clears the state and a late callback from stopped speech doesn't clear newer speech`() {
         val (speech, tts) = output()
         speech.play(7, "First message. It has two sentences.")
         assertEquals(7L, speech.speakingMessageId.value)
@@ -151,7 +151,7 @@ class SpeechOutputTest {
         assertNull(speech.speakingMessageId.value)
     }
 
-    @Test fun `with speak replies off nothing is spoken automatically, but Play works`() {
+    @Test fun `with speak replies off nothing is spoken automatically but Play works`() {
         val (speech, tts) = output(Settings(speakReplies = false))
         speech.onDelta(1, "Hello there. More.")
         speech.onFinished(1, 5, "Hello there. More.")
@@ -163,7 +163,7 @@ class SpeechOutputTest {
         assertEquals(5L, speech.speakingMessageId.value)
     }
 
-    @Test fun `stopping a streaming reply keeps the rest of it quiet, and the next reply speaks again`() {
+    @Test fun `stopping a streaming reply keeps the rest of it quiet and the next reply speaks again`() {
         val (speech, tts) = output()
         speech.onDelta(1, "One sentence here. ")
         speech.stop()
@@ -176,7 +176,7 @@ class SpeechOutputTest {
         assertEquals(listOf("One sentence here.", "A new reply."), tts.texts())
     }
 
-    @Test fun `a cancelled or failed reply stops, and text dropped before a tool call isn't spoken`() {
+    @Test fun `a cancelled or failed reply stops and text dropped before a tool call isn't spoken`() {
         val (speech, tts) = output()
         speech.onDelta(1, "Let me check the weather. One mom")
         speech.onReset(1)

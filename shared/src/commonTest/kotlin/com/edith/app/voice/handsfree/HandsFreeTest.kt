@@ -10,11 +10,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import com.edith.app.testing.assertEquals
+import com.edith.app.testing.assertFalse
+import com.edith.app.testing.assertNull
+import com.edith.app.testing.assertTrue
+import kotlin.test.Test
 
 /** C14: the hands-free state machine with a fake wake word, recognizer, engine and voice. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -83,7 +83,7 @@ class HandsFreeTest {
         fun doneSpeaking() { speaking.value = null }
     }
 
-    @Test fun `wake word, question, spoken answer, then a follow-up without the wake word`() = runTest(UnconfinedTestDispatcher()) {
+    @Test fun `wake word question spoken answer then a follow-up without the wake word`() = runTest(UnconfinedTestDispatcher()) {
         val k = Kit(backgroundScope)
         k.handsFree.start()
         assertEquals(HandsFree.State.Listening, k.state)
@@ -215,7 +215,7 @@ class HandsFreeTest {
         assertEquals(HandsFree.State.Capturing(), k.state)
     }
 
-    @Test fun `stop and pause let go of the microphone, and resume listens again`() = runTest(UnconfinedTestDispatcher()) {
+    @Test fun `stop and pause let go of the microphone and resume listens again`() = runTest(UnconfinedTestDispatcher()) {
         val k = Kit(backgroundScope)
         k.handsFree.start()
         k.wake.hear()
@@ -271,10 +271,10 @@ class HandsFreeTest {
     }
 
     @Test fun `sensitivity maps to openWakeWord's threshold`() {
-        assertEquals(0.5f, OpenWakeWord.threshold(0.5f), 0.001f)
-        assertEquals(0.9f, OpenWakeWord.threshold(0f), 0.001f)
-        assertEquals(0.1f, OpenWakeWord.threshold(1f), 0.001f)
-        assertTrue(OpenWakeWord.threshold(0.8f) < OpenWakeWord.threshold(0.2f))
+        assertEquals(0.5f, WakeWordDetector.threshold(0.5f), 0.001f)
+        assertEquals(0.9f, WakeWordDetector.threshold(0f), 0.001f)
+        assertEquals(0.1f, WakeWordDetector.threshold(1f), 0.001f)
+        assertTrue(WakeWordDetector.threshold(0.8f) < WakeWordDetector.threshold(0.2f))
     }
 
     /** C25, D10: a card can't be approved by voice; she says to tap it, once per card, and waits for the tap. */

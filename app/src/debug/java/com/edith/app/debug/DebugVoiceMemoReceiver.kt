@@ -32,7 +32,7 @@ class DebugVoiceMemoReceiver : BroadcastReceiver() {
         val durationMs = (file.length() - WavWriter.HEADER_BYTES) * 1_000 / (WavWriter.SAMPLE_RATE * WavWriter.BYTES_PER_SAMPLE)
         Log.i(LogTag.Voice, "DEBUG_VOICE_MEMO: sending $name ($durationMs ms) to conversation $conversationId")
         container.appScope.launch(container.dispatchers.main) {
-            container.voiceMemos.sendRecording(conversationId, RecordedAudio(file, durationMs))
+            container.voiceMemos.sendRecording(conversationId, RecordedAudio(file.path, durationMs))
         }
     }
 }

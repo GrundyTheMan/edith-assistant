@@ -7,7 +7,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /** A finished recording: a 16 kHz mono 16-bit PCM WAV (the format Ollama accepts, L12). */
-data class RecordedAudio(val file: File, val durationMs: Long)
+
 
 /**
  * Streams 16-bit PCM samples into a WAV file (C12 §2): a 44-byte header with placeholder sizes first, patched with

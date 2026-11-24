@@ -46,21 +46,21 @@ class SentenceChunker {
                 if (end < 0) {
                     // Keep only what could be the start of the closing tag.
                     val keep = if (final) 0 else partialSuffix(raw, FILE_CLOSE)
-                    raw.delete(0, raw.length - keep)
+                    raw.deleteRange(0, raw.length - keep)
                     return
                 }
-                raw.delete(0, end + FILE_CLOSE.length)
+                raw.deleteRange(0, end + FILE_CLOSE.length)
                 inFile = false
             } else {
                 val start = raw.indexOf(FILE_OPEN)
                 if (start < 0) {
                     val keep = if (final) 0 else partialSuffix(raw, FILE_OPEN)
                     buffer.append(raw, 0, raw.length - keep)
-                    raw.delete(0, raw.length - keep)
+                    raw.deleteRange(0, raw.length - keep)
                     return
                 }
                 buffer.append(raw, 0, start).append(' ')
-                raw.delete(0, start + FILE_OPEN.length)
+                raw.deleteRange(0, start + FILE_OPEN.length)
                 inFile = true
             }
         }
@@ -77,13 +77,13 @@ class SentenceChunker {
             val end = sentenceEnd(buffer)
             if (end >= 0) {
                 emit(buffer.substring(0, end))
-                buffer.delete(0, end)
+                buffer.deleteRange(0, end)
                 continue
             }
             val cut = if (buffer.length > LONG_CHARS) pauseCut(buffer) else -1
             if (cut >= 0) {
                 emit(buffer.substring(0, cut))
-                buffer.delete(0, cut)
+                buffer.deleteRange(0, cut)
                 continue
             }
             break
@@ -167,7 +167,8 @@ class SentenceChunker {
  */
 object SpeechText {
     // Every `{` and `}` is escaped and each pattern is compiled on the device in a test (L25).
-    private val FILE_BLOCK = Regex("<file\\b[^>]*>.*?(</file>|$)", RegexOption.DOT_MATCHES_ALL)
+    // [\s\S] stands for "any character, newlines too": RegexOption.DOT_MATCHES_ALL is Java-only.
+    private val FILE_BLOCK = Regex("<file\\b[^>]*>[\\s\\S]*?(</file>|$)")
     /** C16: resend tags, and the placeholders left where her files were (Play on a stored reply). */
     private val ATTACHMENT_TAG = Regex("<attachment\\b[^>]*>")
     private val FILE_PLACEHOLDER = Regex("\\[Attached file: [^\\]]*\\]")

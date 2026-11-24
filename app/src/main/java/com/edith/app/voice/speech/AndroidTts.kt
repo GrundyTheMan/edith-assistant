@@ -14,29 +14,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.Locale
 
-/** The phone's text-to-speech, behind an interface so [SpeechOutput] can be tested with a fake. */
-interface TtsEngine {
-    /** False when the phone has no usable voice; [problem] says why. */
-    val available: StateFlow<Boolean>
-    val problem: StateFlow<String?>
-    fun setListener(listener: Listener)
-    /** Queues [text] after anything already queued. False if it couldn't be queued (no [Listener] call follows). */
-    fun speak(text: String, utteranceId: String, rate: Float): Boolean
-    /** Drops everything queued and playing. */
-    fun stop()
-    /** Nothing more to say for now: gives up audio focus. */
-    fun idle()
-
-    /** Called on any thread. */
-    interface Listener {
-        fun onStart(utteranceId: String)
-        fun onDone(utteranceId: String)
-        fun onError(utteranceId: String)
-        /** Another app took the audio (a call, a navigation prompt that doesn't duck): stop speaking. */
-        fun onInterrupted()
-    }
-}
-
 /**
  * Android's [TextToSpeech] (C13 §1; A4: on the phone, no network). Started once for the app; speech asked for before
  * the engine is ready waits and is spoken when it is. The language is the phone's, else US English.

@@ -10,7 +10,10 @@ import com.edith.app.ollama.OllamaClient
 import com.edith.app.ollama.OllamaMessage
 import com.edith.app.settings.SettingsRepository
 import kotlinx.coroutines.withContext
-import java.util.Base64
+import com.edith.app.core.util.readFileBytes
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlin.time.TimeSource
 
 /** Turns a recording into text. "" means no speech was heard (L11): nothing is sent. */
 fun interface Transcriber {
@@ -22,6 +25,7 @@ fun interface Transcriber {
  * `images` (audio uses the same field) and the prompt that makes silence answer `[NO_SPEECH]` instead of an apology.
  * Only for models with the "audio" capability; [VoiceMemos] uses live speech recognition for the others.
  */
+@OptIn(ExperimentalEncodingApi::class)
 class OllamaTranscriber(
     private val client: OllamaClient,
     private val settings: SettingsRepository,
@@ -30,10 +34,10 @@ class OllamaTranscriber(
     override suspend fun transcribe(audio: RecordedAudio): Outcome<String> {
         val s = settings.current()
         val model = s.model ?: return Outcome.Failure(AppError.NoChatModels)
-        val wav = withContext(dispatchers.io) { Base64.getEncoder().encodeToString(audio.file.readBytes()) }
-        val started = System.nanoTime()
+        val wav = withContext(dispatchers.io) { Base64.encode(readFileBytes(audio.path)) }
+        val started = TimeSource.Monotonic.markNow()
         val reply = client.chat(s.serverUrl, ChatCall(model, listOf(OllamaMessage("user", PROMPT, images = listOf(wav)))))
-        Log.i(LogTag.Voice, "Transcribed ${audio.durationMs} ms of audio in ${(System.nanoTime() - started) / 1_000_000} ms")
+        Log.i(LogTag.Voice, "Transcribed ${audio.durationMs} ms of audio in ${started.elapsedNow().inWholeMilliseconds} ms")
         return when (reply) {
             is Outcome.Success -> Outcome.Success(clean(reply.value.content))
             is Outcome.Failure -> reply
