@@ -12,6 +12,8 @@ data class StoredFile(val path: String, val sizeBytes: Long)
 interface AttachmentFiles : AttachmentWriter {
     /** Whether the file is there (it is gone when removed, or when it is a session file from an earlier run). */
     fun exists(storedPath: String?): Boolean
+    /** Where the file is on the device (for showing it), or null if it's gone. */
+    fun pathOf(storedPath: String?): String? = null
     /** The file's content, or null if it's gone. */
     fun readBytes(storedPath: String?): ByteArray?
     /** The file as text, or null if it's gone. */

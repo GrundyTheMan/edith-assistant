@@ -4,7 +4,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -42,8 +44,8 @@ fun EngineCheckScreen(check: EngineCheck) {
     var lines by remember { mutableStateOf<List<EngineCheck.Line>>(emptyList()) }
     LaunchedEffect(Unit) { address = check.savedServerUrl() }
 
-    // safeDrawing: stays clear of the notch, the home indicator and the keyboard (the first simulator picture showed the title under the clock).
-    Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing).verticalScroll(rememberScrollState())) {
+    // Clear of the notch and the keyboard (the first simulator picture showed the title under the clock); the tab bar below handles the home indicator.
+    Column(Modifier.windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.ime)).verticalScroll(rememberScrollState())) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Edith engine check", style = MaterialTheme.typography.headlineSmall)
             Text("The shared engine, running on this phone.", style = MaterialTheme.typography.bodyMedium)

@@ -35,6 +35,10 @@ kotlin {
             implementation(compose.foundation)
             implementation(compose.material3)
             implementation(compose.ui)
+            implementation(libs.compose.ui.backhandler)   // K3.2: Back closes the conversation list
+            api(libs.jb.lifecycle.viewmodel.compose)   // K3.2: the chat view model (ViewModel, viewModelScope) is shared
+            api(libs.jb.lifecycle.viewmodel.savedstate)
+            implementation(libs.jb.lifecycle.runtime.compose)
             implementation(libs.coil.compose)   // K3.2: attachment thumbnails (Coil 3 is multiplatform)
             implementation(libs.compose.icons.extended)   // K3.1: every icon the Android app uses must exist here (IconsTest)
         }

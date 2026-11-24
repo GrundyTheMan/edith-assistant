@@ -30,7 +30,7 @@ import platform.Foundation.NSURL
 import platform.Foundation.NSUserDomainMask
 
 /** What the iPhone app keeps for the chat engine (K4.1): the shared container, and the two platform pieces a screen also needs. */
-class IosApp(val container: SharedContainer, val secrets: SecretStore, val settings: SettingsRepository)
+class IosApp(val container: SharedContainer, val secrets: SecretStore, val settings: SettingsRepository, val registry: ToolRegistry)
 
 /**
  * Builds the shared engine for the iPhone from Apple's own parts (K4.1; plan §4.2): the Keychain for secrets, the Darwin engine for HTTP, the
@@ -42,6 +42,7 @@ fun createIosApp(): IosApp {
     val secrets = IosSecretStore()
     val settings = DataStoreSettingsRepository(PreferenceDataStoreFactory.createWithPath { "$dir/settings.preferences_pb".toPath() })
     val listeners = mutableListOf<ReplyListener>()
+    val registry = ToolRegistry(listOf(CurrentTimeTool()))
     lateinit var container: SharedContainer
     container = SharedContainer(
         PlatformServices(
@@ -56,11 +57,11 @@ fun createIosApp(): IosApp {
             toolPermissions = ToolPermissions { true },
             localNetwork = object : LocalNetworkAccess { override fun isGranted() = true },   // iOS asks itself, at the first local connection
         ),
-        toolRegistry = { ToolRegistry(listOf(CurrentTimeTool())) },
+        toolRegistry = { registry },
         replyListeners = { listeners.also { if (it.isEmpty()) it += container.conversationTitler } },
         afterAttachments = { container.retention.apply() },
     )
-    return IosApp(container, secrets, settings)
+    return IosApp(container, secrets, settings, registry)
 }
 
 /** No location yet (K4.2 adds Core Location): the weather tool is not offered, so this is never asked. */

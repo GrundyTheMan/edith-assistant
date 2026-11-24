@@ -70,8 +70,8 @@ class LiveSpeech(private val context: Context) : SpeechInput {
         bundle?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.takeIf { it.isNotBlank() }
 
     companion object {
-        const val DIDNT_CATCH = "Didn't catch that."
-        const val UNAVAILABLE = "Speech recognition isn't available on this device."
+        const val DIDNT_CATCH = SpeechInput.DIDNT_CATCH
+        const val UNAVAILABLE = SpeechInput.UNAVAILABLE
 
         fun messageFor(error: Int): String = when (error) {
             SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> VoiceMemos.MIC_DENIED

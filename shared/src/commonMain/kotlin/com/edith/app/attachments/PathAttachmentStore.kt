@@ -65,6 +65,8 @@ class PathAttachmentStore(
         return path
     }
 
+    override fun pathOf(storedPath: String?): String? = storedPath?.takeIf { exists(it) }?.let { resolve(it) }
+
     override fun exists(storedPath: String?): Boolean = storedPath?.let { isFile(Path(resolve(it))) } == true
 
     override fun readBytes(storedPath: String?): ByteArray? {
