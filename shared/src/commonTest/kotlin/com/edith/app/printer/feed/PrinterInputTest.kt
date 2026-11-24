@@ -1,9 +1,9 @@
 package com.edith.app.printer.feed
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import com.edith.app.testing.assertEquals
+import com.edith.app.testing.assertNull
+import com.edith.app.testing.assertTrue
+import kotlin.test.Test
 
 /** C39 E8: what the owner types, and the commands made from it. An empty or wrong box sends nothing; the JSON is exactly Jarvis's. */
 class PrinterInputTest {
@@ -14,7 +14,7 @@ class PrinterInputTest {
         assertEquals(-5.0, PrinterInput.number("-5")!!, 0.0)
     }
 
-    @Test fun `nothing, words, NaN and infinity are not numbers`() {
+    @Test fun `nothing words NaN and infinity are not numbers`() {
         for (bad in listOf("", "   ", "abc", "1.2.3", "NaN", "Infinity", "-Infinity", "1e999", "12abc")) assertNull(bad, PrinterInput.number(bad))
     }
 
@@ -57,7 +57,7 @@ class PrinterInputTest {
         assertEquals("""{"kind":"limits","velocity":200.0,"accel":3000.0,"scv":5.0,"cruiseRatio":0.5}""", PrinterInput.limits("200", "3000", "5", "0.5")!!.toJson())
     }
 
-    @Test fun `limits with nothing typed, or a wrong number anywhere, send nothing`() {
+    @Test fun `limits with nothing typed or a wrong number anywhere send nothing`() {
         assertNull(PrinterInput.limits("", "", "", ""))
         assertNull(PrinterInput.limits("0", "", "", ""))
         assertNull(PrinterInput.limits("200", "abc", "", ""))
@@ -65,13 +65,13 @@ class PrinterInputTest {
         assertTrue(PrinterInput.limits("", "", "", "0") != null)
     }
 
-    @Test fun `retraction sends only what was typed, and a length of zero is allowed`() {
+    @Test fun `retraction sends only what was typed and a length of zero is allowed`() {
         assertEquals("""{"kind":"retraction","length":0.8}""", PrinterInput.retraction("0.8", "", "", "")!!.toJson())
         assertEquals("""{"kind":"retraction","length":0.0,"speed":35.0}""", PrinterInput.retraction("0", "35", "", "")!!.toJson())
         assertEquals("""{"kind":"retraction","length":0.8,"speed":35.0,"extraLength":0.0,"unretractSpeed":30.0}""", PrinterInput.retraction("0.8", "35", "0", "30")!!.toJson())
     }
 
-    @Test fun `retraction with nothing typed, a negative or a zero speed sends nothing`() {
+    @Test fun `retraction with nothing typed a negative or a zero speed sends nothing`() {
         assertNull(PrinterInput.retraction("", "", "", ""))
         assertNull(PrinterInput.retraction("-1", "", "", ""))
         assertNull(PrinterInput.retraction("", "0", "", ""))

@@ -1,9 +1,9 @@
 package com.edith.app.printer.feed
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import com.edith.app.testing.assertEquals
+import com.edith.app.testing.assertFalse
+import com.edith.app.testing.assertTrue
+import kotlin.test.Test
 
 /** C39 E7: every case of Jarvis's `commandSettled` / `settleTimeout` tests (`printerCommands.test.ts`), plus the ones its code has. */
 class PrinterSettleTest {
@@ -23,7 +23,7 @@ class PrinterSettleTest {
     private fun PrinterState.withQueue(state: String, jobs: List<QueueJob> = listOf(QueueJob("0001", "a.gcode", "A", 1))) = copy(queue = JobQueue(state, jobs))
     private fun ok(c: PrinterCommand, before: PrinterState, now: PrinterState, i: SettleInfo = info) = PrinterSettle.settled(c, before, now, i)
 
-    @Test fun `homing waits for the toolhead to move and stop, not only for ZMOD to say homed`() {
+    @Test fun `homing waits for the toolhead to move and stop not only for ZMOD to say homed`() {
         val before = idle.moved { it.copy(homed = "") }
         val home = PrinterCommand.Home(HomeAxes.ALL)
         assertFalse("ZMOD says homed at once, before moving", ok(home, before, idle.moved { it.copy(homed = "xyz", liveVelocity = 0.0) }))
@@ -56,7 +56,7 @@ class PrinterSettleTest {
         assertTrue("a fractional target is rounded", ok(PrinterCommand.SetTemp("extruder", 219.6), idle, heated))
     }
 
-    @Test fun `a preset waits for both targets, and a preset Jarvis no longer has is done at once`() {
+    @Test fun `a preset waits for both targets and a preset Jarvis no longer has is done at once`() {
         val pla = SettleInfo(1_000, false, listOf(Preset("PLA", 220, 60)))
         val preset = PrinterCommand.Preset("PLA")
         assertFalse(ok(preset, idle, idle.withTargets(220.0, 0.0), pla))
@@ -69,7 +69,7 @@ class PrinterSettleTest {
         assertTrue(ok(PrinterCommand.HeatersOff, idle, idle))
     }
 
-    @Test fun `pause, resume, cancel and start wait for the print state`() {
+    @Test fun `pause resume cancel and start wait for the print state`() {
         assertFalse(ok(PrinterCommand.Pause, printing, printing))
         assertTrue(ok(PrinterCommand.Pause, printing, paused))
         assertTrue(ok(PrinterCommand.Resume, paused, printing))
@@ -82,7 +82,7 @@ class PrinterSettleTest {
         assertFalse(ok(PrinterCommand.Start("a.gcode"), idle, idle))
     }
 
-    @Test fun `light, fans, factors and the Z offset wait for their value`() {
+    @Test fun `light fans factors and the Z offset wait for their value`() {
         assertTrue(ok(PrinterCommand.Light(1.0), idle, idle.copy(light = 1.0)))
         assertFalse(ok(PrinterCommand.Light(1.0), idle, idle.copy(light = 0.5)))
         assertFalse("a printer with no light never settles a light command", ok(PrinterCommand.Light(1.0), idle, idle.copy(light = null)))
@@ -108,7 +108,7 @@ class PrinterSettleTest {
         assertFalse(ok(PrinterCommand.QueueAdd("a.gcode"), q, q))
     }
 
-    @Test fun `controls with nothing to watch are done at once, and every waiting one has a limit`() {
+    @Test fun `controls with nothing to watch are done at once and every waiting one has a limit`() {
         assertEquals(0L, PrinterSettle.timeoutMs(PrinterCommand.MotorsOff))
         assertEquals(0L, PrinterSettle.timeoutMs(PrinterCommand.EStop))
         assertTrue(ok(PrinterCommand.MotorsOff, idle, idle))

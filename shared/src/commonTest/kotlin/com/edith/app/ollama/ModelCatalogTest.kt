@@ -5,8 +5,8 @@ import com.edith.app.core.error.Outcome
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import com.edith.app.testing.assertEquals
+import kotlin.test.Test
 
 /** C03 test 10. */
 class ModelCatalogTest {

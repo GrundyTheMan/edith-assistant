@@ -6,12 +6,12 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import com.edith.app.testing.assertEquals
+import com.edith.app.testing.assertFalse
+import com.edith.app.testing.assertNotNull
+import com.edith.app.testing.assertNull
+import com.edith.app.testing.assertTrue
+import kotlin.test.Test
 
 /** C25 §2, §6, §8: the registry, merging, last-known states, the command log and the re-checks. */
 /** How many devices the Demo home has: C25's nine, and C34's 3D printer. */
@@ -45,7 +45,7 @@ class HomeTest {
         assertTrue("states are stamped with the read's time", v.devices.all { it.stateAt == SchedulerClock.START })
     }
 
-    @Test fun `no Demo home and no service - not connected, nothing read`() = runTest {
+    @Test fun `no Demo home and no service - not connected nothing read`() = runTest {
         val k = HomeKit(this, backgroundScope, demoOn = false)
         assertEquals(com.edith.app.tools.framework.IntegrationStatus.NotConnected, k.home.status.value)
         assertTrue(k.home.refresh().devices.isEmpty())
@@ -61,7 +61,7 @@ class HomeTest {
         assertEquals(listOf("Ring: it didn't answer in time."), v.problems.map { it.line })
     }
 
-    @Test fun `a backend that stops answering keeps its last-known states, marked stale`() = runTest {
+    @Test fun `a backend that stops answering keeps its last-known states marked stale`() = runTest {
         val k = HomeKit(this, backgroundScope)
         k.home.refresh()
         advanceTimeBy(120_000)
@@ -73,7 +73,7 @@ class HomeTest {
         assertEquals(1, v.problems.size)
     }
 
-    @Test fun `a device both Alexa and a direct service report is shown once, through the direct one while it answers`() = runTest {
+    @Test fun `a device both Alexa and a direct service report is shown once through the direct one while it answers`() = runTest {
         val alexa = Other("alexa", isHub = true, list = listOf(alexaCopy("Front door", DeviceType.Lock), alexaCopy("Hall lamp", DeviceType.Light)))
         val k = HomeKit(this, backgroundScope, alexa)
         var v = k.home.refresh()
@@ -86,7 +86,7 @@ class HomeTest {
         assertEquals(listOf("alexa"), v.devices.filter { it.name == "Front door" }.map { it.backend })
     }
 
-    @Test fun `hidden devices are left out, and listed for Settings`() = runTest {
+    @Test fun `hidden devices are left out and listed for Settings`() = runTest {
         val k = HomeKit(this, backgroundScope)
         k.home.refresh()
         k.home.setHidden(k.device("Coffee maker").key, "Coffee maker", true)

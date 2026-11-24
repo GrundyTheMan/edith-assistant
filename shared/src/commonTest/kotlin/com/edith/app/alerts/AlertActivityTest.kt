@@ -16,11 +16,11 @@ import com.edith.app.home.HomeKit
 import com.edith.app.tools.framework.IntegrationStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import com.edith.app.testing.assertEquals
+import com.edith.app.testing.assertNotNull
+import com.edith.app.testing.assertNull
+import com.edith.app.testing.assertTrue
+import kotlin.test.Test
 
 /** C33: what [com.edith.app.home.Home.activity] hands the alerts: clips when a service has them, else each camera's events. */
 class AlertActivityTest {
@@ -49,7 +49,7 @@ class AlertActivityTest {
 
     private fun clip(id: String, at: Long, kind: EventKind = EventKind.Motion) = DeviceClip(id, "", "Porch", at, kind, null)
 
-    @Test fun `a service with clips answers from its clips, keyed by service and clip`() = runTest {
+    @Test fun `a service with clips answers from its clips keyed by service and clip`() = runTest {
         val blink = Camera("blink", Outcome.Success(ClipsPage(listOf(clip("c1", 5), clip("c2", 9, EventKind.Ring)))))
         val k = HomeKit(this, backgroundScope, blink, demoOn = false)
         val found = (k.home.activity("blink", 0) as Outcome.Success).value
@@ -68,7 +68,7 @@ class AlertActivityTest {
         assertEquals("ring:d1:70:Ring", found.first().key)
     }
 
-    @Test fun `the camera list is kept, not asked for again on every look`() = runTest {
+    @Test fun `the camera list is kept not asked for again on every look`() = runTest {
         val ring = Camera("ring", null)
         val k = HomeKit(this, backgroundScope, ring, demoOn = false)
         k.home.activity("ring", 0)
@@ -89,7 +89,7 @@ class AlertActivityTest {
         assertTrue(k.home.activity("nobody", 0) is Outcome.Failure)
     }
 
-    @Test fun `an alert's camera is found by name, for its picture`() = runTest {
+    @Test fun `an alert's camera is found by name for its picture`() = runTest {
         val ring = Camera("ring", null)
         val k = HomeKit(this, backgroundScope, ring, demoOn = false)
         assertEquals("d1", k.home.alertCamera("ring", "Front door")?.id)

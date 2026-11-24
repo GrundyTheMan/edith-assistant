@@ -7,14 +7,14 @@ import com.edith.app.ollama.ModelInfo
 import com.edith.app.testing.FakeOllamaClient
 import com.edith.app.testing.FakeSettingsRepository
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Test
+import com.edith.app.testing.assertEquals
+import com.edith.app.testing.assertNull
+import kotlin.test.Test
 
 class ModelSelectionTest {
     private fun info(name: String, vararg caps: String) = ModelInfo(name, setOf("completion", *caps))
 
-    @Test fun `prefers gemma4 12b, then any gemma4, then tools, then the first`() {
+    @Test fun `prefers gemma4 12b then any gemma4 then tools then the first`() {
         val tools = info("qwen3.5:9b", "tools")
         val plain = info("ornith:9b")
         assertEquals("gemma4:12b-it-q8_0", ModelSelection.chooseDefault(listOf(plain, info("gemma4:e4b"), info("gemma4:12b-it-q8_0")))?.name)
@@ -24,7 +24,7 @@ class ModelSelectionTest {
         assertNull(ModelSelection.chooseDefault(emptyList()))
     }
 
-    @Test fun `missing saved model is replaced, saved, and announced once`() = runTest {
+    @Test fun `missing saved model is replaced saved and announced once`() = runTest {
         val settings = FakeSettingsRepository(Settings(model = "gemma4:12b"))   // old name, no longer installed (L21)
         val selection = ModelSelection(settings, ModelCatalog(FakeOllamaClient()))
 
@@ -48,7 +48,7 @@ class ModelSelectionTest {
         assertEquals("qwen3.5:9b-q8_0", (ModelSelection(settings, ModelCatalog(FakeOllamaClient())).ensureModel() as Outcome.Success).value.name)
     }
 
-    @Test fun `no chat models is an error, and an unreachable server stays that error`() = runTest {
+    @Test fun `no chat models is an error and an unreachable server stays that error`() = runTest {
         val onlyEmbedding = FakeOllamaClient(models = mapOf("nomic-embed-text:latest" to listOf("embedding")))
         assertEquals(Outcome.Failure(AppError.NoChatModels), ModelSelection(FakeSettingsRepository(), ModelCatalog(onlyEmbedding)).ensureModel())
 

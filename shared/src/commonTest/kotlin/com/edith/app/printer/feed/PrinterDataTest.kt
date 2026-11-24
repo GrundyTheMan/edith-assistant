@@ -1,9 +1,9 @@
 package com.edith.app.printer.feed
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import com.edith.app.testing.assertEquals
+import com.edith.app.testing.assertNull
+import com.edith.app.testing.assertTrue
+import kotlin.test.Test
 
 
 class PrinterDataTest {
@@ -52,7 +52,7 @@ class PrinterDataTest {
 
     // --- The axes --------------------------------------------------------------------------------------------------------
 
-    @Test fun `the y axis is the highest value or target plus 10 percent, at least 50`() {
+    @Test fun `the y axis is the highest value or target plus 10 percent at least 50`() {
         val lines = listOf(ChartLine("a", "A", listOf(100.0, 180.0), listOf(200.0, 200.0)))
         assertEquals(220.0, ChartMath.yMax(lines), 0.001)
         assertEquals(50.0, ChartMath.yMax(emptyList()), 0.0)
@@ -133,7 +133,7 @@ class PrinterDataTest {
 
     // --- The bed mesh ----------------------------------------------------------------------------------------------------
 
-    @Test fun `the mesh scale is blue low, near white in the middle and red high`() {
+    @Test fun `the mesh scale is blue low near white in the middle and red high`() {
         val (lr, _, lb) = MeshColors.rgb(-0.1, -0.1, 0.1)
         val (mr, mg, mb) = MeshColors.rgb(0.0, -0.1, 0.1)
         val (hr, _, hb) = MeshColors.rgb(0.1, -0.1, 0.1)

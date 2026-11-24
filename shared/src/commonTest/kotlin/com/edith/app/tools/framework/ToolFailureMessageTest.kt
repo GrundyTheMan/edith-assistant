@@ -19,13 +19,13 @@ import com.edith.app.testing.FakeSettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
-import java.time.Instant
-import java.time.ZoneId
+import com.edith.app.testing.assertEquals
+import com.edith.app.testing.assertTrue
+import kotlin.test.Test
+import kotlin.time.Instant
+import kotlinx.datetime.TimeZone
 
 /**
  * When a tool keeps failing and the model ends with nothing to say, the owner is told what failed, not just
@@ -33,7 +33,7 @@ import java.time.ZoneId
  */
 class ToolFailureMessageTest {
     private val dispatchers = AppDispatchers(Dispatchers.Unconfined, Dispatchers.Unconfined, Dispatchers.Unconfined)
-    private val clock = FakeClock(Instant.parse("2026-11-17T12:00:00Z"), ZoneId.of("UTC"))
+    private val clock = FakeClock(Instant.parse("2026-11-17T12:00:00Z"), TimeZone.of("UTC"))
 
     private class FakeTool(private val answers: MutableList<ToolResult>) : Tool {
         override val spec = ToolSpec("search_email", "Search email")
@@ -43,7 +43,7 @@ class ToolFailureMessageTest {
     }
 
     /** A model that calls the tool every round, and says [lastWords] when it is finally asked for an answer without tools. */
-    private fun run(tool: Tool, callsBeforeAnswer: Int, lastWords: String): String = runBlocking {
+    private suspend fun run(tool: Tool, callsBeforeAnswer: Int, lastWords: String): String {
         var round = 0
         val ollama = object : OllamaClient {
             override fun chatStream(baseUrl: String, request: ChatCall): Flow<ChatEvent> = flow {
@@ -62,27 +62,27 @@ class ToolFailureMessageTest {
         runner.run("http://ollama", ModelInfo("gemma4:12b", setOf("tools")), listOf(OllamaMessage("user", "any unread work email?"))).collect {
             if (it is TurnEvent.Finished) finished = it.text
         }
-        finished
+        return finished
     }
 
     private val noAccount = ToolResult.Error("There's no account called 'Work (HomeGamingRig)'. The accounts are: a@gmail.com, Work (HomeGamingRig).")
 
-    @Test fun `five failures in a row and then silence says what failed`() {
+    @Test fun `five failures in a row and then silence says what failed`() = runTest {
         val text = run(FakeTool(mutableListOf(noAccount)), callsBeforeAnswer = 99, lastWords = "")
         assertTrue(text, text.startsWith("I couldn't finish that: the email step failed."))
         assertTrue(text, text.contains("There's no account called 'Work (HomeGamingRig)'"))
     }
 
-    @Test fun `a model that gives up with nothing right after a failure also says what failed`() {
+    @Test fun `a model that gives up with nothing right after a failure also says what failed`() = runTest {
         val text = run(FakeTool(mutableListOf(noAccount)), callsBeforeAnswer = 1, lastWords = "")
         assertTrue(text, text.contains("There's no account called"))
     }
 
-    @Test fun `when the model does answer, its words are kept`() {
+    @Test fun `when the model does answer its words are kept`() = runTest {
         assertEquals("You have no unread mail.", run(FakeTool(mutableListOf(noAccount)), callsBeforeAnswer = 99, lastWords = "You have no unread mail."))
     }
 
-    @Test fun `a failure followed by a success is not reported`() {
+    @Test fun `a failure followed by a success is not reported`() = runTest {
         val tool = FakeTool(mutableListOf(noAccount, ToolResult.Ok("1. Mail")))
         assertEquals("", run(tool, callsBeforeAnswer = 2, lastWords = ""))   // a silent model after a success is still the old "didn't reply"
     }
