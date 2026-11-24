@@ -19,6 +19,7 @@ navigation = "2.10.2"
 splashscreen = "1.2.0"
 okhttp = "5.5.1"
 ktor = "3.6.1"
+okio = "3.18.2"  # K4.1: the iPhone settings file (DataStore asks for an okio path); the version the Phase 0 spike ran on
 jsoup = "1.23.2"
 ksoup = "0.2.6"
 commons-compress = "1.28.0"
@@ -88,9 +89,11 @@ okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhtt
 mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver3", version.ref = "okhttp" }
 okhttp-tls = { group = "com.squareup.okhttp3", name = "okhttp-tls", version.ref = "okhttp" }
 ktor-client-core = { group = "io.ktor", name = "ktor-client-core", version.ref = "ktor" }
+ktor-client-darwin = { group = "io.ktor", name = "ktor-client-darwin", version.ref = "ktor" }
 ktor-client-mock = { group = "io.ktor", name = "ktor-client-mock", version.ref = "ktor" }
 ktor-client-okhttp = { group = "io.ktor", name = "ktor-client-okhttp", version.ref = "ktor" }
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
+okio = { group = "com.squareup.okio", name = "okio", version.ref = "okio" }
 ksoup = { group = "com.fleeksoft.ksoup", name = "ksoup", version.ref = "ksoup" }
 commons-compress = { group = "org.apache.commons", name = "commons-compress", version.ref = "commons-compress" }
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }

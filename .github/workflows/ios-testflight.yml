@@ -1,0 +1,102 @@
+# K4.1: builds the iPhone app (iosApp/) signed for a real iPhone and uploads it to TestFlight, so it can be installed from the TestFlight app
+# (no Mac, no cable). Started by hand only, on the branch chosen in the Run workflow box. It uses the Apple setup of the Phase 0 spike
+# (docs/design/kmp-transition.md, "Device findings"): three repository secrets and two repository variables, typed in by the owner on GitHub's
+# settings page. They keep their SPIKE_ names, and the first builds keep the spike's bundle identifier, until decision D43 picks com.edith.app.
+name: iPhone app TestFlight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  testflight:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      BUNDLE_ID: ${{ vars.SPIKE_BUNDLE_ID }}
+      TEAM_ID: ${{ vars.SPIKE_APPLE_TEAM_ID }}
+      KEY_ID: ${{ secrets.SPIKE_ASC_KEY_ID }}
+      ISSUER_ID: ${{ secrets.SPIKE_ASC_ISSUER_ID }}
+      KEY_P8: ${{ secrets.SPIKE_ASC_KEY_P8 }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Use Xcode 26 (Apple only accepts uploads built with the iOS 26 SDK or later)
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.3.app
+          xcodebuild -version
+
+      - name: Check the Apple setup is there
+        run: |
+          for v in BUNDLE_ID TEAM_ID KEY_ID ISSUER_ID KEY_P8; do
+            if [ -z "${!v}" ]; then echo "Missing $v: see the repository secrets and variables (SPIKE_*)"; exit 1; fi
+          done
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: konan-${{ runner.os }}-
+
+      - uses: actions/cache@v6
+        with:
+          path: app/libs
+          key: sherpa-${{ hashFiles('scripts/fetch-sherpa.sh') }}
+
+      - name: Fetch the sherpa-onnx library
+        run: scripts/fetch-sherpa.sh
+
+      - name: Generate the Xcode project with the bundle identifier
+        run: |
+          brew install xcodegen
+          sed -i '' "s/com.example.edithkmpspike/${BUNDLE_ID}/" iosApp/project.yml
+          (cd iosApp && xcodegen generate)
+
+      - name: Write the App Store Connect key (kept out of the log)
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          # Rebuild a clean PEM from whatever text was pasted: drop the BEGIN/END lines, spaces and CRs, rewrap at 64 columns, end with a newline.
+          body=$(printf '%s' "$KEY_P8" | sed -e 's/-----[A-Z ]*-----//g' | tr -d '[:space:]')
+          echo "key body length: ${#body} characters (a valid Apple key is about 184)"
+          { echo '-----BEGIN PRIVATE KEY-----'; printf '%s' "$body" | fold -w 64; echo; echo '-----END PRIVATE KEY-----'; } > "$RUNNER_TEMP/keys/AuthKey_${KEY_ID}.p8"
+
+      - name: Archive for a real iPhone
+        run: |
+          set -eo pipefail
+          mkdir -p build
+          # The spike's builds took numbers 1 to 5 for this bundle identifier, and TestFlight wants each build number higher than the last.
+          xcodebuild archive -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath build/App.xcarchive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_${KEY_ID}.p8" -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER_ID" \
+            DEVELOPMENT_TEAM="$TEAM_ID" CURRENT_PROJECT_VERSION="$((100 + ${{ github.run_number }}))" | tail -60
+
+      - name: Upload to TestFlight
+        run: |
+          set -eo pipefail
+          cat > build/ExportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath build/App.xcarchive -exportOptionsPlist build/ExportOptions.plist -exportPath build/export \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_${KEY_ID}.p8" -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER_ID" | tail -40
+
+      - name: Remove the key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/keys"

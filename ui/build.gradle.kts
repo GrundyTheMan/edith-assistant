@@ -20,8 +20,13 @@ kotlin {
     jvm {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
     }
-    iosArm64()
-    iosSimulatorArm64()
+    // K4.1: the iPhone app (iosApp/) links this framework: the shared screens and, through :shared, the engine.
+    listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
+        target.binaries.framework {
+            baseName = "EdithUI"
+            isStatic = true
+        }
+    }
 
     sourceSets {
         commonMain.dependencies {
