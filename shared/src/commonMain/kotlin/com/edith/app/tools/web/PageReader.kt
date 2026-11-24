@@ -185,6 +185,30 @@ object PrivateNetwork {
         return isPrivateV4(first, second)
     }
 
+    /**
+     * Whether a resolved address (4 bytes for IPv4, 16 for IPv6) is on a private network: loopback, link-local, unique-local, multicast, the
+     * unspecified address and the private IPv4 ranges, including an IPv4 address written inside an IPv6 one (::ffff:a.b.c.d).
+     */
+    fun isPrivateAddress(bytes: ByteArray): Boolean {
+        val b = bytes.map { it.toInt() and 0xff }
+        return when (b.size) {
+            4 -> isPrivateV4(b[0], b[1])
+            16 -> {
+                val mapped = b.take(10).all { it == 0 } && b[10] == 0xff && b[11] == 0xff
+                when {
+                    mapped -> isPrivateV4(b[12], b[13])
+                    b.all { it == 0 } -> true                        // ::
+                    b.take(15).all { it == 0 } && b[15] == 1 -> true   // ::1
+                    b[0] and 0xfe == 0xfc -> true                    // fc00::/7, unique local
+                    b[0] == 0xfe && b[1] and 0xc0 == 0x80 -> true    // fe80::/10, link local
+                    b[0] == 0xff -> true                             // multicast
+                    else -> false
+                }
+            }
+            else -> true   // not an address we understand: do not fetch from it
+        }
+    }
+
     fun isPrivateV4(a: Int, b: Int) =
         a == 10 || a == 127 || a == 0 || (a == 169 && b == 254) || (a == 192 && b == 168) || (a == 172 && b in 16..31) ||
             (a == 100 && b in 64..127) || a >= 224
