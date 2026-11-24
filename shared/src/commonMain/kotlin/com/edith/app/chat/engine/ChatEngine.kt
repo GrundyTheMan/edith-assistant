@@ -3,11 +3,13 @@ package com.edith.app.chat.engine
 import com.edith.app.core.error.AppError
 import com.edith.app.core.error.AppErrorException
 import com.edith.app.core.error.ErrorMapper
+import com.edith.app.core.error.isClassLoadFailure
 import com.edith.app.core.error.Outcome
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
+import com.edith.app.core.dispatchers.platformIoDispatcher
 import com.edith.app.core.permissions.LocalNetworkAccess
-import com.edith.app.attachments.AttachmentStore
+import com.edith.app.attachments.AttachmentWriter
 import com.edith.app.attachments.PendingAttachment
 import com.edith.app.attachments.ReplyFormat
 import com.edith.app.data.chat.ChatRepository
@@ -22,7 +24,6 @@ import com.edith.app.tools.framework.ApprovalChannel
 import com.edith.app.tools.framework.Confirmations
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
@@ -31,7 +32,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.io.IOException
+import kotlin.concurrent.Volatile
+import kotlin.concurrent.atomics.AtomicBoolean
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.time.TimeSource
 
 /** What the engine is doing. Every state but Idle names the conversation it belongs to (C06b). */
 sealed interface EngineState {
@@ -64,6 +69,7 @@ interface ReplyListener {
  * [ChatRepository]. Database and network work already run on their own threads (ChatRepository, OllamaClient),
  * so the engine needs no dispatcher of its own.
  */
+@OptIn(ExperimentalAtomicApi::class)
 class ChatEngine(
     private val repo: ChatRepository,
     private val settings: SettingsRepository,
@@ -75,9 +81,9 @@ class ChatEngine(
     private val scope: CoroutineScope,
     private val localNetwork: LocalNetworkAccess,
     private val confirmations: Confirmations = Confirmations(),
-    private val nanoTime: () -> Long = System::nanoTime,
+    private val nanoTime: () -> Long = monotonicNanos,
     /** Where attachments' files go (C15, C16). */
-    private val attachmentStore: AttachmentStore? = null,
+    private val attachmentStore: AttachmentWriter? = null,
     /** Runs after a message with attachments is stored: retention (C16 §2). */
     private val afterAttachments: suspend () -> Unit = {},
 ) {
@@ -102,8 +108,8 @@ class ChatEngine(
             // Files first, so a row never points at a file that isn't there yet (C16 §1).
             val session = keepsNothing()
             val new = attachments.map { a ->
-                val path = withContext(Dispatchers.IO) { attachmentStore?.keep(a, session) }
-                if (path == null) a.file.delete()
+                val path = withContext(platformIoDispatcher) { attachmentStore?.keep(a, session) }
+                if (path == null) attachmentStore?.discard(a)
                 ChatRepository.NewAttachment(a.kind, a.fileName, a.mimeType, a.sizeBytes, path)
             }
             if (repo.addUserMessage(conversationId, text.trim(), source, new) == null) {   // the chat was deleted meanwhile
@@ -159,7 +165,7 @@ class ChatEngine(
                 end = block()
             } finally {
                 jobConversationId = null
-                busy.set(false)
+                busy.store(false)
                 _state.value = end
             }
         }
@@ -224,7 +230,8 @@ class ChatEngine(
             val error = ErrorMapper.map(e, runCatching { settings.current().serverUrl }.getOrDefault("your server"))
             Log.w(LogTag.Chat, "Turn failed: ${error::class.simpleName}", e)
             return fail(conversationId, error, model)
-        } catch (e: LinkageError) {
+        } catch (e: Throwable) {
+            if (!e.isClassLoadFailure()) throw e
             // A class that failed to load (e.g. ExceptionInInitializerError) is a bug, but it must fail this turn,
             // not crash the app: it once did, from a regex Android couldn't compile (L25).
             Log.e(LogTag.Chat, "Turn failed: a part of Edith couldn't load", e)
@@ -253,9 +260,9 @@ class ChatEngine(
         val session = keepsNothing()
         val pictures = images.mapNotNull { image ->
             try {
-                val path = withContext(Dispatchers.IO) { store.writeBytes(image.fileName, image.jpeg, session) }
+                val path = withContext(platformIoDispatcher) { store.writeBytes(image.fileName, image.jpeg, session) }
                 ChatRepository.NewAttachment(AttachmentKind.Image, image.fileName, "image/jpeg", image.jpeg.size.toLong(), path)
-            } catch (e: java.io.IOException) {
+            } catch (e: IOException) {
                 Log.w(LogTag.Chat, "Couldn't keep a tool's picture", e)
                 null
             }
@@ -284,11 +291,11 @@ class ChatEngine(
         for (part in parts) when (part) {
             is ReplyFormat.Part.Text -> out.append(part.text)
             is ReplyFormat.Part.File -> try {
-                val path = withContext(Dispatchers.IO) { store.write(part.name, part.content, session) }
+                val path = withContext(platformIoDispatcher) { store.write(part.name, part.content, session) }
                 files += ChatRepository.NewAttachment(AttachmentKind.File, part.name, ReplyFormat.mimeType(part.name),
-                    part.content.toByteArray().size.toLong(), path)
+                    part.content.encodeToByteArray().size.toLong(), path)
                 line(ReplyFormat.placeholder(part.name))
-            } catch (e: java.io.IOException) {
+            } catch (e: IOException) {
                 Log.w(LogTag.Chat, "Couldn't keep Edith's file", e)
                 line("```\n${part.content}\n```")   // she still sees and shares the content as text
             }
@@ -325,3 +332,8 @@ class ChatEngine(
         const val MIN_EMIT_INTERVAL_NS = 33_000_000L
     }
 }
+
+private val engineStart = TimeSource.Monotonic.markNow()
+
+/** A clock that only goes forward, in nanoseconds: how long the engine has run. */
+private val monotonicNanos: () -> Long = { engineStart.elapsedNow().inWholeNanoseconds }

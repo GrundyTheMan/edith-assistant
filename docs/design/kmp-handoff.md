@@ -18,7 +18,8 @@ Tailscale). Phase 1 makes the Android app ready for sharing without changing wha
 | K1.4 OkHttp replaced by Ktor | **done on Android**: every service calls through Ktor; OkHttp stays only for the engine hooks listed in `OkHttpGuardTest` | #15, #16, #17, and the K1.4 PR after them |
 | K1.5 Room to Room KMP | **done**: the database is in `shared/`, schemas in `shared/schemas/` unchanged | the K1.5 PR |
 | K1.6 move W1 packages into `shared/commonMain` | **done**, except `di/AppContainer`, `SettingsViewModel` and the Android-only parts of `core` (see below) | the K1.6 PR |
-| Gate G1 (the owner decides) | after K1.6 | |
+| Gate G1 (the owner decides) | **passed 2026-11-23** | |
+| K2.1 `chat` engine to `shared/commonMain` | **done**, except `chat/ui` and `ReplyService` | the K2.1 PR |
 
 Phase 0 leftovers that do not block Phase 1 are in the plan's §7 progress table (K0.4 second half, the K0.6b probes: sherpa-onnx
 speech and ONNX Runtime on iOS, WebRTC, SwiftMail, MQTT with a login against Meross's broker).
@@ -88,6 +89,8 @@ Quirks: `LocalDateTime.toString()` drops zero seconds (use `LocalDateTime.Format
 **K1.5 is done.** The database, DAOs, converters, migrations and command log are in `shared/commonMain`; Android opens it with `EdithDatabase.create(context)` (androidMain), the desktop and iPhone with `EdithDatabase.open(path)`. The schema files in `shared/schemas/` are what an installed Android database is checked against: **never edit them by hand, and a schema change needs a version bump, a `Migration` (written against `SQLiteConnection`) and a test like `EdithDatabaseTest`'s version-1 upgrade.** Still to do from K0.4: open a copy of the owner's real `edith.db` (ask them for one), and check the same code on the iPhone (the macOS job builds it; running it on a device is the owner's). DataStore moves with the packages that use it, in K1.6.
 
 **K1.6 is done as far as the waves allow, and gate G1 is next (the owner's).** Moved into `shared/commonMain`: `core` (dispatchers, visibility, errors, message times, the `SecretStore` interface, logging), `ollama`, `settings` (the data: not the screen's view model), `data/chat/ChatRepository`. Seams to know (all small `expect`/`actual`s, in `shared/`): `Log` and `LogConfig` (the app sets `LogConfig.debug` in `EdithApp.onCreate`), `isSocketTimeout`/`isUnreachable`, `platformIoDispatcher`, `inTransaction`/`isConstraintViolation`, and `StoredFiles`. **Left in `app/` on purpose:** `di/AppContainer` (it builds every wave's objects, so it moves last, or is split per platform in Phase 4), `SettingsViewModel` and the other view models (screens wave), `CrashReporter`, `core/permissions`, `core/net`, `KeystoreSecretStore`. What the owner decides at **G1**: the Android app has used Ktor, kotlinx-datetime, the shared database and the shared foundation for a few days with no regression. Do not start Phase 2 before they say go.
+
+**G1 is passed; K2.1 is done.** The chat engine, prompt/context builders, titler, confirmations, `ReplyFormat` and `PendingAttachment`/`AttachmentWriter` are shared. Next: K2.2 (`tools` framework and tools), K2.3 (`attachments`), K2.4 (`jarvis`, `printer/feed`, `home`); then gate G2. Patterns used: `kotlin.concurrent.atomics` (opt in with `ExperimentalAtomicApi`) and `MutableStateFlow` updates in place of `java.util.concurrent` types, `TimeSource.Monotonic` in place of `System.nanoTime`, `platformIoDispatcher` in place of `Dispatchers.IO`.
 
 After G1: plan §7 Phase 2 (the engine: `chat`, `tools`, `attachments`), then Phase 3 shared screens, Phase 4 the iPhone app proper (the Expo app stays frozen until parity), Phase 5 parity and retirement. Each has its own gate; the plan lists the work packages.
 

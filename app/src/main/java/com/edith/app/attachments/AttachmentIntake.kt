@@ -48,7 +48,7 @@ class AttachmentIntake(
             file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) }
             Log.d(LogTag.Chat, "Image prepared: ${bitmap.width}×${bitmap.height}, ${file.length() / 1024} KB")
             bitmap.recycle()
-            Result.Ready(PendingAttachment(AttachmentKind.Image, name.withExtension("jpg"), "image/jpeg", file, file.length()))
+            Result.Ready(PendingAttachment(AttachmentKind.Image, name.withExtension("jpg"), "image/jpeg", file.path, file.length()))
         } catch (e: Exception) {
             Log.w(LogTag.Chat, "Couldn't prepare an image", e)
             Result.Refused("$name couldn't be opened as an image.")
@@ -93,7 +93,7 @@ class AttachmentIntake(
                 mime = "audio/wav"
                 Log.d(LogTag.Chat, "Audio converted to WAV: ${type.ifEmpty { "unknown type" }}, ${durationMs} ms, ${file.length() / 1024} KB")
             }
-            Result.Ready(PendingAttachment(AttachmentKind.Audio, outName, mime, file, file.length(), durationMs))
+            Result.Ready(PendingAttachment(AttachmentKind.Audio, outName, mime, file.path, file.length(), durationMs))
         } catch (e: Exception) {
             Log.w(LogTag.Chat, "Couldn't prepare an audio file", e)
             Result.Refused("$name couldn't be converted to audio Edith can send.")

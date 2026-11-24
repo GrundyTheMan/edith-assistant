@@ -4,7 +4,8 @@ import com.edith.app.chat.engine.ConfirmationRequest
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import kotlinx.coroutines.CompletableDeferred
-import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 
 /** How the owner answered a confirmation: with a tap on its card, or by voice (hands-free). */
 enum class ApprovalChannel { Tap, Voice }
@@ -20,13 +21,14 @@ enum class ApprovalChannel { Tap, Voice }
 class Confirmations {
     private class Waiting(val request: ConfirmationRequest, val answer: CompletableDeferred<Boolean>)
 
-    private val pending = ConcurrentHashMap<String, Waiting>()
+    /** Replaced whole on every change, so any thread can read it and the updates never lose one another. */
+    private val pending = MutableStateFlow<Map<String, Waiting>>(emptyMap())
 
     fun register(request: ConfirmationRequest): CompletableDeferred<Boolean> =
-        CompletableDeferred<Boolean>().also { pending[request.id] = Waiting(request, it) }
+        CompletableDeferred<Boolean>().also { answer -> pending.update { it + (request.id to Waiting(request, answer)) } }
 
     suspend fun await(request: ConfirmationRequest, answer: CompletableDeferred<Boolean>): Boolean =
-        try { answer.await() } finally { pending.remove(request.id) }
+        try { answer.await() } finally { pending.update { it - request.id } }
 
     /**
      * The owner's answer, `by` the way they gave it. Ignored (false) if that request is no longer waiting, or if a voice
@@ -34,7 +36,7 @@ class Confirmations {
      * True when the answer counted.
      */
     fun resolve(id: String, approved: Boolean, by: ApprovalChannel): Boolean {
-        val waiting = pending[id] ?: return false
+        val waiting = pending.value[id] ?: return false
         if (approved && waiting.request.screenOnly && by != ApprovalChannel.Tap) {
             Log.w(LogTag.Tools, "A voice approval of a screen-only card was ignored")
             return false

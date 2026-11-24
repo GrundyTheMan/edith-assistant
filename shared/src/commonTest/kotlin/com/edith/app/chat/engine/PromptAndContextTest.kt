@@ -6,22 +6,24 @@ import com.edith.app.data.db.MessageSource
 import com.edith.app.data.db.MessageStatus
 import com.edith.app.data.db.MessageWithAttachments
 import com.edith.app.ollama.ModelInfo
-import com.edith.app.testing.FakeClock
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
-import java.time.Instant
-import java.time.ZoneId
-import java.util.Locale
+import com.edith.app.core.time.Clock
+import kotlinx.datetime.TimeZone
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import kotlin.test.Test
+import kotlin.time.Instant
 
 class PromptAndContextTest {
     private val model = ModelInfo("gemma4:12b-it-q8_0", setOf("completion", "tools"))
-    private val clock = FakeClock(Instant.parse("2026-10-29T18:30:00Z"), ZoneId.of("America/Detroit"))
+    private val clock = object : Clock {
+        override fun now() = Instant.parse("2026-10-29T18:30:00Z")
+        override fun zone() = TimeZone.of("America/Detroit")
+    }
 
     // --- PromptBuilder ------------------------------------------------------------------------------------------
 
-    @Test fun `system prompt is the persona verbatim, a blank line, then the date line`() {
-        val prompt = PromptBuilder(clock) { listOf(DateTimeSection { Locale.US }) }.system(model)
+    @Test fun `system prompt is the persona verbatim a blank line then the date line`() {
+        val prompt = PromptBuilder(clock) { listOf(DateTimeSection { "en-US" }) }.system(model)
         assertEquals(PERSONA + "\n\nCurrent date and time: Thursday, October 29, 2026, 2:30 PM (America/Detroit, UTC-04:00).", prompt)
         assertTrue(PERSONA.startsWith("You are Edith, a highly sophisticated, warm, and genuinely complimentary personal assistant."))
         assertTrue(PERSONA.endsWith("Let your warmth and wit come through in your word choice, not in extra length."))
@@ -49,7 +51,7 @@ class PromptAndContextTest {
     private fun build(vararg history: MessageWithAttachments) =
         ContextBuilder().build(history.toList(), "SYSTEM", model).map { it.role to it.content }
 
-    @Test fun `system first, then completed user and assistant messages in order`() {
+    @Test fun `system first then completed user and assistant messages in order`() {
         assertEquals(
             listOf("system" to "SYSTEM", "user" to "Hi", "assistant" to "Hello!", "user" to "Weather?"),
             build(user("Hi"), edith("Hello!"), user("Weather?")),
@@ -63,7 +65,7 @@ class PromptAndContextTest {
         )
     }
 
-    @Test fun `tool-call text is stripped, unclosed too, and empty results are dropped`() {
+    @Test fun `tool-call text is stripped unclosed too and empty results are dropped`() {
         assertEquals(
             listOf("system" to "SYSTEM", "user" to "Weather?", "assistant" to "Let me check.", "user" to "And?"),
             build(user("Weather?"), edith("Let me check.<tool_call>{\"name\":\"get_weather\"}</tool_call>"),
@@ -84,10 +86,10 @@ class PromptAndContextTest {
         val history = (1..8).flatMap { listOf(user("u$it $chunk"), edith("a$it $chunk")) } + user("latest")
         val kept = ContextBuilder().build(history, "S", model).drop(1)
         val tokens = kept.sumOf { ContextBuilder.estimateTokens(it.content) }
-        assertTrue("within budget: $tokens", tokens <= ContextBuilder.TOKEN_BUDGET)
+        assertTrue(tokens <= ContextBuilder.TOKEN_BUDGET, "within budget: $tokens")
         assertEquals("latest", kept.last().content)
         assertTrue(kept.first().role == "user" && kept.first().content.startsWith("u"))
-        assertTrue("older ones dropped", kept.none { it.content.startsWith("u1 ") })
+        assertTrue(kept.none { it.content.startsWith("u1 ") }, "older ones dropped")
     }
 
     @Test fun `a huge latest user message is kept with its middle truncated`() {

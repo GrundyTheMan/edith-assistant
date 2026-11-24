@@ -5,7 +5,6 @@ import com.edith.app.ollama.ModelInfo
 import com.edith.app.core.time.formatPattern
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.offsetAt
-import java.util.Locale
 import kotlin.time.Instant
 
 /**
@@ -45,9 +44,9 @@ class PromptBuilder(private val clock: Clock, private val sections: () -> List<P
 }
 
 /** "Current date and time: Thursday, October 29, 2026, 2:30 PM (America/Detroit)." (C06), in the device's language. */
-class DateTimeSection(private val locale: () -> Locale = Locale::getDefault) : PromptSection {
+class DateTimeSection(private val languageTag: () -> String? = { null }) : PromptSection {
     override fun text(ctx: PromptContext): String {
-        val formatted = formatPattern(ctx.now, ctx.zone, "EEEE, MMMM d, yyyy, h:mm a", locale().toLanguageTag())
+        val formatted = formatPattern(ctx.now, ctx.zone, "EEEE, MMMM d, yyyy, h:mm a", languageTag())
         // The offset too (C18): without it gemma4 guessed -04:00 the day after daylight saving ended.
         return "Current date and time: $formatted (${ctx.zone.id}, UTC${ctx.zone.offsetAt(ctx.now).toString().replace("Z", "+00:00")})."
     }

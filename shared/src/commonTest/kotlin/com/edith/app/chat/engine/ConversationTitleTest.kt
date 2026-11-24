@@ -1,15 +1,15 @@
 package com.edith.app.chat.engine
 
 import com.edith.app.data.chat.ChatRepository
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 /** D12 title rules that don't need a database or a model. */
 class ConversationTitleTest {
 
-    @Test fun `first-message titles are one line, cut at a word, with an ellipsis`() {
+    @Test fun `first-message titles are one line cut at a word with an ellipsis`() {
         assertEquals("Hi Edith", ChatRepository.firstMessageTitle("  Hi\n  Edith  "))
         assertEquals("What's the weather going to be like in…",
             ChatRepository.firstMessageTitle("What's the weather going to be like in Detroit this weekend, roughly?"))
@@ -19,7 +19,7 @@ class ConversationTitleTest {
         assertTrue(noSpaces.endsWith("…"))
     }
 
-    @Test fun `Edith's titles lose quotes, labels, markdown and ending punctuation`() {
+    @Test fun `Edith's titles lose quotes labels markdown and ending punctuation`() {
         assertEquals("Picking a Number", ConversationTitler.clean("\"Picking a Number.\""))
         assertEquals("Detroit Weekend Weather", ConversationTitler.clean("Title: **Detroit Weekend Weather**\n\nHope that helps!"))
         assertEquals("Houseplant Names", ConversationTitler.clean("\n\n# “Houseplant Names”"))

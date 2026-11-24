@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.edith.app.attachments.file
 import com.edith.app.attachments.AttachmentIntake
 import com.edith.app.attachments.AttachmentPlayer
 import com.edith.app.attachments.AttachmentStore
