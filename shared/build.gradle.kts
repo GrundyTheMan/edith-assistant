@@ -41,6 +41,7 @@ kotlin {
         commonTest.dependencies {
             implementation(kotlin("test"))
             implementation(libs.coroutines.test)
+            implementation(libs.ktor.client.mock)   // K2.12: a pretend HTTP engine for the container test
         }
         // K2 G2: the chat engine's end-to-end tests need a Room database, which the Android host test cannot build without a Context.
         // They are plain common Kotlin in src/engineTest, compiled for the desktop and the iPhone (each has its own inMemoryTestDatabase()).

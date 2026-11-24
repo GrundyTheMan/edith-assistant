@@ -158,18 +158,36 @@ class AppContainer(val app: Application) {
     val dispatchers: AppDispatchers = AppDispatchers.Default
     val clock: Clock = SystemClock
 
+    /**
+     * The chat engine and what it needs, shared with the iPhone (K2.12). Android hands it its own database, settings, secrets, HTTP clients,
+     * attachment store, location, permissions and network check; the tools, the voice listener and the retention hook are still made here,
+     * because the services behind them are not shared yet.
+     */
+    val shared: SharedContainer by lazy {
+        SharedContainer(
+            PlatformServices(
+                dispatchers = dispatchers, clock = clock, database = lazy { database }, settings = settingsRepository, secrets = secretStore,
+                http = httpClients, attachments = attachmentStore, location = deviceLocation, toolPermissions = toolPermissions,
+                localNetwork = localNetworkAccess,
+            ),
+            toolRegistry = { toolRegistry },
+            replyListeners = { replyListeners },
+            afterAttachments = { retention.apply() },
+        )
+    }
+
     /** For app-wide background work that outlives any screen. */
-    val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + dispatchers.io)
+    val appScope: CoroutineScope get() = shared.appScope
 
     /** The database (C05). Opened once at startup by [openDatabaseInBackground]; Room does its I/O off the main thread. */
     val database: EdithDatabase by lazy {
         ListConverters.onUnreadable = { Log.w(LogTag.Chat, "Unreadable tools_used value; treating it as empty", it) }
         EdithDatabase.create(app)
     }
-    val chatRepository: ChatRepository by lazy { ChatRepository(database, clock, dispatchers, attachmentStore) }
+    val chatRepository: ChatRepository get() = shared.chatRepository
 
     /** Chat turns run here, not in a ViewModel, so a reply carries on through rotation (C06, lessons L10). */
-    val engineScope: CoroutineScope = CoroutineScope(SupervisorJob() + dispatchers.default)
+    val engineScope: CoroutineScope get() = shared.engineScope
 
     /** Every tool Edith has (C08). Later chunks add theirs here: weather C09, web C10, location C11, Google C18/C19. */
     val toolRegistry: ToolRegistry by lazy {
@@ -195,15 +213,15 @@ class AppContainer(val app: Application) {
      * Web search (C10, D3): DuckDuckGo, keyless; with an Ollama API key saved, Ollama's web search first. The key
      * stays in [secretStore].
      */
-    val webSearchSetup: WebSearchSetup by lazy { WebSearchSetup(secretStore) }
-    val ollamaWeb: OllamaWebSearch by lazy { OllamaWebSearch(httpClients.ktorSecure, dispatchers, apiKey = { webSearchSetup.key() }) }
-    private val webSearch: WebSearch by lazy { WebSearch(DuckDuckGoSearch(httpClients.ktorSecure, dispatchers), ollamaWeb, webSearchSetup) }
+    val webSearchSetup: WebSearchSetup get() = shared.webSearchSetup
+    val ollamaWeb: OllamaWebSearch get() = shared.ollamaWeb
+    private val webSearch: WebSearch get() = shared.webSearch
 
-    /** Weather data (C09): Open-Meteo, keyless. Shares the app's HTTP client, with its own 10 s timeouts. */
-    val openMeteo: OpenMeteoClient by lazy { OpenMeteoClient(httpClients.ktorSecure, dispatchers) }
+    /** Weather data (C09): Open-Meteo, keyless. */
+    val openMeteo: OpenMeteoClient get() = shared.openMeteo
 
     /** Tool confirmations waiting for the owner's tap (C08 §6, D11). */
-    val confirmations = Confirmations()
+    val confirmations: Confirmations get() = shared.confirmations
 
     /** Permissions tools ask for with Android's dialog, shown by the chat screen (C11). */
     val toolPermissions: ToolPermissions by lazy { ToolPermissions.android(app) }
@@ -212,32 +230,21 @@ class AppContainer(val app: Application) {
     val deviceLocation: LocationProvider by lazy { AndroidLocationProvider(app, dispatchers) }
 
     /** System-prompt sections; later chunks add theirs here (attachments C15/C16, Google C17). */
-    val promptSections: List<PromptSection> by lazy { listOf(DateTimeSection(), ToolGuidanceSection { toolRegistry }, AttachmentsSection(), EdithFilesSection()) }
+    val promptSections: List<PromptSection> get() = shared.promptSections
 
     /** The tool loop (C08). */
-    val turnRunner: TurnRunner by lazy {
-        ToolTurnRunner(ollama, toolRegistry, confirmations, settingsRepository, clock, dispatchers, permissions = toolPermissions)
-    }
+    val turnRunner: TurnRunner get() = shared.turnRunner
 
     /** Edith names new chats (D12). */
-    val conversationTitler: ConversationTitler by lazy { ConversationTitler(chatRepository, ollama, settingsRepository, appScope) }
+    val conversationTitler: ConversationTitler get() = shared.conversationTitler
 
     /** Edith's voice speaks replies as they stream (C13). */
     val replyListeners: MutableList<ReplyListener> by lazy { mutableListOf(conversationTitler, speechOutput) }
 
-    val chatEngine: ChatEngine by lazy {
-        ChatEngine(
-            repo = chatRepository, settings = settingsRepository, modelSelection = modelSelection,
-            promptBuilder = PromptBuilder(clock) { promptSections }, contextBuilder = ContextBuilder(MediaAttachmentContext(attachmentStore)),
-            turnRunner = turnRunner, listeners = replyListeners, scope = engineScope, localNetwork = localNetworkAccess,
-            confirmations = confirmations, attachmentStore = attachmentStore, afterAttachments = { retention.apply() },
-        )
-    }
+    val chatEngine: ChatEngine get() = shared.chatEngine
 
     /** The open conversation (C06b). Resolved at startup by [openDatabaseInBackground]. */
-    val currentConversation: CurrentConversation by lazy {
-        CurrentConversation(chatRepository, settingsRepository, chatEngine)
-    }
+    val currentConversation: CurrentConversation get() = shared.currentConversation
 
     /** Where Edith's own voice is downloaded to (C36): app-private, not backed up. */
     private val voicesDir: File get() = File(app.filesDir, "voices")
@@ -467,7 +474,7 @@ class AppContainer(val app: Application) {
     val taskRanker: TaskRanker by lazy { TaskRanker(ollama, RankStore(java.io.File(app.filesDir, RankStore.FILE_NAME)), clock) }
 
     /** Keeps the newest N attachments each way (C16, O1). */
-    val retention: Retention by lazy { Retention(database.attachmentDao(), attachmentStore, settingsRepository, clock, dispatchers) }
+    val retention: Retention get() = shared.retention
 
     /** Plays audio attachments in the chat; starting one stops Edith's voice. */
     val attachmentPlayer: AttachmentPlayer by lazy { AndroidAttachmentPlayer { speechOutput.stop() } }
@@ -575,13 +582,13 @@ class AppContainer(val app: Application) {
             .build()
     }
 
-    val ollama: OllamaClient by lazy { KtorOllamaClient(httpClients.ktorPlain, OllamaDtos.json, dispatchers) }
-    val modelCatalog: ModelCatalog by lazy { ModelCatalog(ollama) }
+    val ollama: OllamaClient get() = shared.ollama
+    val modelCatalog: ModelCatalog get() = shared.modelCatalog
 
     /** One DataStore per file per process, so the repository is created exactly once here (C04). */
     private val settingsStore: DataStoreSettingsRepository by lazy { DataStoreSettingsRepository.create(app) }
     val settingsRepository: SettingsRepository get() = settingsStore
-    val modelSelection: ModelSelection by lazy { ModelSelection(settingsRepository, modelCatalog) }
+    val modelSelection: ModelSelection get() = shared.modelSelection
     val localNetworkAccess: LocalNetworkAccess by lazy { AndroidLocalNetworkAccess(app) }
 
     private companion object {
