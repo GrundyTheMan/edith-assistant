@@ -1,7 +1,5 @@
 package com.edith.app.tools.framework
 
-import androidx.sqlite.driver.bundled.BundledSQLiteDriver
-import androidx.room.Room
 import com.edith.app.chat.engine.ChatEngine
 import com.edith.app.chat.engine.ConfirmationRequest
 import com.edith.app.chat.engine.ContextBuilder
@@ -28,6 +26,8 @@ import com.edith.app.ollama.OllamaToolCall
 import com.edith.app.ollama.ReplyStats
 import com.edith.app.settings.ModelSelection
 import com.edith.app.testing.MemorySettings
+import com.edith.app.testing.SyncList
+import com.edith.app.testing.inMemoryTestDatabase
 import com.edith.app.testing.TickingClock
 import com.edith.app.tools.context.CurrentTimeTool
 import kotlinx.coroutines.CoroutineScope
@@ -50,7 +50,7 @@ import com.edith.app.testing.assertFalse
 import com.edith.app.testing.assertNull
 import com.edith.app.testing.assertTrue
 import kotlin.test.Test
-import java.util.Collections
+
 
 /**
  * C08 tests 1–5, 7–12: the tool loop against a scripted Ollama that records every request. On the device, so the
@@ -65,7 +65,7 @@ class ToolTurnRunnerTest {
         data class Calls(val calls: List<Pair<String, String>>, val text: String = "") : Reply
 
         private val script = ArrayDeque(replies.toList())
-        val requests: MutableList<ChatCall> = Collections.synchronizedList(mutableListOf())
+        val requests: SyncList<ChatCall> = SyncList()
         val sentCalls = mutableListOf<OllamaMessage>()   // the assistant messages handed to the runner
 
         override fun chatStream(baseUrl: String, request: ChatCall): Flow<ChatEvent> = flow {
@@ -117,7 +117,7 @@ class ToolTurnRunnerTest {
     private val model = ModelInfo("gemma4:12b-it-q8_0", setOf("completion", "tools"))
     private val settings = MemorySettings()
     private val clock = TickingClock()
-    private val dispatchers = AppDispatchers(Dispatchers.Default, Dispatchers.IO, Dispatchers.Default)
+    private val dispatchers = AppDispatchers(Dispatchers.Default, Dispatchers.Default, Dispatchers.Default)
     private val start = listOf(OllamaMessage("system", "S"), OllamaMessage("user", "Hi"))
     private val confirmations = Confirmations()
 
@@ -304,7 +304,7 @@ class ToolTurnRunnerTest {
     }
 
     @Test fun t11_onlyTheUserMessageAndTheFinalReplyAreStored() = runBlocking {
-        val db = Room.inMemoryDatabaseBuilder<EdithDatabase>().setDriver(BundledSQLiteDriver()).setQueryCoroutineContext(Dispatchers.Default).build()
+        val db = inMemoryTestDatabase()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
             val repo = ChatRepository(db, clock, dispatchers)

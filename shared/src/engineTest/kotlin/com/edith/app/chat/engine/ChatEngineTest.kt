@@ -1,7 +1,5 @@
 package com.edith.app.chat.engine
 
-import androidx.sqlite.driver.bundled.BundledSQLiteDriver
-import androidx.room.Room
 import com.edith.app.chat.CurrentConversation
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.error.AppError
@@ -18,6 +16,8 @@ import com.edith.app.ollama.ModelCatalog
 import com.edith.app.ollama.OllamaMessage
 import com.edith.app.settings.ModelSelection
 import com.edith.app.testing.MemorySettings
+import com.edith.app.testing.SyncList
+import com.edith.app.testing.inMemoryTestDatabase
 import com.edith.app.testing.ScriptedOllama
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,7 +36,7 @@ import kotlin.test.Test
 import kotlin.time.Instant
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.datetime.TimeZone
-import java.util.Collections
+
 
 /** C06 engine tests: real in-memory Room, a scripted Ollama, the real prompt/context builders. */
 class ChatEngineTest {
@@ -48,7 +48,7 @@ class ChatEngineTest {
     }
     private val ollama = ScriptedOllama()
     private var networkGranted = true
-    private val events = Collections.synchronizedList(mutableListOf<String>())
+    private val events = SyncList<String>()
     private lateinit var db: EdithDatabase
     private lateinit var repo: ChatRepository
     private lateinit var engineScope: CoroutineScope
@@ -57,9 +57,8 @@ class ChatEngineTest {
     private val settings = MemorySettings()
 
     @BeforeTest fun setUp() {
-        db = Room.inMemoryDatabaseBuilder<EdithDatabase>().setDriver(BundledSQLiteDriver()).setQueryCoroutineContext(Dispatchers.Default)
-            .build()
-        repo = ChatRepository(db, clock, AppDispatchers(Dispatchers.Default, Dispatchers.IO, Dispatchers.Default))
+        db = inMemoryTestDatabase()
+        repo = ChatRepository(db, clock, AppDispatchers(Dispatchers.Default, Dispatchers.Default, Dispatchers.Default))
         cid = runBlocking { repo.createConversation() }
         engineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         engine = ChatEngine(
@@ -85,7 +84,7 @@ class ChatEngineTest {
     private suspend fun rows() = repo.observe(cid).first().map { Triple(it.message.role, it.message.status, it.message.content) }
 
     @Test fun sendStoresTheUserMessageStreamsAndStoresTheReply() = runBlocking {
-        val partials = Collections.synchronizedList(mutableListOf<String>())
+        val partials = SyncList<String>()
         val watcher = launch(Dispatchers.Default) {
             engine.state.collect { if (it is EngineState.Working) partials += it.partialText }
         }
