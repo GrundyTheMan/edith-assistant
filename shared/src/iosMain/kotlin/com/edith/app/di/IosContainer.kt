@@ -25,7 +25,6 @@ import kotlinx.coroutines.launch
 import platform.Foundation.NSBundle
 import com.edith.app.chat.engine.ReplyListener
 import com.edith.app.core.dispatchers.AppDispatchers
-import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
 import com.edith.app.core.net.DarwinKtorClients
 import com.edith.app.core.permissions.LocalNetworkAccess
@@ -52,8 +51,7 @@ import com.edith.app.tools.web.ReadWebPageTool
 import com.edith.app.tools.web.SearchWebTool
 import com.edith.app.tools.web.publicHostAllowed
 import com.edith.app.tools.framework.ToolRegistry
-import com.edith.app.tools.location.Coordinates
-import com.edith.app.tools.location.LocationProvider
+import com.edith.app.tools.location.IosLocationProvider
 import kotlinx.cinterop.ExperimentalForeignApi
 import okio.Path.Companion.toPath
 import platform.Foundation.NSApplicationSupportDirectory
@@ -86,7 +84,7 @@ class IosApp(
 /**
  * Builds the shared engine for the iPhone from Apple's own parts (K4.1; plan §4.2): the Keychain for secrets, the Darwin engine for HTTP, the
  * database, settings and attachments as files under Application Support (kept by the system and backed up, not shown in the Files app).
- * Call once per launch. Tools so far: the time, the weather in a named place ("here" needs Core Location, not built yet), web search and reading a page; the others join as their services move (K2.5 to K2.8).
+ * Call once per launch. Tools so far: the time, the weather in a named place or "here" (Core Location), web search and reading a page; the others join as their services move (K2.5 to K2.8).
  */
 fun createIosApp(): IosApp {
     val dir = applicationSupportDir()
@@ -94,6 +92,7 @@ fun createIosApp(): IosApp {
     val settings = DataStoreSettingsRepository(PreferenceDataStoreFactory.createWithPath { "$dir/settings.preferences_pb".toPath() }, defaults = Settings(speakReplies = false))
     val listeners = mutableListOf<ReplyListener>()
     val clients = DarwinKtorClients()
+    val location = IosLocationProvider()
     val attachmentStore = PathAttachmentStore("$dir/files", "$dir/cache")
     lateinit var container: SharedContainer
     // The accounts (K4.6): the list in its own DataStore file, Google through the system's sign-in sheet, the work account through Jarvis (pinned certificate).
@@ -115,7 +114,7 @@ fun createIosApp(): IosApp {
         val ranker = TaskRanker(container.ollama, RankStore("$dir/${RankStore.FILE_NAME}"), SystemClock)
         ToolRegistry(
             listOf(
-                CurrentTimeTool(), WeatherTool(container.openMeteo, NoLocation), SearchWebTool(container.webSearch),
+                CurrentTimeTool(), WeatherTool(container.openMeteo, location), SearchWebTool(container.webSearch),
                 ReadWebPageTool(container.webSearch.pages(PageReader(lazy { clients.pageReaderClient() }, AppDispatchers.Default, hostAllowed = ::publicHostAllowed))),
             ) + calendarTools(accounts, calendarHandles, SystemClock::zone) + mailTools(accounts, mailHandles) +
                 taskTools(accounts, taskHandles, ranker, SystemClock) { settings.current() },
@@ -131,7 +130,7 @@ fun createIosApp(): IosApp {
             secrets = secrets,
             http = clients,
             attachments = attachmentStore,
-            location = NoLocation,
+            location = location,
             toolPermissions = ToolPermissions { true },
             localNetwork = object : LocalNetworkAccess { override fun isGranted() = true },   // iOS asks itself, at the first local connection
         ),
@@ -160,12 +159,6 @@ fun createIosApp(): IosApp {
         dispatchers = AppDispatchers.Default,
     )
     return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore, accounts, speech, voiceMemos, com.edith.app.attachments.IosAttachmentPlayer { speech.stop() }, com.edith.app.voice.capture.IosSpeechInput())
-}
-
-/** No location yet (K4.2 adds Core Location): the weather tool is not offered, so this is never asked. */
-private object NoLocation : LocationProvider {
-    override suspend fun current(): Outcome<Coordinates> = Outcome.Failure(AppError.PermissionDenied("location"))
-    override suspend fun placeName(at: Coordinates): String? = null
 }
 
 /** The app's private folder for data, made on first use. */
