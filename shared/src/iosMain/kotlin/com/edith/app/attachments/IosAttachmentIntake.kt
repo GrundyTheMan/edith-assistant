@@ -13,7 +13,10 @@ import kotlinx.cinterop.useContents
 import kotlinx.coroutines.withContext
 import platform.CoreGraphics.CGRectMake
 import platform.CoreGraphics.CGSizeMake
+import platform.AVFAudio.AVAudioFile
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSFileSize
+import platform.Foundation.NSNumber
 import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
 import platform.Foundation.writeToFile
@@ -25,7 +28,7 @@ import platform.UIKit.UIImageJPEGRepresentation
 /**
  * Prepares what the owner picked on the iPhone (K4.3; the rules are Android's, in [AttachmentLimits]): an image is decoded upright (drawing a
  * `UIImage` applies its orientation), scaled so the longest side is at most [AttachmentLimits.MAX_SIDE] and saved as JPEG. The picked item is a file
- * address the photo picker's copy left in the temporary folder; it is deleted once prepared. Audio files are not offered on the iPhone yet.
+ * address the photo picker's copy left in the temporary folder; it is deleted once prepared. Audio files come from the Files app (K4.3).
  * Files go to [pendingDir], which is emptied at startup.
  *
  * Written without a Mac to try it on: the macOS jobs compile it, and the owner's phone is the first real run. A very large photo is decoded in
@@ -61,8 +64,40 @@ class IosAttachmentIntake(private val pendingDir: String, private val dispatcher
         }
     }
 
-    override suspend fun audio(uri: String): AttachmentIntake.Result =
-        AttachmentIntake.Result.Refused("Audio files can't be attached on the iPhone yet.")
+    /**
+     * An audio file from the Files app (the document picker's copy, deleted once prepared). WAV and MP3 are kept as they are, the only formats Ollama
+     * takes; anything else the system can decode (an iPhone voice memo's .m4a, say) becomes 16 kHz mono WAV. At most 5 minutes (as on Android).
+     */
+    override suspend fun audio(uri: String): AttachmentIntake.Result = withContext(dispatchers.io) {
+        val source = NSURL.URLWithString(uri)?.path ?: uri.removePrefix("file://")
+        val name = NSURL.fileURLWithPath(source).lastPathComponent?.takeIf { it.isNotBlank() } ?: "audio.wav"
+        try {
+            val length = runCatching { AVAudioFile(forReading = NSURL.fileURLWithPath(source), error = null) }.getOrNull()
+                ?: return@withContext AttachmentIntake.Result.Refused("$name isn't an audio file Edith can open.")
+            val durationMs = (length.length * 1000.0 / length.processingFormat.sampleRate).toLong()
+            if (durationMs > AttachmentLimits.MAX_AUDIO_MS) {
+                return@withContext AttachmentIntake.Result.Refused("$name is ${AttachmentLimits.minutes(durationMs)} long; audio can be up to 5 minutes.")
+            }
+            files.createDirectoryAtPath(pendingDir, withIntermediateDirectories = true, attributes = null, error = null)
+            val passthrough = AttachmentLimits.audioPassthrough("", name)
+            val extension = passthrough ?: "wav"
+            val path = "$pendingDir/${NSUUID().UUIDString}.$extension"
+            val (outName, mime) = if (passthrough != null) {
+                if (!files.copyItemAtPath(source, toPath = path, error = null)) return@withContext AttachmentIntake.Result.Refused("$name couldn't be read.")
+                name to if (passthrough == "wav") "audio/wav" else "audio/mpeg"
+            } else {
+                AudioToWav.convert(source, path) ?: return@withContext AttachmentIntake.Result.Refused("$name couldn't be converted to audio Edith can send.")
+                name.withExtension("wav") to "audio/wav"
+            }
+            val size = (files.attributesOfItemAtPath(path, error = null)?.get(NSFileSize) as? NSNumber)?.longLongValue ?: 0L
+            AttachmentIntake.Result.Ready(PendingAttachment(AttachmentKind.Audio, outName, mime, path, size, durationMs))
+        } catch (e: Exception) {
+            Log.w(LogTag.Chat, "Couldn't prepare an audio file", e)
+            AttachmentIntake.Result.Refused("$name couldn't be converted to audio Edith can send.")
+        } finally {
+            files.removeItemAtPath(source, error = null)   // the picker's copy is no longer needed
+        }
+    }
 
     override fun discard(attachment: PendingAttachment) {
         files.removeItemAtPath(attachment.path, error = null)
