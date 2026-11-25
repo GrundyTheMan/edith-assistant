@@ -28,7 +28,7 @@ import kotlinx.coroutines.launch
 /**
  * The smart-home services on the iPhone's More tab (K4.9): each registered service shows its state and, from its own [HomeService.form], the boxes to
  * connect it (the printer's address, and an API key if it has one); connected, it can be disconnected. The same form drives every service as they
- * move over, including a second step for a code ([SignInResult.NeedsCode]). Services that sign in on a web page (Alexa) are not offered here yet.
+ * move over, including a second step for a code ([SignInResult.NeedsCode]). A service that signs in on a web page (Alexa) opens it in Safari and takes the address it ends on.
  */
 @Composable
 fun HomeServicesSection(home: Home) {
@@ -85,8 +85,49 @@ private fun ServiceCard(service: HomeService) {
                 },
             ) { Text(if (asked != null) "Send code" else "Connect") }
             note?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        } else if (service.pageSignIn != null) {
+            PageSignInBox(service.pageSignIn!!, busy) { busy = it }
         } else {
-            Text("This service signs in on a web page, which the iPhone does not do yet.", style = MaterialTheme.typography.bodySmall)
+            Text("This service has no sign-in form.", style = MaterialTheme.typography.bodySmall)
         }
     }
+}
+
+/**
+ * Sign-in on a service's own web page (Alexa: Amazon's), the way the Android "Use my browser" path does it: the page opens in Safari, the owner signs in
+ * there, and the page ends on an address that will not load (expected); the owner copies that address and pastes it here. Amazon's password goes to Amazon's
+ * page, never through Edith.
+ */
+@Composable
+private fun PageSignInBox(page: com.edith.app.home.PageSignIn, busy: Boolean, setBusy: (Boolean) -> Unit) {
+    val scope = rememberCoroutineScope()
+    var started by remember { mutableStateOf(false) }
+    var address by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf<String?>(null) }
+
+    Text("${page.siteName} signs in on its own page. Your password goes to ${page.siteName}, never through Edith.", style = MaterialTheme.typography.bodySmall)
+    Button(enabled = !busy, onClick = {
+        val start = page.begin()
+        val url = platform.Foundation.NSURL.URLWithString(start.url)
+        if (url == null) { note = "The sign-in address could not be opened." } else {
+            platform.UIKit.UIApplication.sharedApplication.openURL(url, options = emptyMap<Any?, Any?>(), completionHandler = null)
+            started = true; note = null
+        }
+    }) { Text(if (started) "Open ${page.siteName}'s page again" else "Sign in with ${page.siteName}") }
+    if (started) {
+        Text("When the page ends on one that will not load, copy its address from Safari's address bar and paste it here.", style = MaterialTheme.typography.bodySmall)
+        OutlinedTextField(address, { address = it }, Modifier.fillMaxWidth(), label = { Text("The address the page ended on") }, singleLine = true)
+        Button(enabled = !busy && address.isNotBlank(), onClick = {
+            scope.launch {
+                setBusy(true); note = null
+                when (val r = page.finish(address.trim(), "")) {
+                    SignInResult.Done -> { address = ""; started = false }
+                    is SignInResult.NeedsCode -> note = r.message
+                    is SignInResult.Failed -> note = r.message
+                }
+                setBusy(false)
+            }
+        }) { Text("Finish") }
+    }
+    note?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 }

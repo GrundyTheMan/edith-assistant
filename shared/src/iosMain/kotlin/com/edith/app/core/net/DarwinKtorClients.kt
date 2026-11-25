@@ -5,6 +5,7 @@ import io.ktor.client.engine.darwin.Darwin
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.api.createClientPlugin
 import io.ktor.http.URLProtocol
+import platform.Foundation.NSHTTPCookieAcceptPolicy
 import kotlinx.io.IOException
 
 /**
@@ -35,11 +36,15 @@ class DarwinKtorClients : KtorClients {
         expectSuccess = false
     }
 
-    private fun newClient(httpsOnly: Boolean) = HttpClient(Darwin) {
+    /** Alexa's client (K4.9): the secure one, but Apple's own cookie jar is off, because the Alexa client keeps and sends Amazon's cookies by hand across the redirects it follows itself. */
+    fun alexaClient(): HttpClient = newClient(httpsOnly = true, keepCookiesByHand = true)
+
+    private fun newClient(httpsOnly: Boolean, keepCookiesByHand: Boolean = false) = HttpClient(Darwin) {
         engine {
             configureSession {
                 timeoutIntervalForRequest = SILENCE_SECONDS   // Apple's idle timeout: seconds without any data
                 timeoutIntervalForResource = 86_400.0         // a whole transfer, one day at most
+                if (keepCookiesByHand) { HTTPShouldSetCookies = false; HTTPCookieAcceptPolicy = NSHTTPCookieAcceptPolicy.NSHTTPCookieAcceptPolicyNever }
             }
             configureRequest { setTimeoutInterval(SILENCE_SECONDS) }
         }
