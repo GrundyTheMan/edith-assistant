@@ -29,7 +29,6 @@ import com.edith.app.di.createIosApp
 import com.edith.app.diagnostics.EngineCheck
 import com.edith.app.ui.diagnostics.EngineCheckScreen
 import com.edith.app.ui.theme.EdithTheme
-import com.edith.app.voice.speech.SilentSpeechController
 import kotlinx.coroutines.launch
 import platform.UIKit.UIViewController
 
@@ -57,7 +56,7 @@ fun MainViewController(): UIViewController {
                         repo = app.container.chatRepository,
                         engine = app.container.chatEngine,
                         current = app.container.currentConversation,
-                        speech = SilentSpeechController,
+                        speech = app.speech,
                         features = ChatFeatures(attach = true, audioFiles = false),
                         intake = app.intake,
                         attachmentStore = app.attachments,

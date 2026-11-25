@@ -22,6 +22,8 @@ import com.edith.app.data.db.open
 import com.edith.app.settings.DataStoreSettingsRepository
 import com.edith.app.settings.SettingsRepository
 import com.edith.app.tools.context.CurrentTimeTool
+import com.edith.app.voice.speech.IosTtsEngine
+import com.edith.app.voice.speech.SpeechOutput
 import com.edith.app.tools.weather.WeatherTool
 import com.edith.app.tools.web.PageReader
 import com.edith.app.tools.web.ReadWebPageTool
@@ -47,6 +49,8 @@ class IosApp(
     val intake: AttachmentIntake,
     /** Where sent photos are kept and read back from (the chat shows them). */
     val attachments: AttachmentFiles,
+    /** Edith's voice (K4.3): the Play button on a message speaks through it. Not a reply listener yet: nothing reads replies aloud by itself until there is a setting for it. */
+    val speech: SpeechOutput,
 )
 
 /**
@@ -82,7 +86,7 @@ fun createIosApp(): IosApp {
         replyListeners = { listeners.also { if (it.isEmpty()) it += container.conversationTitler } },
         afterAttachments = { container.retention.apply() },
     )
-    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore)
+    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore, SpeechOutput(IosTtsEngine(), settings, container.appScope))
 }
 
 /** No location yet (K4.2 adds Core Location): the weather tool is not offered, so this is never asked. */
