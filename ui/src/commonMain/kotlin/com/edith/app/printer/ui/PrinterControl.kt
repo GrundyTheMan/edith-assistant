@@ -23,24 +23,25 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.util.UUID
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /** The owner's yes is being asked for: [question] and [confirm] are Jarvis's own words (C39 part 7.2). */
-internal data class ConfirmUi(
+data class ConfirmUi(
     val question: String,
     val confirm: String,
     val danger: Boolean,
-    internal val command: PrinterCommand,
-    internal val requestId: String,
+    val command: PrinterCommand,
+    val requestId: String,
 ) {
     /** The other button: never the same word as the confirm button, never "OK" or "Yes". */
     val keepLabel: String get() = if (confirm.contains("Cancel", ignoreCase = true)) "Keep printing" else "Keep going"
 }
 
 /** A command that was sent and whose change the page is waiting to see (its button shows a spinner). */
-internal data class PendingCommand(val command: PrinterCommand, val before: PrinterState, val sentAtMs: Long, val sawMotion: Boolean = false)
+data class PendingCommand(val command: PrinterCommand, val before: PrinterState, val sentAtMs: Long, val sawMotion: Boolean = false)
 
-internal data class ControlUi(
+data class ControlUi(
     /** The owner allows this phone to control the printer (Jarvis's switch and this phone's tick). When false nothing that sends is drawn. */
     val mayControl: Boolean = false,
     /** Controls are on (the server's answer, or what we were just told while waiting for the next state). */
@@ -60,7 +61,7 @@ internal data class ControlUi(
 )
 
 /** Which control a command belongs to: its pending spinner and its inline refusal are kept under this key. */
-internal fun controlKey(c: PrinterCommand): String = when (c) {
+fun controlKey(c: PrinterCommand): String = when (c) {
     is PrinterCommand.Home -> "home:${c.axes}"
     is PrinterCommand.Jog -> "jog"
     is PrinterCommand.SetTemp -> "setTemp:${c.heater}"
@@ -75,7 +76,8 @@ internal fun controlKey(c: PrinterCommand): String = when (c) {
  * what is allowed, what needs the owner's yes. This only asks, shows the server's words, and never sends `confirmed = true` unless the owner
  * pressed the confirm button of a sheet that showed the server's question.
  */
-internal class PrinterControl(
+@OptIn(ExperimentalUuidApi::class)
+class PrinterControl(
     private val session: PrinterSession,
     private val clock: Clock,
     private val scope: CoroutineScope,
@@ -124,7 +126,7 @@ internal class PrinterControl(
     // --- Sending ---------------------------------------------------------------------------------------------------
 
     /** Asks Jarvis to send [command]. A command the owner must confirm opens the sheet; nothing is confirmed here. */
-    fun send(command: PrinterCommand, requestId: String = UUID.randomUUID().toString()) {
+    fun send(command: PrinterCommand, requestId: String = Uuid.random().toString()) {
         val routes = session.routes() ?: return
         if (_ui.value.busy) return
         _ui.update { it.copy(busy = true, message = null, refused = it.refused - controlKey(command)) }
@@ -188,7 +190,7 @@ internal class PrinterControl(
     // --- Pending buttons ---------------------------------------------------------------------------------------------
 
     /** Told of every command Jarvis accepted (the Files sheet closes on Print, Add to queue and Delete). Set by the ViewModel. */
-    @Volatile var onSent: (PrinterCommand) -> Unit = {}
+    @kotlin.concurrent.Volatile var onSent: (PrinterCommand) -> Unit = {}
 
     private fun sent(command: PrinterCommand) {
         onSent(command)

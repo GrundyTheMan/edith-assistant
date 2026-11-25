@@ -57,7 +57,9 @@ fun MainViewController(): UIViewController {
         EdithTheme {
             Surface {
                 var tab by rememberSaveable { mutableStateOf(0) }
-val homeVm = viewModel { com.edith.app.home.ui.HomeViewModel(app.home, app.container.clock) { app.accounts.jarvisConnection() != null } }
+                val homeVm = viewModel { com.edith.app.home.ui.HomeViewModel(app.home, app.container.clock) { app.accounts.jarvisConnection() != null } }
+                val printerVm = viewModel { com.edith.app.printer.ui.PrinterViewModel(app.printerSession, app.printerPrefs, app.container.clock) }
+                var showPrinter by rememberSaveable { mutableStateOf(false) }
                 val vm = viewModel {
                     ChatViewModel(
                         repo = app.container.chatRepository,
@@ -88,7 +90,7 @@ val homeVm = viewModel { com.edith.app.home.ui.HomeViewModel(app.home, app.conta
                     },
                 ) { padding ->
                     Box(Modifier.padding(padding)) {
-                        when (tab) { 0 -> SimpleChatScreen(vm, photoPicker, microphone, audioPicker); 1 -> IosHomeScreen(homeVm) { tab = 3 }; 2 -> EngineCheckScreen(check); else -> AccountsScreen(app.accounts, app.settings, app.home) }
+                        when (tab) { 0 -> SimpleChatScreen(vm, photoPicker, microphone, audioPicker); 1 -> if (showPrinter) IosPrinterScreen(printerVm, onBack = { showPrinter = false }, openPairing = { showPrinter = false; tab = 3 }) else IosHomeScreen(homeVm, openMore = { tab = 3 }, openPrinter = { showPrinter = true }); 2 -> EngineCheckScreen(check); else -> AccountsScreen(app.accounts, app.settings, app.home) }
                     }
                 }
             }

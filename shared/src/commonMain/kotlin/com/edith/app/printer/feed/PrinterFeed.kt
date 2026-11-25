@@ -7,9 +7,9 @@ import com.edith.app.jarvis.JarvisConnection
 
 /**
  * Finds the paired Jarvis (C38) and its printer. It owns no state: the one [PrinterSession] holds that. Network goes through
- * the Jarvis connection's pinned client, so nothing here makes an `OkHttpClient`. (It stays in `app/` because [JarvisConnection] does.)
+ * the Jarvis connection's pinned client, so nothing here makes an `OkHttpClient`.
  */
-internal class PrinterFeed(private val jarvis: () -> JarvisConnection?) : PrinterFeedSource {
+class PrinterFeed(private val jarvis: () -> JarvisConnection?) : PrinterFeedSource {
     override suspend fun access(): PrinterAccess {
         val connection = jarvis() ?: return PrinterAccess.NoJarvis
         return when (val r = connection.refreshShared()) {

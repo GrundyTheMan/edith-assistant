@@ -1,5 +1,6 @@
 package com.edith.app.printer.ui.cards
 
+import kotlin.math.roundToLong
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -70,7 +71,7 @@ internal fun StatusCard(ui: PrinterUi, state: PrinterState, is24Hour: Boolean, o
             Fact("ETA", PrinterFormat.eta(now, p.timeLeft, ui.zone, is24Hour))
             Fact("Filament", PrinterFormat.filament(p.filamentUsed))
             p.layer?.let { Fact("Layer", "${it.current} / ${it.total}") }
-            Fact("Speed", "${Math.round(state.toolhead.liveVelocity)} mm/s · ${PrinterFormat.factor(state.toolhead.speedFactor)}")
+            Fact("Speed", "${state.toolhead.liveVelocity.roundToLong()} mm/s · ${PrinterFormat.factor(state.toolhead.speedFactor)}")
             Fact("Flow", PrinterFormat.factor(state.toolhead.extrudeFactor))
         }
         p.message?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }

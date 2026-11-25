@@ -29,7 +29,7 @@ internal const val TURN_ON_CONTROLS = "Turn on Controls to use this"
  * (`pause`, `home:xyz`, ...): the server's reason is shown for those. Everything with a parameter is open when Controls are on and the
  * server's refusal is shown inline when it says no.
  */
-internal fun disabledReason(ui: PrinterUi, c: ControlUi, quickKey: String? = null): String? = when {
+fun disabledReason(ui: PrinterUi, c: ControlUi, quickKey: String? = null): String? = when {
     ui.greyed -> "Jarvis isn't reachable right now."
     !c.armed -> TURN_ON_CONTROLS
     quickKey != null && ui.quick[quickKey]?.allowed == false -> ui.quick[quickKey]?.reason ?: "Not now."
@@ -41,7 +41,7 @@ internal fun disabledReason(ui: PrinterUi, c: ControlUi, quickKey: String? = nul
  * clock may be wrong, so the countdown uses Jarvis's clock). Look-only phones get one line instead.
  */
 @Composable
-internal fun ControlsBar(ui: PrinterUi, c: ControlUi, onToggle: (Boolean) -> Unit) {
+fun ControlsBar(ui: PrinterUi, c: ControlUi, onToggle: (Boolean) -> Unit) {
     if (!ui.showsCards) return
     if (!c.mayControl) {
         Text(
@@ -51,8 +51,8 @@ internal fun ControlsBar(ui: PrinterUi, c: ControlUi, onToggle: (Boolean) -> Uni
         )
         return
     }
-    var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(c.armed) { while (c.armed) { nowMs = System.currentTimeMillis(); delay(1_000) } }
+    var nowMs by remember { mutableLongStateOf(kotlin.time.Clock.System.now().toEpochMilliseconds()) }
+    LaunchedEffect(c.armed) { while (c.armed) { nowMs = kotlin.time.Clock.System.now().toEpochMilliseconds(); delay(1_000) } }
     Surface(color = if (c.armed) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().testTag("controls-bar")) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(

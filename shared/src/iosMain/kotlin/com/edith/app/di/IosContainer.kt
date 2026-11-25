@@ -43,6 +43,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import com.edith.app.alexa.AlexaApi
 import com.edith.app.alexa.AlexaService
+import com.edith.app.home.PrinterControlTool
+import com.edith.app.printer.DataStorePrinterPrefs
+import com.edith.app.printer.feed.PrinterFeed
+import com.edith.app.printer.feed.PrinterSession
 import com.edith.app.blink.BlinkApi
 import com.edith.app.blink.BlinkService
 import com.edith.app.meross.MerossApi
@@ -94,6 +98,9 @@ class IosApp(
     val accounts: IosAccounts,
     /** The smart home (K4.9): its services, for the More tab's forms. */
     val home: Home,
+    /** The Printer page's data: Jarvis's printer feed (K3.4). */
+    val printerSession: com.edith.app.printer.feed.PrinterSession,
+    val printerPrefs: com.edith.app.printer.PrinterPrefs,
     /** Edith's voice (K4.3): the Play button on a message speaks through it. Not a reply listener yet: nothing reads replies aloud by itself until there is a setting for it. */
     val speech: SpeechOutput,
     /** Voice memos (K4.3): record, have the model transcribe, send as the owner's message. */
@@ -138,6 +145,8 @@ fun createIosApp(): IosApp {
     // The smart home (K4.9): the printer on the home Wi-Fi so far (Meross, Ring, Alexa and Blink register here as they move). The sign-in forms are on the More tab.
     val printer = PrinterService(secrets, MoonrakerApi(clients.ktorPlain), SystemClock)
     val alexa = AlexaService(secrets, AlexaApi(lazy { clients.alexaClient() }), SystemClock)
+    val printerFeed = PrinterFeed { accounts.jarvisConnection() }
+    val printerPrefs = DataStorePrinterPrefs(settings.store)
     val ring = RingService(secrets, RingApi(clients.ktorSecure), SystemClock)   // no live view yet: that needs WebRTC on the iPhone
     val blink = BlinkService(secrets, BlinkApi(lazy { clients.blinkClient() }), SystemClock)   // no live view yet: the stream server needs a TLS socket the iPhone does not have here
     val meross = MerossService(secrets, MerossApi(clients.ktorSecure, SystemClock), MqttMerossBus(com.edith.app.icloud.mail.NsStreamTransportFactory(), AppDispatchers.Default, SystemClock), SystemClock)
@@ -152,7 +161,9 @@ fun createIosApp(): IosApp {
                 CurrentTimeTool(), WeatherTool(container.openMeteo, location), SearchWebTool(container.webSearch),
                 ReadWebPageTool(container.webSearch.pages(PageReader(lazy { clients.pageReaderClient() }, AppDispatchers.Default, hostAllowed = ::publicHostAllowed))),
             ) + calendarTools(accounts, calendarHandles, SystemClock::zone) + mailTools(accounts, mailHandles) +
-                taskTools(accounts, taskHandles, ranker, SystemClock) { settings.current() } + homeTools(home),
+                taskTools(accounts, taskHandles, ranker, SystemClock) { settings.current() } + homeTools(home) +
+                // The printer through Jarvis (C39), offered only while Jarvis lets this phone control it; every command waits for a confirmation card.
+                PrinterControlTool(printerFeed) { accounts.jarvisConnection()?.printerInfo?.control == true },
             integrations = listOf(accounts, home),
         )
     }
@@ -174,6 +185,7 @@ fun createIosApp(): IosApp {
         afterAttachments = { container.retention.apply() },
     )
     container.appScope.launch { accounts.load() }   // connects and quietly checks every saved account
+    val printerSession = PrinterSession(printerFeed, SystemClock, container.appScope)
     container.appScope.launch { printer.load() }   // picks up a saved printer
     container.appScope.launch { alexa.load() }   // picks up a saved Alexa sign-in
     container.appScope.launch { ring.load() }   // picks up a saved Ring sign-in
@@ -214,7 +226,7 @@ fun createIosApp(): IosApp {
         say = { speech.announce(it) },
         wakeIsTap = true,
     )
-    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore, accounts, home, speech, voiceMemos, com.edith.app.attachments.IosAttachmentPlayer { speech.stop() }, com.edith.app.voice.capture.IosSpeechInput(), handsFree)
+    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore, accounts, home, printerSession, printerPrefs, speech, voiceMemos, com.edith.app.attachments.IosAttachmentPlayer { speech.stop() }, com.edith.app.voice.capture.IosSpeechInput(), handsFree)
 }
 
 /** The app's private folder for data, made on first use. */

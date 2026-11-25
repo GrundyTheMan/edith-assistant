@@ -25,7 +25,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.toColorInt
+import kotlin.math.roundToLong
 import com.edith.app.printer.feed.BedMesh
 import com.edith.app.printer.feed.Connections
 import com.edith.app.printer.feed.FilamentSlot
@@ -33,7 +33,6 @@ import com.edith.app.printer.feed.MeshColors
 import com.edith.app.printer.feed.PrintObject
 import com.edith.app.printer.feed.PrinterFormat
 import com.edith.app.printer.feed.PrinterState
-import java.util.Locale
 
 /** A label and its value on one line. */
 @Composable
@@ -82,14 +81,13 @@ internal fun FansCard(state: PrinterState, ctx: ControlsCtx? = null) {
 
 /** Limits and retraction (stage 1: values). */
 @Composable
-internal fun LimitsCard(state: PrinterState, locale: Locale = Locale.getDefault(), ctx: ControlsCtx? = null) {
+internal fun LimitsCard(state: PrinterState, tag: String = com.edith.app.core.locale.deviceLanguageTag(), ctx: ControlsCtx? = null) {
     val t = state.toolhead
-    val tag = locale.toLanguageTag()
     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.testTag("limits-card")) {
         LabelValue("Speed", PrinterFormat.factor(t.speedFactor))
         LabelValue("Flow", PrinterFormat.factor(t.extrudeFactor))
-        LabelValue("Velocity", "${Math.round(t.maxVelocity)} mm/s")
-        LabelValue("Acceleration", "${Math.round(t.maxAccel)} mm/s²")
+        LabelValue("Velocity", "${t.maxVelocity.roundToLong()} mm/s")
+        LabelValue("Acceleration", "${t.maxAccel.roundToLong()} mm/s²")
         LabelValue("Square corner velocity", "${PrinterFormat.position(t.squareCornerVelocity, tag)} mm/s")
         LabelValue("Minimum cruise ratio", PrinterFormat.position(t.minimumCruiseRatio, tag))
         state.retraction?.let { r ->
@@ -133,7 +131,7 @@ internal fun SlotsCard(state: PrinterState) {
     }
 }
 
-private fun swatch(s: FilamentSlot): Color = runCatching { Color(("#" + s.hex.trimStart('#')).toColorInt()) }.getOrDefault(Color.Gray)
+private fun swatch(s: FilamentSlot): Color = runCatching { hexColor(s.hex) }.getOrDefault(Color.Gray)
 
 /** System: what Jarvis says about the connection, the software versions and the printer's own computer. */
 @Composable
@@ -143,7 +141,7 @@ internal fun SystemCard(state: PrinterState, ctx: ControlsCtx? = null) {
         state.hostname?.let { LabelValue("Host name", it) }
         state.versions?.moonraker?.let { LabelValue("Moonraker", it) }
         state.versions?.mcu?.let { LabelValue("MCU", it) }
-        state.host?.let { LabelValue("Load", String.format(androidx.compose.ui.platform.LocalConfiguration.current.locales[0], "%.2f", it.load)); LabelValue("Memory free", "${(it.memAvailableKb / 1024).toLong()} MB") }
+        state.host?.let { LabelValue("Load", com.edith.app.core.locale.formatDecimal(it.load, 2, com.edith.app.core.locale.deviceLanguageTag())); LabelValue("Memory free", "${(it.memAvailableKb / 1024).toLong()} MB") }
         if (ctx?.mayControl == true) SystemControls(ctx)
     }
 }
@@ -211,7 +209,7 @@ private fun objectNote(o: PrintObject) = when {
 /** Bed mesh: a grid of heights, the back of the bed at the top; blue where the bed is low, red where it is high. View only. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun MeshCard(mesh: BedMesh, locale: Locale = Locale.getDefault()) {
+internal fun MeshCard(mesh: BedMesh, tag: String = com.edith.app.core.locale.deviceLanguageTag()) {
     val all = mesh.points.flatten()
     val lo = all.minOrNull() ?: 0.0
     val hi = all.maxOrNull() ?: 0.0
@@ -226,16 +224,27 @@ internal fun MeshCard(mesh: BedMesh, locale: Locale = Locale.getDefault()) {
                     row.forEach { v ->
                         val (r, g, b) = MeshColors.rgb(v, lo, hi)
                         Box(Modifier.weight(1f).height(28.dp).background(Color(r, g, b)), contentAlignment = Alignment.Center) {
-                            Text(String.format(locale, "%.2f", v), style = MaterialTheme.typography.labelSmall, color = Color.Black)
+                            Text(com.edith.app.core.locale.formatDecimal(v, 2, tag), style = MaterialTheme.typography.labelSmall, color = Color.Black)
                         }
                     }
                 }
             }
         }
         extremes?.let { e ->
-            LabelValue("Spread", "${String.format(locale, "%.3f", e.spread)} mm")
-            LabelValue("Lowest", "${String.format(locale, "%.3f", e.lowest.first)} mm")
-            LabelValue("Highest", "${String.format(locale, "%.3f", e.highest.first)} mm")
+            LabelValue("Spread", "${com.edith.app.core.locale.formatDecimal(e.spread, 3, tag)} mm")
+            LabelValue("Lowest", "${com.edith.app.core.locale.formatDecimal(e.lowest.first, 3, tag)} mm")
+            LabelValue("Highest", "${com.edith.app.core.locale.formatDecimal(e.highest.first, 3, tag)} mm")
         }
+    }
+}
+
+/** A colour from `#RRGGBB` or `#AARRGGBB` (what the printer reports for a filament), or [IllegalArgumentException] when it is neither. */
+internal fun hexColor(hex: String): Color {
+    val digits = hex.trimStart('#')
+    val value = digits.toLongOrNull(16) ?: throw IllegalArgumentException("not a colour: $hex")
+    return when (digits.length) {
+        6 -> Color((0xFF000000L or value).toInt())
+        8 -> Color(value.toInt())
+        else -> throw IllegalArgumentException("not a colour: $hex")
     }
 }
