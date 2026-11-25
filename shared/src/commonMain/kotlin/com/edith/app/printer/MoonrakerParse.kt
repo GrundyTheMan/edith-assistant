@@ -1,5 +1,6 @@
 package com.edith.app.printer
 
+import kotlin.math.roundToLong
 import com.edith.app.home.DeviceState
 import com.edith.app.home.Heat
 import com.edith.app.home.PrintJob
@@ -10,7 +11,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
-import java.net.URLDecoder
+import io.ktor.http.decodeURLQueryComponent
 
 /** What Klipper itself is doing: Moonraker can answer while Klipper is starting or has shut down. */
 enum class Klippy { Ready, Startup, Shutdown, Error }
@@ -105,10 +106,10 @@ object MoonrakerParse {
     fun timeLeft(progress: Double, printSeconds: Double, estimatedSeconds: Double?, byTime: Boolean): Long? {
         val p = progress.coerceIn(0.0, 1.0)
         if (estimatedSeconds != null && estimatedSeconds > 0) {
-            return Math.round(maxOf(0.0, if (byTime) estimatedSeconds * (1 - p) else estimatedSeconds - printSeconds))
+            return (maxOf(0.0, if (byTime) estimatedSeconds * (1 - p) else estimatedSeconds - printSeconds)).roundToLong()
         }
         if (p < ESTIMATE_FROM_PROGRESS || printSeconds < ESTIMATE_FROM_SECONDS) return null
-        return Math.round(maxOf(0.0, printSeconds / p - printSeconds))
+        return (maxOf(0.0, printSeconds / p - printSeconds)).roundToLong()
     }
 
     private const val ESTIMATE_FROM_PROGRESS = 0.01
@@ -130,7 +131,7 @@ object MoonrakerParse {
         return unescape(base.replace(Regex("\\.(gcode|g|gco|3mf|ufp)$", RegexOption.IGNORE_CASE), "")).trim().ifEmpty { path }
     }
 
-    private fun unescape(s: String): String = try { URLDecoder.decode(s, "UTF-8") } catch (e: IllegalArgumentException) { s.replace('+', ' ') }
+    private fun unescape(s: String): String = try { s.decodeURLQueryComponent(plusIsSpace = true) } catch (e: Exception) { s.replace('+', ' ') }
 
     /**
      * The webcams `/server/webcams/list` gives, with a snapshot address each. Moonraker's addresses are often relative
