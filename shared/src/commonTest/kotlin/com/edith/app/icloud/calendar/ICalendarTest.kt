@@ -92,7 +92,7 @@ class ICalendarTest {
         assertTrue("DTEND;VALUE=DATE:20261105" in allDay.split("\r\n"))
 
         val long = ICalendar.fold("SUMMARY:" + "é".repeat(60))
-        long.split("\r\n").forEach { assertTrue("≤ 75 octets: $it", it.toByteArray(Charsets.UTF_8).size <= 75) }
+        long.split("\r\n").forEach { assertTrue("≤ 75 octets: $it", it.encodeToByteArray().size <= 75) }
         assertEquals("unfolds back", "SUMMARY:" + "é".repeat(60), ICalendar.lines(long).single().let { "${it.name}:${it.value}" })
         assertEquals("round trip", "Lunch, Sam; 1\\2", ICalendar.events(ics, zone).single().summary)
     }
