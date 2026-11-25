@@ -103,6 +103,9 @@ class IosApp(
     /** The Printer page's data: Jarvis's printer feed (K3.4). */
     val printerSession: com.edith.app.printer.feed.PrinterSession,
     val printerPrefs: com.edith.app.printer.PrinterPrefs,
+    /** Camera alerts while the app is open, and While you were away (K4.16). */
+    val alerts: com.edith.app.alerts.ForegroundAlerts,
+    val alertPrefs: com.edith.app.alerts.AlertPrefs,
     /** Edith's voice (K4.3): the Play button on a message speaks through it. Not a reply listener yet: nothing reads replies aloud by itself until there is a setting for it. */
     val speech: SpeechOutput,
     /** Voice memos (K4.3): record, have the model transcribe, send as the owner's message. */
@@ -188,6 +191,8 @@ fun createIosApp(): IosApp {
     )
     container.appScope.launch { accounts.load() }   // connects and quietly checks every saved account
     val printerSession = PrinterSession(printerFeed, SystemClock, container.appScope)
+    val alertPrefs = com.edith.app.alerts.DataStoreAlertPrefs(settings.store)
+    val alerts = com.edith.app.alerts.ForegroundAlerts({ id, since -> home.activity(id, since) }, alertPrefs, SystemClock, container.appScope).also { it.start() }
     container.appScope.launch { printer.load() }   // picks up a saved printer
     container.appScope.launch { alexa.load() }   // picks up a saved Alexa sign-in
     container.appScope.launch { ring.load() }   // picks up a saved Ring sign-in
@@ -228,7 +233,7 @@ fun createIosApp(): IosApp {
         say = { speech.announce(it) },
         wakeIsTap = true,
     )
-    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore, accounts, home, printerSession, printerPrefs, speech, voiceMemos, com.edith.app.attachments.IosAttachmentPlayer { speech.stop() }, com.edith.app.voice.capture.IosSpeechInput(), handsFree)
+    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore, accounts, home, printerSession, printerPrefs, alerts, alertPrefs, speech, voiceMemos, com.edith.app.attachments.IosAttachmentPlayer { speech.stop() }, com.edith.app.voice.capture.IosSpeechInput(), handsFree)
 }
 
 /** The app's private folder for data, made on first use. */

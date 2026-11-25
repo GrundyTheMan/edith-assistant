@@ -46,6 +46,7 @@ fun IosSettingsScreen(
     speech: SpeechOutput,
     accounts: IosAccounts,
     home: Home,
+    alertPrefs: com.edith.app.alerts.AlertPrefs,
     edithVersion: String,
     openEngineCheck: () -> Unit,
 ) {
@@ -69,6 +70,8 @@ fun IosSettingsScreen(
                 AttachmentSettingsSection(attachmentsVm)
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 WebSearchSection(webSearchVm)
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                IosAlertSettings(home, alertPrefs)
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     AccountsSections(accounts, home)
