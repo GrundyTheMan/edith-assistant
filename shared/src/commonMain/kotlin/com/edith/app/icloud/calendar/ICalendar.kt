@@ -187,11 +187,17 @@ object ICalendar {
     fun fold(line: String): String {
         val out = StringBuilder()
         var octets = 0
-        for (ch in line) {
-            val n = ch.toString().toByteArray(Charsets.UTF_8).size
+        var i = 0
+        while (i < line.length) {
+            val ch = line[i]
+            // A character outside the Basic Multilingual Plane is two UTF-16 units and four UTF-8 octets, and must not be split.
+            val pair = ch.isHighSurrogate() && i + 1 < line.length && line[i + 1].isLowSurrogate()
+            val n = when { pair -> 4; ch.code < 0x80 -> 1; ch.code < 0x800 -> 2; else -> 3 }
             if (octets + n > 75) { out.append("\r\n "); octets = 1 }
             out.append(ch)
+            if (pair) out.append(line[i + 1])
             octets += n
+            i += if (pair) 2 else 1
         }
         return out.toString()
     }
