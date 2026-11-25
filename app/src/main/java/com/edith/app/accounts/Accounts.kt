@@ -1,16 +1,7 @@
 package com.edith.app.accounts
 
 import android.app.Activity
-import android.app.PendingIntent
-import android.content.Intent
-import com.edith.app.accounts.sources.CalendarInfo
-import com.edith.app.accounts.sources.CalendarSource
-import com.edith.app.accounts.sources.DefaultCalendarSource
-import com.edith.app.accounts.sources.MailSource
-import com.edith.app.accounts.tasks.TaskSource
 import com.edith.app.accounts.tasks.TasksAccess
-import com.edith.app.core.log.Log
-import com.edith.app.core.log.LogTag
 import com.edith.app.google.GoogleAccounts
 import com.edith.app.google.GoogleSignIn
 import com.edith.app.google.browser.BrowserOAuth
@@ -19,53 +10,16 @@ import com.edith.app.jarvis.JarvisAccounts
 import com.edith.app.jarvis.JarvisConnection
 import com.edith.app.microsoft.MicrosoftAccounts
 import com.edith.app.microsoft.MicrosoftOAuth
-import com.edith.app.tools.framework.Integration
-import com.edith.app.tools.framework.IntegrationStatus
-import com.edith.app.tools.framework.Tool
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import java.util.concurrent.ConcurrentHashMap
-
-/** A live account: its provider's connection (C22 §1). */
-interface AccountConnection {
-    val state: StateFlow<AccountState>
-    val capabilities: Capabilities
-    val calendar: CalendarSource?
-    val mail: MailSource?
-    /** C35: the account's to-dos; null for providers without them here (Microsoft, iCloud). */
-    val tasks: TaskSource? get() = null
-    /** C35 §2: whether the to-dos may be used, apart from [state]. */
-    val tasksAccess: StateFlow<TasksAccess>? get() = null
-    /** At startup and after signing in: checks quietly whether access is still granted. */
-    suspend fun start()
-    /** Grant access / Sign in again / Try again. [show] shows a consent screen when the provider has one. */
-    suspend fun grant(activity: Activity, show: (PendingIntent) -> Unit)
-    /** C35: **To-dos: Grant access**. */
-    suspend fun grantTasks(activity: Activity, show: (PendingIntent) -> Unit) = Unit
-    suspend fun onConsentResult(data: Intent?)
-    /** Revokes Edith's access at the provider (a failure is only logged) and deletes the account's secrets. */
-    suspend fun disconnect()
-}
 
 /**
- * Every connected email-and-calendar account (C22, D17), and the integration their tools belong to: the calendar and
- * email tools are offered while at least one account is connected, and the prompt names every account and its state
- * so Edith can say when one needs signing in (L6).
+ * Android's accounts (C22, D17): the shared [AccountsCore] with Google, Microsoft, iCloud and Jarvis, and each way of adding an account (K2.6a:
+ * the list, the prompt and everything provider-free moved to shared code; what is here needs Android's sign-in or a provider's own classes).
  */
 class Accounts(
-    private val store: AccountStore,
+    store: AccountStore,
     val google: GoogleAccounts,
     private val scope: CoroutineScope,
     /** C23: Microsoft accounts (null in tests that don't need it). */
@@ -74,94 +28,17 @@ class Accounts(
     val icloud: ICloudAccounts? = null,
     /** C38: the work account read through Jarvis (null in tests that don't need it). */
     val jarvis: JarvisAccounts? = null,
-) : Integration, AccountDirectory {
-    override val id = ID
+) : AccountsCore(store, scope) {
 
-    private val list = MutableStateFlow<List<Account>>(emptyList())
-    private val connections = ConcurrentHashMap<String, AccountConnection>()
-    private val connectionsFlow = MutableStateFlow<Map<String, AccountConnection>>(emptyMap())
-    private val editLock = Mutex()
-
-    private val _loaded = MutableStateFlow(false)
-    /** False until the saved accounts are read at startup (the Calendar tab waits for it). */
-    val loaded: StateFlow<Boolean> = _loaded.asStateFlow()
-
-    private val _message = MutableStateFlow<String?>(null)
-    /** Why the last sign-in didn't work, for Settings → Accounts; null when there's nothing to say. */
-    val message: StateFlow<String?> = _message.asStateFlow()
-
-    /** The account whose consent screen is showing (one at a time). */
-    @Volatile private var consentFor: String? = null
-
-    /** Every account and its state, for Settings and the Calendar tab. */
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val accounts: StateFlow<List<Pair<Account, AccountState>>> = combine(
-        list,
-        connectionsFlow.flatMapLatest { m ->
-            if (m.isEmpty()) flowOf(emptyMap()) else combine(m.map { (id, c) -> c.state.map { id to it } }) { it.toMap() }
-        },
-    ) { accounts, states -> accounts.map { it to (states[it.id] ?: AccountState.Checking) } }
-        .stateIn(scope, SharingStarted.Eagerly, emptyList())
-
-    override val status: StateFlow<IntegrationStatus> = accounts
-        .map { l -> if (l.any { it.second == AccountState.Connected }) IntegrationStatus.Connected else IntegrationStatus.NotConnected }
-        .stateIn(scope, SharingStarted.Eagerly, IntegrationStatus.NotConnected)
-
-    override fun entries(): List<AccountEntry> = list.value.map { a ->
-        val c = connections[a.id]
-        // The owner's default calendar, when chosen, replaces the provider's (Settings → Accounts).
-        val calendar = c?.calendar?.let { src -> a.defaultCalendar?.let { DefaultCalendarSource(src, it) } ?: src }
-        AccountEntry(
-            a, c?.state?.value ?: AccountState.Error(UNSUPPORTED), c?.capabilities ?: Capabilities(false, false), calendar, c?.mail,
-            c?.tasks, c?.tasksAccess?.value ?: TasksAccess.Unknown,
-        )
+    override fun connectionFor(account: Account, accountOf: () -> Account): AccountConnection? = when (account.provider) {
+        Provider.Google -> google.connect(accountOf) { activity -> onGoogleSignIn(google.signInAgain(activity, accountOf())) }
+        Provider.Microsoft -> microsoft?.connect(accountOf) { activity -> microsoft.signInAgain(activity, accountOf()).let { onMicrosoftSignIn(it) } }
+        Provider.ICloud -> icloud?.connect(accountOf)
+        Provider.Jarvis -> jarvis?.connect(accountOf)
     }
-
-    /**
-     * C35 §2: each account's to-do access by id, for Settings ("To-dos: Grant access") and the To-do view's banner.
-     * Only accounts that have to-dos are in it.
-     */
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val tasksAccess: StateFlow<Map<String, TasksAccess>> = connectionsFlow.flatMapLatest { m ->
-        val flows = m.mapNotNull { (id, c) -> c.tasksAccess?.map { id to it } }
-        if (flows.isEmpty()) flowOf(emptyMap()) else combine(flows) { it.toMap() }
-    }.stateIn(scope, SharingStarted.Eagerly, emptyMap())
-
-    /** **To-dos: Grant access** for one account (C35 §2). */
-    suspend fun grantTasks(id: String, activity: Activity, show: (PendingIntent) -> Unit) {
-        _message.value = null
-        consentFor = id
-        connections[id]?.grantTasks(activity, show)
-    }
-
-    /** One account's writable calendars, with the current default marked, for Settings → Accounts. */
-    suspend fun writableCalendars(id: String): List<CalendarInfo> =
-        (entries().firstOrNull { it.account.id == id }?.calendar?.calendars() as? com.edith.app.core.error.Outcome.Success)
-            ?.value?.filter { it.canWrite }.orEmpty()
-
-    /** Settings → Accounts → Default calendar: where new events go when no calendar is named (null: the provider's). */
-    suspend fun setDefaultCalendar(id: String, calendarId: String?) = editLock.withLock {
-        store.update { current -> current.map { if (it.id == id) it.copy(defaultCalendar = calendarId) else it } }
-        list.value = store.current()
-        Log.i(LogTag.Accounts, "Accounts: $id default calendar ${if (calendarId == null) "reset" else "chosen"}")
-    }
-
-    /** One account's live connection (the debug hook checks each Google account's token with it). */
-    fun connection(id: String): AccountConnection? = connections[id]
 
     /** The paired Jarvis (C38), if there is one: the printer page (C39) talks to the PC through it. */
-    fun jarvisConnection(): JarvisConnection? =
-        list.value.firstOrNull { it.provider == Provider.Jarvis }?.let { connections[it.id] as? JarvisConnection }
-
-    /** At startup (after [AccountMigration]): connects every saved account and checks each quietly, in parallel. */
-    suspend fun load() {
-        val saved = store.current()
-        saved.forEach(::connect)
-        list.value = saved
-        _loaded.value = true
-        Log.i(LogTag.Accounts, "Accounts: ${saved.size} (${saved.joinToString { "${it.id}/${it.provider}" }})")
-        saved.forEach { a -> scope.launch { connections[a.id]?.start() } }
-    }
+    fun jarvisConnection(): JarvisConnection? = connectionOf(Provider.Jarvis) as? JarvisConnection
 
     /**
      * At launch: a browser sign-in an earlier run left waiting (C17b note 1), for whichever provider it was (C23).
@@ -184,7 +61,7 @@ class Accounts(
 
     /** Add account → Google. [useBrowser]: **Use a browser instead** (C17b). */
     suspend fun addGoogle(activity: Activity, useBrowser: Boolean = false) {
-        _message.value = null
+        say(null)
         onGoogleSignIn(google.signInNew(activity, useBrowser))
     }
 
@@ -193,18 +70,15 @@ class Accounts(
      * it in again with the new password). Returns why not, or a note when only mail works; null when all is well.
      */
     suspend fun addICloud(address: String, password: String): String? {
-        _message.value = null
+        say(null)
         val ic = icloud ?: return NOT_SET_UP_ICLOUD
         val check = ic.check(address, password)
         if (check is ICloudAccounts.Check.Failed) return check.message
         check as ICloudAccounts.Check.Ok
         val account = upsert(Provider.ICloud, address.trim(), null)
-        editLock.withLock {
-            store.update { current -> current.map { if (it.id == account.id) it.copy(login = check.login) else it } }
-            list.value = store.current()
-        }
+        setLogin(account.id, check.login)
         ic.keep(account.id, password)
-        connections[account.id]?.start()
+        startConnection(account.id)
         return if (check.calendar) null else ICloudAccounts.CALENDAR_UNAVAILABLE
     }
 
@@ -216,62 +90,34 @@ class Accounts(
      * same PC again). Returns why not, or null when all is well.
      */
     suspend fun addJarvis(base: String, fingerprint: String, code: String, deviceName: String): String? {
-        _message.value = null
+        say(null)
         val j = jarvis ?: return NOT_SET_UP_JARVIS
         val paired = when (val r = j.pair(base, fingerprint, code, deviceName)) {
             is JarvisAccounts.Paired.Ok -> r
             is JarvisAccounts.Paired.Failed -> return r.message
         }
-        val isNew = list.value.none { it.provider == Provider.Jarvis && it.address.equals(paired.pcName, ignoreCase = true) }
+        val isNew = isNew(Provider.Jarvis, paired.pcName)
         val account = upsert(Provider.Jarvis, paired.pcName, null)
         j.keep(account.id, paired)
         // A first pairing is called "Work" when nothing else is (the owner can rename it).
         if (isNew) rename(account.id, "Work")
-        connections[account.id]?.start()
+        startConnection(account.id)
         return null
     }
 
     /** Add account → Microsoft (C23). */
     suspend fun addMicrosoft(activity: Activity) {
-        _message.value = null
-        val m = microsoft ?: return run { _message.value = MicrosoftAccounts.NOT_SET_UP }
+        say(null)
+        val m = microsoft ?: return run { say(MicrosoftAccounts.NOT_SET_UP) }
         onMicrosoftSignIn(m.signInNew(activity))
-    }
-
-    /** Grant access / Sign in again / Try again for one account. */
-    suspend fun grant(id: String, activity: Activity, show: (PendingIntent) -> Unit) {
-        _message.value = null
-        consentFor = id
-        connections[id]?.grant(activity, show)
-    }
-
-    /** Google's consent screen returned, for the account that asked. */
-    suspend fun onConsentResult(data: Intent?) {
-        consentFor?.let { connections[it]?.onConsentResult(data) }
-        consentFor = null
     }
 
     enum class RenameResult { Done, Blank, Taken }
 
-    /** Labels are unique, ignoring case, and can't be another account's address (so [byName] stays unambiguous). */
-    suspend fun rename(id: String, label: String): RenameResult = editLock.withLock {
-        val wanted = label.trim()
-        if (wanted.isEmpty()) return@withLock RenameResult.Blank
-        val others = list.value.filter { it.id != id }
-        if (others.any { it.label.equals(wanted, ignoreCase = true) || it.address.equals(wanted, ignoreCase = true) }) return@withLock RenameResult.Taken
-        store.update { current -> current.map { if (it.id == id) it.copy(label = wanted) else it } }
-        list.value = store.current()
-        RenameResult.Done
-    }
-
-    /** Disconnect: revokes this account's access only and removes it from the list (C22 §2). */
-    suspend fun disconnect(id: String) = editLock.withLock {
-        connections[id]?.disconnect()
-        store.update { current -> current.filterNot { it.id == id } }
-        connections.remove(id)
-        connectionsFlow.value = connections.toMap()
-        list.value = store.current()
-        Log.i(LogTag.Accounts, "Accounts: disconnected $id")
+    suspend fun rename(id: String, label: String): RenameResult = when (renameAccount(id, label)) {
+        RenameOutcome.Done -> RenameResult.Done
+        RenameOutcome.Blank -> RenameResult.Blank
+        RenameOutcome.Taken -> RenameResult.Taken
     }
 
     // --- C17b's browser sign-in, app-wide ------------------------------------------------------------------------
@@ -282,48 +128,7 @@ class Accounts(
     fun pasteBrowserAddress(address: String) = google.paste(address)
     fun cancelBrowserSignIn() = google.cancel()
 
-    // --- The prompt -----------------------------------------------------------------------------------------------
-
-    override val notConnectedNote: String
-        get() {
-            val all = entries()
-            if (all.isEmpty()) {
-                return "No email or calendar account is connected. If asked about the calendar or email, say the owner can add one in Settings → Accounts."
-            }
-            return "${accountsLine(all)} None can be used right now: if asked about the calendar or email, say so and point the owner to Settings → Accounts."
-        }
-
-    override fun connectedNote(tools: List<Tool>): String = accountsLine(entries())
-
-    /** "Accounts: personal — a@gmail.com (Google: calendar and email); work — sam@contoso.com (Google: needs signing in again)." */
-    private fun accountsLine(all: List<AccountEntry>): String = "Accounts: " + all.joinToString("; ") { e ->
-        val who = if (e.account.label.equals(e.account.address, ignoreCase = true)) e.account.address else "${e.account.label} — ${e.account.address}"
-        val what = when (val s = e.state) {
-            // C35 §2: say when to-dos need permission, so Edith tells the owner instead of guessing (L6).
-            AccountState.Connected -> if (e.capabilities.tasks && e.tasksAccess == TasksAccess.NeedsPermission) {
-                e.capabilities.copy(tasks = false).text + "; to-dos need permission"
-            } else e.capabilities.text
-            AccountState.Checking -> "checking the connection"
-            is AccountState.NeedsSignIn -> s.reason.substringBefore(" (")
-            is AccountState.Error -> "can't be reached right now"
-        }
-        "$who (${e.account.provider.displayName}: $what)"
-    } + "."
-
     // --- Inside ---------------------------------------------------------------------------------------------------
-
-    private fun connect(account: Account) {
-        val id = account.id
-        val accountOf = { list.value.firstOrNull { it.id == id } ?: account }
-        val connection = when (account.provider) {
-            Provider.Google -> google.connect(accountOf) { activity -> onGoogleSignIn(google.signInAgain(activity, accountOf())) }
-            Provider.Microsoft -> microsoft?.connect(accountOf) { activity -> microsoft.signInAgain(activity, accountOf()).let { onMicrosoftSignIn(it) } }
-            Provider.ICloud -> icloud?.connect(accountOf)
-            Provider.Jarvis -> jarvis?.connect(accountOf)
-        } ?: return
-        connections[id] = connection
-        connectionsFlow.value = connections.toMap()
-    }
 
     /** A Google sign-in finished: the account it names is added, or, if it's already here, signed in again (C22 §2). */
     private suspend fun onGoogleSignIn(r: GoogleSignIn.Result) {
@@ -332,10 +137,10 @@ class Accounts(
                 val mode = if (r.grant != null) Account.SIGN_IN_BROWSER else Account.SIGN_IN_PLAY
                 val account = upsert(Provider.Google, r.email, mode)
                 r.grant?.let { google.keep(account.id, it) }
-                connections[account.id]?.start()
+                startConnection(account.id)
             }
             GoogleSignIn.Result.Cancelled -> Unit
-            is GoogleSignIn.Result.Failed -> _message.value = r.message
+            is GoogleSignIn.Result.Failed -> say(r.message)
         }
     }
 
@@ -345,43 +150,18 @@ class Accounts(
             is MicrosoftAccounts.Result.SignedIn -> {
                 val account = upsert(Provider.Microsoft, r.address, null)
                 microsoft?.keep(account.id, r.grant)
-                connections[account.id]?.start()
+                startConnection(account.id)
             }
             MicrosoftAccounts.Result.Cancelled -> Unit
-            is MicrosoftAccounts.Result.Failed -> _message.value = r.message
+            is MicrosoftAccounts.Result.Failed -> say(r.message)
         }
-    }
-
-    private suspend fun upsert(provider: Provider, address: String, signIn: String?): Account = editLock.withLock {
-        var result: Account? = null
-        store.update { current ->
-            val existing = current.firstOrNull { it.provider == provider && it.address.equals(address, ignoreCase = true) }
-            if (existing != null) {
-                val updated = existing.copy(signIn = signIn ?: existing.signIn)
-                result = updated
-                current.map { if (it.id == existing.id) updated else it }
-            } else {
-                val added = Account(Account.newId(current.map { it.id }), provider, address, uniqueLabel(address, current), signIn)
-                result = added
-                current + added
-            }
-        }
-        val account = requireNotNull(result) { "the account list wasn't updated" }
-        list.value = store.current()
-        if (!connections.containsKey(account.id)) {
-            connect(account)
-            Log.i(LogTag.Accounts, "Accounts: added ${account.id} (${account.provider})")
-        } else {
-            Log.i(LogTag.Accounts, "Accounts: signed ${account.id} in again")
-        }
-        account
     }
 
     companion object {
         const val ID = ACCOUNTS_INTEGRATION_ID
         const val NOT_SET_UP_ICLOUD = "iCloud isn't available in this build."
         const val NOT_SET_UP_JARVIS = "Work through Jarvis isn't available in this build."
-        const val UNSUPPORTED = "This version of Edith can't use this kind of account."
+        const val UNSUPPORTED = AccountsCore.UNSUPPORTED
         fun uniqueLabel(wanted: String, others: List<Account>): String = AccountNames.uniqueLabel(wanted, others)
 
         fun match(accounts: List<Account>, text: String): List<Account> = AccountNames.match(accounts, text)

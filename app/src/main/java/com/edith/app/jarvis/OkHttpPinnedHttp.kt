@@ -1,7 +1,9 @@
 package com.edith.app.jarvis
 
 import android.annotation.SuppressLint
+import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.net.HttpClients
+import com.edith.app.core.secrets.SecretStore
 import io.ktor.client.HttpClient
 import okhttp3.OkHttpClient
 import java.security.cert.CertificateException
@@ -38,3 +40,7 @@ class OkHttpPinnedHttp(private val http: Lazy<OkHttpClient>) : PinnedHttp {
         return HttpClients.over(okHttp)
     }
 }
+
+/** Android's Jarvis accounts: the shared class over OkHttp, pinned to the PC's certificate (K2.8). Keeps every caller as it was. */
+fun JarvisAccounts(secrets: SecretStore, http: Lazy<OkHttpClient>, dispatchers: AppDispatchers): JarvisAccounts =
+    JarvisAccounts(secrets, OkHttpPinnedHttp(http), dispatchers)
