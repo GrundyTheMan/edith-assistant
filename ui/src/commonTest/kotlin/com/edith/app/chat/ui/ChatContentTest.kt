@@ -67,6 +67,14 @@ class ChatContentTest {
         onNodeWithTag(INPUT_TAG).assertIsNotFocused()
     }
 
+    @Test fun aSlowStartAddsALineAboutTheModelLoading() = runComposeUiTest {
+        val waiting = chat.copy(inFlight = InFlight(label = com.edith.app.chat.engine.PlainTurnRunner.THINKING, partialText = ""))
+        setContent { EdithTheme { ChatContent(state = waiting, draft = "", actions = ChatActions()) } }
+        onNodeWithTag(SLOW_HINT_TAG).assertDoesNotExist()
+        mainClock.advanceTimeBy(SLOW_START_MS + 500)
+        onNodeWithTag(SLOW_HINT_TAG).assertIsDisplayed()
+    }
+
     @Test fun aSharedScreenForEmptyChatsSaysSoOnceLoaded() = runComposeUiTest {
         setContent { EdithTheme { ChatContent(state = ChatUiState(conversationId = 1, loaded = true), draft = "", actions = ChatActions()) } }
         onNodeWithTag(INPUT_TAG).assertIsDisplayed()
