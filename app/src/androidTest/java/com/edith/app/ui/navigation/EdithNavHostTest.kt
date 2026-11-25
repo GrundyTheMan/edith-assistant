@@ -7,13 +7,15 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.edith.app.accounts.ui.AGENDA_TAG
 import com.edith.app.core.permissions.LocalNetworkAccess
 import com.edith.app.ui.theme.EdithTheme
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+
+/** The Agenda list's test tag (AGENDA_TAG, in the shared screens; the instrumented tests do not see that module). */
+private const val AGENDA_TAG = "calendar-agenda"
 
 @RunWith(AndroidJUnit4::class)
 class EdithNavHostTest {
