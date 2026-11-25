@@ -26,9 +26,10 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
-import java.io.File
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
+import kotlinx.io.buffered
+import kotlinx.io.files.Path
+import kotlinx.io.files.SystemFileSystem
+import kotlinx.io.readByteArray
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.toLocalDateTime
 
@@ -166,7 +167,7 @@ object TaskRanking {
         }.toString()
         var h = 0x811c9dc5.toInt()
         for (c in text) h = (h xor c.code) * 0x01000193
-        return "${Integer.toHexString(h)}:${text.length}"
+        return "${h.toUInt().toString(16)}:${text.length}"
     }
 
     /** How far the model moved a task up from where the owner has it (0 when it didn't move it up). */
@@ -199,11 +200,11 @@ object TaskRanking {
 }
 
 /**
- * Saved rankings (C35 §4): per account + list + model, the 50 newest, in `filesDir/task-ranks.json`, written
+ * Saved rankings (C35 §4): per account + list + model, the 50 newest, at [path] (the app's files folder), written
  * atomically. It holds task titles, so it's app-private and, like everything in `filesDir`, excluded from backup
  * (01-architecture §9).
  */
-class RankStore(private val file: File) {
+class RankStore(private val path: String) {
     @Serializable private data class Saved(val key: String, val ranking: Ranking)
 
     private val lock = Mutex()
@@ -224,7 +225,10 @@ class RankStore(private val file: File) {
 
     private fun load(): LinkedHashMap<String, Saved> = cache ?: run {
         val loaded = try {
-            if (file.exists()) LinkedHashMap(json.decodeFromString(MapSerializer(String.serializer(), Saved.serializer()), file.readText())) else LinkedHashMap()
+            if (SystemFileSystem.exists(Path(path))) {
+                val text = SystemFileSystem.source(Path(path)).buffered().use { it.readByteArray() }.decodeToString()
+                LinkedHashMap(json.decodeFromString(MapSerializer(String.serializer(), Saved.serializer()), text))
+            } else LinkedHashMap()
         } catch (e: Exception) {
             Log.w(LogTag.Accounts, "Saved to-do rankings couldn't be read; starting again", e)
             LinkedHashMap()
@@ -235,10 +239,11 @@ class RankStore(private val file: File) {
 
     private fun write(map: LinkedHashMap<String, Saved>) {
         try {
-            file.parentFile?.mkdirs()
-            val tmp = File(file.parentFile, file.name + ".tmp")
-            tmp.writeText(json.encodeToString(MapSerializer(String.serializer(), Saved.serializer()), map))
-            Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            val target = Path(path)
+            target.parent?.let { SystemFileSystem.createDirectories(it) }
+            val tmp = Path("$path.tmp")
+            SystemFileSystem.sink(tmp).buffered().use { it.write(json.encodeToString(MapSerializer(String.serializer(), Saved.serializer()), map).encodeToByteArray()) }
+            SystemFileSystem.atomicMove(tmp, target)
         } catch (e: Exception) {
             Log.w(LogTag.Accounts, "Couldn't save the to-do rankings", e)   // only costs a model call next time
         }
