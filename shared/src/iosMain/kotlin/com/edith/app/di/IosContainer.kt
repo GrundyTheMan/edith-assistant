@@ -87,6 +87,7 @@ fun createIosApp(): IosApp {
         IosAccounts(
             DataStoreAccountStore(PreferenceDataStoreFactory.createWithPath { "$dir/accounts.preferences_pb".toPath() }),
             container.appScope, google, JarvisAccounts(secrets, DarwinPinnedHttp(), AppDispatchers.Default),
+            com.edith.app.accounts.IosMicrosoftAccounts(microsoftClientId(), NSBundle.mainBundle.bundleIdentifier.orEmpty(), IosAuthSession(), secrets, clients.ktorSecure, AppDispatchers.Default, SystemClock),
         )
     }
     // The tools that need no permission: the time, the weather in a named place, web search and reading a page. The reader refuses names
@@ -148,3 +149,6 @@ private fun applicationSupportDir(): String {
 
 /** The client ID of Google's iOS client from Info.plist (`EdithGoogleClientId`), or empty when the build has none. */
 private fun googleClientId(): String = (NSBundle.mainBundle.objectForInfoDictionaryKey("EdithGoogleClientId") as? String).orEmpty().trim()
+
+/** The client ID of Edith's Microsoft app registration from Info.plist (`EdithMicrosoftClientId`), or empty when the build has none. */
+private fun microsoftClientId(): String = (NSBundle.mainBundle.objectForInfoDictionaryKey("EdithMicrosoftClientId") as? String).orEmpty().trim()

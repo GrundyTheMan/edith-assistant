@@ -63,6 +63,9 @@ fun AccountsScreen(accounts: IosAccounts) {
 
         val google = accounts.google
         Button(enabled = !busy && google?.isConfigured == true, onClick = { scope.launch { busy = true; accounts.addGoogle(); busy = false } }) { Text("Add a Google account") }
+        val microsoft = accounts.microsoft
+        Button(enabled = !busy && microsoft?.isConfigured == true, onClick = { scope.launch { busy = true; accounts.addMicrosoft(); busy = false } }) { Text("Add a Microsoft account") }
+        if (microsoft?.isConfigured != true) Text("Microsoft isn't set up in this build (the client ID is missing).", style = MaterialTheme.typography.bodySmall)
         if (google?.isConfigured != true) Text("Google isn't set up in this build (the iPhone client ID is missing).", style = MaterialTheme.typography.bodySmall)
 
         HorizontalDivider()

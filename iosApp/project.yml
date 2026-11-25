@@ -25,6 +25,7 @@ targets:
         CADisableMinimumFrameDurationOnPhone: true
         NSLocalNetworkUsageDescription: Edith talks to the model on your PC over your home network.
         EdithGoogleClientId: ""   # Google's iOS client ID (docs/google-setup.md); empty: Google sign-in says it is not set up
+        EdithMicrosoftClientId: ""   # Edith's Microsoft app registration (docs/microsoft-setup.md, with the iOS platform and this bundle id); empty: Microsoft sign-in says it is not set up
         NSAppTransportSecurity:
           # Found on a real iPhone in Phase 0: a Tailscale address (100.x) is not a "local network" to iOS, so plain-HTTP Ollama was blocked (error -1022).
           # NSAllowsArbitraryLoads must stand alone: with NSAllowsLocalNetworking also set, iOS ignores it. Decision D49 will tighten this before release.
