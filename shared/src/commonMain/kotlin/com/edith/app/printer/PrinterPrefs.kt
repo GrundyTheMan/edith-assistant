@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 
 /** The Printer page's cards, in the order the phone shows them (C39 part 8.3). The ids are what is remembered. */
-internal object PrinterCards {
+object PrinterCards {
     const val STATUS = "status"
     const val CAMERA = "camera"
     const val TEMPERATURES = "temperatures"
@@ -37,7 +37,7 @@ internal object PrinterCards {
 }
 
 /** What the owner chose on the Printer page and wants kept (kept in the settings DataStore). */
-internal interface PrinterPrefs {
+interface PrinterPrefs {
     /** The cards that are folded. Until the owner changes one, every card except Status, Camera and Temperatures. */
     val collapsed: Flow<Set<String>>
     suspend fun setCollapsed(card: String, collapsed: Boolean)
@@ -55,7 +55,7 @@ internal interface PrinterPrefs {
     suspend fun pushConsoleHistory(line: String)
 }
 
-internal class DataStorePrinterPrefs(private val store: DataStore<Preferences>) : PrinterPrefs {
+class DataStorePrinterPrefs(private val store: DataStore<Preferences>) : PrinterPrefs {
     override val collapsed: Flow<Set<String>> = store.data.map { it[COLLAPSED] ?: PrinterCards.COLLAPSED_AT_FIRST }
 
     override suspend fun setCollapsed(card: String, collapsed: Boolean) {
@@ -89,7 +89,7 @@ internal class DataStorePrinterPrefs(private val store: DataStore<Preferences>) 
 }
 
 /** For tests. */
-internal class MemoryPrinterPrefs(initial: Set<String> = PrinterCards.COLLAPSED_AT_FIRST) : PrinterPrefs {
+class MemoryPrinterPrefs(initial: Set<String> = PrinterCards.COLLAPSED_AT_FIRST) : PrinterPrefs {
     private val state = MutableStateFlow(initial)
     override val collapsed: Flow<Set<String>> = state.asStateFlow()
     override suspend fun setCollapsed(card: String, collapsed: Boolean) {
