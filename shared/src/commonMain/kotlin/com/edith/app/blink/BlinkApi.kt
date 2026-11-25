@@ -2,7 +2,18 @@ package com.edith.app.blink
 
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
+import com.edith.app.core.util.RandomSource
+import com.edith.app.core.util.Sha256
+import com.edith.app.core.util.systemRandom
+import io.ktor.client.HttpClient
+import io.ktor.client.plugins.cookies.AcceptAllCookiesStorage
+import io.ktor.client.plugins.cookies.HttpCookies
+import io.ktor.http.encodeURLParameter
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.io.IOException
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -12,9 +23,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
-import okhttp3.Cookie
-import okhttp3.CookieJar
-import com.edith.app.core.net.HttpClients
 import io.ktor.client.request.header
 import io.ktor.client.request.request
 import io.ktor.client.request.setBody
@@ -28,13 +36,6 @@ import io.ktor.http.content.ByteArrayContent
 import io.ktor.http.content.OutgoingContent
 import io.ktor.http.isSuccess
 import io.ktor.http.parameters
-import okhttp3.HttpUrl
-import okhttp3.OkHttpClient
-import java.io.IOException
-import java.security.MessageDigest
-import java.security.SecureRandom
-import java.util.Base64
-import java.util.concurrent.TimeUnit
 
 /** Where Blink's services live. Tests point all of them at one pretend server. */
 data class BlinkEndpoints(
@@ -55,7 +56,15 @@ data class BlinkTier(val tier: String, val accountId: String)
  * A sign-in that has started: Blink's page was loaded, its cookies and CSRF token are held here, and the PKCE verifier
  * that the token exchange needs. It lives in memory only, until a code is typed or the sign-in ends.
  */
-class BlinkSignInSession internal constructor(internal val client: OkHttpClient, internal val csrf: String, internal val verifier: String, val hardwareId: String)
+class BlinkSignInSession internal constructor(
+    /** Follows redirects, with the sign-in's cookies. */
+    internal val client: HttpClient,
+    /** The same cookies, but the redirects are left to Edith (the steps that end in Blink's own address). */
+    internal val manual: HttpClient,
+    internal val csrf: String,
+    internal val verifier: String,
+    val hardwareId: String,
+)
 
 sealed interface BlinkStart {
     data class Ok(val session: BlinkSignInSession) : BlinkStart
@@ -97,9 +106,16 @@ sealed interface BlinkReply<out T> {
  * media list. Stateless apart from [BlinkSignInSession]: [BlinkService] keeps the tokens. Passwords, codes, tokens and
  * answers are never logged.
  */
+@OptIn(ExperimentalEncodingApi::class)
 class BlinkApi(
-    private val http: Lazy<OkHttpClient>,
+    private val http: Lazy<HttpClient>,
     private val endpoints: BlinkEndpoints = BlinkEndpoints(),
+    /**
+     * A client that reaches Blink over IPv4 only, where the platform can make one (Android's: see [ipv4Only]); null on the iPhone, which cannot, so a 406
+     * there is reported as it is.
+     */
+    private val ipv4Client: (() -> HttpClient)? = null,
+    private val random: RandomSource = systemRandom(),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -111,10 +127,18 @@ class BlinkApi(
      * 406 there, for its browser too, and 200 from the owner's PC. Nothing in the request's headers, user agent, TLS version or
      * protocol changed that from the PC; the way the phone is connected is the difference left, and IPv6 is one such way.)
      */
-    @Volatile internal var ipv4Only = false
+    @kotlin.concurrent.Volatile var ipv4Only = false
         private set
 
-    private fun base(): OkHttpClient.Builder = http.value.newBuilder().also { if (ipv4Only) it.dns(IPV4_ONLY) }
+    /** The client every Blink call goes through: the plain one, or the IPv4-only one once that was found to be needed. */
+    private fun base(): HttpClient = if (ipv4Only) ipv4Client?.invoke() ?: http.value else http.value
+
+    /** [client] with a cookie jar of its own: Blink's pages set a session that the next steps send back. Redirects are followed or not as [follow] says, the jar being the same. */
+    private fun withJar(client: HttpClient, jar: AcceptAllCookiesStorage, follow: Boolean): HttpClient = client.config {
+        install(HttpCookies) { storage = jar }
+        followRedirects = follow
+        expectSuccess = false
+    }
 
     /**
      * Loads Blink's sign-in page the way its phone app does, to get its cookies and CSRF token. A 406 is tried once more over IPv4
@@ -122,7 +146,7 @@ class BlinkApi(
      */
     suspend fun begin(hardwareId: String): BlinkStart {
         val first = attempt(hardwareId, ipv4 = ipv4Only)
-        if (first !is BlinkStart.Failed || first.status != 406 || ipv4Only) return first
+        if (first !is BlinkStart.Failed || first.status != 406 || ipv4Only || ipv4Client == null) return first
         return when (val second = attempt(hardwareId, ipv4 = true)) {
             is BlinkStart.Ok -> {
                 ipv4Only = true
@@ -134,9 +158,13 @@ class BlinkApi(
     }
 
     private suspend fun attempt(hardwareId: String, ipv4: Boolean): BlinkStart {
-        val verifier = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also { SecureRandom().nextBytes(it) })
-        val challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()))
-        val client = base().also { if (ipv4) it.dns(IPV4_ONLY) }.cookieJar(MemoryCookies()).callTimeout(CALL_S, TimeUnit.SECONDS).build()
+        val url64 = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT)
+        val verifier = url64.encode(ByteArray(32).also(random::nextBytes))
+        val challenge = url64.encode(Sha256.digest(verifier.encodeToByteArray()))
+        val jar = AcceptAllCookiesStorage()
+        val root = if (ipv4) ipv4Client?.invoke() ?: http.value else base()
+        val client = withJar(root, jar, follow = true)
+        val manual = withJar(root, jar, follow = false)
         val authorize = URLBuilder("${endpoints.oauth}/oauth/v2/authorize").apply {
             listOf(
                 "app_brand" to "blink", "app_version" to APP_VERSION, "client_id" to CLIENT_ID, "code_challenge" to challenge, "code_challenge_method" to "S256",
@@ -151,7 +179,7 @@ class BlinkApi(
         if (page !is Raw.Done) return BlinkStart.Failed((page as Raw.Failed).why)
         if (page.code != 200) return refused("the second step (the sign-in page)", page)
         val csrf = BlinkParse.csrfToken(page.text) ?: return BlinkStart.Failed("Blink's sign-in page wasn't what Edith expected (Blink may have changed it)")
-        return BlinkStart.Ok(BlinkSignInSession(client, csrf, verifier, hardwareId))
+        return BlinkStart.Ok(BlinkSignInSession(client, manual, csrf, verifier, hardwareId))
     }
 
     /**
@@ -163,11 +191,7 @@ class BlinkApi(
         val said = r.text.replace(Regex("<(script|style)[^>]*>.*?</\\1>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)), " ")
             .replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim().take(100)
         val from = if (r.server.isNotEmpty()) ", from ${r.server.take(40)}" else ""
-        // Which addresses Blink's server has for this phone: Blink's own servers' addresses, so nothing of the owner's.
-        val addresses = withContext(Dispatchers.IO) {
-            runCatching { java.net.InetAddress.getAllByName(Url(endpoints.oauth).host).take(4).joinToString { it.hostAddress.orEmpty() } }.getOrNull()
-        }
-        val where = if (!addresses.isNullOrEmpty()) ", reached at $addresses" else ""
+        val where = ""   // Android also said which of Blink's addresses answered; the iPhone cannot look that up from shared code
         Log.w(LogTag.Home, "Blink: $step answered HTTP ${r.code}$from$where; the page says: \"$said\"")
         return BlinkStart.Failed("Blink's sign-in page answered HTTP ${r.code} at $step$from$where${if (said.isNotEmpty()) " (\"$said\")" else ""}", r.code)
     }
@@ -230,7 +254,7 @@ class BlinkApi(
 
     private suspend fun token(form: OutgoingContent): BlinkRefresh {
         val request = Req.Builder().url("${endpoints.oauth}/oauth/token").header("User-Agent", TOKEN_AGENT).header("Accept", "*/*").post(form).build()
-        val r = send(base().callTimeout(CALL_S, TimeUnit.SECONDS).build(), request)
+        val r = send(base(), request)
         if (r !is Raw.Done) return BlinkRefresh.Failed((r as Raw.Failed).why)
         if (r.code == 400 || r.code == 401 || r.code == 403) return BlinkRefresh.Rejected
         if (r.code == 429) return BlinkRefresh.Failed("Blink says to slow down; try again in a few minutes")
@@ -281,7 +305,7 @@ class BlinkApi(
 
     /** One page of the media list (pages start at 1), newest first, since [sinceMs]. */
     suspend fun media(token: String, where: BlinkTier, sinceMs: Long, page: Int): BlinkReply<List<BlinkMedia>> =
-        get(token, where, "/api/v1/accounts/${where.accountId}/media/changed?since=${java.net.URLEncoder.encode(BlinkParse.since(sinceMs), "UTF-8")}&page=$page", "the clips") {
+        get(token, where, "/api/v1/accounts/${where.accountId}/media/changed?since=${BlinkParse.since(sinceMs).encodeURLParameter()}&page=$page", "the clips") {
             BlinkParse.media(json.parseToJsonElement(it))
         }
 
@@ -296,20 +320,22 @@ class BlinkApi(
     }
 
     /** [client] decides redirects (its own `followRedirects`), the cookie jar and the address lookup; Ktor makes the request over it. */
-    private suspend fun send(client: OkHttpClient, request: Req): Raw = withContext(Dispatchers.IO) {
+    private suspend fun send(client: HttpClient, request: Req): Raw = withContext(Dispatchers.Default) {
         try {
-            val r = HttpClients.over(client).request(request.url) {
-                method = request.method
-                request.headers.forEach { (k, v) -> header(k, v) }
-                request.body?.let { setBody(it) }
-            }
-            Raw.Done(r.status.value, r.bodyAsText(), r.headers["Location"], r.headers["Content-Type"].orEmpty().substringBefore(';').trim().lowercase(), r.headers["Server"].orEmpty())
+            withTimeoutOrNull(CALL_S * 1000) {
+                val r = client.request(request.url) {
+                    method = request.method
+                    request.headers.forEach { (k, v) -> header(k, v) }
+                    request.body?.let { setBody(it) }
+                }
+                Raw.Done(r.status.value, r.bodyAsText(), r.headers["Location"], r.headers["Content-Type"].orEmpty().substringBefore(';').trim().lowercase(), r.headers["Server"].orEmpty())
+            } ?: Raw.Failed("Blink didn't answer in time")
         } catch (e: IOException) {
             Raw.Failed("Blink can't be reached right now")
         }
     }
 
-    private fun noRedirects(session: BlinkSignInSession) = session.client.newBuilder().followRedirects(false).followSslRedirects(false).build()
+    private fun noRedirects(session: BlinkSignInSession): HttpClient = session.manual
 
     private fun formHeaders() = mapOf(
         "User-Agent" to PAGE_AGENT, "Accept" to "*/*", "Origin" to endpoints.oauth, "Referer" to "${endpoints.oauth}/oauth/v2/signin",
@@ -329,7 +355,7 @@ class BlinkApi(
     }
 
     private suspend fun <T> call(request: Req, what: String, parse: (String) -> T): BlinkReply<T> {
-        val r = send(base().callTimeout(CALL_S, TimeUnit.SECONDS).build(), request)
+        val r = send(base(), request)
         if (r !is Raw.Done) return BlinkReply.Failed((r as Raw.Failed).why)
         return when {
             r.code == 401 -> BlinkReply.Unauthorized
@@ -353,34 +379,27 @@ class BlinkApi(
         else BlinkReply.Busy(message.ifBlank { "Blink is busy" }.take(120))
     }
 
-    private suspend fun bytes(request: Req, what: String, typeOk: (String) -> Boolean): BlinkReply<ByteArray> = withContext(Dispatchers.IO) {
+    private suspend fun bytes(request: Req, what: String, typeOk: (String) -> Boolean): BlinkReply<ByteArray> = withContext(Dispatchers.Default) {
         try {
-            val r = HttpClients.over(base().callTimeout(IMAGE_S, TimeUnit.SECONDS).build()).request(request.url) {
-                method = request.method
-                request.headers.forEach { (k, v) -> header(k, v) }
-                request.body?.let { setBody(it) }
-            }
-            val type = r.headers["Content-Type"].orEmpty().substringBefore(';').trim().lowercase()
-            val code = r.status.value
-            when {
-                code == 401 -> BlinkReply.Unauthorized
-                code == 409 -> busy(r.bodyAsText())
-                !r.status.isSuccess() -> BlinkReply.Failed("Blink answered HTTP $code for $what")
-                !typeOk(type) -> BlinkReply.Failed("Blink didn't send $what")
-                else -> r.bodyAsBytes().let { if (it.isEmpty()) BlinkReply.Failed("Blink sent an empty $what") else BlinkReply.Ok(it) }
-            }
+            withTimeoutOrNull(IMAGE_S * 1000) {
+                val r = base().request(request.url) {
+                    method = request.method
+                    request.headers.forEach { (k, v) -> header(k, v) }
+                    request.body?.let { setBody(it) }
+                }
+                val type = r.headers["Content-Type"].orEmpty().substringBefore(';').trim().lowercase()
+                val code = r.status.value
+                when {
+                    code == 401 -> BlinkReply.Unauthorized
+                    code == 409 -> busy(r.bodyAsText())
+                    !r.status.isSuccess() -> BlinkReply.Failed("Blink answered HTTP $code for $what")
+                    !typeOk(type) -> BlinkReply.Failed("Blink didn't send $what")
+                    else -> r.bodyAsBytes().let { if (it.isEmpty()) BlinkReply.Failed("Blink sent an empty $what") else BlinkReply.Ok(it) }
+                }
+            } ?: BlinkReply.Failed("Blink didn't answer in time")
         } catch (e: IOException) {
             BlinkReply.Failed("Blink can't be reached right now")
         }
-    }
-
-    /** Cookies for one sign-in only: Blink's pages set some (a session) that the next steps send back. */
-    private class MemoryCookies : CookieJar {
-        private val held = mutableListOf<Cookie>()
-        @Synchronized override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-            cookies.forEach { c -> held.removeAll { it.name == c.name && it.domain == c.domain && it.path == c.path }; held += c }
-        }
-        @Synchronized override fun loadForRequest(url: HttpUrl): List<Cookie> = held.filter { it.matches(url) }
     }
 
     companion object {
@@ -393,11 +412,6 @@ class BlinkApi(
         private const val PAGE_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         private const val PAGE_LANGUAGE = "en-US,en;q=0.9"
         private val REDIRECTS = setOf(301, 302, 303, 307, 308)
-        /** Only the IPv4 addresses of a host; with none, the lookup fails like an unknown host. */
-        internal val IPV4_ONLY = object : okhttp3.Dns {
-            override fun lookup(hostname: String): List<java.net.InetAddress> =
-                okhttp3.Dns.SYSTEM.lookup(hostname).filterIsInstance<java.net.Inet4Address>().ifEmpty { throw java.net.UnknownHostException("$hostname has no IPv4 address") }
-        }
         private const val CALL_S = 20L
         private const val IMAGE_S = 30L
     }

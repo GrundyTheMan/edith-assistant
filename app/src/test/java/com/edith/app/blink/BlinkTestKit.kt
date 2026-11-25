@@ -150,7 +150,7 @@ class FakeBlink {
         return BlinkEndpoints(oauth = base, tierInfo = "$base/rest/api/v1/users/tier_info", rest = { "$base/rest" })
     }
 
-    fun api() = BlinkApi(lazy { OkHttpClient() }, endpoints)
+    fun api() = AndroidBlinkApi(lazy { OkHttpClient() }, endpoints)
     fun shutdown() = server.close()
 
     companion object {

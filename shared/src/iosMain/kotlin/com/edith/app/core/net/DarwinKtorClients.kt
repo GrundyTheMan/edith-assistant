@@ -39,6 +39,9 @@ class DarwinKtorClients : KtorClients {
     /** Alexa's client (K4.9): the secure one, but Apple's own cookie jar is off, because the Alexa client keeps and sends Amazon's cookies by hand across the redirects it follows itself. */
     fun alexaClient(): HttpClient = newClient(httpsOnly = true, keepCookiesByHand = true)
 
+    /** Blink's client (K4.13): the same, since Blink's sign-in keeps a cookie jar of its own across the steps (Ktor's), and redirects are followed step by step by the client. */
+    fun blinkClient(): HttpClient = newClient(httpsOnly = true, keepCookiesByHand = true)
+
     private fun newClient(httpsOnly: Boolean, keepCookiesByHand: Boolean = false) = HttpClient(Darwin) {
         engine {
             configureSession {

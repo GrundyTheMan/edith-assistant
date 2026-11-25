@@ -108,9 +108,10 @@ import com.edith.app.meross.MerossService
 import com.edith.app.meross.PahoMerossBus
 import com.edith.app.printer.MoonrakerApi
 import com.edith.app.printer.PrinterService
-import com.edith.app.blink.BlinkApi
-import com.edith.app.blink.BlinkEndpoints
+import com.edith.app.blink.AndroidBlinkApi
+import com.edith.app.blink.AndroidBlinkService
 import com.edith.app.blink.BlinkService
+import com.edith.app.blink.BlinkEndpoints
 import com.edith.app.ring.RingApi
 import com.edith.app.ring.RingService
 import com.edith.app.microsoft.MicrosoftAccounts
@@ -432,7 +433,7 @@ class AppContainer(val app: Application) {
     val ring: RingService by lazy { RingService(secretStore, RingApi(httpClients.ktorSecure), clock, rtc = com.edith.app.ring.WebRtcClient(app)) }   // C32: rtc is Ring live view
 
     /** Blink cameras (C29): the sign-in is kept encrypted in [secretStore]. */
-    val blink: BlinkService by lazy { BlinkService(secretStore, BlinkApi(httpClients.secure, blinkEndpoints()), clock) }
+    val blink: BlinkService by lazy { AndroidBlinkService(secretStore, AndroidBlinkApi(httpClients.secure, blinkEndpoints()), clock) }
 
     /**
      * Debug builds only: a pretend Blink on the PC for trying the sign-in, snapshots and clips on the emulator without an
