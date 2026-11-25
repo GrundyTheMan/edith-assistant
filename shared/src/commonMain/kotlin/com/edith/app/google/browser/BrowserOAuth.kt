@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalEncodingApi::class)
+
 package com.edith.app.google.browser
 
 import com.edith.app.core.dispatchers.AppDispatchers
@@ -21,10 +23,14 @@ import io.ktor.http.URLProtocol
 import io.ktor.http.Url
 import io.ktor.http.isSuccess
 import io.ktor.http.parameters
-import java.io.IOException
-import java.security.MessageDigest
-import java.security.SecureRandom
-import java.util.Base64
+import com.edith.app.core.util.RandomSource
+import com.edith.app.core.util.Sha256
+import com.edith.app.core.util.constantTimeEquals
+import com.edith.app.core.util.systemRandom
+import kotlinx.io.IOException
+
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
  * A provider's OAuth endpoints for an installed app (C17b §1, D16; any [OAuthProvider] since C23): the authorization
@@ -36,7 +42,7 @@ class BrowserOAuth(
     private val http: Lazy<HttpClient>,
     private val dispatchers: AppDispatchers,
     val provider: OAuthProvider,
-    private val random: SecureRandom = SecureRandom(),
+    private val random: RandomSource = systemRandom(),
 ) {
     /** Google's Desktop client (C17b): the constructor C17b's code and tests use. */
     constructor(
@@ -47,7 +53,7 @@ class BrowserOAuth(
         authBaseUrl: String = AUTH_URL,
         tokenUrl: String = TOKEN_URL,
         revokeUrl: String = REVOKE_URL,
-        random: SecureRandom = SecureRandom(),
+        random: RandomSource = systemRandom(),
     ) : this(http, dispatchers, OAuthProvider.google(clientId, clientSecret, authBaseUrl, tokenUrl, revokeUrl), random)
 
     /** A PKCE pair (RFC 7636): the [verifier] stays on the device, the [challenge] goes in the sign-in address. */
@@ -155,7 +161,7 @@ class BrowserOAuth(
         val withScheme = if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) trimmed else "http://$trimmed"
         val url = runCatching { Url(withScheme) }.getOrNull()?.takeIf { (it.protocol == URLProtocol.HTTP || it.protocol == URLProtocol.HTTPS) && it.host.isNotEmpty() } ?: return Redirect.WrongState
         val state = url.parameters["state"]
-        if (state == null || !MessageDigest.isEqual(state.toByteArray(), expectedState.toByteArray())) return Redirect.WrongState
+        if (state == null || !constantTimeEquals(state.encodeToByteArray(), expectedState.encodeToByteArray())) return Redirect.WrongState
         url.parameters["error"]?.let { error ->
             if (needsAdmin(url.parameters["error_description"])) return Redirect.AdminApproval
             return if (error == "access_denied") Redirect.Denied else Redirect.Error(error)
@@ -236,7 +242,7 @@ class BrowserOAuth(
     private data class ErrorDto(val error: String? = null, @SerialName("error_description") val description: String? = null)
 
     private fun randomToken(bytes: Int): String =
-        Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(bytes).also(random::nextBytes))
+        Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).encode(ByteArray(bytes).also(random::nextBytes))
 
     companion object {
         const val AUTH_URL = OAuthProvider.GOOGLE_AUTH_URL
@@ -248,27 +254,27 @@ class BrowserOAuth(
         /** Microsoft's "an admin has to approve this app" codes. */
         private val ADMIN_CODES = setOf("AADSTS65001", "AADSTS90094", "AADSTS90095")
 
-        internal fun needsAdmin(description: String?): Boolean =
+        fun needsAdmin(description: String?): Boolean =
             description != null && AADSTS.findAll(description).any { it.value in ADMIN_CODES }
 
         /** The S256 challenge for [verifier]: base64url(SHA-256(verifier)) without padding (RFC 7636 §4.2). */
         fun challengeFor(verifier: String): String =
-            Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.US_ASCII)))
+            Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).encode(Sha256.digest(verifier.encodeToByteArray()))
 
         /** `openid email` plus every scope Edith uses. */
         fun scopeString(scopes: Set<GoogleScope>): String = (listOf("openid", "email") + scopes.map { it.uri }).joinToString(" ")
 
         /** The email in an id_token's payload (Google's claim). */
-        internal fun emailFromIdToken(idToken: String): String? = addressFromIdToken(idToken, listOf("email"))
+        fun emailFromIdToken(idToken: String): String? = addressFromIdToken(idToken, listOf("email"))
 
         /**
          * The first non-blank of [claims] in an id_token's payload. The signature isn't checked: the token came straight
          * from the provider's token endpoint over TLS, which OpenID Connect Core §3.1.3.7 accepts in place of validating it.
          */
-        internal fun addressFromIdToken(idToken: String, claims: List<String>): String? {
+        fun addressFromIdToken(idToken: String, claims: List<String>): String? {
             val payload = idToken.split('.').getOrNull(1) ?: return null
             return try {
-                val obj: JsonObject = json.parseToJsonElement(String(Base64.getUrlDecoder().decode(payload), Charsets.UTF_8)).jsonObject
+                val obj: JsonObject = json.parseToJsonElement(Base64.UrlSafe.withPadding(Base64.PaddingOption.PRESENT_OPTIONAL).decode(payload).decodeToString()).jsonObject
                 claims.firstNotNullOfOrNull { c -> (obj[c] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()?.takeIf { it.isNotEmpty() } }
             } catch (e: IllegalArgumentException) {
                 null

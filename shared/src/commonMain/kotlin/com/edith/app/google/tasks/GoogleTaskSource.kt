@@ -17,13 +17,13 @@ import kotlinx.datetime.LocalDate
 class GoogleTaskSource(
     private val accountOf: () -> Account,
     private val client: TasksClient,
-    private val nowMs: () -> Long = System::currentTimeMillis,
+    private val nowMs: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
 ) : TaskSource {
     override val account: Account get() = accountOf()
 
     private val lock = Mutex()
-    @Volatile private var cached: List<TaskList>? = null
-    @Volatile private var fetchedAtMs = 0L
+    @kotlin.concurrent.Volatile private var cached: List<TaskList>? = null
+    @kotlin.concurrent.Volatile private var fetchedAtMs = 0L
 
     override suspend fun lists(): Outcome<List<TaskList>> = lock.withLock {
         cached?.takeIf { nowMs() - fetchedAtMs < CACHE_MS }?.let { return@withLock Outcome.Success(it) }

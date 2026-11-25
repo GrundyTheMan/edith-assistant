@@ -9,7 +9,7 @@ import com.edith.app.core.log.LogTag
 import com.edith.app.accounts.sources.CalendarEvent
 import com.edith.app.accounts.sources.CalendarInfo
 import com.edith.app.accounts.sources.EventChange
-import com.edith.app.google.GoogleAccountAuth
+import com.edith.app.google.GoogleAuth
 import com.edith.app.google.GoogleCall
 import com.edith.app.google.GoogleScope
 import kotlinx.coroutines.withContext
@@ -28,7 +28,9 @@ import io.ktor.http.ParametersBuilder
 import io.ktor.http.URLBuilder
 import io.ktor.http.Url
 import io.ktor.http.content.TextContent
+import io.ktor.http.encodeURLParameter
 import io.ktor.http.withCharset
+import io.ktor.utils.io.charsets.Charsets
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
@@ -46,7 +48,7 @@ import kotlin.time.Instant
  */
 class CalendarClient(
     private val http: Lazy<HttpClient>,
-    private val auth: GoogleAccountAuth,
+    private val auth: GoogleAuth,
     private val dispatchers: AppDispatchers,
     private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() },
     private val baseUrl: String = BASE_URL,
@@ -122,7 +124,7 @@ class CalendarClient(
             if (body != null) setBody(TextContent(body, JSON_TYPE))
         }
         handle(response.status.value, response.bodyAsText(), parse)
-    } catch (e: java.io.IOException) {
+    } catch (e: kotlinx.io.IOException) {
         Log.w(LogTag.Google, "Calendar request failed", e)
         GoogleCall.Failed(AppError.ToolFailed("calendar", "Couldn't reach Google Calendar. Check the phone's connection."))
     } catch (e: kotlinx.serialization.SerializationException) {
@@ -146,7 +148,7 @@ class CalendarClient(
     private fun url(path: String, query: ParametersBuilder.() -> Unit): Url =
         URLBuilder(baseUrl.trimEnd('/') + "/" + path).apply { parameters.query() }.build()
 
-    private fun enc(id: String) = java.net.URLEncoder.encode(id, "UTF-8").replace("+", "%20")
+    private fun enc(id: String) = id.encodeURLParameter()
 
     // --- JSON -------------------------------------------------------------------------------------------------
 

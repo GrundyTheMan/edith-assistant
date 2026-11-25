@@ -9,7 +9,7 @@ import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
-import com.edith.app.google.GoogleAccountAuth
+import com.edith.app.google.GoogleAuth
 import com.edith.app.google.GoogleCall
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -31,7 +31,9 @@ import io.ktor.http.ParametersBuilder
 import io.ktor.http.URLBuilder
 import io.ktor.http.Url
 import io.ktor.http.content.TextContent
+import io.ktor.http.encodeURLParameter
 import io.ktor.http.withCharset
+import io.ktor.utils.io.charsets.Charsets
 import kotlinx.datetime.LocalDate
 import kotlin.time.Instant
 
@@ -41,7 +43,7 @@ import kotlin.time.Instant
  */
 class TasksClient(
     private val http: Lazy<HttpClient>,
-    private val auth: GoogleAccountAuth,
+    private val auth: GoogleAuth,
     private val dispatchers: AppDispatchers,
     private val baseUrl: String = BASE_URL,
     /** Stamped on every task, so a change goes to the account it came from (C22). */
@@ -161,7 +163,7 @@ class TasksClient(
             if (body != null) setBody(TextContent(body, JSON_TYPE))
         }
         handle(response.status.value, response.bodyAsText(), parse)
-    } catch (e: java.io.IOException) {
+    } catch (e: kotlinx.io.IOException) {
         Log.w(LogTag.Google, "Tasks request failed", e)
         GoogleCall.Failed(AppError.ToolFailed(TOOL, "Couldn't reach Google Tasks. Check the phone's connection."))
     } catch (e: kotlinx.serialization.SerializationException) {
@@ -191,7 +193,7 @@ class TasksClient(
 
     private fun taskUrl(listId: String, taskId: String) = url("lists/${enc(listId)}/tasks/${enc(taskId)}") {}
 
-    private fun enc(id: String) = java.net.URLEncoder.encode(id, "UTF-8").replace("+", "%20")
+    private fun enc(id: String) = id.encodeURLParameter()
 
     private fun TaskDto.toTask(listId: String, keepEmpty: Boolean = false): TaskItem? {
         if (deleted == true) return null

@@ -22,18 +22,6 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
 /**
- * What a browser sign-in got from Google (C17b): the refresh token and a first access token. It's handed to
- * [BrowserGoogle.keep] once Edith knows which account it belongs to (C22: the address decides, so adding an account
- * that's already there replaces its token instead of adding it twice).
- */
-class BrowserGrant internal constructor(
-    internal val refreshToken: String,
-    internal val accessToken: String,
-    internal val expiresAt: Instant,
-    internal val scopes: Set<String>,
-)
-
-/**
  * Google sign-in and access through the browser, for devices without Play services (C17b, D16). The sign-in itself
  * runs in the app-wide [BrowserSignIn] (shared with Microsoft since C23). Per account (C22) a refresh token is kept
  * encrypted in [SecretStore] under `account/<id>/refresh_token`; access tokens stay in memory. Nothing secret is logged.

@@ -109,48 +109,6 @@ class GmailTest {
 
     private fun args(tool: Tool, vararg pairs: Pair<String, String>) = ToolArgs(JsonObject(pairs.associate { it.first to JsonPrimitive(it.second) }), tool.spec)
 
-    // --- MIME and the outgoing message -------------------------------------------------------------------------
-
-    private fun part(mime: String, text: String? = null, parts: List<PartDto> = emptyList(), filename: String? = null) =
-        PartDto(mimeType = mime, filename = filename, body = text?.let { BodyDto(b64(it)) }, parts = parts)
-
-    @Test fun `plain text is preferred, html is made readable, attachments are skipped`() {
-        assertEquals("Hello\nSee you Friday.", MailText.body(part("multipart/alternative", parts = listOf(part("text/plain", "Hello\nSee you Friday."), part("text/html", "<p>Hello</p>")))))
-        assertTrue(MailText.body(part("text/html", "<html><body><p>Field trip <b>Friday</b>.</p><p>Bring lunch.</p></body></html>")).let { it.contains("Field trip Friday.") && it.contains("Bring lunch.") })
-        val mixed = part("multipart/mixed", parts = listOf(
-            part("text/plain", "attached notes", filename = "notes.txt"),
-            part("multipart/alternative", parts = listOf(part("text/plain", "The real body"))),
-        ))
-        assertEquals("The real body", MailText.body(mixed))
-        assertEquals("base64url with - and _ decoded", "é?>>", MailText.body(part("text/plain", "é?>>")))
-    }
-
-    @Test fun `quoted history is removed where it's obvious`() {
-        val gmail = "Sounds good!\n\nOn Thu, Oct 29, 2026 at 12:00 PM Sam Lee <sam@example.com> wrote:\n> Are we on for Friday?\n> Sam"
-        assertEquals("Sounds good!", MailText.stripQuoted(gmail).trim())
-        assertEquals("Yes.", MailText.stripQuoted("Yes.\n-----Original Message-----\nFrom: x").trim())
-        assertEquals("Line one\nLine two", MailText.stripQuoted("Line one\n> quoted\nLine two"))
-        assertEquals("On Friday I'll bring cake.", MailText.stripQuoted("On Friday I'll bring cake."))
-    }
-
-    @Test fun `a long body is cut at 6000 characters`() {
-        val body = MailText.body(part("text/plain", "x".repeat(10_000)))
-        assertTrue(body.startsWith("x".repeat(MailText.MAX_BODY)) && body.endsWith("[…the rest of the email is cut]"))
-    }
-
-    @Test fun `the raw message has the headers, a UTF-8 subject in RFC 2047, and the body`() {
-        val raw = MailText.raw(OutgoingMail("sam@example.com", "Café on Friday", "Thanks!\nSee you there.", inReplyTo = "<sam-1@example.com>"))
-        val text = String(Base64.getUrlDecoder().decode(raw))
-        val (head, body) = text.split("\r\n\r\n", limit = 2)
-        assertTrue(head.contains("To: sam@example.com\r\n"))
-        assertTrue(head.contains("Subject: =?UTF-8?B?" + Base64.getEncoder().encodeToString("Café on Friday".toByteArray()) + "?="))
-        assertTrue(head.contains("In-Reply-To: <sam-1@example.com>\r\nReferences: <sam-1@example.com>"))
-        assertTrue(head.contains("Content-Type: text/plain; charset=UTF-8"))
-        assertEquals("Thanks!\r\nSee you there.", String(Base64.getMimeDecoder().decode(body)))
-        assertEquals("plain ASCII stays", "Lunch", MailText.encodeHeader("Lunch"))
-        assertFalse("no header injection", String(Base64.getUrlDecoder().decode(MailText.raw(OutgoingMail("a@b.c\r\nBcc: x@y.z", "s", "b")))).contains("\r\nBcc:"))
-    }
-
     // --- Tools -----------------------------------------------------------------------------------------------
 
     @Test fun `search lists the newest first with short ids, unread marked, entities decoded`() = runBlocking {

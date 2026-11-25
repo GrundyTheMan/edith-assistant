@@ -1,13 +1,13 @@
 package com.edith.app.jarvis
 
-import android.app.Activity
-import android.app.PendingIntent
-import android.content.Intent
 import com.edith.app.accounts.Account
 import com.edith.app.accounts.AccountConnection
 import com.edith.app.accounts.AccountSecrets
 import com.edith.app.accounts.AccountState
 import com.edith.app.accounts.Capabilities
+import com.edith.app.accounts.PlatformActivity
+import com.edith.app.accounts.PlatformIntent
+import com.edith.app.accounts.PlatformPendingIntent
 import com.edith.app.accounts.sources.CalendarSource
 import com.edith.app.accounts.sources.MailSource
 import com.edith.app.accounts.sources.Reads
@@ -22,7 +22,6 @@ import com.edith.app.core.secrets.SecretStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import okhttp3.OkHttpClient
 
 /**
  * The owner's PC as an account provider (C38, D25): Jarvis serves the work Outlook mail, calendar and tasks that only
@@ -32,7 +31,7 @@ import okhttp3.OkHttpClient
  */
 class JarvisAccounts(
     private val secrets: SecretStore,
-    private val http: Lazy<OkHttpClient>,
+    private val pinned: PinnedHttp,
     private val dispatchers: AppDispatchers,
 ) {
     /** Pairing, step 1 (the owner then compares [fingerprint] with Jarvis's screen). */
@@ -50,7 +49,7 @@ class JarvisAccounts(
     /** What pairing produced, kept opaque outside this package until [keep] stores it. */
     class JarvisLinkHandle internal constructor(internal val link: JarvisLink)
 
-    private val pairingApi = JarvisApi({ null }, OkHttpPinnedHttp(http), dispatchers)
+    private val pairingApi = JarvisApi({ null }, pinned, dispatchers)
 
     suspend fun probe(address: String): Probe {
         val (base, problem) = JarvisPairing.address(address)
@@ -76,7 +75,7 @@ class JarvisAccounts(
         secrets.put(AccountSecrets.jarvisLink(accountId), feedJson.encodeToString(JarvisLink.serializer(), paired.link.link))
 
     /** The live connection for the account. */
-    fun connect(accountOf: () -> Account): JarvisConnection = JarvisConnection(accountOf, secrets, http, dispatchers)
+    fun connect(accountOf: () -> Account): JarvisConnection = JarvisConnection(accountOf, secrets, pinned, dispatchers)
 
     private fun messageOf(e: AppError): String = when (e) {
         is AppError.ToolFailed -> e.detail
@@ -94,37 +93,37 @@ class JarvisAccounts(
 class JarvisConnection internal constructor(
     private val accountOf: () -> Account,
     private val secrets: SecretStore,
-    http: Lazy<OkHttpClient>,
+    pinned: PinnedHttp,
     dispatchers: AppDispatchers,
 ) : AccountConnection {
     private val _state = MutableStateFlow<AccountState>(AccountState.Checking)
     override val state: StateFlow<AccountState> = _state.asStateFlow()
 
-    @Volatile private var shared: Shared? = null
-    @Volatile private var link: JarvisLink? = null
+    @kotlin.concurrent.Volatile private var shared: Shared? = null
+    @kotlin.concurrent.Volatile private var link: JarvisLink? = null
 
     private val id get() = accountOf().id
 
-    private val api = JarvisApi({ link }, OkHttpPinnedHttp(http), dispatchers, onUnauthorized = {
+    private val api = JarvisApi({ link }, pinned, dispatchers, onUnauthorized = {
         Log.w(LogTag.Accounts, "Account $id: Jarvis no longer accepts this phone")
         _state.value = AccountState.NeedsSignIn(JarvisAccounts.NEEDS_PAIRING)
     })
 
     /** The routes of the feed, for the printer (C39). Its calls keep this connection's pin, token and removed-phone handling. */
-    internal val feedApi: JarvisApi get() = api
+    val feedApi: JarvisApi get() = api
 
     /** What Jarvis last said about the printer: null when it isn't shared (or this Jarvis doesn't know it). */
-    internal val printerInfo: com.edith.app.printer.feed.SharedPrinter? get() = shared?.printer
+    val printerInfo: com.edith.app.printer.feed.SharedPrinter? get() = shared?.printer
 
     /** Whether this phone is paired at all (a saved link), without asking Jarvis. */
-    internal val isPaired: Boolean get() = link != null
+    val isPaired: Boolean get() = link != null
 
     /**
      * Asks Jarvis what it shares again (the printer page does this each time it opens). Success holds the printer entry, which is
      * null when the owner doesn't share it (or this Jarvis is too old to know it); Failure says why Jarvis couldn't be asked, so the
      * page can tell "not shared" from "the PC is off".
      */
-    internal suspend fun refreshShared(): Outcome<com.edith.app.printer.feed.SharedPrinter?> {
+    suspend fun refreshShared(): Outcome<com.edith.app.printer.feed.SharedPrinter?> {
         if (link == null) link = secrets.get(AccountSecrets.jarvisLink(id))?.let { runCatching { feedJson.decodeFromString(JarvisLink.serializer(), it) }.getOrNull() }
         return when (val r = api.get("shared", emptyMap(), Shared.serializer())) {
             is Outcome.Success -> { shared = r.value; Outcome.Success(r.value.printer) }
@@ -166,11 +165,11 @@ class JarvisConnection internal constructor(
     }
 
     /** Try again, when Jarvis couldn't be reached. A removed phone needs pairing again, which Settings asks for. */
-    override suspend fun grant(activity: Activity, show: (PendingIntent) -> Unit) {
+    override suspend fun grant(activity: PlatformActivity, show: (PlatformPendingIntent) -> Unit) {
         if (_state.value !is AccountState.NeedsSignIn) start()
     }
 
-    override suspend fun onConsentResult(data: Intent?) = Unit
+    override suspend fun onConsentResult(data: PlatformIntent?) = Unit
 
     /** Forgets the pairing on this phone; the owner removes the phone in Jarvis too, to be sure it can't be used. */
     override suspend fun disconnect() {
