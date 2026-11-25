@@ -29,13 +29,13 @@ class GoogleCalendarSource(
     private val accountOf: () -> Account,
     private val client: CalendarClient,
     private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() },
-    private val nowMs: () -> Long = System::currentTimeMillis,
+    private val nowMs: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
 ) : CalendarSource {
     override val account: Account get() = accountOf()
 
     private val lock = Mutex()
-    @Volatile private var cached: List<CalendarInfo>? = null
-    @Volatile private var fetchedAtMs = 0L
+    @kotlin.concurrent.Volatile private var cached: List<CalendarInfo>? = null
+    @kotlin.concurrent.Volatile private var fetchedAtMs = 0L
 
     override suspend fun calendars(): Outcome<List<CalendarInfo>> = lock.withLock {
         cached?.takeIf { nowMs() - fetchedAtMs < CACHE_MS }?.let { return@withLock Outcome.Success(it) }
