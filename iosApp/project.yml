@@ -24,6 +24,7 @@ targets:
         # Compose Multiplatform throws at start-up on a 120 Hz iPhone without this (found by a crash in the Phase 0 spike).
         CADisableMinimumFrameDurationOnPhone: true
         NSLocalNetworkUsageDescription: Edith talks to the model on your PC over your home network.
+        EdithGoogleClientId: ""   # Google's iOS client ID (docs/google-setup.md); empty: Google sign-in says it is not set up
         NSAppTransportSecurity:
           # Found on a real iPhone in Phase 0: a Tailscale address (100.x) is not a "local network" to iOS, so plain-HTTP Ollama was blocked (error -1022).
           # NSAllowsArbitraryLoads must stand alone: with NSAllowsLocalNetworking also set, iOS ignores it. Decision D49 will tighten this before release.

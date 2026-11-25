@@ -7,6 +7,22 @@ import com.edith.app.attachments.AttachmentFiles
 import com.edith.app.attachments.AttachmentIntake
 import com.edith.app.attachments.IosAttachmentIntake
 import com.edith.app.attachments.PathAttachmentStore
+import com.edith.app.accounts.DataStoreAccountStore
+import com.edith.app.accounts.IosAccounts
+import com.edith.app.accounts.IosGoogleAccounts
+import com.edith.app.accounts.tools.CalendarHandles
+import com.edith.app.accounts.tools.FindFreeTimeTool
+import com.edith.app.accounts.tools.ListCalendarEventsTool
+import com.edith.app.accounts.tools.MailHandles
+import com.edith.app.accounts.tools.ReadEmailTool
+import com.edith.app.accounts.tools.SearchEmailTool
+import com.edith.app.accounts.tools.ListTasksTool
+import com.edith.app.accounts.tools.TaskHandles
+import com.edith.app.google.browser.IosAuthSession
+import com.edith.app.jarvis.DarwinPinnedHttp
+import com.edith.app.jarvis.JarvisAccounts
+import kotlinx.coroutines.launch
+import platform.Foundation.NSBundle
 import com.edith.app.chat.engine.ReplyListener
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.error.AppError
@@ -47,6 +63,8 @@ class IosApp(
     val intake: AttachmentIntake,
     /** Where sent photos are kept and read back from (the chat shows them). */
     val attachments: AttachmentFiles,
+    /** The connected accounts (K4.6): Google through the sign-in sheet, and the work account through Jarvis. */
+    val accounts: IosAccounts,
 )
 
 /**
@@ -62,9 +80,31 @@ fun createIosApp(): IosApp {
     val clients = DarwinKtorClients()
     val attachmentStore = PathAttachmentStore("$dir/files", "$dir/cache")
     lateinit var container: SharedContainer
-    // The tools that need no permission and no account: the time, the weather in a named place, web search and reading a page. The reader refuses names
-    // that resolve to a private address (publicHostAllowed; Android does it inside its DNS lookup).
-    val registry by lazy { ToolRegistry(listOf(CurrentTimeTool(), WeatherTool(container.openMeteo, NoLocation), SearchWebTool(container.webSearch), ReadWebPageTool(container.webSearch.pages(PageReader(lazy { clients.pageReaderClient() }, AppDispatchers.Default, hostAllowed = ::publicHostAllowed))))) }
+    // The accounts (K4.6): the list in its own DataStore file, Google through the system's sign-in sheet, the work account through Jarvis (pinned certificate).
+    // The client ID of Google's iOS client is in Info.plist (EdithGoogleClientId); without it Google says it is not set up.
+    val accounts by lazy {
+        val google = IosGoogleAccounts(googleClientId(), IosAuthSession(), secrets, SystemClock, clients.ktorSecure, AppDispatchers.Default)
+        IosAccounts(
+            DataStoreAccountStore(PreferenceDataStoreFactory.createWithPath { "$dir/accounts.preferences_pb".toPath() }),
+            container.appScope, google, JarvisAccounts(secrets, DarwinPinnedHttp(), AppDispatchers.Default),
+        )
+    }
+    // The tools that need no permission: the time, the weather in a named place, web search and reading a page. The reader refuses names
+    // that resolve to a private address (publicHostAllowed; Android does it inside its DNS lookup). With the accounts, only the tools that READ (the
+    // calendar, email and to-dos): the ones that change something wait for the confirmation cards on the iPhone.
+    val registry by lazy {
+        val calendarHandles = CalendarHandles(); val mailHandles = MailHandles(); val taskHandles = TaskHandles()
+        ToolRegistry(
+            listOf(
+                CurrentTimeTool(), WeatherTool(container.openMeteo, NoLocation), SearchWebTool(container.webSearch),
+                ReadWebPageTool(container.webSearch.pages(PageReader(lazy { clients.pageReaderClient() }, AppDispatchers.Default, hostAllowed = ::publicHostAllowed))),
+                ListCalendarEventsTool(accounts, calendarHandles), FindFreeTimeTool(accounts),
+                SearchEmailTool(accounts, mailHandles), ReadEmailTool(accounts, mailHandles),
+                ListTasksTool(accounts, taskHandles),
+            ),
+            integrations = listOf(accounts),
+        )
+    }
     container = SharedContainer(
         PlatformServices(
             dispatchers = AppDispatchers.Default,
@@ -82,7 +122,8 @@ fun createIosApp(): IosApp {
         replyListeners = { listeners.also { if (it.isEmpty()) it += container.conversationTitler } },
         afterAttachments = { container.retention.apply() },
     )
-    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore)
+    container.appScope.launch { accounts.load() }   // connects and quietly checks every saved account
+    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore, accounts)
 }
 
 /** No location yet (K4.2 adds Core Location): the weather tool is not offered, so this is never asked. */
@@ -104,3 +145,6 @@ private fun applicationSupportDir(): String {
     NSFileManager.defaultManager.createDirectoryAtPath(path, withIntermediateDirectories = true, attributes = null, error = null)
     return path
 }
+
+/** The client ID of Google's iOS client from Info.plist (`EdithGoogleClientId`), or empty when the build has none. */
+private fun googleClientId(): String = (NSBundle.mainBundle.objectForInfoDictionaryKey("EdithGoogleClientId") as? String).orEmpty().trim()
