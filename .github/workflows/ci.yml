@@ -1,5 +1,5 @@
 # Build, unit tests and lint on every pull request and every push to master — the same checks as
-# scripts/check.sh. Debug only: the release signing key never leaves the owner's PC (05-environment.md §6).
+# scripts/check.sh. Debug only (the debug APK is kept as an artifact): the release signing key never leaves the owner's PC (05-environment.md §6).
 name: CI
 
 on:
@@ -48,3 +48,14 @@ jobs:
           name: reports
           path: app/build/reports/
           retention-days: 7
+
+      # The debug build, to install on a phone without building it there. Debug-signed (the release key never leaves the owner's PC), so it installs
+      # as com.edith.app.debug beside the real app. Built without local.properties, so it has no Google client IDs: Google sign-in says it is not set up.
+      - name: Upload the debug APK
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: edith-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
