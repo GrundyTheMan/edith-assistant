@@ -27,9 +27,8 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
 import io.ktor.http.URLBuilder
 import io.ktor.http.content.TextContent
-import java.io.IOException
+import kotlinx.io.IOException
 import kotlin.time.Instant
-import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -232,7 +231,7 @@ class RingApi(
             (json.parseToJsonElement(text) as? JsonObject)?.text("url")?.takeIf { it.startsWith("https://") } ?: throw SerializationException("no address")
         }
 
-    internal fun clipRow(e: JsonElement, camera: RingCamera): RingClipRow? {
+    fun clipRow(e: JsonElement, camera: RingCamera): RingClipRow? {
         val d = e.obj() ?: return null
         val id = d["ding_id"].idText() ?: return null
         val at = (d["created_at"] as? JsonPrimitive)?.let { it.longOrNull ?: it.contentOrNull?.let { s -> runCatching { Instant.parse(s).toEpochMilliseconds() }.getOrNull() } } ?: return null
@@ -253,7 +252,7 @@ class RingApi(
 
     // ---- parsing (internal: the tests use them) ----
 
-    internal fun camera(e: JsonElement, doorbell: Boolean): RingCamera? {
+    fun camera(e: JsonElement, doorbell: Boolean): RingCamera? {
         val d = e.obj() ?: return null
         val id = d["id"].idText() ?: return null
         val kind = d.text("kind").orEmpty()
@@ -269,7 +268,7 @@ class RingApi(
     }
 
     /** The library's `getBatteryLevel`: the lower of the two batteries; null for a wired camera. */
-    internal fun battery(d: JsonObject): Int? {
+    fun battery(d: JsonObject): Int? {
         fun level(e: JsonElement?): Double? = (e as? JsonPrimitive)?.let { it.doubleOrNull ?: it.contentOrNull?.toDoubleOrNull() }
         val levels = listOfNotNull(level(d["battery_life"]), level(d["battery_life_2"]))
         val health = d["health"].obj()
@@ -279,7 +278,7 @@ class RingApi(
         return if (levels.isEmpty() || none) null else levels.min().toInt().coerceIn(0, 100)
     }
 
-    internal fun event(e: JsonElement): DeviceEvent? {
+    fun event(e: JsonElement): DeviceEvent? {
         val d = e.obj() ?: return null
         val at = d.text("created_at")?.let { runCatching { Instant.parse(it).toEpochMilliseconds() }.getOrNull() } ?: return null
         val cv = d["cv_properties"].obj()
