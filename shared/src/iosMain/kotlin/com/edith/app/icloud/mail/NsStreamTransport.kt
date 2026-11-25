@@ -51,6 +51,7 @@ class NsStreamTransport private constructor(
     private val input: NSInputStream,
     private val output: NSOutputStream,
     private val timeoutMs: Long,
+    private val peer: String,
 ) : MailTransport {
     private val pending = ArrayList<Byte>()
 
@@ -70,8 +71,17 @@ class NsStreamTransport private constructor(
         }
     }
 
+    /** Waits for some bytes (at most [max]); null at the end of the stream. For the live view, which reads raw video, not lines. */
+    suspend fun readSome(max: Int): ByteArray? {
+        if (pending.isEmpty() && !fill()) return null
+        val n = minOf(max, pending.size)
+        val out = ByteArray(n) { pending[it] }
+        repeat(n) { pending.removeAt(0) }
+        return out
+    }
+
     override suspend fun readBytes(count: Int): ByteArray {
-        while (pending.size < count) if (!fill()) throw IOException("The mail server closed the connection.")
+        while (pending.size < count) if (!fill()) throw IOException("${peer.replaceFirstChar { it.uppercase() }} closed the connection.")
         val out = ByteArray(count) { pending[it] }
         repeat(count) { pending.removeAt(0) }
         return out
@@ -83,12 +93,12 @@ class NsStreamTransport private constructor(
         while (sent < bytes.size) {
             if (output.hasSpaceAvailable) {
                 val n = bytes.usePinned { output.write(it.addressOf(sent).reinterpret<UByteVar>(), (bytes.size - sent).toULong()) }
-                if (n < 0) throw IOException("Writing to the mail server failed.")
+                if (n < 0) throw IOException("Writing to $peer failed.")
                 sent += n.toInt()
                 continue
             }
             check(output.streamStatus)
-            if (deadline.hasPassedNow()) throw IOException("The mail server didn't take the data in time.")
+            if (deadline.hasPassedNow()) throw IOException("${peer.replaceFirstChar { it.uppercase() }} didn't take the data in time.")
             delay(10)
         }
     }
@@ -117,26 +127,26 @@ class NsStreamTransport private constructor(
                 }
                 if (n > 0) return true
                 if (n == 0L) return false
-                throw IOException("Reading from the mail server failed.")
+                throw IOException("Reading from $peer failed.")
             }
             when (input.streamStatus) {
                 NSStreamStatusAtEnd, NSStreamStatusClosed -> return false
                 else -> check(input.streamStatus)
             }
-            if (deadline.hasPassedNow()) throw IOException("The mail server didn't answer in time.")
+            if (deadline.hasPassedNow()) throw IOException("${peer.replaceFirstChar { it.uppercase() }} didn't answer in time.")
             delay(10)
         }
     }
 
     private fun check(status: ULong) {
-        if (status == NSStreamStatusError) throw IOException("The secure connection to the mail server failed.")
+        if (status == NSStreamStatusError) throw IOException("The secure connection to $peer failed.")
     }
 
     companion object {
         private const val CHUNK = 4096
 
         /** Connects to [host]:[port]; [tls] true: TLS from the first byte. Throws [IOException] when it cannot. */
-        suspend fun open(host: String, port: Int, tls: Boolean, timeoutMs: Long = 20_000): NsStreamTransport {
+        suspend fun open(host: String, port: Int, tls: Boolean, timeoutMs: Long = 20_000, trustAnyCertificate: Boolean = false, peer: String = "the mail server"): NsStreamTransport {
             // Foundation's own helper for this is not on the iPhone's SDK, so the pair is made by CoreFoundation and used as the streams they are (toll-free).
             var read: CFReadStreamRef? = null
             var write: CFWriteStreamRef? = null
@@ -157,19 +167,25 @@ class NsStreamTransport private constructor(
             if (tls) {
                 input.setProperty(NSStreamSocketSecurityLevelNegotiatedSSL, forKey = NSStreamSocketSecurityLevelKey)
                 output.setProperty(NSStreamSocketSecurityLevelNegotiatedSSL, forKey = NSStreamSocketSecurityLevelKey)
+                // Blink's stream servers are reached by address with certificates that don't name them: only for them is the chain not checked (as blinkpy and Android do).
+                if (trustAnyCertificate) {
+                    val loose: Map<Any?, Any?> = mapOf("kCFStreamSSLValidatesCertificateChain" to false)
+                    input.setProperty(loose, forKey = "kCFStreamPropertySSLSettings")
+                    output.setProperty(loose, forKey = "kCFStreamPropertySSLSettings")
+                }
             }
             input.open()
             output.open()
             val deadline = TimeSource.Monotonic.markNow() + kotlin.time.Duration.parse("${timeoutMs}ms")
             while (input.streamStatus == NSStreamStatusNotOpen || input.streamStatus == NSStreamStatusOpening || output.streamStatus == NSStreamStatusOpening) {
-                if (deadline.hasPassedNow()) { input.close(); output.close(); throw IOException("The mail server didn't answer in time.") }
+                if (deadline.hasPassedNow()) { input.close(); output.close(); throw IOException("${peer.replaceFirstChar { it.uppercase() }} didn't answer in time.") }
                 delay(10)
             }
             if (input.streamStatus == NSStreamStatusError || output.streamStatus == NSStreamStatusError) {
                 input.close(); output.close()
                 throw IOException("Edith couldn't connect to $host.")
             }
-            return NsStreamTransport(input, output, timeoutMs)
+            return NsStreamTransport(input, output, timeoutMs, peer)
         }
     }
 }

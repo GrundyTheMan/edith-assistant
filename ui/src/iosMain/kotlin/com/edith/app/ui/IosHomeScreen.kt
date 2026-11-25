@@ -14,7 +14,7 @@ import com.edith.app.home.ui.HomeViewModel
 import com.edith.app.home.ui.tabActions
 
 /**
- * The iPhone's Home tab (K3.3, K4.15, K4.16): the shared [HomeContent] over its view model, with Apple's player for clips, and **While you were away** on top (what the
+ * The iPhone's Home tab (K3.3, K4.15, K4.16): the shared [HomeContent] over its view model, with Apple's player for clips and Blink live views (K4.17), and **While you were away** on top (what the
  * cameras reported since the app was last opened, until dismissed). Settings (the connect button) is the Settings tab, where the services' sign-in forms are. The printer
  * tile's Details opens the Printer page when a Jarvis is paired.
  */
@@ -30,7 +30,7 @@ fun IosHomeScreen(
     Column {
         CatchUpCard(catchUp, onOpenClips = { vm.openClips(); onDismissCatchUp() }, onDismiss = onDismissCatchUp)
         Box(Modifier.weight(1f)) {
-            HomeContent(ui, vm.tabActions(openSettings = openMore, openPrinter = openPrinter), HomeOverlays(clipPlayer = { url, headers -> IosClipPlayer(url, headers) }))
+            HomeContent(ui, vm.tabActions(openSettings = openMore, openPrinter = openPrinter), HomeOverlays(clipPlayer = { url, headers -> IosClipPlayer(url, headers) }, live = { live, onClose -> IosLiveDialog(live, onClose) }))
         }
     }
 }
