@@ -12,7 +12,7 @@ import com.edith.app.accounts.sources.MailSearchResult
 import com.edith.app.accounts.sources.MailSummary
 import com.edith.app.accounts.sources.MailBody
 import com.edith.app.accounts.sources.OutgoingMail
-import com.edith.app.google.GoogleAccountAuth
+import com.edith.app.google.GoogleAuth
 import com.edith.app.google.GoogleCall
 import com.edith.app.google.GoogleScope
 import com.edith.app.tools.web.PageReader
@@ -32,14 +32,16 @@ import io.ktor.http.URLBuilder
 import io.ktor.http.Url
 import io.ktor.http.content.TextContent
 import io.ktor.http.withCharset
-import org.jsoup.Jsoup
+import com.fleeksoft.ksoup.Ksoup
+import io.ktor.utils.io.charsets.Charsets
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlin.time.Instant
-import java.util.Base64
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
  * One Google account's Gmail over its REST API (C19 §1, per account since C22), with a token from that account's
@@ -48,7 +50,7 @@ import java.util.Base64
  */
 class GmailClient(
     private val http: Lazy<HttpClient>,
-    private val auth: GoogleAccountAuth,
+    private val auth: GoogleAuth,
     private val dispatchers: AppDispatchers,
     private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() },
     private val baseUrl: String = BASE_URL,
@@ -126,7 +128,7 @@ class GmailClient(
                 GoogleCall.Failed(AppError.ToolFailed("email", "Gmail said no (HTTP $code)."))
             }
         }
-    } catch (e: java.io.IOException) {
+    } catch (e: kotlinx.io.IOException) {
         Log.w(LogTag.Google, "Gmail request failed", e)
         GoogleCall.Failed(AppError.ToolFailed("email", "Couldn't reach Gmail. Check the phone's connection."))
     } catch (e: kotlinx.serialization.SerializationException) {
@@ -153,7 +155,7 @@ class GmailClient(
         to = header("To"),
         subject = header("Subject")?.takeIf { it.isNotBlank() } ?: "(no subject)",
         date = Instant.fromEpochMilliseconds(internalDate?.toLongOrNull() ?: 0),
-        snippet = Jsoup.parse(snippet.orEmpty()).text(),   // Gmail's snippets carry HTML entities
+        snippet = Ksoup.parse(snippet.orEmpty()).text(),   // Gmail's snippets carry HTML entities
         messageIdHeader = header("Message-ID") ?: header("Message-Id"),
         unread = "UNREAD" in labelIds,
         accountId = accountId,
@@ -222,6 +224,7 @@ object GmailQuery {
  * The text of an email (C19 §1): a MIME tree to plain text, and an outgoing email to Gmail's `raw` (RFC 2822,
  * base64url).
  */
+@OptIn(ExperimentalEncodingApi::class)
 object MailText {
     const val MAX_BODY = MailBody.MAX_BODY
 
@@ -241,7 +244,7 @@ object MailText {
         return part.parts.firstNotNullOfOrNull { find(it, mime) }
     }
 
-    private fun decode(part: PartDto): String = part.body?.data?.let { String(Base64.getUrlDecoder().decode(it.trimEnd('=')), Charsets.UTF_8) }.orEmpty()
+    private fun decode(part: PartDto): String = part.body?.data?.let { Base64.UrlSafe.withPadding(Base64.PaddingOption.PRESENT_OPTIONAL).decode(it.trimEnd('=')).decodeToString() }.orEmpty()
 
     internal fun htmlToText(html: String): String = MailBody.htmlToText(html)
 
@@ -257,14 +260,14 @@ object MailText {
             add("Content-Type: text/plain; charset=UTF-8")
             add("Content-Transfer-Encoding: base64")
         }
-        val body = Base64.getMimeEncoder(76, "\r\n".toByteArray()).encodeToString(email.body.replace("\r\n", "\n").replace("\n", "\r\n").toByteArray(Charsets.UTF_8))
+        val body = Base64.Mime.encode(email.body.replace("\r\n", "\n").replace("\n", "\r\n").encodeToByteArray())
         val message = headers.joinToString("\r\n") + "\r\n\r\n" + body
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(message.toByteArray(Charsets.UTF_8))
+        return Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).encode(message.encodeToByteArray())
     }
 
     /** `Café` → `=?UTF-8?B?Q2Fmw6k=?=`; plain ASCII is left as it is. */
     fun encodeHeader(value: String): String =
-        if (value.all { it.code in 32..126 }) value else "=?UTF-8?B?" + Base64.getEncoder().encodeToString(value.toByteArray(Charsets.UTF_8)) + "?="
+        if (value.all { it.code in 32..126 }) value else "=?UTF-8?B?" + Base64.encode(value.encodeToByteArray()) + "?="
 }
 
 @Serializable private class MessageListDto(val messages: List<MessageRefDto> = emptyList(), val nextPageToken: String? = null)

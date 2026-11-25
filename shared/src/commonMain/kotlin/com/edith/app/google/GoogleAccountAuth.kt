@@ -1,8 +1,8 @@
 package com.edith.app.google
 
-import android.app.Activity
-import android.app.PendingIntent
-import android.content.Intent
+import com.edith.app.accounts.PlatformActivity
+import com.edith.app.accounts.PlatformPendingIntent
+import com.edith.app.accounts.PlatformIntent
 import com.edith.app.accounts.Account
 import com.edith.app.accounts.AccountState
 import com.edith.app.accounts.tasks.TasksAccess
@@ -18,23 +18,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-/** What Edith may ask Google for (C17 §2). Each tool asks only for what it needs. */
-enum class GoogleScope(val uri: String) {
-    CalendarEvents("https://www.googleapis.com/auth/calendar.events"),
-    /** C18: which calendars the owner has checked (the owner chose all of them, not only the primary). */
-    CalendarList("https://www.googleapis.com/auth/calendar.calendarlist.readonly"),
-    GmailReadonly("https://www.googleapis.com/auth/gmail.readonly"),
-    GmailCompose("https://www.googleapis.com/auth/gmail.compose"),
-    /** C35: Google Tasks, read and write. Asked for only when a Tasks call needs it (trap 2), never at startup. */
-    Tasks("https://www.googleapis.com/auth/tasks"),
-    ;
-
-    companion object {
-        /** What calendar and email need: every scope but [Tasks], so an account signed in before C35 stays Connected. */
-        val CORE: Set<GoogleScope> = entries.toSet() - Tasks
-    }
-}
-
 /** Signing in (who): Android's Credential Manager with "Sign in with Google". A fake in tests. */
 interface GoogleSignIn {
     sealed interface Result {
@@ -44,7 +27,7 @@ interface GoogleSignIn {
         data class Failed(val message: String) : Result
     }
     /** Shows Google's sign-in sheet over [activity]. */
-    suspend fun signIn(activity: Activity, webClientId: String): Result
+    suspend fun signIn(activity: PlatformActivity, webClientId: String): Result
     suspend fun signOut()
 }
 
@@ -56,26 +39,16 @@ interface GoogleAuthorizer {
     sealed interface Result {
         data class Granted(val accessToken: String) : Result
         /** The owner must approve; [intent] shows Google's consent screen (null on the browser path and in tests). */
-        data class NeedsConsent(val intent: PendingIntent?) : Result
+        data class NeedsConsent(val intent: PlatformPendingIntent?) : Result
         data class Failed(val message: String) : Result
     }
     suspend fun authorize(scopes: Set<GoogleScope>): Result
     /** What the consent screen returned. */
-    fun fromConsent(data: Intent?): Result
+    fun fromConsent(data: PlatformIntent?): Result
     /** Forgets a token Google refused, so the next [authorize] gets a fresh one. */
     suspend fun clearToken(token: String)
     /** Removes Edith's access to [email]'s account (all scopes). */
     suspend fun revoke(email: String)
-}
-
-/** One Google API call made with an access token (C18, C19): its result, or "the token was refused". */
-sealed interface GoogleCall<out T> {
-    data class Ok<T>(val value: T) : GoogleCall<T>
-    /** HTTP 401: the token was refused. */
-    data object Unauthorized : GoogleCall<Nothing>
-    /** HTTP 403 for a missing scope (`insufficientPermissions`): the owner must approve more access. */
-    data object MissingScope : GoogleCall<Nothing>
-    data class Failed(val error: AppError) : GoogleCall<Nothing>
 }
 
 /**
@@ -90,8 +63,8 @@ class GoogleAccountAuth(
     /** Whether this account reaches Google through the browser now (C17b), so Grant access means signing in again. */
     private val usesBrowser: suspend () -> Boolean,
     /** Signs this account in again through the browser (Grant access on the browser path). */
-    private val signInAgain: suspend (Activity) -> Unit,
-) {
+    private val signInAgain: suspend (PlatformActivity) -> Unit,
+) : GoogleAuth {
     private val _state = MutableStateFlow<AccountState>(AccountState.Checking)
     val state: StateFlow<AccountState> = _state.asStateFlow()
 
@@ -100,13 +73,13 @@ class GoogleAccountAuth(
     val tasks: StateFlow<TasksAccess> = _tasks.asStateFlow()
 
     /** The consent screen for the Tasks scope alone (Play services), while [tasks] is NeedsPermission. */
-    @Volatile private var tasksConsentIntent: PendingIntent? = null
+    @kotlin.concurrent.Volatile private var tasksConsentIntent: PlatformPendingIntent? = null
     /** What the consent screen now showing is for: calendar and email, every scope (Tasks too), or Tasks alone. */
-    @Volatile private var consentFor: ConsentFor = ConsentFor.Core
+    @kotlin.concurrent.Volatile private var consentFor: ConsentFor = ConsentFor.Core
     private enum class ConsentFor { Core, All, Tasks }
 
     /** The consent screen to show, while [state] is NeedsSignIn on the Play services path. */
-    @Volatile var consentIntent: PendingIntent? = null
+    @kotlin.concurrent.Volatile var consentIntent: PlatformPendingIntent? = null
         private set
 
     private val lock = Mutex()
@@ -137,7 +110,7 @@ class GoogleAccountAuth(
      * Google's consent screen; if Edith has none in hand (a cancelled consent used it up, or an error), she asks Google
      * again first and shows the screen it returns, so one tap is enough.
      */
-    suspend fun grant(activity: Activity, show: (PendingIntent) -> Unit) {
+    suspend fun grant(activity: PlatformActivity, show: (PlatformPendingIntent) -> Unit) {
         if (consentIntent == null && usesBrowser()) {
             check()
             if (_state.value is AccountState.NeedsSignIn) signInAgain(activity)
@@ -152,7 +125,7 @@ class GoogleAccountAuth(
      * `include_granted_scopes`. With Play services: Google's consent screen for the Tasks scope alone; calendar and
      * email aren't touched.
      */
-    suspend fun grantTasks(activity: Activity, show: (PendingIntent) -> Unit) {
+    suspend fun grantTasks(activity: PlatformActivity, show: (PlatformPendingIntent) -> Unit) {
         if (tasksConsentIntent == null && usesBrowser()) {
             signInAgain(activity)
             return
@@ -167,7 +140,7 @@ class GoogleAccountAuth(
     }
 
     /** Google's consent screen returned. */
-    suspend fun onConsentResult(data: Intent?) = lock.withLock {
+    suspend fun onConsentResult(data: PlatformIntent?) = lock.withLock {
         if (consentFor == ConsentFor.Tasks) {
             consentFor = ConsentFor.Core
             tasksConsentIntent = null
@@ -207,7 +180,7 @@ class GoogleAccountAuth(
      * Runs [call] with a fresh access token for [scopes] (C18, C19). A 401 clears the token and tries once more; a
      * second 401 means access was withdrawn, so [state] becomes NeedsSignIn.
      */
-    suspend fun <T> authorized(scopes: Set<GoogleScope>, call: suspend (token: String) -> GoogleCall<T>): Outcome<T> {
+    override suspend fun <T> authorized(scopes: Set<GoogleScope>, call: suspend (token: String) -> GoogleCall<T>): Outcome<T> {
         repeat(2) { attempt ->
             val token = when (val t = accessToken(scopes)) {
                 is Outcome.Success -> t.value
@@ -236,7 +209,7 @@ class GoogleAccountAuth(
      * only makes [tasks] NeedsPermission: [state] (calendar and email) stays as it is. On the browser path the refresh
      * response's `scope` already says whether Tasks was granted, so no Tasks request is made without it.
      */
-    suspend fun <T> tasksAuthorized(call: suspend (token: String) -> GoogleCall<T>): Outcome<T> {
+    override suspend fun <T> tasksAuthorized(call: suspend (token: String) -> GoogleCall<T>): Outcome<T> {
         val scopes = setOf(GoogleScope.Tasks)
         repeat(2) { attempt ->
             val token = when (val r = authorizer.authorize(scopes)) {
@@ -261,7 +234,7 @@ class GoogleAccountAuth(
         return Outcome.Failure(AppError.GoogleAuth(AccountErrors.NEEDS_PERMISSION))
     }
 
-    private fun tasksNeedPermission(intent: PendingIntent?): Outcome<Nothing> {
+    private fun tasksNeedPermission(intent: PlatformPendingIntent?): Outcome<Nothing> {
         if (_tasks.value != TasksAccess.NeedsPermission) Log.i(LogTag.Google, "Account $id: to-dos need permission")
         tasksConsentIntent = intent
         _tasks.value = TasksAccess.NeedsPermission
@@ -272,7 +245,7 @@ class GoogleAccountAuth(
      * The consent screen to keep when calendar and email need approval anyway: one for every scope, Tasks included,
      * so the owner approves once (C35 §2). Falls back to [coreIntent] if Google gives none.
      */
-    private suspend fun consentForAll(coreIntent: PendingIntent?): PendingIntent? {
+    private suspend fun consentForAll(coreIntent: PlatformPendingIntent?): PlatformPendingIntent? {
         if (coreIntent == null) return null   // the browser path: Sign in again asks for every scope already
         val all = (authorizer.authorize(GoogleScope.entries.toSet()) as? GoogleAuthorizer.Result.NeedsConsent)?.intent
         consentFor = if (all != null) ConsentFor.All else ConsentFor.Core
