@@ -6,7 +6,7 @@ memos and attachments, and speaks her replies. She is being rebuilt from scratch
 history (tag `edith-v1`) — don't reuse its code.
 
 ## Read first
-**Moving to one shared Kotlin codebase (Android + iPhone)? Start with [`docs/design/kmp-handoff.md`](docs/design/kmp-handoff.md)**: Phase 1 is in progress (K1.1 to K1.3 done, K1.4 partly), and it says where it stands, how to work, and what is next. The plan is [`docs/design/kmp-transition.md`](docs/design/kmp-transition.md).
+**Working on the shared Kotlin codebase (Android + iPhone)? Start with [`docs/design/kmp-handoff.md`](docs/design/kmp-handoff.md)**: the engine, the screens and the iPhone app are all on shared code (Phases 0 to 4 are built; the iPhone features are compile-checked and on TestFlight but not yet tried on a phone), and it says where it stands, how to work, the traps (Windows tooling, Kotlin/Native, the one-rolling-branch rule for PRs) and what is next. The plan is [`docs/design/kmp-transition.md`](docs/design/kmp-transition.md); each work package has a row in its progress tables.
 
 **[`docs/design/README.md`](docs/design/README.md)** — the complete design, split into chunks (C01–C36) with
 dependencies and status. Read the shared context it lists, then take one chunk whose dependencies are merged.

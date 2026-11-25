@@ -1,32 +1,24 @@
-# Handoff: moving Edith to one shared Kotlin codebase (written 2026-11-23, updated after K2.4)
+# Handoff: Edith as one shared Kotlin codebase (Android + iPhone) (written 2026-11-23, rewritten 2026-11-26 after K4.16)
 
-You are picking up Phase 2 (K2.4 is merged; gate G2 is next, the owner's) of [`kmp-transition.md`](kmp-transition.md). That plan is the authority on *what* and *why*; this
-page says *where it stands*, *how to work here without tripping*, and *what to do next, in order*. Read it before touching
-anything, then read the plan's §3.3 (spike), §4 (target architecture), §6 (migration order) and §7 Phase 1.
+The engine, the screens and the iPhone app are **on shared Kotlin code**, and the iPhone app is on TestFlight (built from master). Almost every iPhone feature is
+**built and compile-checked but has not run on a phone**: the owner's phone is the next check. [`kmp-transition.md`](kmp-transition.md) is the authority on *what* and *why*
+(each work package has a row in its progress tables, with what is done and what is not); this page says *where it stands*, *how to work here without tripping*, and *what is next*.
+Read it before touching anything, then the plan's §4 (target architecture) and §6.1 (the standard move).
 
-## 1. Where things stand
+## 1. Where things stand (2026-11-26)
 
-The owner said **go** at gate G0 on 2026-11-23 (D40) and froze the Expo iPhone app (D46: bug and security fixes only).
-Phase 0 proved Kotlin + Compose Multiplatform runs on a real iPhone (TestFlight build 5, chat with the owner's Ollama over
-Tailscale). Phase 1 makes the Android app ready for sharing without changing what it does.
+| Phase | State |
+|---|---|
+| Phase 0 the spike, gate G0 | **done** (2026-11-23); the Expo iPhone app is frozen (D46: bug and security fixes only) |
+| Phase 1 Android ready for sharing (K1.1 to K1.6), gate G1 | **done**, passed 2026-11-23 |
+| Phase 2 and 2b the engine moved to `shared/commonMain` (K2.1 to K2.12 and the service moves), gate G2 | **done**; what stays platform-specific is listed in each row (Android's Paho MQTT, WebRTC, the Blink stream socket, Play services, the foreground services) |
+| Phase 3 shared screens (`ui/`): theme, chat (K3.1, K3.2), Home (K3.3), Printer page (K3.4), Calendar and To-do (K3.5), Settings (K3.6), clips, upload and 12/24-hour (K3.7) | **done**; Android keeps thin wrappers (view model factories, permissions, Google's consent screens, ExoPlayer, WebRTC) |
+| Phase 4 the iPhone app on shared code (K4.1 to K4.16) | **built**: chat with tools; photos, audio files, voice memos, dictation, read-aloud and conversation mode (a Talk button, no wake word); Google, Microsoft, iCloud (mail and calendar) and the Jarvis work account; Home, Printer, Calendar and Settings tabs; Alexa, Ring, Blink, Meross and the printer; camera alerts while the app is open and While you were away. **Not tried on a phone** |
+| Phase 5 parity and retirement | not started; waits on the phone checks |
 
-| Work package | State | PRs |
-|---|---|---|
-| K1.1 the `shared/` module (android, jvm, iosArm64, iosSimulatorArm64), an import guard for `commonMain` | **done** | #11 |
-| K1.2 iPhone-simulator tests of `shared/` in CI (`shared-ios.yml`) | **done** | #12 |
-| K1.3 `java.time` replaced by kotlinx-datetime everywhere in `app/src/main` | **done** | #13, #14 |
-| K1.4 OkHttp replaced by Ktor | **done on Android**: every service calls through Ktor; OkHttp stays only for the engine hooks listed in `OkHttpGuardTest` | #15, #16, #17, and the K1.4 PR after them |
-| K1.5 Room to Room KMP | **done**: the database is in `shared/`, schemas in `shared/schemas/` unchanged | the K1.5 PR |
-| K1.6 move W1 packages into `shared/commonMain` | **done**, except `di/AppContainer`, `SettingsViewModel` and the Android-only parts of `core` (see below) | the K1.6 PR |
-| Gate G1 (the owner decides) | **passed 2026-11-23** | |
-| K2.1 `chat` engine to `shared/commonMain` | **done**, except `chat/ui` and `ReplyService` | #22 (merged) |
-| K2.2 `tools` framework and tools to `shared/commonMain` | **done**, except `DeviceLocation` (Android) and the other services' tools | #23 (merged) |
-| K2.3 `attachments` to `shared/commonMain` | **done**, except intake, audio conversion, player and file export (platform code) | #24 (merged) |
-| K2.4 `jarvis`, `printer/feed`, `home` framework to `shared/commonMain` | **done**, except the platform parts listed in the plan | #26 (merged; the iPhone simulator job ran its new shared tests) |
-| Gate G2 (the owner decides) | after K2.4 | |
-
-Phase 0 leftovers that do not block Phase 1 are in the plan's §7 progress table (K0.4 second half, the K0.6b probes: sherpa-onnx
-speech and ONNX Runtime on iOS, WebRTC, SwiftMail, MQTT with a login against Meross's broker).
+**What the iPhone does not have yet:** a wake word (an engine and a decision), live camera views (Ring's WebRTC, Blink's stream: the iPhone has no player for either), the
+crash banner, hands-free settings, and notifications while the app is closed (iOS allows them only with a push from a server, which is a separate design). Sign-in for Google and
+Microsoft needs the owner's client IDs in `iosApp/project.yml` (`EdithGoogleClientId`, `EdithMicrosoftClientId`) and, for Microsoft, an app registration with the bundle id.
 
 ## 2. The ground rules (read `AGENTS.md` too)
 
@@ -88,52 +80,58 @@ Quirks: `LocalDateTime.toString()` drops zero seconds (use `LocalDateTime.Format
 
 ## 5. Next steps, in order
 
-**K1.4 is done on Android; one piece is left for K1.6.** Every service now calls through Ktor over its OkHttp client. What stays OkHttp-specific is each service's engine hook (listed, and fenced, in `OkHttpGuardTest`): Blink's cookie jar and IPv4-only lookup, iCloud's trusted-host password interceptor, Jarvis's certificate pin, the page reader's private-address check, and `HttpClients` itself. On the iPhone each needs its own answer (Darwin engine: a certificate-pinning delegate, a cookie storage, a lookup filter); that is plan K4.5. In K1.6 move `HttpClients` and the services behind an `expect`/`actual` engine in `shared/`, so `commonMain` code asks for an `HttpClient` and the Android part builds it over OkHttp.
+**The owner's phone comes first.** Every iPhone slice since K4.3 is checked only by CI (it compiles, and the shared logic has tests on a simulator). Ask for a TestFlight check of the
+areas in the plan's K4.x rows, and fix what breaks before building more: the sign-in sheets and the pinned Jarvis connection (K4.4 to K4.6), iCloud mail's TLS connection
+(K4.10), Meross's MQTT (K4.14), Blink's cookie-jar sign-in (K4.13), clip playback and the Files picker (K3.7), conversation mode (K4.11).
 
-**K1.5 is done.** The database, DAOs, converters, migrations and command log are in `shared/commonMain`; Android opens it with `EdithDatabase.create(context)` (androidMain), the desktop and iPhone with `EdithDatabase.open(path)`. The schema files in `shared/schemas/` are what an installed Android database is checked against: **never edit them by hand, and a schema change needs a version bump, a `Migration` (written against `SQLiteConnection`) and a test like `EdithDatabaseTest`'s version-1 upgrade.** Still to do from K0.4: open a copy of the owner's real `edith.db` (ask them for one), and check the same code on the iPhone (the macOS job builds it; running it on a device is the owner's). DataStore moves with the packages that use it, in K1.6.
-
-**K1.6 is done as far as the waves allow, and gate G1 is next (the owner's).** Moved into `shared/commonMain`: `core` (dispatchers, visibility, errors, message times, the `SecretStore` interface, logging), `ollama`, `settings` (the data: not the screen's view model), `data/chat/ChatRepository`. Seams to know (all small `expect`/`actual`s, in `shared/`): `Log` and `LogConfig` (the app sets `LogConfig.debug` in `EdithApp.onCreate`), `isSocketTimeout`/`isUnreachable`, `platformIoDispatcher`, `inTransaction`/`isConstraintViolation`, and `StoredFiles`. **Left in `app/` on purpose:** `di/AppContainer` (it builds every wave's objects, so it moves last, or is split per platform in Phase 4), `SettingsViewModel` and the other view models (screens wave), `CrashReporter`, `core/permissions`, `core/net`, `KeystoreSecretStore`. What the owner decides at **G1**: the Android app has used Ktor, kotlinx-datetime, the shared database and the shared foundation for a few days with no regression. Do not start Phase 2 before they say go.
-
-**G1 is passed; K2.1 is done.** The chat engine, prompt/context builders, titler, confirmations, `ReplyFormat` and `PendingAttachment`/`AttachmentWriter` are shared. Next: K2.2 (`tools` framework and tools), K2.3 (`attachments`), K2.4 (`jarvis`, `printer/feed`, `home`); then gate G2. Patterns used: `kotlin.concurrent.atomics` (opt in with `ExperimentalAtomicApi`) and `MutableStateFlow` updates in place of `java.util.concurrent` types, `TimeSource.Monotonic` in place of `System.nanoTime`, `platformIoDispatcher` in place of `Dispatchers.IO`.
-
-**Now: K2.1 to K2.4 are done and merged (#22, #23, #24, #26); gate G2 is next and is the owner's.** Do not start Phase 3 without their go. Procedure that worked for K2.1 to K2.4, in this order:
-1. Read the plan's Phase 2 table and the files you are about to move; list their Android imports (`grep -E '^import (android|androidx|java\.|okhttp3|org\.)'`). Most files have two or three.
-2. `git mv` the files into `shared/src/commonMain/kotlin/com/edith/app/<same package>/` (package names do not change, so most of `app/` keeps compiling untouched), then fix what no longer compiles. Compile shared first: `./gradlew --no-daemon -q :shared:compileKotlinJvm :shared:compileAndroidMain`, then `:app:compileDebugKotlin :app:compileDebugUnitTestKotlin :app:compileDebugAndroidTestKotlin`.
-3. Replace the Java type with a common one, or put a small seam in: `expect`/`actual` function, or an interface the app implements (examples: `AttachmentFiles`, `LocationProvider`, `PrivateAddress`, `LocalNetworkAccess`). Keep the Android implementation in `app/` next to its old name so callers and tests change as little as possible.
-4. `scripts/check.sh` (and the UTC run) green, update the plan's Phase 2 progress table and this page in the same PR, push, open the PR, wait for both CI jobs (`check`, `ios-tests`), report to the owner, and ask before merging. They have so far answered "merge, start the next one".
-
-**K2.4 (done, #26 merged; read the plan's K2.4 row for what moved and what stayed): `jarvis` client and pairing, `printer/feed` logic (wire types, 33 commands, session, settle), `home` framework (Home, services, `HomeBackend`).** Expect: the Jarvis certificate pin and cookie/address hooks are OkHttp engine hooks (see `OkHttpGuardTest`): keep the OkHttp-building part in `app/` and move the logic over a Ktor client, as was done for `PageReader.over`. The printer feed is mostly wire types and state machines (good candidates for `commonTest`). Check `home/` for `Context`, notification and `Manifest` uses. After K2.4: gate G2, which is "the shared engine passes its tests on desktop, Android and the iOS simulator, and the Android app is unchanged to use". Do not start Phase 3 (shared screens) without the owner's go.
-
-**What K2.4 learned (apply it):**
-- **Check Kotlin/Native problems on Windows**: `./gradlew --no-daemon -q :shared:compileCommonMainKotlinMetadata` compiles `commonMain` against the common APIs only, so it lists every `java.*`, `Math`, `System`, `Charsets`, `synchronized` and `String.format` use that the JVM and Android compiles accept but the iPhone would reject, without waiting for the macOS job. Run it after every move; it is the fastest way to find them. It cannot compile `iosMain`: the two iPhone actuals of K2.4 (`core/crypto/Digests.ios.kt`, `core/locale/Decimal.ios.kt`) were written blind and are checked only by the macOS job, which also runs the `commonTest` vectors for them.
-- Replacements used: `Math.round(x)` -> `x.roundToLong()` / `roundToInt()` (the same tie rule); `synchronized` in non-suspending code -> an atomic holder (`AtomicReference`, see `PrinterSession`) or `CowMap`/`CowList` (`core/util`), in suspending code -> `Mutex.withLock`; `@Volatile` needs `import kotlin.concurrent.Volatile`; `UUID` -> `kotlin.uuid.Uuid`; `System.currentTimeMillis` -> `SystemClock.now()` or `TimeSource.Monotonic`; `String.format` -> `formatDecimal`; `Locale` parameters -> a language tag string; `java.io.InputStream` -> kotlinx-io `Source` (`stream.asSource().buffered()` in `app/`).
-- Public API: code moved to `shared/` that `app/` or its tests use must be public (the `internal` keyword was removed from the moved Jarvis, printer-feed and home files). Kotlin also refuses a smart cast on a public property of another module (`state.light` after a null check): read it into a local first.
-- The Jarvis certificate pin is the engine hook: `PinnedHttp` (interface, shared) + `PinCheck` (the logic, shared) + `OkHttpPinnedHttp` (`app/`). The iPhone needs a Darwin implementation that calls `PinCheck.accepts(der)` from its server-trust challenge (K4.5). `OkHttpGuardTest` now lists `jarvis/OkHttpPinnedHttp.kt` instead of `jarvis/JarvisApi.kt`.
-- `./gradlew :shared:testAndroidHostTest` failed on master before K2.4 (`ConfirmationsTest`: `android.util.Log` is not mocked in a host test); K2.4 sets `isReturnDefaultValues = true` for the host test, which fixes it.
-- One full `check.sh` run had `WebSearchTest > files, errors and oversized pages are handled` fail with "the test body did not run to completion" after a minute; it passed alone and in the next full run and in the UTC run. Not explained, not proven flaky: if it comes back, save the report and look at it before rerunning.
-
-**What Phase 2 learned (apply it):**
-- Kotlin/Native rejects some things Android and the desktop accept: a comma in a backticked test name ("Name contains illegal characters"); `Dispatchers.IO` (use `platformIoDispatcher`); `Charsets` outside Ktor's; `java.util.concurrent` (use `kotlin.concurrent.atomics` with `@OptIn(ExperimentalAtomicApi::class)`, or a `MutableStateFlow` updated in place); `System.nanoTime` (`TimeSource.Monotonic`); `UUID` (`kotlin.uuid.Uuid`, `@OptIn(ExperimentalUuidApi::class)`); `java.util.Base64` (`kotlin.io.encoding.Base64`); `LinkageError` (see `isClassLoadFailure`); `Locale` (tools take a language tag; `deviceLanguageTag()`, `regionOf()`); `String.format`; `java.io.IOException` (use `kotlinx.io.IOException`); `java.io.File` (use kotlinx-io `SystemFileSystem` and `Path`).
-- `internal` in `shared/` is not visible to `app/` tests: make what an Android test needs public.
-- Jsoup is ksoup 0.2.6 in shared code (`Ksoup.parse`, `isBlock()` is a function); the app still uses Jsoup for Gmail's snippet only.
-- **Tests (G2 work, done):** pure tests of shared code now live in `shared/commonTest` and run on the desktop, Android host and the iOS simulator. A moved JUnit test keeps its body: `testing/Asserts.kt` has JUnit-style `assertEquals(message, expected, actual)` and friends (kotlin.test puts the message last), `FakeClock` (kotlin.time only), `FakeSettingsRepository`, `FakeOllamaClient` and `testDispatchers()` are copied there; `app/` keeps its own copies for the tests that stay (when the screens move in Phase 3, the app copies go). Test names for `commonTest` use only letters, digits, spaces, apostrophes and hyphens (Kotlin/Native rejects a comma and more). `runBlocking` becomes `runTest`; a test that needs real threads or real time (`HomeGuardTest`) is JVM-only and stays in `app/`. The engine end-to-end tests live in `shared/src/engineTest` (added as a source dir to `jvmTest` and `iosTest`; use `Dispatchers.Default`, since `Dispatchers.IO` is internal on Native). The pattern: `git mv`, swap `org.junit` imports, rename tests, compile with `:shared:compileTestKotlinJvm`.
-- **The engine's end-to-end tests run on the desktop:** `shared/src/jvmTest` has `ChatTestKit`, `ChatEngineTest` and `ToolTurnRunnerTest`, ported from `androidTest` (Room's bundled SQLite instead of Android's, `Dispatchers.Default` instead of `Main`). Still Android-only: `AttachmentSendTest`, `RetentionTest` (the app's file store, `Base64`), the migration test and the Compose UI tests. The instrumented tests have still not been run on a device in this series.
-
-**Phase 3 has started (2026-11-24, the owner cleared G2).** K3.0 (the UI module spike) is in the plan's "Phase 3 progress" table. The module is `ui/`; `./gradlew :ui:jvmTest` runs its tests, `./gradlew :ui:run` opens the desktop window. **On a PC with many cores, the Android build can fail while dexing `material-icons-extended` with a random D8 exception: use `JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=4` (see the plan).** The detailed plan for the rest is `kmp-parity-plan.md` (PR 30).
-
-After G2: Phase 3 shared screens, Phase 4 the iPhone app proper (the Expo app stays frozen until parity), Phase 5 parity and retirement. Each has its own gate; the plan lists the work packages.
+Then, in this order, none needing a decision unless noted:
+1. **An Android regression check on the emulator.** Phase 3 moved the Home, Printer, Calendar and Settings screens under Android's wrappers. The unit tests and the shared UI tests pass,
+   but the Android instrumented tests are not run in CI. They need the emulator, which wipes its app data: **ask the owner first.**
+2. **Live camera view on the iPhone.** Ring needs a WebRTC library (K0.6b probe), Blink needs a TLS socket to the stream server (its certificate is not checked, as on Android) and a way to
+   play MPEG transport stream bytes (AVPlayer wants HLS or a file: a small local server or a segmenter). The seams are ready: `RingLive` and `BlinkLiveRunner` in `shared/`, `HomeOverlays.live` in `ui/`.
+3. **Notifications while the app is closed** (C72 option B): Jarvis sends a push. Needs a design with the owner (Apple push credentials, Jarvis's side).
+4. **The wake word** ("Hey Edith"): an engine decision (D41) first; `WakeListener` is the seam, `TapWakeListener` the stand-in.
+5. **Phase 5**: retire the Expo app once the phone checks pass, remove the Android copies that the shared code replaced, update `AGENTS.md`'s design index.
 
 ## 6. Things waiting on the owner (do not do these for them)
 
-- **The emulator check at G1 passed** (existing database opens; a chat reply streamed through the new Ktor client, 2026-11-23). It first looked like a hang: Ollama had to reload the 27B model for the app's context size (about 40 s) and then took over 3 minutes on the first long prompt, past the app's 3-minute limit ("Edith took too long"); a retry on the warm model answered after about 80 s of prompt processing (roughly 75 tokens a second over the ~6,000-token tool prompt). If chat seems stuck, look at Ollama's `server.log` before suspecting the code. Three test chats were left on the emulator.
-- **Run the new Android build on the phone against their Ollama**: chat (the Ollama client now runs on Ktor), the Printer page, the voice download. The tests pass, nothing here has been run on a device.
-- Delete the App Store Connect API key `edith-spike-ci` once the spike is no longer needed (the TestFlight workflow `spike-kmp-testflight.yml` uses it).
-- Decisions still open in the plan's §12: **D47** (licence for the public repo), **D49** (how the iPhone app reaches Ollama over plain HTTP: the spike used a blanket App Transport Security exemption; decide before K4.5), and the bundle id check for `com.edith.app` (D43).
-- Confirm on GitHub's billing page that macOS minutes are free for the public repo (K0.8, plan §14 U9).
-- Tidy-up they may want: the old private clone `D:\Dev Projects\edith` (one redundant local commit), the extra worktrees, the paused Expo prep (`c58-dev-build-prep`, uncommitted in the c67 worktree).
+- Try the TestFlight build and report what breaks (see §5).
+- The Google iOS client ID and the Microsoft app registration (client ID, the iOS platform with the bundle id) so those sign-ins can be tried; the iCloud app-specific password.
+- Decisions open in the plan's §12: D47 (licence), D49 (App Transport Security for plain-HTTP Ollama: the build still has a blanket exemption), the bundle id (D43), D50 to D60.
+- Delete the App Store Connect API key `edith-spike-ci` once the spike is no longer needed.
+- Tidy-up: the old private clone `D:\Dev Projects\edith`, the extra worktrees, the paused Expo prep.
 
-## 7. History worth knowing
+## 7. What the iPhone phase learned (apply it)
+
+**Process.**
+- **One rolling branch per batch of related work, one PR, one CI run.** Eleven stacked PRs were a mess to land: every merge made the next one conflict (the same few files: `IosContainer.kt`,
+  `iosApp/project.yml`, the plan's tables) and restarted a 25-minute macOS run each time. Stack only what truly depends on another PR, and merge a stack in one pass.
+- **Merge only when all three checks (`check`, `ios-tests`, `simulator`) pass on the PR's current head**, and ask the owner first (the permission system refuses a merge the owner did not approve in that
+  session). A check that shows "fail" with a cancelled job and no failing step is the runner, not the code: `gh run rerun <id> --failed`. Changing a PR's base branch restarts its CI: do not merge on the old result.
+- A TestFlight build is `gh workflow run ios-testflight.yml --ref master` (about 20 to 30 minutes); the workflow builds whichever ref it is given. Apple allows a limited number of certificates: if it fails with
+  "maximum number of certificates", the owner revokes some.
+
+**Windows tooling.** Long `sed` scripts, `sed -i 'a\'` with several lines, and heredocs with apostrophes break or silently flatten code: use the Write and Edit tools for anything longer than a line or two.
+A `sed` whose search found nothing (`n=$(grep ...)` empty) can append after **every** line: check the variable first. `compose.` removed with `sed` also strips `androidx.compose.` from imports.
+`git reset --hard` is refused by the permission system: merge or checkout instead.
+
+**Kotlin/Native and the iPhone.**
+- Compile the iPhone code (and its tests) on Windows: `./gradlew :shared:compileKotlinIosSimulatorArm64 :ui:compileKotlinIosSimulatorArm64 :shared:compileTestKotlinIosSimulatorArm64 :ui:compileTestKotlinIosSimulatorArm64`.
+  The JVM compile does not catch `System`, `Math`, `java.*`, `String.format`, `UUID`, `@Volatile` or `Dispatchers.IO` in `commonMain`: the iOS one does. Replacements: `kotlin.time.Clock`, `roundToLong()`, `formatDecimal`, `Uuid.random()`,
+  `@kotlin.concurrent.Volatile`, `PlatformLock`, `Dispatchers.Default` or an injected dispatcher, kotlinx-io's `Source` for streams, `Base64` from `kotlin.io.encoding`.
+- Apple API quirks met: a category's methods (and `setActive`) need an explicit import; delegate overloads with the same Kotlin signature need `@ObjCSignatureOverride`; `NSStream.getStreamsToHostWithName` is not in the iPhone SDK
+  (use `CFStreamCreatePairWithSocketToHost` and the toll-free bridge); `AVURLAsset.URLAssetWithURL` instead of the constructor; `NSHTTPCookieAcceptPolicy` is an enum class; `Url("https://")` in Ktor invents a host.
+- `ASWebAuthenticationSession` for sign-in (a custom-scheme redirect, no URL type needed in `Info.plist`), `SFSpeechRecognizer` and `AVAudioRecorder` and `CLLocationManager` each need a usage-description key in `iosApp/project.yml`
+  or iOS ends the app the moment it asks.
+- Ktor's Darwin client: redirects are Ktor's; Apple's own cookie jar must be off for a client that keeps cookies by hand (`HTTPShouldSetCookies = false`, `HTTPCookieAcceptPolicy`); HTTPS-only is a plugin.
+
+**Patterns.** A platform class gets a **thin wrapper**, not a fork: the shared class takes an interface (`PinnedHttp`, `MailTransport`, `RingLive`, `BlinkLiveRunner`, `HomeOverlays`, `AuthSession`), Android's `AndroidXxx` factory
+or subclass builds it with its OkHttp or its Activity, and the iPhone's wiring is in `IosContainer.kt` and `MainViewController.kt`. Shared Compose screens take state and actions (`HomeContent(ui, actions, overlays)`) and each
+platform adds its view model factory; the tests of a shared screen run on the desktop and the simulator, which Android's instrumented tests could not do in CI.
+
+## 8. History worth knowing
 
 - A first K1.1 attempt was committed in the old clone with the owner's real email and then carried toward the public repo; the tooling refused the push. It was redone as a fresh commit under the no-reply identity (PR #11). Do not repeat it.
-- The first CI run of K1.3 found two tests that only fail in UTC; the first CI run of K1.4's voice slice found a downloader test that passed or failed by luck (it cut the connection before any data arrived). Both were test faults, fixed in their PRs: when a test fails in CI and not locally, suspect the machine's zone, locale, timing or file-system case first.
-- TestFlight (Phase 0): the spike runs from TestFlight as `com.edith.app.spike`; the findings (App Transport Security with Tailscale, thinking models, dark mode, Xcode 26) are in the plan's "Device findings".
+- The first CI run of K1.3 found two tests that only fail in UTC; K1.4's voice slice found a downloader test that passed or failed by luck. Both were test faults: when a test fails once in CI and never locally, suspect the test.
+- TestFlight (Phase 0): the spike ran as `com.edith.app.spike`; the findings (App Transport Security with Tailscale, thinking models, dark mode, Xcode 26) are in the plan's "Device findings".
+- The 2026-11-25 overnight run opened eleven stacked PRs; landing them took most of a day (see §7, Process). The rolling-branch rule came from that.
