@@ -38,7 +38,7 @@ import kotlinx.coroutines.launch
  * how the sign-in seams get used before a designed Settings exists.
  */
 @Composable
-fun AccountsScreen(accounts: IosAccounts, settings: SettingsRepository) {
+fun AccountsScreen(accounts: IosAccounts, settings: SettingsRepository, home: com.edith.app.home.Home) {
     val scope = rememberCoroutineScope()
     val list by accounts.accounts.collectAsState()
     val message by accounts.message.collectAsState()
@@ -78,6 +78,8 @@ fun AccountsScreen(accounts: IosAccounts, settings: SettingsRepository) {
         if (microsoft?.isConfigured != true) Text("Microsoft isn't set up in this build (the client ID is missing).", style = MaterialTheme.typography.bodySmall)
         if (google?.isConfigured != true) Text("Google isn't set up in this build (the iPhone client ID is missing).", style = MaterialTheme.typography.bodySmall)
 
+        HorizontalDivider()
+        HomeServicesSection(home)
         HorizontalDivider()
         ICloudForm(accounts, busy) { busy = it }
         HorizontalDivider()
