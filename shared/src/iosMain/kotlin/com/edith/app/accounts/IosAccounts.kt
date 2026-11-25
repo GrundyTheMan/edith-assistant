@@ -43,13 +43,14 @@ class IosAccounts(
     val google: IosGoogleAccounts? = null,
     val jarvis: JarvisAccounts? = null,
     val microsoft: IosMicrosoftAccounts? = null,
+    val icloud: IosICloudAccounts? = null,
 ) : AccountsCore(store, scope) {
 
     override fun connectionFor(account: Account, accountOf: () -> Account): AccountConnection? = when (account.provider) {
         Provider.Google -> google?.connect(accountOf) { onGoogleSignIn(google.signInAgain(accountOf())) }
         Provider.Jarvis -> jarvis?.connect(accountOf)
         Provider.Microsoft -> microsoft?.connect(accountOf) { onMicrosoftSignIn(microsoft.signInAgain(accountOf())) }
-        Provider.ICloud -> null
+        Provider.ICloud -> icloud?.connect(accountOf)
     }
 
     /** The paired Jarvis, if there is one. */
@@ -67,6 +68,22 @@ class IosAccounts(
         say(null)
         val m = microsoft ?: return say(IosMicrosoftAccounts.NOT_SET_UP)
         onMicrosoftSignIn(m.signInNew())
+    }
+
+    /**
+     * Add account → iCloud: checks the address and app-specific password (the calendar's discovery), then adds the account, or signs it in again with the
+     * new password. Returns why not, or null when all is well. Calendar only: mail needs an IMAP client the iPhone does not have yet.
+     */
+    suspend fun addICloud(address: String, password: String): String? {
+        say(null)
+        val ic = icloud ?: return IosICloudAccounts.NOT_SET_UP
+        val check = ic.check(address, password)
+        if (check is IosICloudAccounts.Check.Failed) return check.message
+        val account = upsert(Provider.ICloud, address.trim(), null)
+        setLogin(account.id, address.trim())
+        ic.keep(account.id, password)
+        startConnection(account.id)
+        return null
     }
 
     /** Add account → Work (via Jarvis), step 1: finds the PC and its certificate, for the owner to compare. */
