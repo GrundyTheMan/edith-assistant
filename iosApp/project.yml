@@ -23,6 +23,8 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         # Compose Multiplatform throws at start-up on a 120 Hz iPhone without this (found by a crash in the Phase 0 spike).
         CADisableMinimumFrameDurationOnPhone: true
+        NSMicrophoneUsageDescription: Edith listens when you tap the record button, to turn what you say into a message.
+        NSSpeechRecognitionUsageDescription: Edith turns what you say into text in the message box, on your phone when your language allows it.
         NSLocalNetworkUsageDescription: Edith talks to the model on your PC over your home network.
         EdithGoogleClientId: ""   # Google's iOS client ID (docs/google-setup.md); empty: Google sign-in says it is not set up
         NSAppTransportSecurity:
