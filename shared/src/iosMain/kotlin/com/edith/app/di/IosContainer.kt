@@ -18,10 +18,17 @@ import com.edith.app.core.secrets.IosSecretStore
 import com.edith.app.core.secrets.SecretStore
 import com.edith.app.core.time.SystemClock
 import com.edith.app.data.db.EdithDatabase
+import com.edith.app.data.db.MessageSource
 import com.edith.app.data.db.open
 import com.edith.app.settings.DataStoreSettingsRepository
 import com.edith.app.settings.SettingsRepository
 import com.edith.app.tools.context.CurrentTimeTool
+import com.edith.app.voice.capture.IosRecorder
+import com.edith.app.voice.capture.NoSpeechInput
+import com.edith.app.voice.capture.OllamaTranscriber
+import com.edith.app.voice.capture.VoiceMemos
+import com.edith.app.voice.speech.IosTtsEngine
+import com.edith.app.voice.speech.SpeechOutput
 import com.edith.app.tools.weather.WeatherTool
 import com.edith.app.tools.web.PageReader
 import com.edith.app.tools.web.ReadWebPageTool
@@ -47,6 +54,14 @@ class IosApp(
     val intake: AttachmentIntake,
     /** Where sent photos are kept and read back from (the chat shows them). */
     val attachments: AttachmentFiles,
+    /** Edith's voice (K4.3): the Play button on a message speaks through it. Not a reply listener yet: nothing reads replies aloud by itself until there is a setting for it. */
+    val speech: SpeechOutput,
+    /** Voice memos (K4.3): record, have the model transcribe, send as the owner's message. */
+    val voiceMemos: VoiceMemos,
+    /** Plays an audio attachment from its bubble (K4.3). */
+    val player: com.edith.app.attachments.AttachmentPlayer,
+    /** Dictation into the text field (K4.3): Apple speech recognition. Not the voice memos path, which records and lets the model transcribe. */
+    val dictation: com.edith.app.voice.capture.SpeechInput,
 )
 
 /**
@@ -83,7 +98,23 @@ fun createIosApp(): IosApp {
         replyListeners = { listeners.also { if (it.isEmpty()) it += container.conversationTitler } },
         afterAttachments = { container.retention.apply() },
     )
-    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore)
+    val speech = SpeechOutput(IosTtsEngine(), settings, container.appScope)
+    val voiceMemos = VoiceMemos(
+        recorder = IosRecorder("$dir/recordings"),
+        transcriber = OllamaTranscriber(container.ollama, settings, AppDispatchers.Default),
+        liveSpeech = NoSpeechInput,
+        modelHears = {
+            // Unknown (server unreachable, no model): try the model; its error is clearer than a fallback.
+            val s = settings.current()
+            val caps = s.model?.let { container.modelCatalog.capabilities(s.serverUrl, it) }
+            caps !is Outcome.Success || "audio" in caps.value
+        },
+        send = { id, text -> container.chatEngine.send(id, text, MessageSource.VoiceMemo) },
+        stopSpeaking = { speech.stop() },
+        scope = container.appScope,
+        dispatchers = AppDispatchers.Default,
+    )
+    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore, speech, voiceMemos, com.edith.app.attachments.IosAttachmentPlayer { speech.stop() }, com.edith.app.voice.capture.IosSpeechInput())
 }
 
 /** The app's private folder for data, made on first use. */
