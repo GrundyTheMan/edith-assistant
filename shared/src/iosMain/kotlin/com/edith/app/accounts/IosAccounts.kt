@@ -71,20 +71,22 @@ class IosAccounts(
     }
 
     /**
-     * Add account → iCloud: checks the address and app-specific password (the calendar's discovery), then adds the account, or signs it in again with the
-     * new password. Returns why not, or null when all is well. Calendar only: mail needs an IMAP client the iPhone does not have yet.
+     * Add account → iCloud: checks the address and app-specific password (the IMAP login, then the calendar's discovery), then adds the account, or signs
+     * it in again with the new password. Returns why not, or a note when only mail works; null when all is well.
      */
     suspend fun addICloud(address: String, password: String): String? {
         say(null)
         val ic = icloud ?: return IosICloudAccounts.NOT_SET_UP
         val check = ic.check(address, password)
         if (check is IosICloudAccounts.Check.Failed) return check.message
+        check as IosICloudAccounts.Check.Ok
         val account = upsert(Provider.ICloud, address.trim(), null)
-        setLogin(account.id, address.trim())
+        setLogin(account.id, check.login)
         ic.keep(account.id, password)
         startConnection(account.id)
-        return null
+        return if (check.calendar) null else IosICloudAccounts.CALENDAR_UNAVAILABLE
     }
+
 
     /** Add account → Work (via Jarvis), step 1: finds the PC and its certificate, for the owner to compare. */
     suspend fun probeJarvis(address: String): JarvisAccounts.Probe = jarvis?.probe(address) ?: JarvisAccounts.Probe.Failed(NOT_SET_UP_JARVIS)

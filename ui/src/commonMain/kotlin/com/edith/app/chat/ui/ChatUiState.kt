@@ -75,7 +75,8 @@ data class MessageUi(
 
 /** Hands-free on the chat screen (C14 §3): the top-bar button and, while on, what it's doing. */
 @Immutable
-data class HandsFreeUi(val on: Boolean, val status: String? = null)
+/** [canTalk]: a Talk button is offered (tap-to-talk, where there is no wake word): to start speaking, or to cut Edith off. */
+data class HandsFreeUi(val on: Boolean, val status: String? = null, val canTalk: Boolean = false)
 
 @Immutable
 data class AttachmentUi(

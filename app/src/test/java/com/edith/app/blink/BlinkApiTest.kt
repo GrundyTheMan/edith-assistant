@@ -121,8 +121,8 @@ class BlinkApiTest {
     }
 
     @Test fun `the IPv4-only lookup keeps IPv4 addresses and fails for a host that has none`() {
-        assertTrue(BlinkApi.IPV4_ONLY.lookup("localhost").all { it is java.net.Inet4Address })
-        assertTrue(runCatching { BlinkApi.IPV4_ONLY.lookup("::1") }.exceptionOrNull() is java.net.UnknownHostException)
+        assertTrue(BlinkIpv4.ONLY.lookup("localhost").all { it is java.net.Inet4Address })
+        assertTrue(runCatching { BlinkIpv4.ONLY.lookup("::1") }.exceptionOrNull() is java.net.UnknownHostException)
     }
 
     @Test fun `a 202 that lists code methods also asks for the code`() = runBlocking {

@@ -38,7 +38,7 @@ import kotlinx.coroutines.launch
  * how the sign-in seams get used before a designed Settings exists.
  */
 @Composable
-fun AccountsScreen(accounts: IosAccounts, settings: SettingsRepository) {
+fun AccountsScreen(accounts: IosAccounts, settings: SettingsRepository, home: com.edith.app.home.Home) {
     val scope = rememberCoroutineScope()
     val list by accounts.accounts.collectAsState()
     val message by accounts.message.collectAsState()
@@ -78,6 +78,8 @@ fun AccountsScreen(accounts: IosAccounts, settings: SettingsRepository) {
         if (microsoft?.isConfigured != true) Text("Microsoft isn't set up in this build (the client ID is missing).", style = MaterialTheme.typography.bodySmall)
         if (google?.isConfigured != true) Text("Google isn't set up in this build (the iPhone client ID is missing).", style = MaterialTheme.typography.bodySmall)
 
+        HorizontalDivider()
+        HomeServicesSection(home)
         HorizontalDivider()
         ICloudForm(accounts, busy) { busy = it }
         HorizontalDivider()
@@ -135,8 +137,8 @@ private fun ICloudForm(accounts: IosAccounts, busy: Boolean, setBusy: (Boolean) 
     var password by remember { mutableStateOf("") }
     var note by remember { mutableStateOf<String?>(null) }
 
-    Text("iCloud calendar", style = MaterialTheme.typography.titleMedium)
-    Text("Use an app-specific password made at account.apple.com, not your Apple Account password. Only the calendar is read for now.", style = MaterialTheme.typography.bodySmall)
+    Text("iCloud mail and calendar", style = MaterialTheme.typography.titleMedium)
+    Text("Use an app-specific password made at account.apple.com, not your Apple Account password. The password is kept in the iPhone's Keychain.", style = MaterialTheme.typography.bodySmall)
     OutlinedTextField(address, { address = it }, Modifier.fillMaxWidth(), label = { Text("iCloud address") }, singleLine = true)
     OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), label = { Text("App-specific password") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
     Button(enabled = !busy && address.isNotBlank() && password.isNotBlank(), onClick = {
@@ -146,6 +148,6 @@ private fun ICloudForm(accounts: IosAccounts, busy: Boolean, setBusy: (Boolean) 
             if (note == null) { address = ""; password = "" }
             setBusy(false)
         }
-    }) { Text("Add iCloud calendar") }
+    }) { Text("Add iCloud") }
     note?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 }

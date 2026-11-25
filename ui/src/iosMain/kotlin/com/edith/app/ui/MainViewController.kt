@@ -66,6 +66,7 @@ fun MainViewController(): UIViewController {
                         voiceMemos = app.voiceMemos,
                         attachmentPlayer = app.player,
                         dictation = app.dictation,
+                        handsFree = app.handsFree,
                         intake = app.intake,
                         attachmentStore = app.attachments,
                         clock = app.container.clock,
@@ -84,7 +85,7 @@ fun MainViewController(): UIViewController {
                     },
                 ) { padding ->
                     Box(Modifier.padding(padding)) {
-                        when (tab) { 0 -> SimpleChatScreen(vm, photoPicker, microphone, audioPicker); 1 -> EngineCheckScreen(check); else -> AccountsScreen(app.accounts, app.settings) }
+                        when (tab) { 0 -> SimpleChatScreen(vm, photoPicker, microphone, audioPicker); 1 -> EngineCheckScreen(check); else -> AccountsScreen(app.accounts, app.settings, app.home) }
                     }
                 }
             }

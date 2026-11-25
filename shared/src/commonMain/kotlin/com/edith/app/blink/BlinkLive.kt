@@ -1,7 +1,6 @@
 package com.edith.app.blink
 
-import java.io.ByteArrayOutputStream
-import java.net.URI
+import io.ktor.http.Url
 
 /**
  * Blink's live view (C32; Jarvis's `blinkLive.ts`, blinkpy's `livestream.py`): the camera's video comes from Blink's
@@ -13,33 +12,35 @@ object BlinkLive {
     data class Immis(val host: String, val port: Int, val connectionId: String, val clientId: Long)
 
     fun parseImmis(server: String): Immis? {
-        val uri = runCatching { URI(server.replaceFirst(Regex("^immis:"), "https:")) }.getOrNull() ?: return null
-        val host = uri.host ?: return null
-        val last = uri.path.orEmpty().split('/').lastOrNull { it.isNotEmpty() }.orEmpty()
-        val client = uri.query.orEmpty().split('&').firstOrNull { it.startsWith("client_id=") }?.substringAfter('=')?.toLongOrNull() ?: 0L
-        return Immis(host, if (uri.port > 0) uri.port else 443, last.substringBefore("__"), client)
+        // Ktor fills in a host for an address with none ("https://"): no host in the text means no stream.
+        if (server.substringAfter("//", "").substringBefore('/').substringBefore('?').isEmpty()) return null
+        val url = runCatching { Url(server.replaceFirst(Regex("^immis:"), "https:")) }.getOrNull() ?: return null
+        val host = url.host.takeIf { it.isNotEmpty() } ?: return null
+        val last = url.encodedPath.split('/').lastOrNull { it.isNotEmpty() }.orEmpty()
+        val client = url.encodedQuery.split('&').firstOrNull { it.startsWith("client_id=") }?.substringAfter('=')?.toLongOrNull() ?: 0L
+        // An address with no port says 443; Ktor reports the scheme's own port then, which here is 443 too.
+        return Immis(host, url.specifiedPort.takeIf { it > 0 } ?: 443, last.substringBefore("__"), client)
     }
 
     /** A length-prefixed field padded with zero bytes to [size]. */
     private fun field(value: String, size: Int): ByteArray {
         val out = ByteArray(4 + size)
         out[0] = (size ushr 24).toByte(); out[1] = (size ushr 16).toByte(); out[2] = (size ushr 8).toByte(); out[3] = size.toByte()
-        value.toByteArray(Charsets.UTF_8).copyInto(out, 4, 0, minOf(size, value.toByteArray(Charsets.UTF_8).size))
+        value.encodeToByteArray().copyInto(out, 4, 0, minOf(size, value.encodeToByteArray().size))
         return out
     }
 
     private fun int32(v: Long): ByteArray = byteArrayOf((v ushr 24).toByte(), (v ushr 16).toByte(), (v ushr 8).toByte(), v.toByte())
 
     /** The 122 bytes that open the stream: the camera's serial, the client and the connection. */
-    fun handshake(serial: String, server: Immis): ByteArray = ByteArrayOutputStream().apply {
-        write(byteArrayOf(0x00, 0x00, 0x00, 0x28))
-        write(field(serial, 16))
-        write(int32(server.clientId))
-        write(byteArrayOf(0x01, 0x08))
-        write(field("", 64)) // where a token would go; Blink accepts it empty
-        write(field(server.connectionId, 16))
-        write(byteArrayOf(0x00, 0x00, 0x00, 0x01))
-    }.toByteArray()
+    fun handshake(serial: String, server: Immis): ByteArray =
+        byteArrayOf(0x00, 0x00, 0x00, 0x28) +
+            field(serial, 16) +
+            int32(server.clientId) +
+            byteArrayOf(0x01, 0x08) +
+            field("", 64) +   // where a token would go; Blink accepts it empty
+            field(server.connectionId, 16) +
+            byteArrayOf(0x00, 0x00, 0x00, 0x01)
 
     private fun header(type: Int, sequence: Long, length: Int): ByteArray = byteArrayOf(type.toByte()) + int32(sequence) + int32(length.toLong())
 

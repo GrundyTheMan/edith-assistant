@@ -31,7 +31,7 @@ class BlinkServiceTest {
     private val secrets = InMemorySecretStore()
     private val clock = FakeClock(Instant.parse("2026-11-15T15:00:00Z"))
     private val waits = mutableListOf<Long>()
-    private fun service() = BlinkService(secrets, blink.api(), clock) { waits += it }
+    private fun service() = AndroidBlinkService(secrets, blink.api(), clock) { waits += it }
     @After fun tearDown() = blink.shutdown()
 
     private val login = mapOf("email" to "a@b.c", "password" to "hunter2")
@@ -192,7 +192,7 @@ class BlinkServiceTest {
         return server to got
     }
 
-    private fun liveService(limitMs: Long = 60_000) = BlinkService(secrets, blink.api(), clock, { Socket(it.host, it.port) }, limitMs, 100L) { waits += it }
+    private fun liveService(limitMs: Long = 60_000) = AndroidBlinkService(secrets, blink.api(), clock, { Socket(it.host, it.port) }, limitMs, 100L) { waits += it }
 
     @Test fun `a live view asks Blink, connects to the stream server with the camera's serial, and passes the video on`() = runBlocking {
         val (server, got) = streamServer(video(0x47, 1), video(0x47, 2))

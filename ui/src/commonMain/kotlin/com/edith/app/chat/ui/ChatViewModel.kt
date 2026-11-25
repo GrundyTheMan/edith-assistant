@@ -148,7 +148,7 @@ class ChatViewModel(
 
     /** The button's state and hands-free's notice (why it stopped). */
     private val handsFreeUi: Flow<Pair<HandsFreeUi, String?>?> = if (handsFree == null) MutableStateFlow(null) else {
-        combine(handsFree.state, handsFree.notice) { s, notice -> handsFreeUi(s, handsFree.phrase) to notice }
+        combine(handsFree.state, handsFree.notice) { s, notice -> handsFreeUi(s, handsFree.phrase, handsFree.wakeIsTap) to notice }
     }
 
     val state: StateFlow<ChatUiState> = combine(
@@ -393,6 +393,16 @@ class ChatViewModel(
     // --- Errors --------------------------------------------------------------------------------------------------
 
     /** Turns hands-free off. (The screen turns it on: it must start the service, after the microphone permission.) */
+    /** Turns hands-free on (the screen asks for the microphone first). */
+    fun startHandsFree() {
+        handsFree?.start()
+    }
+
+    /** Tap-to-talk: starts listening for a question, or, while Edith speaks, cuts in. */
+    fun talk() {
+        handsFree?.wakeWordHeard()
+    }
+
     fun stopHandsFree() {
         handsFree?.stop()
     }
@@ -503,13 +513,13 @@ class ChatViewModel(
         private fun draftKey(conversationId: Long) = "draft_$conversationId"
 
         /** What the hands-free line under the top bar says (C14 §3). */
-        fun handsFreeUi(state: HandsFree.State, phrase: String): HandsFreeUi = when (state) {
+        fun handsFreeUi(state: HandsFree.State, phrase: String, tap: Boolean = false): HandsFreeUi = when (state) {
             HandsFree.State.Off -> HandsFreeUi(on = false)
             HandsFree.State.Paused -> HandsFreeUi(on = true, status = "Paused")
-            HandsFree.State.Listening -> HandsFreeUi(on = true, status = "Listening for “$phrase”")
+            HandsFree.State.Listening -> if (tap) HandsFreeUi(on = true, status = "Tap Talk, then speak", canTalk = true) else HandsFreeUi(on = true, status = "Listening for “$phrase”")
             is HandsFree.State.Capturing -> HandsFreeUi(on = true, status = state.partial.ifBlank { "Listening…" })
             HandsFree.State.Thinking -> HandsFreeUi(on = true, status = "Thinking…")
-            HandsFree.State.Speaking -> HandsFreeUi(on = true, status = "Speaking…")
+            HandsFree.State.Speaking -> HandsFreeUi(on = true, status = "Speaking…", canTalk = tap)
         }
 
         private fun EngineState.runningConversationId(): Long? = when (this) {

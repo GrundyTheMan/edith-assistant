@@ -6,6 +6,8 @@ import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
 import com.edith.app.core.secrets.SecretStore
 import com.edith.app.core.time.Clock
+import com.edith.app.core.util.PlatformLock
+import com.edith.app.core.util.synchronized
 import com.edith.app.home.Capability
 import com.edith.app.home.ClipsPage
 import com.edith.app.home.DeviceClip
@@ -17,7 +19,6 @@ import com.edith.app.home.HomeBackend
 import com.edith.app.home.HomeDevice
 import com.edith.app.home.HomeService
 import com.edith.app.home.LiveFeed
-import com.edith.app.home.TrackLiveFeed
 import com.edith.app.home.ServiceState
 import com.edith.app.home.SignInField
 import com.edith.app.home.SignInForm
@@ -35,7 +36,10 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
-import java.util.UUID
+import kotlin.concurrent.atomics.AtomicBoolean
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * Ring doorbells and cameras (C27, D10): the owner's Ring account, signed in with an email, a password and a 2FA code
@@ -47,12 +51,13 @@ import java.util.UUID
  * ([refreshLock]: two at once would both spend the same old token). A token Ring no longer accepts turns the service
  * to [ServiceState.NeedsSignIn]: "Sign in again". No live view (C32) and no alerts (C33) here.
  */
+@OptIn(ExperimentalUuidApi::class, ExperimentalAtomicApi::class)
 class RingService(
     private val secrets: SecretStore,
     private val api: RingApi,
     private val clock: Clock,
     /** Makes WebRTC calls for live view (C32); null: no live view (tests, where the native library cannot run). */
-    private val rtc: RingRtc? = null,
+    private val rtc: RingLive? = null,
     /** How long a live view runs before Edith ends it (Jarvis ends one after 5 minutes too). */
     private val liveLimitMs: Long = 5 * 60_000L,
 ) : HomeService {
@@ -63,15 +68,16 @@ class RingService(
     private val _connected = MutableStateFlow(IntegrationStatus.NotConnected)
 
     private val refreshLock = Mutex()
-    @Volatile private var saved: Saved? = null
-    @Volatile private var access: Access? = null
-    @Volatile private var sessionReady = false
+    @kotlin.concurrent.Volatile private var saved: Saved? = null
+    @kotlin.concurrent.Volatile private var access: Access? = null
+    @kotlin.concurrent.Volatile private var sessionReady = false
     /** The phone id of a sign-in still waiting for its 2FA code: Ring ties the code to it, so each try must send the same one. */
-    @Volatile private var pendingHardwareId: String? = null
+    @kotlin.concurrent.Volatile private var pendingHardwareId: String? = null
     /** The cameras last listed, for events (they need the location id) and picture checks. */
-    @Volatile private var cameras: List<RingCamera> = emptyList()
+    @kotlin.concurrent.Volatile private var cameras: List<RingCamera> = emptyList()
     /** The addresses the clip search listed clips with, by clip id: a last resort when Ring gives no fresh one. */
-    private val listedUrls = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val listedUrls = HashMap<String, String>()
+    private val urlsLock = PlatformLock()
 
     override val backend: HomeBackend = Backend()
 
@@ -105,7 +111,7 @@ class RingService(
         val code = values["code"]?.trim()?.takeIf { it.isNotEmpty() }
         if (email.isEmpty() || password.isEmpty()) return SignInResult.Failed("Type your Ring email and password.")
         // The same hardware id each time, so Ring sees one phone, not a new one at every sign-in.
-        val hardwareId = saved?.hardwareId ?: pendingHardwareId ?: UUID.randomUUID().toString().also { pendingHardwareId = it }
+        val hardwareId = saved?.hardwareId ?: pendingHardwareId ?: Uuid.random().toString().also { pendingHardwareId = it }
         return when (val r = api.signIn(email, password, code, hardwareId)) {
             is RingLogin.Ok -> {
                 val token = r.tokens.refreshToken ?: return SignInResult.Failed("Ring signed in but gave no sign-in token to keep.")
@@ -166,7 +172,7 @@ class RingService(
         }
     }
 
-    @Volatile private var lastFailure: String? = null
+    @kotlin.concurrent.Volatile private var lastFailure: String? = null
 
     /**
      * Runs [call] with a working access token and this phone's session. A 401 refreshes once and asks again; a forgotten
@@ -275,7 +281,7 @@ class RingService(
                 is Outcome.Success -> c.value
             }
             if (camera.offline) return Outcome.Failure(AppError.ToolFailed("Ring", "${camera.name} is offline"))
-            val sessionId = UUID.randomUUID().toString()
+            val sessionId = Uuid.random().toString()
             var refused: AppError? = null
             val call = when (val r = rtc.open { offer ->
                 when (val a = authed { t, h -> api.liveStart(t, h, deviceId, sessionId, offer) }) {
@@ -286,7 +292,7 @@ class RingService(
                 is Outcome.Failure -> return Outcome.Failure(refused ?: r.error)
                 is Outcome.Success -> r.value
             }
-            return Outcome.Success(RingLiveFeed(call, sessionId))
+            return Outcome.Success(rtc.feed(call, RingLiveFeed(call, sessionId)))
         }
 
         override suspend fun events(deviceId: String, sinceMs: Long): Outcome<List<DeviceEvent>> {
@@ -314,7 +320,7 @@ class RingService(
             if (answered == 0 && firstFailure != null) return firstFailure
             // Whether the account has a plan isn't asked of Ring: it shows in the search (every recent event without one).
             val noPlan = rows.isNotEmpty() && rows.none { it.hadPlan }
-            rows.forEach { r -> r.url?.let { listedUrls[r.id] = it } }
+            urlsLock.synchronized { rows.forEach { r -> r.url?.let { listedUrls[r.id] = it } } }
             val clips = if (noPlan) emptyList() else rows.filter { it.hadPlan }.map { DeviceClip(it.id, ID, it.cameraName, it.at, it.kind, it.seconds) }
             return Outcome.Success(ClipsPage(clips.sortedByDescending { it.at }, noPlan))
         }
@@ -334,19 +340,17 @@ class RingService(
                     }
                 }
             }
-            listedUrls[clipId]?.let { return Outcome.Success(it) }
+            urlsLock.synchronized { listedUrls[clipId] }?.let { return Outcome.Success(it) }
             return failure ?: Outcome.Failure(AppError.ToolFailed("Ring", "Ring has no address for that clip"))
         }
     }
 
     /** A Ring live view: the call's video, ended when the call is lost, the time limit passes or [stop] is called; Ring is told each time. */
-    private inner class RingLiveFeed(private val call: RtcCall, private val sessionId: String) : TrackLiveFeed {
+    private inner class RingLiveFeed(private val call: RingCall, private val sessionId: String) : LiveFeed {
         private val _ended = MutableStateFlow<String?>(null)
         override val ended: StateFlow<String?> = _ended.asStateFlow()
-        override val track = call.track
-        override val eglContext = call.eglContext
-        private val finished = java.util.concurrent.atomic.AtomicBoolean(false)
-        private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+        private val finished = AtomicBoolean(false)
+        private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
 
         init {
             scope.launch { call.lost.filterNotNull().first().let { finish(it) } }

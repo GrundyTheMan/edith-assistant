@@ -7,7 +7,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
-import java.net.URI
+import io.ktor.http.Url
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.UtcOffset
 import kotlinx.datetime.format
@@ -171,7 +171,7 @@ object BlinkParse {
     }
 
     /** The time as Blink's media list wants it: "2026-10-29T08:34:19+0000", in UTC, without milliseconds. */
-    fun since(ms: Long): String = Instant.fromEpochSeconds(Math.floorDiv(ms, 1000L)).format(BASIC_OFFSET, UtcOffset.ZERO)
+    fun since(ms: Long): String = Instant.fromEpochSeconds(ms.floorDiv(1000L)).format(BASIC_OFFSET, UtcOffset.ZERO)
 
     /** `2026-10-29T08:34:19+0000`: seconds and an offset without a colon, the way Blink wants `since` and sometimes writes times. */
     private val BASIC_OFFSET = DateTimeComponents.Format {
@@ -181,7 +181,7 @@ object BlinkParse {
     /** The `code` in the address Blink's sign-in ends on; null when there is none. */
     fun codeFrom(location: String?): String? {
         if (location == null) return null
-        val query = runCatching { URI(location).rawQuery }.getOrNull() ?: location.substringAfter('?', "")
+        val query = runCatching { Url(location).encodedQuery }.getOrNull()?.takeIf { it.isNotEmpty() } ?: location.substringAfter('?', "")
         return query.split('&').firstNotNullOfOrNull { p -> p.substringBefore('=').takeIf { it == "code" }?.let { p.substringAfter('=', "") } }?.takeIf { it.isNotEmpty() }
     }
 

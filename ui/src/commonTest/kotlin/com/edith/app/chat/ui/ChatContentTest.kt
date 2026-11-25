@@ -95,6 +95,21 @@ class ChatContentTest {
         onNodeWithText("Audio file").assertIsDisplayed()
     }
 
+    @Test fun tapToTalkOffersATalkButtonThatCallsTheAction() = runComposeUiTest {
+        var talked = 0
+        val listening = chat.copy(handsFree = HandsFreeUi(on = true, status = "Tap Talk, then speak", canTalk = true))
+        setContent { EdithTheme { ChatContent(state = listening, draft = "", actions = ChatActions(onTalk = { talked++ })) } }
+        onNodeWithTag(TALK_BUTTON_TAG).assertIsDisplayed()
+        onNodeWithTag(TALK_BUTTON_TAG).performClick()
+        assertEquals(1, talked)
+    }
+
+    @Test fun withAWakeWordThereIsNoTalkButton() = runComposeUiTest {
+        val listening = chat.copy(handsFree = HandsFreeUi(on = true, status = "Listening for “Hey Edith”"))
+        setContent { EdithTheme { ChatContent(state = listening, draft = "", actions = ChatActions()) } }
+        onNodeWithTag(TALK_BUTTON_TAG).assertDoesNotExist()
+    }
+
     @Test fun aSharedScreenForEmptyChatsSaysSoOnceLoaded() = runComposeUiTest {
         setContent { EdithTheme { ChatContent(state = ChatUiState(conversationId = 1, loaded = true), draft = "", actions = ChatActions()) } }
         onNodeWithTag(INPUT_TAG).assertIsDisplayed()

@@ -35,6 +35,27 @@ import com.edith.app.core.time.SystemClock
 import com.edith.app.data.db.EdithDatabase
 import com.edith.app.data.db.MessageSource
 import com.edith.app.data.db.open
+import com.edith.app.voice.handsfree.HandsFree
+import com.edith.app.voice.handsfree.TapWakeListener
+import com.edith.app.voice.handsfree.iosEarcon
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import com.edith.app.alexa.AlexaApi
+import com.edith.app.alexa.AlexaService
+import com.edith.app.blink.BlinkApi
+import com.edith.app.blink.BlinkService
+import com.edith.app.meross.MerossApi
+import com.edith.app.meross.MerossService
+import com.edith.app.meross.MqttMerossBus
+import com.edith.app.ring.RingApi
+import com.edith.app.ring.RingService
+import com.edith.app.home.DataStoreHomePrefs
+import com.edith.app.home.Home
+import com.edith.app.home.RoomCommandLog
+import com.edith.app.home.homeTools
+import com.edith.app.printer.MoonrakerApi
+import com.edith.app.printer.PrinterService
 import com.edith.app.settings.DataStoreSettingsRepository
 import com.edith.app.settings.SettingsRepository
 import com.edith.app.settings.Settings
@@ -71,6 +92,8 @@ class IosApp(
     val attachments: AttachmentFiles,
     /** The connected accounts (K4.6): Google through the sign-in sheet, and the work account through Jarvis. */
     val accounts: IosAccounts,
+    /** The smart home (K4.9): its services, for the More tab's forms. */
+    val home: Home,
     /** Edith's voice (K4.3): the Play button on a message speaks through it. Not a reply listener yet: nothing reads replies aloud by itself until there is a setting for it. */
     val speech: SpeechOutput,
     /** Voice memos (K4.3): record, have the model transcribe, send as the owner's message. */
@@ -79,6 +102,8 @@ class IosApp(
     val player: com.edith.app.attachments.AttachmentPlayer,
     /** Dictation into the text field (K4.3): Apple speech recognition. Not the voice memos path, which records and lets the model transcribe. */
     val dictation: com.edith.app.voice.capture.SpeechInput,
+    /** Conversation mode (K4.11): tap Talk, ask, hear the answer, follow up. */
+    val handsFree: HandsFree,
 )
 
 /**
@@ -94,6 +119,7 @@ fun createIosApp(): IosApp {
     val clients = DarwinKtorClients()
     val location = IosLocationProvider()
     val attachmentStore = PathAttachmentStore("$dir/files", "$dir/cache")
+    val database = lazy { EdithDatabase.open("$dir/edith.db") }
     lateinit var container: SharedContainer
     // The accounts (K4.6): the list in its own DataStore file, Google through the system's sign-in sheet, the work account through Jarvis (pinned certificate).
     // The client ID of Google's iOS client is in Info.plist (EdithGoogleClientId); without it Google says it is not set up.
@@ -103,12 +129,21 @@ fun createIosApp(): IosApp {
             DataStoreAccountStore(PreferenceDataStoreFactory.createWithPath { "$dir/accounts.preferences_pb".toPath() }),
             container.appScope, google, JarvisAccounts(secrets, DarwinPinnedHttp(), AppDispatchers.Default),
             com.edith.app.accounts.IosMicrosoftAccounts(microsoftClientId(), NSBundle.mainBundle.bundleIdentifier.orEmpty(), IosAuthSession(), secrets, clients.ktorSecure, AppDispatchers.Default, SystemClock),
-            com.edith.app.accounts.IosICloudAccounts(secrets, clients.ktorSecure, AppDispatchers.Default),
+            com.edith.app.accounts.IosICloudAccounts(secrets, clients.ktorSecure, com.edith.app.icloud.mail.NsStreamTransportFactory(), AppDispatchers.Default),
         )
     }
     // The tools that need no permission: the time, the weather in a named place, web search and reading a page. The reader refuses names
     // that resolve to a private address (publicHostAllowed; Android does it inside its DNS lookup). With the accounts, the calendar, email and to-do
     // tools: those that change something (create, send, complete, delete) wait for the owner's tap on a confirmation card, which the shared chat shows.
+    // The smart home (K4.9): the printer on the home Wi-Fi so far (Meross, Ring, Alexa and Blink register here as they move). The sign-in forms are on the More tab.
+    val printer = PrinterService(secrets, MoonrakerApi(clients.ktorPlain), SystemClock)
+    val alexa = AlexaService(secrets, AlexaApi(lazy { clients.alexaClient() }), SystemClock)
+    val ring = RingService(secrets, RingApi(clients.ktorSecure), SystemClock)   // no live view yet: that needs WebRTC on the iPhone
+    val blink = BlinkService(secrets, BlinkApi(lazy { clients.blinkClient() }), SystemClock)   // no live view yet: the stream server needs a TLS socket the iPhone does not have here
+    val meross = MerossService(secrets, MerossApi(clients.ktorSecure, SystemClock), MqttMerossBus(com.edith.app.icloud.mail.NsStreamTransportFactory(), AppDispatchers.Default, SystemClock), SystemClock)
+    val home by lazy {
+        Home(DataStoreHomePrefs(settings.store), RoomCommandLog(database.value.homeCommandDao()), container.appScope, SystemClock).also { it.register(printer); it.register(alexa); it.register(ring); it.register(blink); it.register(meross) }
+    }
     val registry by lazy {
         val calendarHandles = CalendarHandles(); val mailHandles = MailHandles(); val taskHandles = TaskHandles()
         val ranker = TaskRanker(container.ollama, RankStore("$dir/${RankStore.FILE_NAME}"), SystemClock)
@@ -117,15 +152,15 @@ fun createIosApp(): IosApp {
                 CurrentTimeTool(), WeatherTool(container.openMeteo, location), SearchWebTool(container.webSearch),
                 ReadWebPageTool(container.webSearch.pages(PageReader(lazy { clients.pageReaderClient() }, AppDispatchers.Default, hostAllowed = ::publicHostAllowed))),
             ) + calendarTools(accounts, calendarHandles, SystemClock::zone) + mailTools(accounts, mailHandles) +
-                taskTools(accounts, taskHandles, ranker, SystemClock) { settings.current() },
-            integrations = listOf(accounts),
+                taskTools(accounts, taskHandles, ranker, SystemClock) { settings.current() } + homeTools(home),
+            integrations = listOf(accounts, home),
         )
     }
     container = SharedContainer(
         PlatformServices(
             dispatchers = AppDispatchers.Default,
             clock = SystemClock,
-            database = lazy { EdithDatabase.open("$dir/edith.db") },
+            database = database,
             settings = settings,
             secrets = secrets,
             http = clients,
@@ -139,6 +174,11 @@ fun createIosApp(): IosApp {
         afterAttachments = { container.retention.apply() },
     )
     container.appScope.launch { accounts.load() }   // connects and quietly checks every saved account
+    container.appScope.launch { printer.load() }   // picks up a saved printer
+    container.appScope.launch { alexa.load() }   // picks up a saved Alexa sign-in
+    container.appScope.launch { ring.load() }   // picks up a saved Ring sign-in
+    container.appScope.launch { blink.load() }   // picks up a saved Blink sign-in
+    container.appScope.launch { meross.load() }   // picks up a saved Meross sign-in
     val speech = SpeechOutput(IosTtsEngine(), settings, container.appScope)
     // Replies are read aloud only while Read replies aloud is on, which it is not until the owner turns it on (the More tab).
     listeners += container.conversationTitler
@@ -158,7 +198,23 @@ fun createIosApp(): IosApp {
         scope = container.appScope,
         dispatchers = AppDispatchers.Default,
     )
-    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore, accounts, speech, voiceMemos, com.edith.app.attachments.IosAttachmentPlayer { speech.stop() }, com.edith.app.voice.capture.IosSpeechInput())
+    // Conversation mode (K4.11): the hands-free loop with a Talk button in place of the wake word (the iPhone has no wake-word engine yet).
+    val handsFree = HandsFree(
+        wake = TapWakeListener,
+        recognizer = com.edith.app.voice.capture.IosSpeechInput(),
+        engineState = container.chatEngine.state,
+        speaking = speech.speakingMessageId,
+        stopSpeaking = { speech.stop() },
+        cancelReply = { container.chatEngine.cancel() },
+        send = { text -> container.chatEngine.send(container.currentConversation.await(), text, MessageSource.HandsFree) },
+        earcon = { iosEarcon() },
+        settings = settings,
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
+        phrase = "Talk",
+        say = { speech.announce(it) },
+        wakeIsTap = true,
+    )
+    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore, accounts, home, speech, voiceMemos, com.edith.app.attachments.IosAttachmentPlayer { speech.stop() }, com.edith.app.voice.capture.IosSpeechInput(), handsFree)
 }
 
 /** The app's private folder for data, made on first use. */

@@ -14,7 +14,7 @@ import java.io.File
 class OkHttpGuardTest {
     private val androidHooks = setOf(
         "core/net/HttpClients.kt", "core/net/TaggedSocketFactory.kt", "di/AppContainer.kt",
-        "alexa/AlexaApi.kt", "blink/BlinkApi.kt", "icloud/ICloudAccounts.kt", "icloud/calendar/CalDavClient.kt",
+        "alexa/AlexaApi.kt", "blink/AndroidBlink.kt", "icloud/ICloudAccounts.kt", "icloud/calendar/CalDavClient.kt",
         "jarvis/JarvisAccounts.kt", "jarvis/OkHttpPinnedHttp.kt", "tools/web/PageReaderAndroid.kt",
     )
 
