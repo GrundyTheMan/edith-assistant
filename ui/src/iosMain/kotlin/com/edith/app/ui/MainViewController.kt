@@ -61,6 +61,7 @@ fun MainViewController(): UIViewController {
                         speech = app.speech,
                         features = ChatFeatures(attach = true, audioFiles = false, record = true),
                         voiceMemos = app.voiceMemos,
+                        attachmentPlayer = app.player,
                         intake = app.intake,
                         attachmentStore = app.attachments,
                         clock = app.container.clock,
