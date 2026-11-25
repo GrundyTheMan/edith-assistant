@@ -42,12 +42,14 @@ class IosAccounts(
     private val scope: CoroutineScope,
     val google: IosGoogleAccounts? = null,
     val jarvis: JarvisAccounts? = null,
+    val microsoft: IosMicrosoftAccounts? = null,
 ) : AccountsCore(store, scope) {
 
     override fun connectionFor(account: Account, accountOf: () -> Account): AccountConnection? = when (account.provider) {
         Provider.Google -> google?.connect(accountOf) { onGoogleSignIn(google.signInAgain(accountOf())) }
         Provider.Jarvis -> jarvis?.connect(accountOf)
-        Provider.Microsoft, Provider.ICloud -> null
+        Provider.Microsoft -> microsoft?.connect(accountOf) { onMicrosoftSignIn(microsoft.signInAgain(accountOf())) }
+        Provider.ICloud -> null
     }
 
     /** The paired Jarvis, if there is one. */
@@ -58,6 +60,13 @@ class IosAccounts(
         say(null)
         val g = google ?: return say(IosGoogleAccounts.NOT_SET_UP)
         onGoogleSignIn(g.signInNew())
+    }
+
+    /** Add account → Microsoft: the sign-in sheet with Microsoft's account picker. */
+    suspend fun addMicrosoft() {
+        say(null)
+        val m = microsoft ?: return say(IosMicrosoftAccounts.NOT_SET_UP)
+        onMicrosoftSignIn(m.signInNew())
     }
 
     /** Add account → Work (via Jarvis), step 1: finds the PC and its certificate, for the owner to compare. */
@@ -91,6 +100,19 @@ class IosAccounts(
             }
             GoogleSignIn.Result.Cancelled -> Unit
             is GoogleSignIn.Result.Failed -> say(r.message)
+        }
+    }
+
+    /** A Microsoft sign-in finished: the account it names is added, or signed in again. */
+    private suspend fun onMicrosoftSignIn(r: IosMicrosoftAccounts.Result) {
+        when (r) {
+            is IosMicrosoftAccounts.Result.SignedIn -> {
+                val account = upsert(Provider.Microsoft, r.address, null)
+                microsoft?.keep(account.id, r.grant)
+                startConnection(account.id)
+            }
+            IosMicrosoftAccounts.Result.Cancelled -> Unit
+            is IosMicrosoftAccounts.Result.Failed -> say(r.message)
         }
     }
 
