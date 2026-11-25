@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -14,6 +15,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,6 +62,9 @@ fun MainViewController(): UIViewController {
                 val homeVm = viewModel { com.edith.app.home.ui.HomeViewModel(app.home, app.container.clock) { app.accounts.jarvisConnection() != null } }
                 val printerVm = viewModel { com.edith.app.printer.ui.PrinterViewModel(app.printerSession, app.printerPrefs, app.container.clock) }
                 var showPrinter by rememberSaveable { mutableStateOf(false) }
+                val calendarVm = viewModel { com.edith.app.accounts.ui.CalendarViewModel(app.accounts, app.accounts.accounts, app.accounts.loaded, app.container.clock) }
+                // The To-do view loads only once it is picked, so its view model is made then.
+                val todoVm: @Composable () -> com.edith.app.accounts.ui.TodoViewModel = { viewModel { com.edith.app.accounts.ui.TodoViewModel(app.accounts, app.accounts.accounts, app.accounts.tasksAccess, app.accounts.loaded, app.container.clock, grant = { id, a, show -> app.accounts.grantTasks(id, a, show) }, consentResult = { app.accounts.onConsentResult(it) }, appScope = app.container.appScope) } }
                 val vm = viewModel {
                     ChatViewModel(
                         repo = app.container.chatRepository,
@@ -84,13 +89,21 @@ fun MainViewController(): UIViewController {
                         NavigationBar {
                             NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null) }, label = { Text("Chat") })
                             NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Icon(Icons.Filled.Home, contentDescription = null) }, label = { Text("Home") })
-                            NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Icon(Icons.Filled.Settings, contentDescription = null) }, label = { Text("Setup") })
-                            NavigationBarItem(selected = tab == 3, onClick = { tab = 3 }, icon = { Icon(Icons.Filled.AccountCircle, contentDescription = null) }, label = { Text("More") })
+                            NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Icon(Icons.Filled.CalendarMonth, contentDescription = null) }, label = { Text("Calendar") })
+                            NavigationBarItem(selected = tab == 3, onClick = { tab = 3 }, icon = { Icon(Icons.Filled.Settings, contentDescription = null) }, label = { Text("Setup") })
+                            NavigationBarItem(selected = tab == 4, onClick = { tab = 4 }, icon = { Icon(Icons.Filled.AccountCircle, contentDescription = null) }, label = { Text("More") })
                         }
                     },
                 ) { padding ->
                     Box(Modifier.padding(padding)) {
-                        when (tab) { 0 -> SimpleChatScreen(vm, photoPicker, microphone, audioPicker); 1 -> if (showPrinter) IosPrinterScreen(printerVm, onBack = { showPrinter = false }, openPairing = { showPrinter = false; tab = 3 }) else IosHomeScreen(homeVm, openMore = { tab = 3 }, openPrinter = { showPrinter = true }); 2 -> EngineCheckScreen(check); else -> AccountsScreen(app.accounts, app.settings, app.home) }
+                        when (tab) {
+                            0 -> SimpleChatScreen(vm, photoPicker, microphone, audioPicker)
+                            1 -> if (showPrinter) IosPrinterScreen(printerVm, onBack = { showPrinter = false }, openPairing = { showPrinter = false; tab = 4 })
+                                else IosHomeScreen(homeVm, openMore = { tab = 4 }, openPrinter = { showPrinter = true })
+                            2 -> IosCalendarScreen(calendarVm, { todoVm() }, openMore = { tab = 4 })
+                            3 -> EngineCheckScreen(check)
+                            else -> AccountsScreen(app.accounts, app.settings, app.home)
+                        }
                     }
                 }
             }
