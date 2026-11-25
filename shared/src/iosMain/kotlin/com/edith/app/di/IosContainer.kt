@@ -34,10 +34,18 @@ import com.edith.app.core.secrets.IosSecretStore
 import com.edith.app.core.secrets.SecretStore
 import com.edith.app.core.time.SystemClock
 import com.edith.app.data.db.EdithDatabase
+import com.edith.app.data.db.MessageSource
 import com.edith.app.data.db.open
 import com.edith.app.settings.DataStoreSettingsRepository
 import com.edith.app.settings.SettingsRepository
+import com.edith.app.settings.Settings
 import com.edith.app.tools.context.CurrentTimeTool
+import com.edith.app.voice.capture.IosRecorder
+import com.edith.app.voice.capture.NoSpeechInput
+import com.edith.app.voice.capture.OllamaTranscriber
+import com.edith.app.voice.capture.VoiceMemos
+import com.edith.app.voice.speech.IosTtsEngine
+import com.edith.app.voice.speech.SpeechOutput
 import com.edith.app.tools.weather.WeatherTool
 import com.edith.app.tools.web.PageReader
 import com.edith.app.tools.web.ReadWebPageTool
@@ -65,6 +73,14 @@ class IosApp(
     val attachments: AttachmentFiles,
     /** The connected accounts (K4.6): Google through the sign-in sheet, and the work account through Jarvis. */
     val accounts: IosAccounts,
+    /** Edith's voice (K4.3): the Play button on a message speaks through it. Not a reply listener yet: nothing reads replies aloud by itself until there is a setting for it. */
+    val speech: SpeechOutput,
+    /** Voice memos (K4.3): record, have the model transcribe, send as the owner's message. */
+    val voiceMemos: VoiceMemos,
+    /** Plays an audio attachment from its bubble (K4.3). */
+    val player: com.edith.app.attachments.AttachmentPlayer,
+    /** Dictation into the text field (K4.3): Apple speech recognition. Not the voice memos path, which records and lets the model transcribe. */
+    val dictation: com.edith.app.voice.capture.SpeechInput,
 )
 
 /**
@@ -75,7 +91,7 @@ class IosApp(
 fun createIosApp(): IosApp {
     val dir = applicationSupportDir()
     val secrets = IosSecretStore()
-    val settings = DataStoreSettingsRepository(PreferenceDataStoreFactory.createWithPath { "$dir/settings.preferences_pb".toPath() })
+    val settings = DataStoreSettingsRepository(PreferenceDataStoreFactory.createWithPath { "$dir/settings.preferences_pb".toPath() }, defaults = Settings(speakReplies = false))
     val listeners = mutableListOf<ReplyListener>()
     val clients = DarwinKtorClients()
     val attachmentStore = PathAttachmentStore("$dir/files", "$dir/cache")
@@ -119,11 +135,30 @@ fun createIosApp(): IosApp {
             localNetwork = object : LocalNetworkAccess { override fun isGranted() = true },   // iOS asks itself, at the first local connection
         ),
         toolRegistry = { registry },
-        replyListeners = { listeners.also { if (it.isEmpty()) it += container.conversationTitler } },
+        replyListeners = { listeners },
         afterAttachments = { container.retention.apply() },
     )
     container.appScope.launch { accounts.load() }   // connects and quietly checks every saved account
-    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore, accounts)
+    val speech = SpeechOutput(IosTtsEngine(), settings, container.appScope)
+    // Replies are read aloud only while Read replies aloud is on, which it is not until the owner turns it on (the More tab).
+    listeners += container.conversationTitler
+    listeners += speech
+    val voiceMemos = VoiceMemos(
+        recorder = IosRecorder("$dir/recordings"),
+        transcriber = OllamaTranscriber(container.ollama, settings, AppDispatchers.Default),
+        liveSpeech = NoSpeechInput,
+        modelHears = {
+            // Unknown (server unreachable, no model): try the model; its error is clearer than a fallback.
+            val s = settings.current()
+            val caps = s.model?.let { container.modelCatalog.capabilities(s.serverUrl, it) }
+            caps !is Outcome.Success || "audio" in caps.value
+        },
+        send = { id, text -> container.chatEngine.send(id, text, MessageSource.VoiceMemo) },
+        stopSpeaking = { speech.stop() },
+        scope = container.appScope,
+        dispatchers = AppDispatchers.Default,
+    )
+    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore, accounts, speech, voiceMemos, com.edith.app.attachments.IosAttachmentPlayer { speech.stop() }, com.edith.app.voice.capture.IosSpeechInput())
 }
 
 /** No location yet (K4.2 adds Core Location): the weather tool is not offered, so this is never asked. */
