@@ -45,6 +45,9 @@ import com.edith.app.alexa.AlexaApi
 import com.edith.app.alexa.AlexaService
 import com.edith.app.blink.BlinkApi
 import com.edith.app.blink.BlinkService
+import com.edith.app.meross.MerossApi
+import com.edith.app.meross.MerossService
+import com.edith.app.meross.MqttMerossBus
 import com.edith.app.ring.RingApi
 import com.edith.app.ring.RingService
 import com.edith.app.home.DataStoreHomePrefs
@@ -137,8 +140,9 @@ fun createIosApp(): IosApp {
     val alexa = AlexaService(secrets, AlexaApi(lazy { clients.alexaClient() }), SystemClock)
     val ring = RingService(secrets, RingApi(clients.ktorSecure), SystemClock)   // no live view yet: that needs WebRTC on the iPhone
     val blink = BlinkService(secrets, BlinkApi(lazy { clients.blinkClient() }), SystemClock)   // no live view yet: the stream server needs a TLS socket the iPhone does not have here
+    val meross = MerossService(secrets, MerossApi(clients.ktorSecure, SystemClock), MqttMerossBus(com.edith.app.icloud.mail.NsStreamTransportFactory(), AppDispatchers.Default, SystemClock), SystemClock)
     val home by lazy {
-        Home(DataStoreHomePrefs(settings.store), RoomCommandLog(database.value.homeCommandDao()), container.appScope, SystemClock).also { it.register(printer); it.register(alexa); it.register(ring); it.register(blink) }
+        Home(DataStoreHomePrefs(settings.store), RoomCommandLog(database.value.homeCommandDao()), container.appScope, SystemClock).also { it.register(printer); it.register(alexa); it.register(ring); it.register(blink); it.register(meross) }
     }
     val registry by lazy {
         val calendarHandles = CalendarHandles(); val mailHandles = MailHandles(); val taskHandles = TaskHandles()
@@ -174,6 +178,7 @@ fun createIosApp(): IosApp {
     container.appScope.launch { alexa.load() }   // picks up a saved Alexa sign-in
     container.appScope.launch { ring.load() }   // picks up a saved Ring sign-in
     container.appScope.launch { blink.load() }   // picks up a saved Blink sign-in
+    container.appScope.launch { meross.load() }   // picks up a saved Meross sign-in
     val speech = SpeechOutput(IosTtsEngine(), settings, container.appScope)
     // Replies are read aloud only while Read replies aloud is on, which it is not until the owner turns it on (the More tab).
     listeners += container.conversationTitler

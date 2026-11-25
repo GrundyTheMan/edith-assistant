@@ -32,7 +32,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import java.util.UUID
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * Meross garage door openers (C26, D10): the owner's Meross account, signed in with an email and password that are
@@ -40,6 +41,7 @@ import java.util.UUID
  * ([SecretStore] `home/meross`). Devices come from Meross's HTTP list, their state and commands go over its MQTT
  * ([MerossBus]). A token Meross no longer accepts turns the service to [ServiceState.NeedsSignIn]: "Sign in again".
  */
+@OptIn(ExperimentalUuidApi::class)
 class MerossService(
     private val secrets: SecretStore,
     private val api: MerossApi,
@@ -52,7 +54,7 @@ class MerossService(
     override val state: StateFlow<ServiceState> = _state.asStateFlow()
     private val _connected = MutableStateFlow(IntegrationStatus.NotConnected)
 
-    @Volatile private var creds: MerossCreds? = null
+    @kotlin.concurrent.Volatile private var creds: MerossCreds? = null
 
     override val backend: HomeBackend = Backend()
 
@@ -84,7 +86,7 @@ class MerossService(
         val password = values["password"].orEmpty()
         val code = values["code"]?.trim()?.takeIf { it.isNotEmpty() }
         if (email.isEmpty() || password.isEmpty()) return SignInResult.Failed("Type your Meross email and password.")
-        val install = creds?.installId ?: UUID.randomUUID().toString().uppercase()
+        val install = creds?.installId ?: Uuid.random().toString().uppercase()
         return when (val r = api.login(email, password, code, install)) {
             is MerossLogin.Ok -> {
                 val old = creds
