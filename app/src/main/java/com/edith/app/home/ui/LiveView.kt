@@ -98,15 +98,6 @@ internal class FeedDataSource(private val feed: StreamLiveFeed, private val rece
     }
 }
 
-/** What the Live dialog shows: the camera's name, and the feed once the service has one (or why it couldn't). */
-data class LiveUi(
-    val name: String,
-    val feed: LiveFeed? = null,
-    val error: String? = null,
-    /** Why the view ended on its own (Blink's limit, the camera going quiet). */
-    val endedBecause: String? = null,
-)
-
 private val DIALOG_PICTURE_HEIGHT = 220.dp
 
 /** How long a picture may take to appear before the player is retried or the viewer is told. */
@@ -123,7 +114,10 @@ private const val CAMERA_WAIT_MS = 10_000L
 fun LiveDialog(live: LiveUi, onClose: () -> Unit) {
     // Saved, so a rotation (which recreates the screen) keeps full screen. It ends if the view ends: the small dialog says why.
     var full by rememberSaveable { mutableStateOf(false) }
-    val playing = live.feed != null && live.error == null && live.endedBecause == null
+    val error = live.error
+    val ended = live.endedBecause
+    val feed = live.feed
+    val playing = feed != null && error == null && ended == null
     if (full && playing) {
         LiveFullScreen(live, onExit = { full = false }, onClose = onClose)
         return
@@ -134,11 +128,11 @@ fun LiveDialog(live: LiveUi, onClose: () -> Unit) {
         text = {
             Column {
                 when {
-                    live.error != null -> Text(live.error)
-                    live.endedBecause != null -> Text(live.endedBecause)
-                    live.feed == null -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                    live.feed is StreamLiveFeed -> LivePlayer(live.feed, Modifier.fillMaxWidth().height(DIALOG_PICTURE_HEIGHT))
-                    live.feed is TrackLiveFeed -> RtcPlayer(live.feed, Modifier.fillMaxWidth().height(DIALOG_PICTURE_HEIGHT))
+                    error != null -> Text(error)
+                    ended != null -> Text(ended)
+                    feed == null -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                    feed is StreamLiveFeed -> LivePlayer(feed, Modifier.fillMaxWidth().height(DIALOG_PICTURE_HEIGHT))
+                    feed is TrackLiveFeed -> RtcPlayer(feed, Modifier.fillMaxWidth().height(DIALOG_PICTURE_HEIGHT))
                     else -> Text("This camera has no picture to show.")
                 }
                 Text(

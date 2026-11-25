@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.edith.app.core.error.Outcome
 import com.edith.app.core.time.Clock
-import com.edith.app.di.viewModelFactory
 import com.edith.app.home.Approval
 import com.edith.app.home.Capability
 import com.edith.app.home.CommandSource
@@ -335,6 +334,5 @@ class HomeViewModel(private val home: Home, private val clock: Clock, private va
         const val CLIPS_MAX_DAYS = 60L
         const val CLIPS_WINDOWS_PER_LOAD = 4
         private const val DAY_MS = 86_400_000L
-        val Factory = viewModelFactory { c, _ -> HomeViewModel(c.home, c.clock) { c.accounts.jarvisConnection() != null } }
     }
 }

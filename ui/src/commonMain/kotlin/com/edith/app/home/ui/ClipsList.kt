@@ -1,6 +1,5 @@
 package com.edith.app.home.ui
 
-import android.view.ViewGroup
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,28 +21,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.DefaultRenderersFactory
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
-import androidx.media3.ui.PlayerView
 import com.edith.app.home.DeviceClip
 import com.edith.app.core.time.formatPattern
 import kotlinx.datetime.DateTimeUnit
@@ -51,14 +37,13 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.minus
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
-import java.util.Locale
 
 /** The words for a clip's row: "Front Door · A person · 0:23". */
-internal fun clipTitle(c: DeviceClip): String =
-    listOfNotNull(c.deviceName, c.kind.label, c.seconds?.let { "%d:%02d".format(Locale.US, it / 60, it % 60) }).joinToString(" · ")
+fun clipTitle(c: DeviceClip): String =
+    listOfNotNull(c.deviceName, c.kind.label, c.seconds?.let { "${it / 60}:${(it % 60).toString().padStart(2, '0')}" }).joinToString(" · ")
 
 /** "Today 3:42 PM", "Yesterday 9:05 AM", or "Tue 11 Nov, 6:30 PM". */
-internal fun clipWhen(at: Long, now: Long, zone: TimeZone = TimeZone.currentSystemDefault()): String {
+fun clipWhen(at: Long, now: Long, zone: TimeZone = TimeZone.currentSystemDefault()): String {
     val moment = Instant.fromEpochMilliseconds(at)
     val today = Instant.fromEpochMilliseconds(now).toLocalDateTime(zone).date
     val clock = formatPattern(moment, zone, "h:mm a", "en-US")
@@ -70,7 +55,7 @@ internal fun clipWhen(at: Long, now: Long, zone: TimeZone = TimeZone.currentSyst
 }
 
 /** What to say when there are no clips to list. */
-internal fun clipsEmptyText(c: ClipsUi): String = when {
+fun clipsEmptyText(c: ClipsUi): String = when {
     c.noPlan -> "Ring keeps recordings only with a Ring Protect plan, and this account doesn't have one, so there are no clips to show."
     c.problems.isNotEmpty() -> c.problems.joinToString(" ")
     else -> "No clips in the last 60 days."
@@ -78,7 +63,7 @@ internal fun clipsEmptyText(c: ClipsUi): String = when {
 
 /** The clips of the doorbells and cameras, newest first, older ones as the list is scrolled (C27). */
 @Composable
-fun ClipsDialog(ui: ClipsUi, now: Long, a: HomeTabActions) {
+fun ClipsDialog(ui: ClipsUi, now: Long, a: HomeTabActions, clipPlayer: @Composable (String, Map<String, String>) -> Unit = { _, _ -> androidx.compose.material3.Text("Clips can't be played on this phone yet.") }) {
     Dialog(onDismissRequest = a.closeClips, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize()) {
@@ -113,12 +98,12 @@ fun ClipsDialog(ui: ClipsUi, now: Long, a: HomeTabActions) {
             }
         }
     }
-    ui.playing?.let { clip -> ClipPlayerDialog(clip, ui, a.closePlayer) }
+    ui.playing?.let { clip -> ClipPlayerDialog(clip, ui, a.closePlayer, clipPlayer) }
 }
 
-/** Plays one clip with Media3's ExoPlayer, streaming from the address the service just gave (they expire). */
+/** The clip's dialog: a spinner until the service gives an address (they expire), then the platform's player. */
 @Composable
-private fun ClipPlayerDialog(clip: DeviceClip, ui: ClipsUi, onClose: () -> Unit) {
+private fun ClipPlayerDialog(clip: DeviceClip, ui: ClipsUi, onClose: () -> Unit, clipPlayer: @Composable (String, Map<String, String>) -> Unit) {
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text(clipTitle(clip), style = MaterialTheme.typography.titleMedium) },
@@ -126,68 +111,10 @@ private fun ClipPlayerDialog(clip: DeviceClip, ui: ClipsUi, onClose: () -> Unit)
             when {
                 ui.playError != null -> Text(ui.playError)
                 ui.playUrl == null -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                else -> ClipPlayer(ui.playUrl, ui.playHeaders)
+                else -> clipPlayer(ui.playUrl, ui.playHeaders)
             }
         },
         confirmButton = { TextButton(onClick = onClose) { Text("Close") } },
     )
 }
 
-/**
- * Decoders with software ones first. Some phones' hardware video decoders start and then fail on a stream
- * (`ERROR_CODE_DECODING_FAILED`); the player then tries once more with these (found on the emulator, whose
- * `c2.goldfish.h264.decoder` failed on a plain H.264 file).
- */
-@androidx.annotation.OptIn(UnstableApi::class)
-internal fun softwareFirst() = MediaCodecSelector { mimeType, secure, tunneling ->
-    MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, secure, tunneling).sortedBy { if (it.softwareOnly) 0 else 1 }
-}
-
-internal val DECODER_ERRORS = setOf(
-    PlaybackException.ERROR_CODE_DECODING_FAILED, PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
-    PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED, PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
-)
-
-@Composable
-@androidx.annotation.OptIn(UnstableApi::class)
-private fun ClipPlayer(url: String, headers: Map<String, String>) {
-    val context = LocalContext.current
-    val failure = remember(url) { androidx.compose.runtime.mutableStateOf<String?>(null) }
-    // Set after a decoder error: the player is built again, once, with software decoders first.
-    val software = remember(url) { androidx.compose.runtime.mutableStateOf(false) }
-    val player = remember(url, software.value) {
-        val factory = DefaultRenderersFactory(context).apply { if (software.value) setMediaCodecSelector(softwareFirst()) }
-        ExoPlayer.Builder(context, factory).setMediaSourceFactory(DefaultMediaSourceFactory(DefaultHttpDataSource.Factory().setDefaultRequestProperties(headers))).build().apply {
-            setMediaItem(MediaItem.fromUri(url))
-            addListener(object : Player.Listener {
-                override fun onPlayerError(error: PlaybackException) {
-                    if (!software.value && error.errorCode in DECODER_ERRORS) {
-                        com.edith.app.core.log.Log.w(com.edith.app.core.log.LogTag.Home, "A clip's decoder failed (${error.errorCodeName}); trying a software decoder")
-                        software.value = true
-                    } else {
-                        com.edith.app.core.log.Log.w(com.edith.app.core.log.LogTag.Home, "A clip couldn't be played (${error.errorCodeName})")
-                        failure.value = "This phone couldn't play the clip (${error.errorCodeName})."
-                    }
-                }
-            })
-            prepare()
-            playWhenReady = true
-        }
-    }
-    DisposableEffect(player) { onDispose { player.release() } }   // never left playing behind a closed dialog
-    failure.value?.let { Text(it); return }
-    AndroidView(
-        factory = { c ->
-            PlayerView(c).apply {
-                this.player = player
-                layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                // Play/pause and the seek bar stay on screen; by default they appear only after a tap and fade after 5 s.
-                controllerShowTimeoutMs = 0
-                controllerHideOnTouch = false
-                showController()
-            }
-        },
-        update = { it.player = player },
-        modifier = Modifier.fillMaxWidth().height(220.dp),
-    )
-}
