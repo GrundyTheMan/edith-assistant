@@ -16,7 +16,7 @@ import com.edith.app.accounts.sources.OutgoingMail
 import com.edith.app.core.error.Outcome
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
-import com.edith.app.google.gmail.MailText
+import com.edith.app.accounts.sources.MailBody
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
@@ -255,7 +255,7 @@ class OutlookMailSource(
             mapOf("Prefer" to "outlook.body-content-type=\"text\""),
         ) { body ->
             val dto = graphJson.decodeFromString<MessageDto>(body)
-            MailMessage(dto.summary(), dto.ccRecipients.joinToString(", ") { it.text() }.ifBlank { null }, MailText.clean(dto.body?.content.orEmpty()))
+            MailMessage(dto.summary(), dto.ccRecipients.joinToString(", ") { it.text() }.ifBlank { null }, MailBody.clean(dto.body?.content.orEmpty()))
         }
 
     override suspend fun draft(m: OutgoingMail): Outcome<Unit> = when (val r = makeDraft(m)) {

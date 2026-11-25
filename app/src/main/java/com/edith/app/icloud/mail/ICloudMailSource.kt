@@ -13,7 +13,7 @@ import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
-import com.edith.app.google.gmail.MailText
+import com.edith.app.accounts.sources.MailBody
 import jakarta.mail.AuthenticationFailedException
 import jakarta.mail.FetchProfile
 import jakarta.mail.Flags
@@ -103,7 +103,7 @@ class ICloudMailSource(
         if (folder.uidValidity != validity) throw ICloudMailException(LIST_AGAIN)
         val m = folder.getMessageByUID(uid) ?: throw ICloudMailException("That email isn't there any more.")
         val cc = (m.getRecipients(Message.RecipientType.CC) ?: emptyArray()).joinToString(", ") { it.toString() }.ifBlank { null }
-        MailMessage(summary(inbox, validity, m), cc, MailText.clean(text(m)))
+        MailMessage(summary(inbox, validity, m), cc, MailBody.clean(text(m)))
     }
 
     /** `APPEND` to the folder flagged `\Drafts` (by SPECIAL-USE, never by name), marked `\Draft`. */
@@ -239,7 +239,7 @@ class ICloudMailSource(
             val multi = part.content as? Multipart ?: return null
             return (0 until multi.count).firstNotNullOfOrNull { find(multi.getBodyPart(it), mime) }
         }
-        return find(p, "text/plain") ?: find(p, "text/html")?.let(MailText::htmlToText) ?: ""
+        return find(p, "text/plain") ?: find(p, "text/html")?.let(MailBody::htmlToText) ?: ""
     }
 
     /** RFC 2822 with RFC 2047 headers; CR/LF never reach a header (no header injection). */

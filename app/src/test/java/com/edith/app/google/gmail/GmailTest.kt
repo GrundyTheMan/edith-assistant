@@ -271,7 +271,7 @@ class GmailTest {
         assertEquals(2, write.size)
         write.forEach { t -> assertTrue(t.spec.name, t.confirmation(args(t, "to" to "a@b.c", "subject" to "s", "body" to "b")) != null) }
         // The only way to Gmail's send endpoint is SendEmailTool's, behind its confirmation (D5).
-        val sources = File("src/main/java/com/edith/app").walkTopDown().filter { it.extension == "kt" }.toList()
+        val sources = listOf("src/main/java/com/edith/app", "../shared/src/commonMain/kotlin/com/edith/app").flatMap { File(it).walkTopDown().filter { f -> f.extension == "kt" }.toList() }
         assertEquals("Gmail's send: only GmailSource", listOf("GoogleSources.kt"), sources.filter { it.readText().contains("client.send(") }.map { it.name })
         assertEquals("a source's send: only the tools", listOf("MailTools.kt"), sources.filter { it.readText().contains("source.send(") }.map { it.name })
     }
