@@ -27,8 +27,8 @@ targets:
         NSMicrophoneUsageDescription: Edith listens when you tap the record button, to turn what you say into a message.
         NSSpeechRecognitionUsageDescription: Edith turns what you say into text in the message box, on your phone when your language allows it.
         NSLocalNetworkUsageDescription: Edith talks to the model on your PC over your home network.
-        EdithGoogleClientId: ""   # Google's iOS client ID (docs/google-setup.md); empty: Google sign-in says it is not set up
-        EdithMicrosoftClientId: ""   # Edith's Microsoft app registration (docs/microsoft-setup.md, with the iOS platform and this bundle id); empty: Microsoft sign-in says it is not set up
+        EdithGoogleClientId: "158291874134-m9dqa46o72rg2a38352984p7ucsnbd3e.apps.googleusercontent.com"   # Google's iOS client ID (docs/google-setup.md); empty: Google sign-in says it is not set up
+        EdithMicrosoftClientId: "93dc844d-f90a-481f-b5c3-12f3e03db45e"   # Edith's Microsoft app registration (docs/microsoft-setup.md, with the iOS platform and this bundle id); empty: Microsoft sign-in says it is not set up
         NSAppTransportSecurity:
           # Found on a real iPhone in Phase 0: a Tailscale address (100.x) is not a "local network" to iOS, so plain-HTTP Ollama was blocked (error -1022).
           # NSAllowsArbitraryLoads must stand alone: with NSAllowsLocalNetworking also set, iOS ignores it. Decision D49 will tighten this before release.
