@@ -129,4 +129,10 @@ data class ConversationItem(
 
 /** Input-row buttons later chunks switch on (C07 §6): attach (C15), record and dictation (C12). */
 @Immutable
-data class ChatFeatures(val attach: Boolean = false, val record: Boolean = false, val dictation: Boolean = false)
+data class ChatFeatures(
+    val attach: Boolean = false,
+    val record: Boolean = false,
+    val dictation: Boolean = false,
+    /** False where audio files can't be attached yet (the iPhone, K4.3): the paperclip then goes straight to the photo picker. */
+    val audioFiles: Boolean = true,
+)

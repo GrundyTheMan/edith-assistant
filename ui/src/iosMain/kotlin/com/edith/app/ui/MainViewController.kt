@@ -23,6 +23,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.edith.app.chat.ui.ChatFeatures
 import com.edith.app.chat.ui.ChatViewModel
+import com.edith.app.chat.ui.IosPhotoPicker
 import com.edith.app.chat.ui.SimpleChatScreen
 import com.edith.app.di.createIosApp
 import com.edith.app.diagnostics.EngineCheck
@@ -36,15 +37,17 @@ import platform.UIKit.UIViewController
  * The iPhone's entry (K4.1, K4.2): the shared screens inside a view controller that the SwiftUI shell in `iosApp/` shows. It builds the shared
  * engine once per launch from Apple's own parts (Keychain, Darwin, files), does what Android's container does at startup (clears leftovers,
  * opens the database, picks the open chat), and shows two tabs: the chat, and the setup page with the engine check where the Ollama address is typed.
- * Chat has no attachments, voice or tools beyond the time yet.
+ * Chat has photo attachments (K4.3); voice and audio files come later.
  */
 fun MainViewController(): UIViewController {
     val app = createIosApp()
     val check = EngineCheck(app.container, app.secrets, app.settings)
+    app.intake.clearLeftovers()
     app.container.appScope.launch {
         app.container.retention.onStart()
         app.container.currentConversation.resolve()
     }
+    val photoPicker = IosPhotoPicker()
     return ComposeUIViewController {
         EdithTheme {
             Surface {
@@ -55,7 +58,9 @@ fun MainViewController(): UIViewController {
                         engine = app.container.chatEngine,
                         current = app.container.currentConversation,
                         speech = SilentSpeechController,
-                        features = ChatFeatures(),
+                        features = ChatFeatures(attach = true, audioFiles = false),
+                        intake = app.intake,
+                        attachmentStore = app.attachments,
                         clock = app.container.clock,
                         toolLabel = app.registry::displayName,
                         savedState = SavedStateHandle(),
@@ -71,7 +76,7 @@ fun MainViewController(): UIViewController {
                     },
                 ) { padding ->
                     Box(Modifier.padding(padding)) {
-                        if (tab == 0) SimpleChatScreen(vm) else EngineCheckScreen(check)
+                        if (tab == 0) SimpleChatScreen(vm, photoPicker) else EngineCheckScreen(check)
                     }
                 }
             }
