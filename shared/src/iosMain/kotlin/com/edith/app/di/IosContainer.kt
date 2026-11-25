@@ -29,7 +29,7 @@ import com.edith.app.tools.web.SearchWebTool
 import com.edith.app.tools.web.publicHostAllowed
 import com.edith.app.tools.framework.ToolRegistry
 import com.edith.app.tools.location.Coordinates
-import com.edith.app.tools.location.LocationProvider
+import com.edith.app.tools.location.IosLocationProvider
 import kotlinx.cinterop.ExperimentalForeignApi
 import okio.Path.Companion.toPath
 import platform.Foundation.NSApplicationSupportDirectory
@@ -52,7 +52,7 @@ class IosApp(
 /**
  * Builds the shared engine for the iPhone from Apple's own parts (K4.1; plan §4.2): the Keychain for secrets, the Darwin engine for HTTP, the
  * database, settings and attachments as files under Application Support (kept by the system and backed up, not shown in the Files app).
- * Call once per launch. Tools so far: the time, the weather in a named place ("here" needs Core Location, not built yet), web search and reading a page; the others join as their services move (K2.5 to K2.8).
+ * Call once per launch. Tools so far: the time, the weather in a named place or "here" (Core Location), web search and reading a page; the others join as their services move (K2.5 to K2.8).
  */
 fun createIosApp(): IosApp {
     val dir = applicationSupportDir()
@@ -60,11 +60,12 @@ fun createIosApp(): IosApp {
     val settings = DataStoreSettingsRepository(PreferenceDataStoreFactory.createWithPath { "$dir/settings.preferences_pb".toPath() })
     val listeners = mutableListOf<ReplyListener>()
     val clients = DarwinKtorClients()
+    val location = IosLocationProvider()
     val attachmentStore = PathAttachmentStore("$dir/files", "$dir/cache")
     lateinit var container: SharedContainer
     // The tools that need no permission and no account: the time, the weather in a named place, web search and reading a page. The reader refuses names
     // that resolve to a private address (publicHostAllowed; Android does it inside its DNS lookup).
-    val registry by lazy { ToolRegistry(listOf(CurrentTimeTool(), WeatherTool(container.openMeteo, NoLocation), SearchWebTool(container.webSearch), ReadWebPageTool(container.webSearch.pages(PageReader(lazy { clients.pageReaderClient() }, AppDispatchers.Default, hostAllowed = ::publicHostAllowed))))) }
+    val registry by lazy { ToolRegistry(listOf(CurrentTimeTool(), WeatherTool(container.openMeteo, location), SearchWebTool(container.webSearch), ReadWebPageTool(container.webSearch.pages(PageReader(lazy { clients.pageReaderClient() }, AppDispatchers.Default, hostAllowed = ::publicHostAllowed))))) }
     container = SharedContainer(
         PlatformServices(
             dispatchers = AppDispatchers.Default,
@@ -74,7 +75,7 @@ fun createIosApp(): IosApp {
             secrets = secrets,
             http = clients,
             attachments = attachmentStore,
-            location = NoLocation,
+            location = location,
             toolPermissions = ToolPermissions { true },
             localNetwork = object : LocalNetworkAccess { override fun isGranted() = true },   // iOS asks itself, at the first local connection
         ),
@@ -83,12 +84,6 @@ fun createIosApp(): IosApp {
         afterAttachments = { container.retention.apply() },
     )
     return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore)
-}
-
-/** No location yet (K4.2 adds Core Location): the weather tool is not offered, so this is never asked. */
-private object NoLocation : LocationProvider {
-    override suspend fun current(): Outcome<Coordinates> = Outcome.Failure(AppError.PermissionDenied("location"))
-    override suspend fun placeName(at: Coordinates): String? = null
 }
 
 /** The app's private folder for data, made on first use. */
