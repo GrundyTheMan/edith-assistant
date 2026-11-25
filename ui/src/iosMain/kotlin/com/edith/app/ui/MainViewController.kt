@@ -28,7 +28,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.edith.app.chat.ui.ChatFeatures
 import com.edith.app.chat.ui.ChatViewModel
 import com.edith.app.chat.ui.IosMicrophoneAccess
-import com.edith.app.chat.ui.IosAudioPicker
+import com.edith.app.chat.ui.IosFilePicker
 import com.edith.app.chat.ui.IosPhotoPicker
 import com.edith.app.chat.ui.SimpleChatScreen
 import com.edith.app.di.createIosApp
@@ -53,7 +53,7 @@ fun MainViewController(): UIViewController {
         app.container.currentConversation.resolve()
     }
     val photoPicker = IosPhotoPicker()
-    val audioPicker = IosAudioPicker()
+    val audioPicker = IosFilePicker()
     val microphone = IosMicrophoneAccess()
     return ComposeUIViewController {
         EdithTheme {
