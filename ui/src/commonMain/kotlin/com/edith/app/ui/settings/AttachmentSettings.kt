@@ -22,14 +22,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.edith.app.attachments.Retention
-import com.edith.app.di.viewModelFactory
 import com.edith.app.settings.SettingsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.util.Locale
 import kotlin.math.roundToInt
 
 /** What Settings shows for attachments. */
@@ -97,7 +95,6 @@ class AttachmentSettingsViewModel(private val settings: SettingsRepository, priv
 
     companion object {
         const val MAX = 50
-        val Factory = viewModelFactory { c, _ -> AttachmentSettingsViewModel(c.settingsRepository, c.retention) }
     }
 }
 
@@ -165,7 +162,7 @@ fun AttachmentsContent(
 /** "12 files, 8.4 MB". */
 fun usageLine(u: Retention.Usage): String {
     val size = when {
-        u.bytes >= 1_000_000 -> String.format(Locale.US, "%.1f MB", u.bytes / 1_000_000.0)
+        u.bytes >= 1_000_000 -> com.edith.app.core.locale.formatDecimal(u.bytes / 1_000_000.0, 1, "en-US") + " MB"
         u.bytes >= 1_000 -> "${u.bytes / 1_000} KB"
         else -> "${u.bytes} B"
     }

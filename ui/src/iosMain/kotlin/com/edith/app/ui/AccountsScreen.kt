@@ -33,26 +33,18 @@ import androidx.compose.material3.Switch
 import kotlinx.coroutines.launch
 
 /**
- * The iPhone's accounts page (K4.6): the connected accounts and what state each is in, adding Google through the system's sign-in sheet, and pairing the
+ * The iPhone's accounts, as a part of Settings (K4.6, K3.6): the connected accounts and what state each is in, adding Google through the system's sign-in sheet, and pairing the
  * work account with Jarvis on the PC (find the PC, compare the fingerprint with the one Jarvis shows, type its code). Plain on purpose: it is
  * how the sign-in seams get used before a designed Settings exists.
  */
 @Composable
-fun AccountsScreen(accounts: IosAccounts, settings: SettingsRepository, home: com.edith.app.home.Home) {
+fun AccountsSections(accounts: IosAccounts, home: com.edith.app.home.Home) {
     val scope = rememberCoroutineScope()
     val list by accounts.accounts.collectAsState()
     val message by accounts.message.collectAsState()
     var busy by remember { mutableStateOf(false) }
 
-    Column(Modifier.statusBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("More", style = MaterialTheme.typography.headlineSmall)
-        val current by settings.settings.collectAsState(initial = null)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Read replies aloud")
-            Switch(checked = current?.speakReplies == true, onCheckedChange = { on -> scope.launch { settings.update { it.copy(speakReplies = on) } } })
-        }
-        HorizontalDivider()
-        Text("Accounts", style = MaterialTheme.typography.titleLarge)
+    Text("Accounts", style = MaterialTheme.typography.titleMedium)
         message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
         if (list.isEmpty()) Text("No account is connected yet.")
@@ -84,7 +76,6 @@ fun AccountsScreen(accounts: IosAccounts, settings: SettingsRepository, home: co
         ICloudForm(accounts, busy) { busy = it }
         HorizontalDivider()
         WorkPairing(accounts, busy) { busy = it }
-    }
 }
 
 @Composable

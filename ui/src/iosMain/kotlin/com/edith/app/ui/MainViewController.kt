@@ -2,7 +2,9 @@ package com.edith.app.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.AccountCircle
@@ -28,7 +30,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.edith.app.chat.ui.ChatFeatures
 import com.edith.app.chat.ui.ChatViewModel
 import com.edith.app.chat.ui.IosMicrophoneAccess
-import com.edith.app.chat.ui.IosAudioPicker
+import com.edith.app.chat.ui.IosFilePicker
 import com.edith.app.chat.ui.IosPhotoPicker
 import com.edith.app.chat.ui.SimpleChatScreen
 import com.edith.app.di.createIosApp
@@ -53,7 +55,7 @@ fun MainViewController(): UIViewController {
         app.container.currentConversation.resolve()
     }
     val photoPicker = IosPhotoPicker()
-    val audioPicker = IosAudioPicker()
+    val audioPicker = IosFilePicker()
     val microphone = IosMicrophoneAccess()
     return ComposeUIViewController {
         EdithTheme {
@@ -62,6 +64,10 @@ fun MainViewController(): UIViewController {
                 val homeVm = viewModel { com.edith.app.home.ui.HomeViewModel(app.home, app.container.clock) { app.accounts.jarvisConnection() != null } }
                 val printerVm = viewModel { com.edith.app.printer.ui.PrinterViewModel(app.printerSession, app.printerPrefs, app.container.clock) }
                 var showPrinter by rememberSaveable { mutableStateOf(false) }
+                var showCheck by rememberSaveable { mutableStateOf(false) }
+                val settingsVm = viewModel { com.edith.app.settings.SettingsViewModel(app.settings, app.container.modelCatalog, app.container.ollama, app.container.modelSelection, object : com.edith.app.core.permissions.LocalNetworkAccess { override fun isGranted() = true }) }
+                val webSearchVm = viewModel { com.edith.app.ui.settings.WebSearchSettingsViewModel(app.container.webSearchSetup, app.container.ollamaWeb) }
+                val attachmentsVm = viewModel { com.edith.app.ui.settings.AttachmentSettingsViewModel(app.settings, app.container.retention) }
                 val calendarVm = viewModel { com.edith.app.accounts.ui.CalendarViewModel(app.accounts, app.accounts.accounts, app.accounts.loaded, app.container.clock) }
                 // The To-do view loads only once it is picked, so its view model is made then.
                 val todoVm: @Composable () -> com.edith.app.accounts.ui.TodoViewModel = { viewModel { com.edith.app.accounts.ui.TodoViewModel(app.accounts, app.accounts.accounts, app.accounts.tasksAccess, app.accounts.loaded, app.container.clock, grant = { id, a, show -> app.accounts.grantTasks(id, a, show) }, consentResult = { app.accounts.onConsentResult(it) }, appScope = app.container.appScope) } }
@@ -90,19 +96,24 @@ fun MainViewController(): UIViewController {
                             NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null) }, label = { Text("Chat") })
                             NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Icon(Icons.Filled.Home, contentDescription = null) }, label = { Text("Home") })
                             NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Icon(Icons.Filled.CalendarMonth, contentDescription = null) }, label = { Text("Calendar") })
-                            NavigationBarItem(selected = tab == 3, onClick = { tab = 3 }, icon = { Icon(Icons.Filled.Settings, contentDescription = null) }, label = { Text("Setup") })
-                            NavigationBarItem(selected = tab == 4, onClick = { tab = 4 }, icon = { Icon(Icons.Filled.AccountCircle, contentDescription = null) }, label = { Text("More") })
+                            NavigationBarItem(selected = tab == 3, onClick = { tab = 3 }, icon = { Icon(Icons.Filled.Settings, contentDescription = null) }, label = { Text("Settings") })
                         }
                     },
                 ) { padding ->
                     Box(Modifier.padding(padding)) {
                         when (tab) {
                             0 -> SimpleChatScreen(vm, photoPicker, microphone, audioPicker)
-                            1 -> if (showPrinter) IosPrinterScreen(printerVm, onBack = { showPrinter = false }, openPairing = { showPrinter = false; tab = 4 })
-                                else IosHomeScreen(homeVm, openMore = { tab = 4 }, openPrinter = { showPrinter = true })
-                            2 -> IosCalendarScreen(calendarVm, { todoVm() }, openMore = { tab = 4 })
-                            3 -> EngineCheckScreen(check)
-                            else -> AccountsScreen(app.accounts, app.settings, app.home)
+                            1 -> if (showPrinter) IosPrinterScreen(printerVm, onBack = { showPrinter = false }, openPairing = { showPrinter = false; tab = 3 })
+                                else IosHomeScreen(homeVm, openMore = { tab = 3 }, openPrinter = { showPrinter = true })
+                            2 -> IosCalendarScreen(calendarVm, { todoVm() }, openMore = { tab = 3 })
+                            else -> if (showCheck) Column {
+                                androidx.compose.material3.TextButton(onClick = { showCheck = false }, modifier = Modifier.statusBarsPadding()) { Text("‹ Settings") }
+                                EngineCheckScreen(check)
+                            } else IosSettingsScreen(
+                                settingsVm, webSearchVm, attachmentsVm, app.settings, app.speech, app.accounts, app.home,
+                                edithVersion = (platform.Foundation.NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String) ?: "",
+                                openEngineCheck = { showCheck = true },
+                            )
                         }
                     }
                 }
