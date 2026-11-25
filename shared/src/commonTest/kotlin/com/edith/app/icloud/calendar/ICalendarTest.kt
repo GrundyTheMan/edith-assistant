@@ -1,13 +1,13 @@
 package com.edith.app.icloud.calendar
 
-import org.junit.Assert.assertEquals
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import com.edith.app.testing.assertEquals
+import com.edith.app.testing.assertFalse
+import com.edith.app.testing.assertNull
+import com.edith.app.testing.assertTrue
+import kotlin.test.Test
 import kotlin.time.Instant
 
 /** C24 §3: the iCalendar Edith reads and writes (RFC 5545). Made-up events. */
@@ -18,7 +18,7 @@ class ICalendarTest {
     private fun cal(vararg event: String) = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Apple Inc.//iCloud//EN\r\n" +
         event.joinToString("") { "BEGIN:VEVENT\r\n$it\r\nEND:VEVENT\r\n" } + "END:VCALENDAR\r\n"
 
-    @Test fun `timed with TZID, UTC with Z, and floating`() {
+    @Test fun timedWithTZIDUTCWithZAndFloating() {
         val events = ICalendar.events(
             cal(
                 "UID:a\r\nSUMMARY:Dentist\r\nDTSTART;TZID=America/Chicago:20261103T140000\r\nDTEND;TZID=America/Chicago:20261103T150000",
@@ -33,7 +33,7 @@ class ICalendarTest {
         assertFalse(events.any { it.allDay })
     }
 
-    @Test fun `all-day with an exclusive end, DURATION, and an Outlook-style TZID`() {
+    @Test fun allDayWithAnExclusiveEndDURATIONAndAnOutlookStyleTZID() {
         val events = ICalendar.events(
             cal(
                 "UID:d\r\nSUMMARY:Holiday\r\nDTSTART;VALUE=DATE:20261104\r\nDTEND;VALUE=DATE:20261106",
@@ -54,7 +54,7 @@ class ICalendarTest {
         assertEquals("an unknown zone falls back to the calendar's", at(3, 10), events[3].start)
     }
 
-    @Test fun `folding, escapes, cancelled, alarms skipped, instances and series`() {
+    @Test fun foldingEscapesCancelledAlarmsSkippedInstancesAndSeries() {
         val events = ICalendar.events(
             "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:h\r\nSUMMARY:Lunch\\, with Sam\\; maybe a very long title that the server folds over\r\n  two lines\r\n" +
                 "DESCRIPTION:Line one\\nLine two \\\\ done\r\nLOCATION:Café\r\nDTSTART:20261103T170000Z\r\nDTEND:20261103T180000Z\r\n" +
@@ -74,7 +74,7 @@ class ICalendarTest {
         assertNull(events[3].recurrenceId)
     }
 
-    @Test fun `a new event - UTC times, all-day dates, escaped text, folded at 75 octets`() {
+    @Test fun aNewEventUTCTimesAllDayDatesEscapedTextFoldedAt75Octets() {
         val ics = ICalendar.newEvent("UID-1", Instant.parse("2026-11-02T18:00:00Z"), "Lunch, Sam; 1\\2", at(3, 15), at(3, 16), false, "Café", "a\nb", zone)
         val lines = ics.split("\r\n")
         assertTrue(ics.endsWith("\r\n"))
@@ -97,7 +97,7 @@ class ICalendarTest {
         assertEquals("round trip", "Lunch, Sam; 1\\2", ICalendar.events(ics, zone).single().summary)
     }
 
-    @Test fun `a change keeps every other line and replaces only the asked ones`() {
+    @Test fun aChangeKeepsEveryOtherLineAndReplacesOnlyTheAskedOnes() {
         val original = cal("UID:k\r\nDTSTAMP:20260101T000000Z\r\nSUMMARY:Old\r\nX-APPLE-TRAVEL-ADVISORY-BEHAVIOR:AUTOMATIC\r\nDTSTART;TZID=America/Detroit:20261103T150000\r\nDURATION:PT1H\r\nBEGIN:VALARM\r\nTRIGGER:-PT5M\r\nEND:VALARM")
         val changed = ICalendar.change(
             original,
@@ -114,5 +114,16 @@ class ICalendarTest {
         val e = ICalendar.events(changed, zone).single()
         assertEquals(at(3, 16), e.start)
         assertEquals(at(3, 17), e.end)
+    }
+
+    @Test fun foldingNeverSplitsACharacterOutsideTheBasicPlane() {
+        val line = "SUMMARY:" + "\uD83D\uDE00".repeat(30)   // 8 + 30 x 4 octets
+        val folded = ICalendar.fold(line)
+        for (part in folded.split("\r\n")) {
+            val body = part.trimStart()
+            assertEquals(body, body.count { it.isHighSurrogate() }, body.count { it.isLowSurrogate() })
+            assertFalse(body, body.firstOrNull()?.isLowSurrogate() == true)
+        }
+        assertEquals(line, folded.replace("\r\n ", ""))
     }
 }

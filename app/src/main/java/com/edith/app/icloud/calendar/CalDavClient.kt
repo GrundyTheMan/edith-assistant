@@ -29,29 +29,6 @@ import java.io.StringReader
 import kotlin.time.Instant
 import javax.xml.parsers.DocumentBuilderFactory
 
-/** [reference] (an address or a path) resolved against this one, or null when it can't be. */
-internal fun Url.resolve(reference: String): Url? = runCatching { URLBuilder(this).takeFrom(reference).build() }.getOrNull()
-
-/** One calendar collection found by discovery (C24 §3). */
-data class DavCalendar(val href: Url, val name: String, val canWrite: Boolean, val color: String?)
-
-/** What discovery found: the calendars that hold events, and the default one if the server names it. */
-data class DavHome(val calendars: List<DavCalendar>, val defaultHref: Url?)
-
-/** One resource from a calendar query: where it is, its ETag, and its iCalendar text. */
-data class DavResource(val href: Url, val etag: String?, val ics: String)
-
-/** How a CalDAV request went. */
-sealed interface DavResult<out T> {
-    data class Ok<T>(val value: T) : DavResult<T>
-    /** 401: the app-specific password stopped working. */
-    data object Unauthorized : DavResult<Nothing>
-    /** 412: the resource changed since it was read. */
-    data object Changed : DavResult<Nothing>
-    data object NotFound : DavResult<Nothing>
-    data class Failed(val why: String, val network: Boolean = false) : DavResult<Nothing>
-}
-
 /**
  * iCloud's calendars over CalDAV (RFC 4791, 6638) with Ktor, over an OkHttp client, and HTTP Basic (the address and the app-specific password,
  * over TLS only). The credentials are added by a network interceptor, so they follow Apple's redirect to the account's
@@ -65,7 +42,7 @@ class CalDavClient(
     user: String,
     password: String,
     private val baseUrl: String = BASE_URL,
-) {
+) : DavClient {
     private val okBase = baseUrl.toHttpUrl()
     private val base = Url(baseUrl)
     private val auth = Credentials.basic(user, password, Charsets.UTF_8)
@@ -84,7 +61,7 @@ class CalDavClient(
     }
 
     /** Discovery (§3): the principal, its calendar home (on the partition host) and the calendars there. */
-    suspend fun discover(): DavResult<DavHome> {
+    override suspend fun discover(): DavResult<DavHome> {
         val root = base.resolve("/") ?: return DavResult.Failed("the server address can't be used")
         val principalDoc = when (val r = propfind(root, 0, PRINCIPAL_BODY)) { is DavResult.Ok -> r.value; else -> return r.map() }
         val principal = principalDoc.first.firstHref("current-user-principal")?.let { principalDoc.second.resolve(it) }
@@ -120,7 +97,7 @@ class CalDavClient(
     }
 
     /** `REPORT` calendar-query: `VEVENT`s in [from, to), with `<C:expand>` so a series comes back as instances. */
-    suspend fun query(calendar: Url, from: Instant, to: Instant): DavResult<List<DavResource>> {
+    override suspend fun query(calendar: Url, from: Instant, to: Instant): DavResult<List<DavResource>> {
         val r = send("REPORT", calendar, queryBody(from, to), depth = 1)
         return when (r) {
             is DavResult.Ok -> DavResult.Ok(parseResources(r.value.first, r.value.second))
@@ -129,17 +106,17 @@ class CalDavClient(
     }
 
     /** One resource and its ETag. */
-    suspend fun get(href: Url): DavResult<DavResource> = withContext(dispatchers.io) {
+    override suspend fun get(href: Url): DavResult<DavResource> = withContext(dispatchers.io) {
         execute(HttpMethod.Get, href, null, emptyMap()) { body, response -> DavResource(href, response.headers["ETag"], body) }
     }
 
     /** `PUT` [ics] at [href]: a new resource ([etag] null: `If-None-Match: *`) or a change (`If-Match`). Returns the new ETag. */
-    suspend fun put(href: Url, ics: String, etag: String?): DavResult<String?> = withContext(dispatchers.io) {
+    override suspend fun put(href: Url, ics: String, etag: String?): DavResult<String?> = withContext(dispatchers.io) {
         val condition = if (etag == null) "If-None-Match" to "*" else "If-Match" to etag
         execute(HttpMethod.Put, href, TextContent(ics, ICS), mapOf(condition)) { _, response -> response.headers["ETag"] }
     }
 
-    suspend fun delete(href: Url, etag: String?): DavResult<Unit> = withContext(dispatchers.io) {
+    override suspend fun delete(href: Url, etag: String?): DavResult<Unit> = withContext(dispatchers.io) {
         execute(HttpMethod.Delete, href, null, listOfNotNull(etag?.let { "If-Match" to it }).toMap()) { _, _ -> }
     }
 

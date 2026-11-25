@@ -18,7 +18,7 @@ import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.plus
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Instant
-import java.util.UUID
+import kotlin.random.Random
 
 /**
  * One iCloud account's calendars over CalDAV (C24 §3). Discovery is remembered for the app run. An instance of a
@@ -27,7 +27,7 @@ import java.util.UUID
  */
 class ICloudCalendarSource(
     private val accountOf: () -> Account,
-    private val dav: () -> CalDavClient,
+    private val dav: () -> DavClient,
     private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() },
     private val now: () -> Instant = kotlin.time.Clock.System::now,
     private val onUnauthorized: suspend () -> Unit = {},
@@ -35,7 +35,7 @@ class ICloudCalendarSource(
     override val account: Account get() = accountOf()
 
     private val lock = Mutex()
-    @Volatile private var home: DavHome? = null
+    @kotlin.concurrent.Volatile private var home: DavHome? = null
 
     /** Discovery, once per app run (or after a failure). */
     suspend fun home(): Outcome<DavHome> = lock.withLock {
@@ -105,7 +105,7 @@ class ICloudCalendarSource(
             ?: return Outcome.Failure(AppError.ToolFailed("calendar", "This iCloud account has no calendar Edith can add to."))
         val start = draft.start ?: return Outcome.Failure(AppError.ToolFailed("calendar", "A new event needs a start."))
         val end = draft.end ?: if (draft.allDay) start.plus(1, DateTimeUnit.DAY, zone()) else start + 1.hours
-        val uid = UUID.randomUUID().toString().uppercase()
+        val uid = newUid()
         val href = cal.href.resolve("$uid.ics") ?: return Outcome.Failure(AppError.ToolFailed("calendar", "Edith couldn't name the new event."))
         val ics = ICalendar.newEvent(uid, now(), draft.title ?: "(No title)", start, end, draft.allDay, draft.location, draft.description, zone())
         return when (val r = dav().put(href, ics, etag = null)) {
@@ -201,4 +201,10 @@ class ICloudCalendarSource(
             else -> href
         }
     }
+}
+
+/** A random identifier in the usual 8-4-4-4-12 form, upper case, for a new event's file name and UID. */
+private fun newUid(): String {
+    val hex = Random.nextBytes(16).joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }.uppercase()
+    return listOf(hex.substring(0, 8), hex.substring(8, 12), hex.substring(12, 16), hex.substring(16, 20), hex.substring(20)).joinToString("-")
 }
