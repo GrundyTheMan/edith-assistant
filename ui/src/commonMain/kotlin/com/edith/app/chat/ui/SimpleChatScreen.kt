@@ -34,6 +34,11 @@ fun SimpleChatScreen(vm: ChatViewModel, photoPicker: PhotoPicker? = null, microp
             ),
             onOpenAppSettings = { microphone?.openSettings() },
             onAttachPhoto = { photoPicker?.pick(MAX_PHOTOS) { vm.attachImages(it) } },
+            onHandsFree = {
+                if (state.handsFree?.on == true) vm.stopHandsFree()
+                else microphone?.request { granted -> if (granted) vm.startHandsFree() else { permissionDenied = true } }
+            },
+            onTalk = vm::talk,
             onAttachAudio = { audioPicker?.pick { address -> address?.let(vm::attachAudio) } },
             onRemoveAttachment = vm::removeAttachment,
             onDraftChange = vm::onDraftChange,

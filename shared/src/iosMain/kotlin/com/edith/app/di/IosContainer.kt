@@ -35,6 +35,12 @@ import com.edith.app.core.time.SystemClock
 import com.edith.app.data.db.EdithDatabase
 import com.edith.app.data.db.MessageSource
 import com.edith.app.data.db.open
+import com.edith.app.voice.handsfree.HandsFree
+import com.edith.app.voice.handsfree.TapWakeListener
+import com.edith.app.voice.handsfree.iosEarcon
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import com.edith.app.alexa.AlexaApi
 import com.edith.app.alexa.AlexaService
 import com.edith.app.home.DataStoreHomePrefs
@@ -89,6 +95,8 @@ class IosApp(
     val player: com.edith.app.attachments.AttachmentPlayer,
     /** Dictation into the text field (K4.3): Apple speech recognition. Not the voice memos path, which records and lets the model transcribe. */
     val dictation: com.edith.app.voice.capture.SpeechInput,
+    /** Conversation mode (K4.11): tap Talk, ask, hear the answer, follow up. */
+    val handsFree: HandsFree,
 )
 
 /**
@@ -177,7 +185,23 @@ fun createIosApp(): IosApp {
         scope = container.appScope,
         dispatchers = AppDispatchers.Default,
     )
-    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore, accounts, home, speech, voiceMemos, com.edith.app.attachments.IosAttachmentPlayer { speech.stop() }, com.edith.app.voice.capture.IosSpeechInput())
+    // Conversation mode (K4.11): the hands-free loop with a Talk button in place of the wake word (the iPhone has no wake-word engine yet).
+    val handsFree = HandsFree(
+        wake = TapWakeListener,
+        recognizer = com.edith.app.voice.capture.IosSpeechInput(),
+        engineState = container.chatEngine.state,
+        speaking = speech.speakingMessageId,
+        stopSpeaking = { speech.stop() },
+        cancelReply = { container.chatEngine.cancel() },
+        send = { text -> container.chatEngine.send(container.currentConversation.await(), text, MessageSource.HandsFree) },
+        earcon = { iosEarcon() },
+        settings = settings,
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
+        phrase = "Talk",
+        say = { speech.announce(it) },
+        wakeIsTap = true,
+    )
+    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore, accounts, home, speech, voiceMemos, com.edith.app.attachments.IosAttachmentPlayer { speech.stop() }, com.edith.app.voice.capture.IosSpeechInput(), handsFree)
 }
 
 /** The app's private folder for data, made on first use. */

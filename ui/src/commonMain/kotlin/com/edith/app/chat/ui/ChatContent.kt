@@ -93,6 +93,8 @@ data class ChatActions(
     val onOpenAppSettings: () -> Unit = {},
     /** The top bar's hands-free button (C14): on or off. */
     val onHandsFree: () -> Unit = {},
+    /** Tap-to-talk: the Talk button (no wake word on this platform). */
+    val onTalk: () -> Unit = {},
     /** Attachments (C15): the paperclip's two pickers, ✕ on a chip, ▶/■ on an audio attachment, a photo full screen. */
     val onAttachPhoto: () -> Unit = {},
     val onAttachAudio: () -> Unit = {},
@@ -175,6 +177,14 @@ fun ChatContent(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag(HANDS_FREE_STATUS_TAG),
                 )
+            }
+            state.handsFree?.let { hf ->
+                if (hf.canTalk) {
+                    androidx.compose.material3.FilledTonalButton(
+                        onClick = actions.onTalk,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag(TALK_BUTTON_TAG),
+                    ) { Text(if (hf.status == "Speaking…") "Cut in and talk" else "Talk") }
+                }
             }
             MessageList(state, actions, Modifier.weight(1f))
             state.error?.let { error ->
@@ -405,3 +415,4 @@ const val MESSAGE_LIST_TAG = "message-list"
 const val DRAWER_LIST_TAG = "conversation-list"
 const val NEW_BELOW_TAG = "new-messages-below"
 const val HANDS_FREE_STATUS_TAG = "hands-free-status"
+const val TALK_BUTTON_TAG = "hands-free-talk"

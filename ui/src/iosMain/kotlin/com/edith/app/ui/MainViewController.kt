@@ -66,6 +66,7 @@ fun MainViewController(): UIViewController {
                         voiceMemos = app.voiceMemos,
                         attachmentPlayer = app.player,
                         dictation = app.dictation,
+                        handsFree = app.handsFree,
                         intake = app.intake,
                         attachmentStore = app.attachments,
                         clock = app.container.clock,

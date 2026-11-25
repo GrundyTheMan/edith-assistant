@@ -50,6 +50,8 @@ class HandsFree(
     val phrase: String,
     /** Says a line without stopping the reply (C25: "tap the card on the screen"). */
     private val say: (String) -> Unit = {},
+    /** True where there is no wake-word engine: the owner taps Talk instead, which calls [wakeWordHeard] (the iPhone). */
+    val wakeIsTap: Boolean = false,
 ) {
     sealed interface State {
         data object Off : State
