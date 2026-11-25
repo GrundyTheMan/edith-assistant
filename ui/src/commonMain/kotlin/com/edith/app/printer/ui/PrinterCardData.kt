@@ -16,7 +16,6 @@ import com.edith.app.printer.feed.PrinterSession
 import com.edith.app.printer.feed.PrinterWords
 import com.edith.app.printer.feed.Connections
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.io.asSource
 import kotlinx.io.buffered
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -28,7 +27,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-internal data class HistoryUi(
+data class HistoryUi(
     val jobs: List<HistoryJob> = emptyList(),
     val totals: HistoryTotals? = null,
     val loading: Boolean = false,
@@ -37,7 +36,7 @@ internal data class HistoryUi(
     val error: String? = null,
 )
 
-internal data class FilesUi(
+data class FilesUi(
     /** Null until the owner presses Load files: nothing is requested before that. */
     val files: List<PrinterFile>? = null,
     val cachedAt: Long = 0,
@@ -56,7 +55,7 @@ internal data class FilesUi(
  * A file being sent to the printer (stage 3). [name] is null when nothing was sent lately. While [active], [sent] of [total] bytes have gone;
  * afterwards either [done] (the name Jarvis saved it under) or [error] (in plain words) says how it ended. Cancelling clears all of it.
  */
-internal data class UploadUi(
+data class UploadUi(
     val name: String? = null,
     val active: Boolean = false,
     val sent: Long = 0,
@@ -67,18 +66,18 @@ internal data class UploadUi(
     val ready: Boolean = false,
 )
 
-internal data class ConsoleUi(val lines: List<ConsoleLine> = emptyList(), val hideValues: Boolean = true, val error: String? = null, val history: List<String> = emptyList())
+data class ConsoleUi(val lines: List<ConsoleLine> = emptyList(), val hideValues: Boolean = true, val error: String? = null, val history: List<String> = emptyList())
 
 /** The Macros card: what Jarvis sent (null until read), and the filter. */
-internal data class MacrosUi(val answer: com.edith.app.printer.feed.MacrosAnswer? = null, val loading: Boolean = false, val error: String? = null, val query: String = "")
+data class MacrosUi(val answer: com.edith.app.printer.feed.MacrosAnswer? = null, val loading: Boolean = false, val error: String? = null, val query: String = "")
 
 /** The camera picture: [frame] is the newest JPEG or PNG; [number] changes with each picture so the page redraws even for equal bytes. */
-internal class CameraUi(val cameraId: String? = null, val frame: ByteArray? = null, val number: Int = 0, val offline: Boolean = false)
+class CameraUi(val cameraId: String? = null, val frame: ByteArray? = null, val number: Int = 0, val offline: Boolean = false)
 
 /** The presets editor: saving, Jarvis's refusal in its words, and a count that goes up when a save worked (the dialog closes on it). */
-internal data class PresetsUi(val saving: Boolean = false, val error: String? = null, val saved: Int = 0)
+data class PresetsUi(val saving: Boolean = false, val error: String? = null, val saved: Int = 0)
 
-internal data class CardsUi(
+data class CardsUi(
     val chart: List<ChartLine> = emptyList(),
     val chartHidden: Set<String> = emptySet(),
     val history: HistoryUi = HistoryUi(),
@@ -95,12 +94,12 @@ internal data class CardsUi(
  * a second only while its card is open, and **the file list is never asked for until the owner presses Load files** (it freezes the
  * printer for several seconds). [visible] is how the page says which cards are open.
  */
-internal class PrinterCardData(
+class PrinterCardData(
     private val session: PrinterSession,
     private val prefs: PrinterPrefs,
     private val scope: CoroutineScope,
     /** Where a picked file is opened (a disk read); tests give their own. */
-    private val io: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
+    private val io: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Default,
 ) {
     private val _ui = MutableStateFlow(CardsUi())
     val ui: StateFlow<CardsUi> = _ui.asStateFlow()
@@ -362,7 +361,7 @@ internal class PrinterCardData(
 
     // --- Upload (stage 3) ---------------------------------------------------------------------------------------------------
 
-    private class Chosen(val name: String, val size: Long, val open: () -> java.io.InputStream?)
+    private class Chosen(val name: String, val size: Long, val open: () -> kotlinx.io.Source?)
 
     /**
      * The owner picked a file in the system picker. It is checked here with Jarvis's own rules (so a wrong file is told at once) and then
@@ -370,7 +369,7 @@ internal class PrinterCardData(
      * takes the Printer page off the screen, and leaving the page switches Controls off on purpose (an emulator check showed a one-step
      * upload was always refused for that reason). Controls must be on when Send is pressed. [open] opens the file's stream later, once.
      */
-    fun chooseUpload(name: String, size: Long, open: () -> java.io.InputStream?) {
+    fun chooseUpload(name: String, size: Long, open: () -> kotlinx.io.Source?) {
         if (uploadJob?.isActive == true) return
         com.edith.app.printer.feed.PrinterUpload.problem(name, size)?.let { why -> chosen = null; setUpload(UploadUi(name = name, error = why)); return }
         chosen = Chosen(name, size, open)
@@ -390,7 +389,7 @@ internal class PrinterCardData(
         uploadJob = scope.launch {
             val stream = kotlinx.coroutines.withContext(io) { runCatching(file.open).getOrNull() }
             if (stream == null) { chosen = null; setUpload(UploadUi(name = file.name, error = com.edith.app.printer.feed.PrinterUpload.UNREADABLE_WORDS)); return@launch }
-            val r = routes.upload(file.name, stream.asSource().buffered(), file.size) { sent -> _ui.update { u -> u.copy(files = u.files.copy(upload = u.files.upload.copy(sent = sent))) } }
+            val r = routes.upload(file.name, stream, file.size) { sent -> _ui.update { u -> u.copy(files = u.files.copy(upload = u.files.upload.copy(sent = sent))) } }
             when (r) {
                 is FeedResult.Ok -> {
                     chosen = null

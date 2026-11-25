@@ -31,6 +31,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
+import kotlinx.io.asSource
+import kotlinx.io.buffered
 
 /** C39 E11: sending a file from the phone, and what the Files sheet's commands do to the list. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -51,10 +53,10 @@ class PrinterUploadDataTest {
     private val gcode = ByteArray(5_000) { (it % 251).toByte() }
     /** Picks the file and presses Send, as the owner does. */
     private fun Rig.send(name: String = "benchy.gcode", size: Long = gcode.size.toLong(), bytes: ByteArray = gcode) {
-        data.chooseUpload(name, size) { ByteArrayInputStream(bytes) }
+        data.chooseUpload(name, size) { ByteArrayInputStream(bytes).asSource().buffered() }
         data.sendUpload()
     }
-    private fun Rig.choose(name: String = "benchy.gcode", size: Long = gcode.size.toLong(), bytes: ByteArray = gcode) = data.chooseUpload(name, size) { ByteArrayInputStream(bytes) }
+    private fun Rig.choose(name: String = "benchy.gcode", size: Long = gcode.size.toLong(), bytes: ByteArray = gcode) = data.chooseUpload(name, size) { ByteArrayInputStream(bytes).asSource().buffered() }
 
     @Test fun `an upload sends the exact bytes under the name and shows what Jarvis saved`() = runTest(UnconfinedTestDispatcher()) {
         val r = rig()

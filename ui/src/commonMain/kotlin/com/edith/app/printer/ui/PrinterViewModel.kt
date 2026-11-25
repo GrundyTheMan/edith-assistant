@@ -3,7 +3,6 @@ package com.edith.app.printer.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.edith.app.core.time.Clock
-import com.edith.app.di.viewModelFactory
 import com.edith.app.printer.PrinterCards
 import com.edith.app.printer.PrinterPrefs
 import com.edith.app.printer.feed.Connections
@@ -25,12 +24,12 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 
 /** How strongly the connection chip should look: from "all well" to "something is wrong". */
-internal enum class Tone { Good, Warn, Bad, Muted }
+enum class Tone { Good, Warn, Bad, Muted }
 
-internal data class ConnectionChip(val text: String, val tone: Tone)
+data class ConnectionChip(val text: String, val tone: Tone)
 
 /** Everything the Printer page draws (C39 part 6.2 and 8.3). Built from the session's state, so it can be tested without a screen. */
-internal data class PrinterUi(
+data class PrinterUi(
     val screen: PrinterScreenState = PrinterScreenState.Connecting,
     /** The printer's name from Jarvis; "Printer" until Jarvis has said. */
     val name: String = "Printer",
@@ -121,7 +120,7 @@ internal data class PrinterUi(
 }
 
 /** What the page can ask of its ViewModel (kept apart so a UI test can drive the page without one). */
-internal data class PrinterActions(
+data class PrinterActions(
     val back: () -> Unit = {},
     val tryAgain: () -> Unit = {},
     val openPairing: () -> Unit = {},
@@ -161,7 +160,7 @@ internal data class PrinterActions(
  * The Printer page's state (C39 part 6, 8). The page calls [attach] when it comes on screen and [detach] when it leaves: only then does
  * the session ask Jarvis anything.
  */
-internal class PrinterViewModel(
+class PrinterViewModel(
     private val session: PrinterSession,
     private val prefs: PrinterPrefs,
     private val clock: Clock,
@@ -221,6 +220,5 @@ internal class PrinterViewModel(
 
     companion object {
         const val TICK_MS = 30_000L
-        val Factory = viewModelFactory { c, _ -> PrinterViewModel(c.printerSession, c.printerPrefs, c.clock) }
     }
 }

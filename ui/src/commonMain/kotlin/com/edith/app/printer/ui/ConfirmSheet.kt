@@ -24,7 +24,7 @@ import androidx.compose.ui.unit.dp
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ConfirmSheet(sheet: ConfirmUi, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+fun ConfirmSheet(sheet: ConfirmUi, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("confirm-sheet")) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text(sheet.question, style = MaterialTheme.typography.titleMedium, modifier = Modifier.testTag("confirm-question"))

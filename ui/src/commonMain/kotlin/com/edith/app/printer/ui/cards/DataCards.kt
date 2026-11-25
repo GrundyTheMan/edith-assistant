@@ -1,7 +1,5 @@
 package com.edith.app.printer.ui.cards
 
-import android.graphics.BitmapFactory
-import android.util.Base64
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -38,11 +36,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.edith.app.ui.components.decodeImageBitmap
 import com.edith.app.printer.feed.ConsoleView
 import com.edith.app.printer.feed.FileList
 import com.edith.app.printer.feed.PrinterCamera
@@ -66,7 +64,7 @@ private fun rememberDecoded(key: Any?, bytes: () -> ByteArray?): ImageBitmap? {
     var image by remember { mutableStateOf<ImageBitmap?>(null) }
     LaunchedEffect(key) {
         val data = bytes() ?: return@LaunchedEffect
-        val decoded = withContext(Dispatchers.Default) { runCatching { BitmapFactory.decodeByteArray(data, 0, data.size)?.asImageBitmap() }.getOrNull() }
+        val decoded = withContext(Dispatchers.Default) { runCatching { decodeImageBitmap(data) }.getOrNull() }
         if (decoded != null) image = decoded
     }
     return image
@@ -192,7 +190,7 @@ private fun UploadRow(upload: UploadUi, printing: Boolean, ctx: ControlsCtx, onP
 private fun FileDetailSheet(files: FilesUi, title: String, onClose: () -> Unit, ctx: ControlsCtx? = null) {
     val d = files.detail
     val path = files.detailOf
-    val thumb = rememberDecoded(d?.thumbnail) { d?.thumbnail?.substringAfter("base64,", "")?.takeIf { it.isNotEmpty() }?.let { runCatching { Base64.decode(it, Base64.DEFAULT) }.getOrNull() } }
+    val thumb = rememberDecoded(d?.thumbnail) { d?.thumbnail?.substringAfter("base64,", "")?.takeIf { it.isNotEmpty() }?.let { runCatching { kotlin.io.encoding.Base64.Mime.decode(it) }.getOrNull() } }
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text(title) },
