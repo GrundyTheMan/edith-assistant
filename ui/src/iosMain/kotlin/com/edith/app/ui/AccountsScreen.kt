@@ -137,8 +137,8 @@ private fun ICloudForm(accounts: IosAccounts, busy: Boolean, setBusy: (Boolean) 
     var password by remember { mutableStateOf("") }
     var note by remember { mutableStateOf<String?>(null) }
 
-    Text("iCloud calendar", style = MaterialTheme.typography.titleMedium)
-    Text("Use an app-specific password made at account.apple.com, not your Apple Account password. Only the calendar is read for now.", style = MaterialTheme.typography.bodySmall)
+    Text("iCloud mail and calendar", style = MaterialTheme.typography.titleMedium)
+    Text("Use an app-specific password made at account.apple.com, not your Apple Account password. The password is kept in the iPhone's Keychain.", style = MaterialTheme.typography.bodySmall)
     OutlinedTextField(address, { address = it }, Modifier.fillMaxWidth(), label = { Text("iCloud address") }, singleLine = true)
     OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), label = { Text("App-specific password") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
     Button(enabled = !busy && address.isNotBlank() && password.isNotBlank(), onClick = {
@@ -148,6 +148,6 @@ private fun ICloudForm(accounts: IosAccounts, busy: Boolean, setBusy: (Boolean) 
             if (note == null) { address = ""; password = "" }
             setBusy(false)
         }
-    }) { Text("Add iCloud calendar") }
+    }) { Text("Add iCloud") }
     note?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 }
