@@ -4,7 +4,7 @@ import com.edith.app.accounts.Account
 import com.edith.app.core.time.formatPattern
 import com.edith.app.accounts.AccountDirectory
 import com.edith.app.accounts.AccountEntry
-import com.edith.app.accounts.Accounts
+import com.edith.app.accounts.ACCOUNTS_INTEGRATION_ID
 import com.edith.app.accounts.sources.CalendarEvent
 import com.edith.app.accounts.sources.CalendarMerge
 import com.edith.app.accounts.sources.CalendarSource
@@ -14,6 +14,8 @@ import com.edith.app.accounts.sources.ReadAll
 import com.edith.app.accounts.sources.Readable
 import com.edith.app.accounts.sources.Reads
 import com.edith.app.chat.engine.ConfirmationRequest
+import com.edith.app.core.util.PlatformLock
+import com.edith.app.core.util.synchronized
 import com.edith.app.core.error.Outcome
 import com.edith.app.tools.framework.ArgumentError
 import com.edith.app.tools.framework.ParamType
@@ -48,23 +50,24 @@ import kotlin.time.Instant
 class CalendarHandles {
     private val handles = LinkedHashMap<String, CalendarEvent>()
     private var next = 1
+    private val lock = PlatformLock()
 
-    @Synchronized fun handleFor(event: CalendarEvent): String {
+    fun handleFor(event: CalendarEvent): String = lock.synchronized {
         handles.entries.firstOrNull { it.value.accountId == event.accountId && it.value.id == event.id && it.value.calendarId == event.calendarId }?.let {
             it.setValue(event)
-            return it.key
+            return@synchronized it.key
         }
         val h = "e${next++}"
         handles[h] = event
         if (handles.size > MAX_HANDLES) handles.remove(handles.keys.first())
-        return h
+        h
     }
 
-    @Synchronized fun event(handle: String?): CalendarEvent? = handle?.trim()?.let { handles[it] }
+    fun event(handle: String?): CalendarEvent? = lock.synchronized { handle?.trim()?.let { handles[it] } }
 
-    @Synchronized fun update(handle: String, event: CalendarEvent) { handles[handle] = event }
+    fun update(handle: String, event: CalendarEvent) = lock.synchronized { handles[handle] = event }
 
-    @Synchronized fun forget(handle: String) { handles.remove(handle) }
+    fun forget(handle: String) { lock.synchronized { handles.remove(handle) } }
 
     companion object {
         const val MAX_HANDLES = 300
@@ -120,7 +123,7 @@ private val END = ToolParam("end", ParamType.DateTime, "End of the period, in th
  * So `Z`/`+00:00`, and any offset the owner's own zone uses at some time of year (both of Detroit's), are read as local
  * wall-clock time. A genuinely different zone ("3pm Pacific" → `-08:00`) is kept.
  */
-internal fun ToolArgs.localTime(name: String, zone: TimeZone): Instant? {
+public fun ToolArgs.localTime(name: String, zone: TimeZone): Instant? {
     val text = string(name)?.trim() ?: return dateTime(name, zone)
     val offset = Regex("(Z|[+-]\\d\\d:?\\d\\d)$").find(text) ?: return dateTime(name, zone)
     val local = try {
@@ -165,7 +168,7 @@ class ListCalendarEventsTool(private val dir: AccountDirectory, private val hand
     )
     override val statusLabel = "Checking your calendar…"
     override val displayName = "calendar"
-    override val integrationId = Accounts.ID
+    override val integrationId = ACCOUNTS_INTEGRATION_ID
     override val guidance = "For the user's schedule, call list_calendar_events with ISO start and end covering the days asked about " +
         "(a whole day: 00:00 to 23:59). Results carry an event_id for changing or deleting an event. $LOCAL_TIMES"
 
@@ -205,7 +208,7 @@ class FindFreeTimeTool(private val dir: AccountDirectory) : Tool {
     )
     override val statusLabel = "Checking your calendar…"
     override val displayName = "calendar"
-    override val integrationId = Accounts.ID
+    override val integrationId = ACCOUNTS_INTEGRATION_ID
     override val guidance = "For \"am I free…\" or \"when could I…\", call find_free_time."
 
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
@@ -272,7 +275,7 @@ class CreateCalendarEventTool(private val dir: AccountDirectory, private val han
     )
     override val statusLabel = "Adding to your calendar…"
     override val displayName = "calendar"
-    override val integrationId = Accounts.ID
+    override val integrationId = ACCOUNTS_INTEGRATION_ID
     override val guidance = "To add, change or delete an event, call the tool straight away: the app asks the user to confirm on screen, so don't ask in chat first."
 
     private fun change(args: ToolArgs): EventChange {
@@ -333,7 +336,7 @@ class UpdateCalendarEventTool(private val dir: AccountDirectory, private val han
     )
     override val statusLabel = "Changing your calendar…"
     override val displayName = "calendar"
-    override val integrationId = Accounts.ID
+    override val integrationId = ACCOUNTS_INTEGRATION_ID
 
     private fun change(args: ToolArgs, e: CalendarEvent): EventChange {
         val z = zone()
@@ -393,7 +396,7 @@ class DeleteCalendarEventTool(private val dir: AccountDirectory, private val han
     )
     override val statusLabel = "Changing your calendar…"
     override val displayName = "calendar"
-    override val integrationId = Accounts.ID
+    override val integrationId = ACCOUNTS_INTEGRATION_ID
 
     /**
      * C24: an occurrence that can only go with its whole series (iCloud) needs `whole_series`, which the model may send
