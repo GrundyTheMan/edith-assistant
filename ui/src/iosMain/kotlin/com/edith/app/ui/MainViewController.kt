@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -76,11 +77,12 @@ fun MainViewController(): UIViewController {
                         NavigationBar {
                             NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null) }, label = { Text("Chat") })
                             NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Icon(Icons.Filled.Settings, contentDescription = null) }, label = { Text("Setup") })
+                            NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Icon(Icons.Filled.AccountCircle, contentDescription = null) }, label = { Text("Accounts") })
                         }
                     },
                 ) { padding ->
                     Box(Modifier.padding(padding)) {
-                        if (tab == 0) SimpleChatScreen(vm, photoPicker, microphone) else EngineCheckScreen(check)
+                        when (tab) { 0 -> SimpleChatScreen(vm, photoPicker, microphone); 1 -> EngineCheckScreen(check); else -> AccountsScreen(app.accounts) }
                     }
                 }
             }
