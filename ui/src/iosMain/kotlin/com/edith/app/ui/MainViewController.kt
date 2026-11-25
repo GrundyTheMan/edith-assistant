@@ -18,6 +18,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,6 +66,10 @@ fun MainViewController(): UIViewController {
                 val printerVm = viewModel { com.edith.app.printer.ui.PrinterViewModel(app.printerSession, app.printerPrefs, app.container.clock) }
                 var showPrinter by rememberSaveable { mutableStateOf(false) }
                 var showCheck by rememberSaveable { mutableStateOf(false) }
+                // While you were away: what the cameras reported since the app was last opened (K4.16), found once at launch.
+                var catchUp by remember { mutableStateOf<List<com.edith.app.alerts.Alert>>(emptyList()) }
+                androidx.compose.runtime.LaunchedEffect(Unit) { catchUp = app.alerts.catchUp() }
+                val banners by app.alerts.banners.collectAsState()
                 val settingsVm = viewModel { com.edith.app.settings.SettingsViewModel(app.settings, app.container.modelCatalog, app.container.ollama, app.container.modelSelection, object : com.edith.app.core.permissions.LocalNetworkAccess { override fun isGranted() = true }) }
                 val webSearchVm = viewModel { com.edith.app.ui.settings.WebSearchSettingsViewModel(app.container.webSearchSetup, app.container.ollamaWeb) }
                 val attachmentsVm = viewModel { com.edith.app.ui.settings.AttachmentSettingsViewModel(app.settings, app.container.retention) }
@@ -104,17 +109,24 @@ fun MainViewController(): UIViewController {
                         when (tab) {
                             0 -> SimpleChatScreen(vm, photoPicker, microphone, audioPicker)
                             1 -> if (showPrinter) IosPrinterScreen(printerVm, onBack = { showPrinter = false }, openPairing = { showPrinter = false; tab = 3 })
-                                else IosHomeScreen(homeVm, openMore = { tab = 3 }, openPrinter = { showPrinter = true })
+                                else IosHomeScreen(homeVm, openMore = { tab = 3 }, openPrinter = { showPrinter = true }, catchUp = catchUp, onDismissCatchUp = { catchUp = emptyList() })
                             2 -> IosCalendarScreen(calendarVm, { todoVm() }, openMore = { tab = 3 })
                             else -> if (showCheck) Column {
                                 androidx.compose.material3.TextButton(onClick = { showCheck = false }, modifier = Modifier.statusBarsPadding()) { Text("‹ Settings") }
                                 EngineCheckScreen(check)
                             } else IosSettingsScreen(
-                                settingsVm, webSearchVm, attachmentsVm, app.settings, app.speech, app.accounts, app.home,
+                                settingsVm, webSearchVm, attachmentsVm, app.settings, app.speech, app.accounts, app.home, app.alertPrefs,
                                 edithVersion = (platform.Foundation.NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String) ?: "",
                                 openEngineCheck = { showCheck = true },
                             )
                         }
+                        // New camera alerts while the app is open, over whatever tab is showing.
+                        com.edith.app.alerts.ui.AlertBanners(
+                            banners,
+                            onOpenClips = { showPrinter = false; tab = 1; homeVm.openClips(); app.alerts.dismissAll() },
+                            onDismiss = app.alerts::dismiss,
+                            modifier = Modifier.align(androidx.compose.ui.Alignment.TopCenter),
+                        )
                     }
                 }
             }
