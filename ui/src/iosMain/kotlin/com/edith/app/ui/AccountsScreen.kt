@@ -22,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.edith.app.accounts.AccountState
 import com.edith.app.accounts.IosAccounts
@@ -69,6 +70,8 @@ fun AccountsScreen(accounts: IosAccounts) {
         if (google?.isConfigured != true) Text("Google isn't set up in this build (the iPhone client ID is missing).", style = MaterialTheme.typography.bodySmall)
 
         HorizontalDivider()
+        ICloudForm(accounts, busy) { busy = it }
+        HorizontalDivider()
         WorkPairing(accounts, busy) { busy = it }
     }
 }
@@ -114,4 +117,26 @@ private fun describe(state: AccountState): String = when (state) {
     AccountState.Connected -> "Connected"
     is AccountState.NeedsSignIn -> state.reason
     is AccountState.Error -> state.message
+}
+
+@Composable
+private fun ICloudForm(accounts: IosAccounts, busy: Boolean, setBusy: (Boolean) -> Unit) {
+    val scope = rememberCoroutineScope()
+    var address by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf<String?>(null) }
+
+    Text("iCloud calendar", style = MaterialTheme.typography.titleMedium)
+    Text("Use an app-specific password made at account.apple.com, not your Apple Account password. Only the calendar is read for now.", style = MaterialTheme.typography.bodySmall)
+    OutlinedTextField(address, { address = it }, Modifier.fillMaxWidth(), label = { Text("iCloud address") }, singleLine = true)
+    OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), label = { Text("App-specific password") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+    Button(enabled = !busy && address.isNotBlank() && password.isNotBlank(), onClick = {
+        scope.launch {
+            setBusy(true); note = null
+            note = accounts.addICloud(address, password)
+            if (note == null) { address = ""; password = "" }
+            setBusy(false)
+        }
+    }) { Text("Add iCloud calendar") }
+    note?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 }

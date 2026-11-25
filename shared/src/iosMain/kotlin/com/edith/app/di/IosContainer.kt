@@ -88,6 +88,7 @@ fun createIosApp(): IosApp {
             DataStoreAccountStore(PreferenceDataStoreFactory.createWithPath { "$dir/accounts.preferences_pb".toPath() }),
             container.appScope, google, JarvisAccounts(secrets, DarwinPinnedHttp(), AppDispatchers.Default),
             com.edith.app.accounts.IosMicrosoftAccounts(microsoftClientId(), NSBundle.mainBundle.bundleIdentifier.orEmpty(), IosAuthSession(), secrets, clients.ktorSecure, AppDispatchers.Default, SystemClock),
+            com.edith.app.accounts.IosICloudAccounts(secrets, clients.ktorSecure, AppDispatchers.Default),
         )
     }
     // The tools that need no permission: the time, the weather in a named place, web search and reading a page. The reader refuses names
