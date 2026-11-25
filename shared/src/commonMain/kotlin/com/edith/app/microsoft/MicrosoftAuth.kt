@@ -1,6 +1,6 @@
 package com.edith.app.microsoft
 
-import android.app.Activity
+import com.edith.app.accounts.PlatformActivity
 import com.edith.app.accounts.Account
 import com.edith.app.accounts.AccountSecrets
 import com.edith.app.accounts.AccountState
@@ -51,10 +51,10 @@ object MicrosoftOAuth {
 }
 
 /** What a Microsoft sign-in got: the refresh token and a first access token, kept once the account is known. */
-class MicrosoftGrant internal constructor(
-    internal val refreshToken: String,
-    internal val accessToken: String,
-    internal val expiresAt: Instant,
+class MicrosoftGrant(
+    val refreshToken: String,
+    val accessToken: String,
+    val expiresAt: Instant,
 )
 
 /**
@@ -69,14 +69,14 @@ class MicrosoftAccountAuth(
     private val secrets: SecretStore,
     private val clock: Clock,
     /** Signs this account in again through the browser. */
-    private val signInAgain: suspend (Activity) -> Unit,
+    private val signInAgain: suspend (PlatformActivity) -> Unit,
 ) : GraphAuth {
     private val _state = MutableStateFlow<AccountState>(AccountState.Checking)
     val state: StateFlow<AccountState> = _state.asStateFlow()
 
     private class Cached(val token: String, val expiresAt: Instant)
 
-    @Volatile private var cached: Cached? = null
+    @kotlin.concurrent.Volatile private var cached: Cached? = null
     private val refreshLock = Mutex()
 
     private val id: String get() = account().id
@@ -102,7 +102,7 @@ class MicrosoftAccountAuth(
     }
 
     /** Sign in again / Try again: a quiet check first (after no network); if Microsoft wants the owner, the browser. */
-    suspend fun grant(activity: Activity) {
+    suspend fun grant(activity: PlatformActivity) {
         if (_state.value !is AccountState.NeedsSignIn) check()
         if (_state.value is AccountState.NeedsSignIn) signInAgain(activity)
     }
