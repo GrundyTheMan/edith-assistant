@@ -58,6 +58,10 @@ class IosApp(
     val speech: SpeechOutput,
     /** Voice memos (K4.3): record, have the model transcribe, send as the owner's message. */
     val voiceMemos: VoiceMemos,
+    /** Plays an audio attachment from its bubble (K4.3). */
+    val player: com.edith.app.attachments.AttachmentPlayer,
+    /** Dictation into the text field (K4.3): Apple speech recognition. Not the voice memos path, which records and lets the model transcribe. */
+    val dictation: com.edith.app.voice.capture.SpeechInput,
 )
 
 /**
@@ -109,7 +113,7 @@ fun createIosApp(): IosApp {
         scope = container.appScope,
         dispatchers = AppDispatchers.Default,
     )
-    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore, speech, voiceMemos)
+    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore, speech, voiceMemos, com.edith.app.attachments.IosAttachmentPlayer { speech.stop() }, com.edith.app.voice.capture.IosSpeechInput())
 }
 
 /** No location yet (K4.2 adds Core Location): the weather tool is not offered, so this is never asked. */
