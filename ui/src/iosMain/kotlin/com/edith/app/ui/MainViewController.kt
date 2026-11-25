@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -23,13 +24,14 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.edith.app.chat.ui.ChatFeatures
 import com.edith.app.chat.ui.ChatViewModel
+import com.edith.app.chat.ui.IosMicrophoneAccess
+import com.edith.app.chat.ui.IosAudioPicker
 import com.edith.app.chat.ui.IosPhotoPicker
 import com.edith.app.chat.ui.SimpleChatScreen
 import com.edith.app.di.createIosApp
 import com.edith.app.diagnostics.EngineCheck
 import com.edith.app.ui.diagnostics.EngineCheckScreen
 import com.edith.app.ui.theme.EdithTheme
-import com.edith.app.voice.speech.SilentSpeechController
 import kotlinx.coroutines.launch
 import platform.UIKit.UIViewController
 
@@ -48,6 +50,8 @@ fun MainViewController(): UIViewController {
         app.container.currentConversation.resolve()
     }
     val photoPicker = IosPhotoPicker()
+    val audioPicker = IosAudioPicker()
+    val microphone = IosMicrophoneAccess()
     return ComposeUIViewController {
         EdithTheme {
             Surface {
@@ -57,8 +61,11 @@ fun MainViewController(): UIViewController {
                         repo = app.container.chatRepository,
                         engine = app.container.chatEngine,
                         current = app.container.currentConversation,
-                        speech = SilentSpeechController,
-                        features = ChatFeatures(attach = true, audioFiles = false),
+                        speech = app.speech,
+                        features = ChatFeatures(attach = true, audioFiles = true, record = true, dictation = app.dictation.isAvailable),
+                        voiceMemos = app.voiceMemos,
+                        attachmentPlayer = app.player,
+                        dictation = app.dictation,
                         intake = app.intake,
                         attachmentStore = app.attachments,
                         clock = app.container.clock,
@@ -72,11 +79,12 @@ fun MainViewController(): UIViewController {
                         NavigationBar {
                             NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null) }, label = { Text("Chat") })
                             NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Icon(Icons.Filled.Settings, contentDescription = null) }, label = { Text("Setup") })
+                            NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Icon(Icons.Filled.AccountCircle, contentDescription = null) }, label = { Text("More") })
                         }
                     },
                 ) { padding ->
                     Box(Modifier.padding(padding)) {
-                        if (tab == 0) SimpleChatScreen(vm, photoPicker) else EngineCheckScreen(check)
+                        when (tab) { 0 -> SimpleChatScreen(vm, photoPicker, microphone, audioPicker); 1 -> EngineCheckScreen(check); else -> AccountsScreen(app.accounts, app.settings) }
                     }
                 }
             }

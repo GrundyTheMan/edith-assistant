@@ -7,6 +7,22 @@ import com.edith.app.attachments.AttachmentFiles
 import com.edith.app.attachments.AttachmentIntake
 import com.edith.app.attachments.IosAttachmentIntake
 import com.edith.app.attachments.PathAttachmentStore
+import com.edith.app.accounts.DataStoreAccountStore
+import com.edith.app.accounts.IosAccounts
+import com.edith.app.accounts.IosGoogleAccounts
+import com.edith.app.accounts.tools.CalendarHandles
+import com.edith.app.accounts.tools.calendarTools
+import com.edith.app.accounts.tools.mailTools
+import com.edith.app.accounts.tools.taskTools
+import com.edith.app.accounts.tasks.RankStore
+import com.edith.app.accounts.tasks.TaskRanker
+import com.edith.app.accounts.tools.MailHandles
+import com.edith.app.accounts.tools.TaskHandles
+import com.edith.app.google.browser.IosAuthSession
+import com.edith.app.jarvis.DarwinPinnedHttp
+import com.edith.app.jarvis.JarvisAccounts
+import kotlinx.coroutines.launch
+import platform.Foundation.NSBundle
 import com.edith.app.chat.engine.ReplyListener
 import com.edith.app.core.dispatchers.AppDispatchers
 import com.edith.app.core.error.AppError
@@ -18,10 +34,18 @@ import com.edith.app.core.secrets.IosSecretStore
 import com.edith.app.core.secrets.SecretStore
 import com.edith.app.core.time.SystemClock
 import com.edith.app.data.db.EdithDatabase
+import com.edith.app.data.db.MessageSource
 import com.edith.app.data.db.open
 import com.edith.app.settings.DataStoreSettingsRepository
 import com.edith.app.settings.SettingsRepository
+import com.edith.app.settings.Settings
 import com.edith.app.tools.context.CurrentTimeTool
+import com.edith.app.voice.capture.IosRecorder
+import com.edith.app.voice.capture.NoSpeechInput
+import com.edith.app.voice.capture.OllamaTranscriber
+import com.edith.app.voice.capture.VoiceMemos
+import com.edith.app.voice.speech.IosTtsEngine
+import com.edith.app.voice.speech.SpeechOutput
 import com.edith.app.tools.weather.WeatherTool
 import com.edith.app.tools.web.PageReader
 import com.edith.app.tools.web.ReadWebPageTool
@@ -47,6 +71,16 @@ class IosApp(
     val intake: AttachmentIntake,
     /** Where sent photos are kept and read back from (the chat shows them). */
     val attachments: AttachmentFiles,
+    /** The connected accounts (K4.6): Google through the sign-in sheet, and the work account through Jarvis. */
+    val accounts: IosAccounts,
+    /** Edith's voice (K4.3): the Play button on a message speaks through it. Not a reply listener yet: nothing reads replies aloud by itself until there is a setting for it. */
+    val speech: SpeechOutput,
+    /** Voice memos (K4.3): record, have the model transcribe, send as the owner's message. */
+    val voiceMemos: VoiceMemos,
+    /** Plays an audio attachment from its bubble (K4.3). */
+    val player: com.edith.app.attachments.AttachmentPlayer,
+    /** Dictation into the text field (K4.3): Apple speech recognition. Not the voice memos path, which records and lets the model transcribe. */
+    val dictation: com.edith.app.voice.capture.SpeechInput,
 )
 
 /**
@@ -57,14 +91,37 @@ class IosApp(
 fun createIosApp(): IosApp {
     val dir = applicationSupportDir()
     val secrets = IosSecretStore()
-    val settings = DataStoreSettingsRepository(PreferenceDataStoreFactory.createWithPath { "$dir/settings.preferences_pb".toPath() })
+    val settings = DataStoreSettingsRepository(PreferenceDataStoreFactory.createWithPath { "$dir/settings.preferences_pb".toPath() }, defaults = Settings(speakReplies = false))
     val listeners = mutableListOf<ReplyListener>()
     val clients = DarwinKtorClients()
     val attachmentStore = PathAttachmentStore("$dir/files", "$dir/cache")
     lateinit var container: SharedContainer
-    // The tools that need no permission and no account: the time, the weather in a named place, web search and reading a page. The reader refuses names
-    // that resolve to a private address (publicHostAllowed; Android does it inside its DNS lookup).
-    val registry by lazy { ToolRegistry(listOf(CurrentTimeTool(), WeatherTool(container.openMeteo, NoLocation), SearchWebTool(container.webSearch), ReadWebPageTool(container.webSearch.pages(PageReader(lazy { clients.pageReaderClient() }, AppDispatchers.Default, hostAllowed = ::publicHostAllowed))))) }
+    // The accounts (K4.6): the list in its own DataStore file, Google through the system's sign-in sheet, the work account through Jarvis (pinned certificate).
+    // The client ID of Google's iOS client is in Info.plist (EdithGoogleClientId); without it Google says it is not set up.
+    val accounts by lazy {
+        val google = IosGoogleAccounts(googleClientId(), IosAuthSession(), secrets, SystemClock, clients.ktorSecure, AppDispatchers.Default)
+        IosAccounts(
+            DataStoreAccountStore(PreferenceDataStoreFactory.createWithPath { "$dir/accounts.preferences_pb".toPath() }),
+            container.appScope, google, JarvisAccounts(secrets, DarwinPinnedHttp(), AppDispatchers.Default),
+            com.edith.app.accounts.IosMicrosoftAccounts(microsoftClientId(), NSBundle.mainBundle.bundleIdentifier.orEmpty(), IosAuthSession(), secrets, clients.ktorSecure, AppDispatchers.Default, SystemClock),
+            com.edith.app.accounts.IosICloudAccounts(secrets, clients.ktorSecure, AppDispatchers.Default),
+        )
+    }
+    // The tools that need no permission: the time, the weather in a named place, web search and reading a page. The reader refuses names
+    // that resolve to a private address (publicHostAllowed; Android does it inside its DNS lookup). With the accounts, the calendar, email and to-do
+    // tools: those that change something (create, send, complete, delete) wait for the owner's tap on a confirmation card, which the shared chat shows.
+    val registry by lazy {
+        val calendarHandles = CalendarHandles(); val mailHandles = MailHandles(); val taskHandles = TaskHandles()
+        val ranker = TaskRanker(container.ollama, RankStore("$dir/${RankStore.FILE_NAME}"), SystemClock)
+        ToolRegistry(
+            listOf(
+                CurrentTimeTool(), WeatherTool(container.openMeteo, NoLocation), SearchWebTool(container.webSearch),
+                ReadWebPageTool(container.webSearch.pages(PageReader(lazy { clients.pageReaderClient() }, AppDispatchers.Default, hostAllowed = ::publicHostAllowed))),
+            ) + calendarTools(accounts, calendarHandles, SystemClock::zone) + mailTools(accounts, mailHandles) +
+                taskTools(accounts, taskHandles, ranker, SystemClock) { settings.current() },
+            integrations = listOf(accounts),
+        )
+    }
     container = SharedContainer(
         PlatformServices(
             dispatchers = AppDispatchers.Default,
@@ -79,10 +136,30 @@ fun createIosApp(): IosApp {
             localNetwork = object : LocalNetworkAccess { override fun isGranted() = true },   // iOS asks itself, at the first local connection
         ),
         toolRegistry = { registry },
-        replyListeners = { listeners.also { if (it.isEmpty()) it += container.conversationTitler } },
+        replyListeners = { listeners },
         afterAttachments = { container.retention.apply() },
     )
-    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore)
+    container.appScope.launch { accounts.load() }   // connects and quietly checks every saved account
+    val speech = SpeechOutput(IosTtsEngine(), settings, container.appScope)
+    // Replies are read aloud only while Read replies aloud is on, which it is not until the owner turns it on (the More tab).
+    listeners += container.conversationTitler
+    listeners += speech
+    val voiceMemos = VoiceMemos(
+        recorder = IosRecorder("$dir/recordings"),
+        transcriber = OllamaTranscriber(container.ollama, settings, AppDispatchers.Default),
+        liveSpeech = NoSpeechInput,
+        modelHears = {
+            // Unknown (server unreachable, no model): try the model; its error is clearer than a fallback.
+            val s = settings.current()
+            val caps = s.model?.let { container.modelCatalog.capabilities(s.serverUrl, it) }
+            caps !is Outcome.Success || "audio" in caps.value
+        },
+        send = { id, text -> container.chatEngine.send(id, text, MessageSource.VoiceMemo) },
+        stopSpeaking = { speech.stop() },
+        scope = container.appScope,
+        dispatchers = AppDispatchers.Default,
+    )
+    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore, accounts, speech, voiceMemos, com.edith.app.attachments.IosAttachmentPlayer { speech.stop() }, com.edith.app.voice.capture.IosSpeechInput())
 }
 
 /** No location yet (K4.2 adds Core Location): the weather tool is not offered, so this is never asked. */
@@ -104,3 +181,9 @@ private fun applicationSupportDir(): String {
     NSFileManager.defaultManager.createDirectoryAtPath(path, withIntermediateDirectories = true, attributes = null, error = null)
     return path
 }
+
+/** The client ID of Google's iOS client from Info.plist (`EdithGoogleClientId`), or empty when the build has none. */
+private fun googleClientId(): String = (NSBundle.mainBundle.objectForInfoDictionaryKey("EdithGoogleClientId") as? String).orEmpty().trim()
+
+/** The client ID of Edith's Microsoft app registration from Info.plist (`EdithMicrosoftClientId`), or empty when the build has none. */
+private fun microsoftClientId(): String = (NSBundle.mainBundle.objectForInfoDictionaryKey("EdithMicrosoftClientId") as? String).orEmpty().trim()
