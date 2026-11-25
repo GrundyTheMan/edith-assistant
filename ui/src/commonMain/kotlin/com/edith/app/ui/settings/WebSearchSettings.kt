@@ -22,7 +22,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
-import com.edith.app.di.viewModelFactory
 import com.edith.app.tools.web.OllamaWebSearch
 import com.edith.app.tools.web.WebSearchSetup
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -82,10 +81,6 @@ class WebSearchSettingsViewModel(private val setup: WebSearchSetup, private val 
             }
             _state.update { it.copy(testing = false, status = message, statusIsError = error) }
         }
-    }
-
-    companion object {
-        val Factory = viewModelFactory { container, _ -> WebSearchSettingsViewModel(container.webSearchSetup, container.ollamaWeb) }
     }
 }
 

@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
 import com.edith.app.core.permissions.LocalNetworkAccess
-import com.edith.app.di.viewModelFactory
 import com.edith.app.ollama.ModelCatalog
 import com.edith.app.ollama.ModelInfo
 import com.edith.app.ollama.OllamaClient
@@ -220,9 +219,5 @@ class SettingsViewModel(
 
     companion object {
         const val DEBOUNCE_MS = 600L
-
-        val Factory = viewModelFactory { c, _ ->
-            SettingsViewModel(c.settingsRepository, c.modelCatalog, c.ollama, c.modelSelection, c.localNetworkAccess)
-        }
     }
 }
