@@ -1,12 +1,14 @@
 package com.edith.app.home.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.edith.app.home.Capability
 import com.edith.app.home.DeviceCommand
 import com.edith.app.home.DeviceState
@@ -18,15 +20,12 @@ import com.edith.app.ui.theme.EdithTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import org.junit.Assert.assertEquals
-import org.junit.Rule
-import org.junit.Test
-import org.junit.runner.RunWith
+import kotlin.test.Test
+import kotlin.test.assertEquals
 
-/** C25 §5: the Home tab: not connected, chips, a one-tap toggle, the lock section and the unlock dialog. */
-@RunWith(AndroidJUnit4::class)
-class HomeScreenTest {
-    @get:Rule val compose = createComposeRule()
+/** C25 §5, K3.3: the Home tab (shared since K3.3, so it runs on the desktop and the iPhone simulator): not connected, chips, a one-tap toggle, the lock section and the unlock dialog. */
+@OptIn(ExperimentalTestApi::class)
+class HomeContentTest {
 
     private val now = 1_800_000_000_000L
     private val porch = HomeDevice("porch", "Porch light", "Outside", DeviceType.Light, setOf(Capability.OnOff, Capability.Brightness), "demo",
@@ -35,17 +34,17 @@ class HomeScreenTest {
         state = DeviceState(lock = LockState.Locked), stateAt = now)
     private val view = HomeView(devices = listOf(porch, door), readAt = now)
 
-    @Test fun notConnectedPointsToSettings() {
+    @Test fun notConnectedPointsToSettings() = runComposeUiTest {
         var opened = false
-        compose.setContent { EdithTheme { HomeContent(HomeUi(connected = false), HomeTabActions(openSettings = { opened = true })) } }
-        compose.onNodeWithText("Settings → Home").performClick()
+        setContent { EdithTheme { HomeContent(HomeUi(connected = false), HomeTabActions(openSettings = { opened = true })) } }
+        onNodeWithText("Settings → Home").performClick()
         assertEquals(true, opened)
     }
 
-    @Test fun chipsTogglesAndTheUnlockDialog() {
-        val sent = mutableListOf<Pair<String, Any>>()
+    @Test fun chipsTogglesAndTheUnlockDialog() = runComposeUiTest {
+        val sent = mutableListOf<Pair<String, DeviceCommand>>()
         var ui by mutableStateOf(HomeUi(connected = true, view = view, now = now))
-        compose.setContent {
+        setContent {
             EdithTheme {
                 HomeContent(ui, HomeTabActions(
                     chip = { ui = ui.copy(chip = it) },
@@ -57,20 +56,20 @@ class HomeScreenTest {
                 ))
             }
         }
-        compose.onNodeWithText("Off · 3 min ago").assertIsDisplayed()
-        compose.onNodeWithText("Locks and doors", useUnmergedTree = true).assertExists()
+        onNodeWithText("Off · 3 min ago").assertIsDisplayed()
+        onAllNodesWithText("Locks and doors", useUnmergedTree = true).assertCountEquals(2)   // the chip, and the section it opens
 
-        compose.onNodeWithContentDescription("Porch light on or off").performClick()
-        assertEquals(listOf("Porch light" to DeviceCommand.TurnOn), sent)
+        onNodeWithContentDescription("Porch light on or off").performClick()
+        assertEquals<List<Pair<String, DeviceCommand>>>(listOf("Porch light" to DeviceCommand.TurnOn), sent)
 
-        compose.onNodeWithText("Unlock").performClick()
-        compose.onNodeWithText("Unlock: Front door?").assertIsDisplayed()
-        assertEquals("nothing is sent before the tap", 1, sent.size)
-        compose.onNodeWithTag(CONFIRM_TAG).performClick()
+        onNodeWithText("Unlock").performClick()
+        onNodeWithText("Unlock: Front door?").assertIsDisplayed()
+        assertEquals(1, sent.size, "nothing is sent before the tap")
+        onNodeWithTag(CONFIRM_TAG).performClick()
         assertEquals("Front door" to DeviceCommand.Unlock, sent.last())
 
-        compose.onNodeWithText("Lights").performClick()
-        compose.onNodeWithText("Porch light").assertIsDisplayed()
-        compose.onNodeWithText("Front door").assertDoesNotExist()
+        onNodeWithText("Lights").performClick()
+        onNodeWithText("Porch light").assertIsDisplayed()
+        onNodeWithText("Front door").assertDoesNotExist()
     }
 }

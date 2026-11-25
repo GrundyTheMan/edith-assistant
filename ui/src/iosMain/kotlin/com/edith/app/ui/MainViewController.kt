@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -56,6 +57,7 @@ fun MainViewController(): UIViewController {
         EdithTheme {
             Surface {
                 var tab by rememberSaveable { mutableStateOf(0) }
+val homeVm = viewModel { com.edith.app.home.ui.HomeViewModel(app.home, app.container.clock) { app.accounts.jarvisConnection() != null } }
                 val vm = viewModel {
                     ChatViewModel(
                         repo = app.container.chatRepository,
@@ -79,13 +81,14 @@ fun MainViewController(): UIViewController {
                     bottomBar = {
                         NavigationBar {
                             NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null) }, label = { Text("Chat") })
-                            NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Icon(Icons.Filled.Settings, contentDescription = null) }, label = { Text("Setup") })
-                            NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Icon(Icons.Filled.AccountCircle, contentDescription = null) }, label = { Text("More") })
+                            NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Icon(Icons.Filled.Home, contentDescription = null) }, label = { Text("Home") })
+                            NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Icon(Icons.Filled.Settings, contentDescription = null) }, label = { Text("Setup") })
+                            NavigationBarItem(selected = tab == 3, onClick = { tab = 3 }, icon = { Icon(Icons.Filled.AccountCircle, contentDescription = null) }, label = { Text("More") })
                         }
                     },
                 ) { padding ->
                     Box(Modifier.padding(padding)) {
-                        when (tab) { 0 -> SimpleChatScreen(vm, photoPicker, microphone, audioPicker); 1 -> EngineCheckScreen(check); else -> AccountsScreen(app.accounts, app.settings, app.home) }
+                        when (tab) { 0 -> SimpleChatScreen(vm, photoPicker, microphone, audioPicker); 1 -> IosHomeScreen(homeVm) { tab = 3 }; 2 -> EngineCheckScreen(check); else -> AccountsScreen(app.accounts, app.settings, app.home) }
                     }
                 }
             }
