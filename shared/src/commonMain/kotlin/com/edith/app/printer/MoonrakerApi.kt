@@ -19,9 +19,8 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.URLParserException
 import io.ktor.http.content.ByteArrayContent
-import java.io.IOException
-import java.net.URI
-import java.net.URISyntaxException
+import io.ktor.http.Url
+import kotlinx.io.IOException
 
 /** Where a printer's Moonraker (the API) and its web server (the cameras) are. */
 data class PrinterUrls(val api: String, val web: String)
@@ -41,16 +40,20 @@ object PrinterAddress {
         val text = typed.trim()
         if (text.isEmpty()) return Result.failure(IllegalArgumentException("Type the printer's address, e.g. 192.168.4.86."))
         val withScheme = if (Regex("^[a-z][a-z0-9+.-]*://", RegexOption.IGNORE_CASE).containsMatchIn(text)) text else "http://$text"
-        val uri = try { URI(withScheme) } catch (e: URISyntaxException) {
+        // ktor fills in a default host for "http://"; an empty address is not one.
+        if (withScheme.substringAfter("://").takeWhile { it != '/' && it != '?' && it != '#' }.isBlank()) {
             return Result.failure(IllegalArgumentException("“$text” isn't an address Edith can use."))
         }
-        val scheme = uri.scheme?.lowercase()
+        val uri = try { Url(withScheme) } catch (e: IllegalArgumentException) {
+            return Result.failure(IllegalArgumentException("“$text” isn't an address Edith can use."))
+        }
+        val scheme = uri.protocol.name.lowercase()
         if (scheme != "http" && scheme != "https") return Result.failure(IllegalArgumentException("The printer's address must start with http:// or https://."))
-        val host = uri.host?.takeIf { it.isNotBlank() } ?: return Result.failure(IllegalArgumentException("“$text” isn't an address Edith can use."))
+        val host = uri.host.takeIf { it.isNotBlank() } ?: return Result.failure(IllegalArgumentException("“$text” isn't an address Edith can use."))
         val origin = "$scheme://$host"
         return Result.success(
-            if (uri.port == -1 || uri.port == MOONRAKER_PORT) PrinterUrls("$origin:$MOONRAKER_PORT", origin)
-            else PrinterUrls("$origin:${uri.port}", "$origin:${uri.port}"),
+            if (uri.specifiedPort == 0 || uri.specifiedPort == MOONRAKER_PORT) PrinterUrls("$origin:$MOONRAKER_PORT", origin)
+            else PrinterUrls("$origin:${uri.specifiedPort}", "$origin:${uri.specifiedPort}"),
         )
     }
 }
@@ -69,7 +72,10 @@ sealed interface PrinterReply<out T> {
  * these unwrap the result. A printer is only reachable on the home network, so a call that gets no answer at all is
  * [PrinterReply.Unreachable], not an error.
  */
-class MoonrakerApi(private val http: Lazy<HttpClient>) {
+class MoonrakerApi(
+    private val http: Lazy<HttpClient>,
+    private val io: kotlinx.coroutines.CoroutineDispatcher = com.edith.app.core.dispatchers.AppDispatchers.Default.io,
+) {
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun get(conn: PrinterConn, path: String, timeoutS: Long = CALL_S): PrinterReply<JsonElement> = result(request(conn, "GET", conn.urls.api + path, timeoutS))
@@ -97,7 +103,7 @@ class MoonrakerApi(private val http: Lazy<HttpClient>) {
         // The body is read in whatever thread the call resumes on, and Android kills the app for reading the network on the main thread
         // (`NetworkOnMainThreadException`, found with Alexa: small answers are already buffered, big or slow ones are not), so the whole
         // call and read run on the IO threads whoever asks.
-        return withContext(Dispatchers.IO) {
+        return withContext(io) {
             try {
                 val r = http.value.request(url) {
                     this.method = HttpMethod.parse(method)

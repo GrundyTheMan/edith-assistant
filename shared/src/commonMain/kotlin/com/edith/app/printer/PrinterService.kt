@@ -25,8 +25,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
-import java.net.URLEncoder
-import java.util.concurrent.ConcurrentHashMap
+import com.edith.app.core.util.PlatformLock
+import com.edith.app.core.util.synchronized
+import io.ktor.http.encodeURLParameter
 
 /**
  * A 3D printer running Klipper with Moonraker (C34, D19), on the home Wi-Fi: the owner types its address (and an API key if it
@@ -49,11 +50,12 @@ class PrinterService(
     override val state: StateFlow<ServiceState> = _state.asStateFlow()
     private val _connected = MutableStateFlow(IntegrationStatus.NotConnected)
 
-    @Volatile private var conn: PrinterConn? = null
+    @kotlin.concurrent.Volatile private var conn: PrinterConn? = null
     /** The webcams, asked for once an answer came; null until then. */
-    @Volatile private var cameras: List<PrinterCamera>? = null
+    @kotlin.concurrent.Volatile private var cameras: List<PrinterCamera>? = null
     /** The slicer's estimate per file, so only the first read of a print asks for it. */
-    private val estimates = ConcurrentHashMap<String, Double>()
+    private val estimates = HashMap<String, Double>()
+    private val estimatesLock = PlatformLock()
 
     override val backend: HomeBackend = Backend()
 
@@ -92,7 +94,7 @@ class PrinterService(
                 else SignInResult.Failed("${r.why}. Is $typed a Klipper printer with Moonraker?")
             is PrinterReply.Ok -> {
                 secrets.put(SECRET_KEY, json.encodeToString(Saved.serializer(), Saved(typed, key)))
-                conn = attempt; cameras = null; estimates.clear()
+                conn = attempt; cameras = null; estimatesLock.synchronized { estimates.clear() }
                 _state.value = ServiceState.Connected
                 _connected.value = IntegrationStatus.Connected
                 Log.i(LogTag.Home, "3D printer connected")
@@ -103,7 +105,7 @@ class PrinterService(
 
     override suspend fun disconnect() {
         secrets.put(SECRET_KEY, null)
-        conn = null; cameras = null; estimates.clear()
+        conn = null; cameras = null; estimatesLock.synchronized { estimates.clear() }
         _state.value = ServiceState.NotConnected
         _connected.value = IntegrationStatus.NotConnected
     }
@@ -137,10 +139,10 @@ class PrinterService(
     private suspend fun viaJarvis(): DeviceState? = try { jarvis?.read() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { null }
 
     private suspend fun estimateFor(c: PrinterConn, filename: String): Double? {
-        estimates[filename]?.let { return it }
-        val path = "/server/files/metadata?filename=${URLEncoder.encode(filename, "UTF-8").replace("+", "%20")}"
+        estimatesLock.synchronized { estimates[filename] }?.let { return it }
+        val path = "/server/files/metadata?filename=${filename.encodeURLParameter()}"
         val seconds = (api.get(c, path) as? PrinterReply.Ok)?.let { MoonrakerParse.estimatedTime(it.value) } ?: return null
-        estimates[filename] = seconds
+        estimatesLock.synchronized { estimates[filename] = seconds }
         return seconds
     }
 

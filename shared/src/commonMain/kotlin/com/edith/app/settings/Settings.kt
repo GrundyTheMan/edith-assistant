@@ -83,24 +83,25 @@ object SettingsKeys {
  * Settings in the Preferences DataStore `settings`. Create one per process (AppContainer does): on Android see `DataStoreSettingsRepository.create(context)`. C22: the
  * account list (`accounts`) lives in the same file, so [store] is shared with it.
  */
-class DataStoreSettingsRepository(val store: DataStore<Preferences>) : SettingsRepository {
+/** [defaults]: what a setting not yet saved reads as (the iPhone starts with spoken replies off, so nothing speaks until the owner turns it on). */
+class DataStoreSettingsRepository(val store: DataStore<Preferences>, private val defaults: Settings = Settings()) : SettingsRepository {
 
     override val settings: Flow<Settings> = store.data
         .catch { e -> if (e is IOException) emit(emptyPreferences()) else throw e }   // unreadable file → defaults
-        .map { it.toSettings() }
+        .map { it.toSettings(defaults) }
 
     override suspend fun current(): Settings = settings.first()
 
     /** Read, transform and write in one DataStore transaction, so concurrent updates can't overwrite each other. */
     override suspend fun update(transform: (Settings) -> Settings) {
-        store.edit { prefs -> prefs.write(transform(prefs.toSettings())) }
+        store.edit { prefs -> prefs.write(transform(prefs.toSettings(defaults))) }
     }
 
     companion object
 }
 
-fun Preferences.toSettings(): Settings {
-    val d = Settings()
+fun Preferences.toSettings(defaults: Settings = Settings()): Settings {
+    val d = defaults
     return Settings(
         serverUrl = this[SettingsKeys.SERVER_URL] ?: d.serverUrl,
         model = this[SettingsKeys.MODEL],
