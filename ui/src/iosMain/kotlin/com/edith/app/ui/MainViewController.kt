@@ -23,13 +23,13 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.edith.app.chat.ui.ChatFeatures
 import com.edith.app.chat.ui.ChatViewModel
+import com.edith.app.chat.ui.IosMicrophoneAccess
 import com.edith.app.chat.ui.IosPhotoPicker
 import com.edith.app.chat.ui.SimpleChatScreen
 import com.edith.app.di.createIosApp
 import com.edith.app.diagnostics.EngineCheck
 import com.edith.app.ui.diagnostics.EngineCheckScreen
 import com.edith.app.ui.theme.EdithTheme
-import com.edith.app.voice.speech.SilentSpeechController
 import kotlinx.coroutines.launch
 import platform.UIKit.UIViewController
 
@@ -48,6 +48,7 @@ fun MainViewController(): UIViewController {
         app.container.currentConversation.resolve()
     }
     val photoPicker = IosPhotoPicker()
+    val microphone = IosMicrophoneAccess()
     return ComposeUIViewController {
         EdithTheme {
             Surface {
@@ -57,8 +58,9 @@ fun MainViewController(): UIViewController {
                         repo = app.container.chatRepository,
                         engine = app.container.chatEngine,
                         current = app.container.currentConversation,
-                        speech = SilentSpeechController,
-                        features = ChatFeatures(attach = true, audioFiles = false),
+                        speech = app.speech,
+                        features = ChatFeatures(attach = true, audioFiles = false, record = true),
+                        voiceMemos = app.voiceMemos,
                         intake = app.intake,
                         attachmentStore = app.attachments,
                         clock = app.container.clock,
@@ -76,7 +78,7 @@ fun MainViewController(): UIViewController {
                     },
                 ) { padding ->
                     Box(Modifier.padding(padding)) {
-                        if (tab == 0) SimpleChatScreen(vm, photoPicker) else EngineCheckScreen(check)
+                        if (tab == 0) SimpleChatScreen(vm, photoPicker, microphone) else EngineCheckScreen(check)
                     }
                 }
             }
