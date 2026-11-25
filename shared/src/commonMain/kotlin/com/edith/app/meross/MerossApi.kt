@@ -18,9 +18,8 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.content.TextContent
-import java.io.IOException
-import java.security.SecureRandom
-import java.util.concurrent.TimeUnit
+import kotlinx.io.IOException
+import kotlin.random.Random
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -45,7 +44,7 @@ class MerossApi(
     private val http: Lazy<HttpClient>,
     private val clock: Clock,
     private val baseUrl: String = BASE_URL,
-    private val random: SecureRandom = SecureRandom(),
+    private val random: Random = Random.Default,
     /** Which addresses Meross may send Edith to (a region redirect, the API and MQTT hosts); tests answer from a local server. */
     private val trusted: (String) -> Boolean = MerossProtocol::isTrustedDomain,
 ) {

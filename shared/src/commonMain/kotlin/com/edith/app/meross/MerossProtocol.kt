@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalEncodingApi::class)
+
 package com.edith.app.meross
 
 import kotlinx.serialization.json.JsonElement
@@ -7,9 +9,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import java.security.MessageDigest
-import java.security.SecureRandom
-import java.util.Base64
+import com.edith.app.core.util.Md5
+import kotlin.random.Random
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
  * Meross's cloud protocol, as the maintained `meross-iot` Python library (albertogeniola/MerossIot, 0.4.x) does it;
@@ -24,16 +27,16 @@ object MerossProtocol {
     private val hex = "0123456789abcdef".toCharArray()
 
     fun md5(text: String): String {
-        val bytes = MessageDigest.getInstance("MD5").digest(text.toByteArray(Charsets.UTF_8))
+        val bytes = Md5.digest(text.encodeToByteArray())
         return buildString(32) { for (b in bytes) { append(hex[b.toInt() shr 4 and 15]); append(hex[b.toInt() and 15]) } }
     }
 
     /** 16 random characters from A–Z and 0–9: the sign-in's nonce. */
-    fun nonce(random: SecureRandom = SecureRandom()): String =
+    fun nonce(random: Random = Random.Default): String =
         buildString(16) { repeat(16) { append(NONCE_CHARS[random.nextInt(NONCE_CHARS.length)]) } }
 
     /** The sign-in's `params`: the request's data as JSON, then base64 (no line breaks). */
-    fun encodeParams(params: JsonObject): String = Base64.getEncoder().encodeToString(params.toString().toByteArray(Charsets.UTF_8))
+    fun encodeParams(params: JsonObject): String = Base64.encode(params.toString().encodeToByteArray())
 
     /** `md5(SECRET + timestamp-in-ms + nonce + encoded params)`, in lower-case hex. */
     fun requestSign(timestampMs: Long, nonce: String, encodedParams: String): String = md5("$SECRET$timestampMs$nonce$encodedParams")
@@ -64,7 +67,7 @@ object MerossProtocol {
     /** A message to a device and its id: `{header: {…}, payload}`, with `sign = md5(messageId + key + timestamp)`. */
     fun message(
         method: String, namespace: String, payload: JsonObject, deviceUuid: String, key: String, replyTopic: String,
-        nowSeconds: Long, random: SecureRandom = SecureRandom(),
+        nowSeconds: Long, random: Random = Random.Default,
     ): Pair<String, String> {
         val messageId = md5(buildString(16) { repeat(16) { append(NONCE_CHARS[random.nextInt(NONCE_CHARS.length)]) } })
         val header = buildJsonObject {
