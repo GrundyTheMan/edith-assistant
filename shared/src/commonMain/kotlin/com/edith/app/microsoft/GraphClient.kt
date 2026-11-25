@@ -25,7 +25,9 @@ import io.ktor.http.content.ByteArrayContent
 import io.ktor.http.content.TextContent
 import io.ktor.http.isSuccess
 import io.ktor.http.withCharset
-import java.io.IOException
+import io.ktor.utils.io.charsets.Charsets
+import kotlinx.io.IOException
+import kotlin.time.TimeSource
 import kotlin.coroutines.resumeWithException
 
 /**
@@ -35,7 +37,7 @@ import kotlin.coroutines.resumeWithException
  */
 class GraphClient(
     private val http: Lazy<HttpClient>,
-    private val auth: MicrosoftAccountAuth,
+    private val auth: GraphAuth,
     private val dispatchers: AppDispatchers,
     private val tool: String,
     private val service: String,
@@ -64,7 +66,7 @@ class GraphClient(
 
     private suspend fun <T> execute(request: Sent, parse: (String) -> T, retryAfter429: Boolean): GraphCall<T> {
         val kind = requestKind(request.method.value, request.url)
-        val startedMs = System.currentTimeMillis()
+        val started = TimeSource.Monotonic.markNow()
         val answer: Answer<T> = try {
             // A cancelled read (one account's 10 s timeout, C22 §4) cancels the HTTP call too.
             val response = http.value.request(request.url) {
@@ -76,7 +78,7 @@ class GraphClient(
             }
             val body = response.bodyAsText()
             val code = response.status.value
-            Log.d(LogTag.Accounts, "$service: $kind HTTP $code in ${System.currentTimeMillis() - startedMs} ms")
+            Log.d(LogTag.Accounts, "$service: $kind HTTP $code in ${started.elapsedNow().inWholeMilliseconds} ms")
             when {
                         response.status.isSuccess() -> Done(GraphCall.Ok(parse(body)))
                         code == 401 -> Done(GraphCall.Unauthorized)
@@ -93,7 +95,7 @@ class GraphClient(
                         }
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
-            Log.d(LogTag.Accounts, "$service: $kind stopped after ${System.currentTimeMillis() - startedMs} ms")
+            Log.d(LogTag.Accounts, "$service: $kind stopped after ${started.elapsedNow().inWholeMilliseconds} ms")
             throw e
         } catch (e: IOException) {
             Log.w(LogTag.Accounts, "$service request failed on $kind (${e::class.simpleName})")

@@ -50,16 +50,6 @@ object MicrosoftOAuth {
     )
 }
 
-/** One Graph call made with an access token: its result, or how the token was refused. */
-sealed interface GraphCall<out T> {
-    data class Ok<T>(val value: T) : GraphCall<T>
-    /** HTTP 401: the token was refused. */
-    data object Unauthorized : GraphCall<Nothing>
-    /** HTTP 403: Edith lacks a permission for this (C23 §4). */
-    data object Forbidden : GraphCall<Nothing>
-    data class Failed(val error: AppError) : GraphCall<Nothing>
-}
-
 /** What a Microsoft sign-in got: the refresh token and a first access token, kept once the account is known. */
 class MicrosoftGrant internal constructor(
     internal val refreshToken: String,
@@ -80,7 +70,7 @@ class MicrosoftAccountAuth(
     private val clock: Clock,
     /** Signs this account in again through the browser. */
     private val signInAgain: suspend (Activity) -> Unit,
-) {
+) : GraphAuth {
     private val _state = MutableStateFlow<AccountState>(AccountState.Checking)
     val state: StateFlow<AccountState> = _state.asStateFlow()
 
@@ -121,7 +111,7 @@ class MicrosoftAccountAuth(
      * Runs [call] with an access token (C23 §4). A 401 refreshes once and tries again; a second 401, or a 403, means
      * access was withdrawn, so [state] becomes NeedsSignIn.
      */
-    suspend fun <T> authorized(call: suspend (token: String) -> GraphCall<T>): Outcome<T> {
+    override suspend fun <T> authorized(call: suspend (token: String) -> GraphCall<T>): Outcome<T> {
         repeat(2) { attempt ->
             val token = when (val t = accessToken(force = attempt > 0)) {
                 is Outcome.Success -> t.value
