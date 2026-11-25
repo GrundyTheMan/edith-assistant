@@ -31,7 +31,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
-import java.util.concurrent.ConcurrentHashMap
+import com.edith.app.core.util.PlatformLock
+import com.edith.app.core.util.synchronized
 
 /**
  * Alexa devices (C30, D10, D19): everything linked to the owner's Amazon account, through the unofficial connection the
@@ -55,13 +56,14 @@ class AlexaService(
     private val _connected = MutableStateFlow(IntegrationStatus.NotConnected)
 
     private val sessionLock = Mutex()
-    @Volatile private var saved: Saved? = null
-    @Volatile private var session: AlexaSession? = null
-    @Volatile private var pending: AlexaSignInStart? = null
+    @kotlin.concurrent.Volatile private var saved: Saved? = null
+    @kotlin.concurrent.Volatile private var session: AlexaSession? = null
+    @kotlin.concurrent.Volatile private var pending: AlexaSignInStart? = null
     /** The device list (without states), kept briefly so reading one device's state doesn't list them all again. */
-    @Volatile private var listed: Pair<Long, List<AlexaDevice>>? = null
+    @kotlin.concurrent.Volatile private var listed: Pair<Long, List<AlexaDevice>>? = null
     /** The last reading each device gave, shown with its age when it doesn't answer (Jarvis's `lastKnown`). */
-    private val lastKnown = ConcurrentHashMap<String, Pair<AlexaReading, Long>>()
+    private val lastKnown = HashMap<String, Pair<AlexaReading, Long>>()
+    private val lastKnownLock = PlatformLock()
 
     override val backend: HomeBackend = Backend()
     override val form: SignInForm? = null
@@ -103,15 +105,15 @@ class AlexaService(
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w(LogTag.Home, "Alexa's registration failed unexpectedly: ${e.javaClass.name} at ${e.stackTrace.firstOrNull()}")
-            return SignInResult.Failed("Edith hit an unexpected problem finishing the sign-in (${e.javaClass.simpleName}). Try \"Use my browser\" instead.")
+            Log.w(LogTag.Home, "Alexa's registration failed unexpectedly: ${e::class.simpleName}")
+            return SignInResult.Failed("Edith hit an unexpected problem finishing the sign-in (${e::class.simpleName}). Try \"Use my browser\" instead.")
         }
         return when (val r = registered) {
             is AlexaReply.Ok -> {
                 sessionLock.withLock {
                     val keep = Saved(r.value.refreshToken, start.site.site, r.value.deviceSerial, clock.now().toEpochMilliseconds())
                     secrets.put(SECRET_KEY, json.encodeToString(Saved.serializer(), keep))
-                    saved = keep; session = null; listed = null; lastKnown.clear()
+                    saved = keep; session = null; listed = null; lastKnownLock.synchronized { lastKnown.clear() }
                 }
                 pending = null
                 _state.value = ServiceState.Connected
@@ -127,7 +129,7 @@ class AlexaService(
     override suspend fun disconnect() {
         sessionLock.withLock {
             secrets.put(SECRET_KEY, null)
-            saved = null; session = null; pending = null; listed = null; lastKnown.clear()
+            saved = null; session = null; pending = null; listed = null; lastKnownLock.synchronized { lastKnown.clear() }
         }
         _state.value = ServiceState.NotConnected
         _connected.value = IntegrationStatus.NotConnected
@@ -151,7 +153,7 @@ class AlexaService(
         }
     }
 
-    @Volatile private var lastFailure: String? = null
+    @kotlin.concurrent.Volatile private var lastFailure: String? = null
 
     /** Runs [call] with working cookies; a refusal gets new cookies once and asks again. */
     private suspend fun <T> authed(call: suspend (AmazonSite, AlexaSession) -> AlexaReply<T>): Outcome<T> {
@@ -184,43 +186,50 @@ class AlexaService(
         }
     }
 
+    /** What one batch of device states came to: the readings, and why it failed or was refused, if it did. */
+    private class BatchResult(val readings: List<Pair<String, AlexaReading>>, val problem: String? = null)
+
     /** The devices with their states now: batches of five by maker, all at once, each with its own deadline. */
     private suspend fun lookup(list: List<AlexaDevice>): List<HomeDevice> {
         val now = clock.now().toEpochMilliseconds()
         val scale = (AmazonSite.of(saved?.site.orEmpty()) ?: AmazonSite.DEFAULT).scale
         val asked = list.filter(AlexaParse::shouldAskState)
-        val readings = ConcurrentHashMap<String, AlexaReading>()
-        val problem = java.util.concurrent.atomic.AtomicReference<String?>(null)
-        val failed = java.util.concurrent.atomic.AtomicInteger()
         val batches = AlexaParse.stateBatches(asked, STATE_BATCH)
-        coroutineScope {
+        // Each batch answers on its own; the answers are put together here, one after another, so nothing is shared between the coroutines.
+        val results = coroutineScope {
             batches.map { group ->
                 async {
                     val answer = withTimeoutOrNull(STATE_DEADLINE_MS) {
                         authed<JsonElement> { site, s -> api.states(site, s, AlexaParse.stateRequests(group), STATE_DEADLINE_MS / 1000) }
                     }
                     when (answer) {
-                        null -> { failed.incrementAndGet(); problem.set("no answer within ${STATE_DEADLINE_MS / 1000} s"); group.forEach { readings[it.entityId] = AlexaReading(null, noAnswer = true) } }
-                        is Outcome.Failure -> { failed.incrementAndGet(); problem.set(whyOf(answer)); group.forEach { readings[it.entityId] = AlexaReading(null, noAnswer = true) } }
+                        null -> BatchResult(group.map { it.entityId to AlexaReading(null, noAnswer = true) }, "no answer within ${STATE_DEADLINE_MS / 1000} s")
+                        is Outcome.Failure -> BatchResult(group.map { it.entityId to AlexaReading(null, noAnswer = true) }, whyOf(answer))
                         is Outcome.Success -> {
-                            AlexaParse.stateRefusal(answer.value)?.let { failed.incrementAndGet(); problem.set(it) }
                             val parsed = AlexaParse.parseStates(answer.value, scale)
-                            group.forEach { readings[it.entityId] = AlexaParse.readingOf(it, parsed) }
+                            BatchResult(group.map { it.entityId to AlexaParse.readingOf(it, parsed) }, AlexaParse.stateRefusal(answer.value))
                         }
                     }
                 }
             }.awaitAll()
         }
-        if (batches.isNotEmpty() && failed.get() == batches.size) Log.w(LogTag.Home, "Alexa gave no device states: ${problem.get()}")
+        val readings = HashMap<String, AlexaReading>()
+        var problem: String? = null
+        var failed = 0
+        for (r in results) {
+            r.readings.forEach { (id, reading) -> readings[id] = reading }
+            if (r.problem != null) { failed++; problem = r.problem }
+        }
+        if (batches.isNotEmpty() && failed == batches.size) Log.w(LogTag.Home, "Alexa gave no device states: $problem")
         return list.map { d -> device(d, readings[d.entityId], now, scale) }
     }
 
     private fun device(d: AlexaDevice, reading: AlexaReading?, now: Long, scale: TempScale): HomeDevice {
         var shown = reading
         var at: Long? = if (reading != null && !reading.noAnswer) now else null
-        if (reading != null && !reading.noAnswer && (reading.state != null || reading.unreachable)) lastKnown[d.entityId] = reading to now
+        if (reading != null && !reading.noAnswer && (reading.state != null || reading.unreachable)) lastKnownLock.synchronized { lastKnown[d.entityId] = reading to now }
         // No answer this time: the last reading, with when it was reported.
-        if (reading?.noAnswer == true) lastKnown[d.entityId]?.let { (last, lastAt) -> shown = last; at = lastAt }
+        if (reading?.noAnswer == true) lastKnownLock.synchronized { lastKnown[d.entityId] }?.let { (last, lastAt) -> shown = last; at = lastAt }
         return HomeDevice(
             id = d.entityId, name = d.name, room = null, type = typeOf(d.type),
             capabilities = AlexaParse.capabilitiesOf(d, scale),
@@ -262,7 +271,7 @@ class AlexaService(
             Log.i(LogTag.Home, "Alexa command sent (${d.type})")
             // What the device reports right after; clouds often lag, and Home asks again (C25 §6).
             val now = lookup(listOf(d)).first()
-            return Outcome.Success(now.state ?: lastKnown[d.entityId]?.first?.state ?: DeviceState())
+            return Outcome.Success(now.state ?: lastKnownLock.synchronized { lastKnown[d.entityId] }?.first?.state ?: DeviceState())
         }
 
         override suspend fun snapshot(deviceId: String): Outcome<ByteArray> = failed("Alexa can't take camera pictures for Edith")
