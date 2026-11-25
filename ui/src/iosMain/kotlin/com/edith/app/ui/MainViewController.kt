@@ -25,6 +25,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.edith.app.chat.ui.ChatFeatures
 import com.edith.app.chat.ui.ChatViewModel
 import com.edith.app.chat.ui.IosMicrophoneAccess
+import com.edith.app.chat.ui.IosAudioPicker
 import com.edith.app.chat.ui.IosPhotoPicker
 import com.edith.app.chat.ui.SimpleChatScreen
 import com.edith.app.di.createIosApp
@@ -49,6 +50,7 @@ fun MainViewController(): UIViewController {
         app.container.currentConversation.resolve()
     }
     val photoPicker = IosPhotoPicker()
+    val audioPicker = IosAudioPicker()
     val microphone = IosMicrophoneAccess()
     return ComposeUIViewController {
         EdithTheme {
@@ -60,7 +62,7 @@ fun MainViewController(): UIViewController {
                         engine = app.container.chatEngine,
                         current = app.container.currentConversation,
                         speech = app.speech,
-                        features = ChatFeatures(attach = true, audioFiles = false, record = true, dictation = app.dictation.isAvailable),
+                        features = ChatFeatures(attach = true, audioFiles = true, record = true, dictation = app.dictation.isAvailable),
                         voiceMemos = app.voiceMemos,
                         attachmentPlayer = app.player,
                         dictation = app.dictation,
@@ -82,7 +84,7 @@ fun MainViewController(): UIViewController {
                     },
                 ) { padding ->
                     Box(Modifier.padding(padding)) {
-                        when (tab) { 0 -> SimpleChatScreen(vm, photoPicker, microphone); 1 -> EngineCheckScreen(check); else -> AccountsScreen(app.accounts, app.settings) }
+                        when (tab) { 0 -> SimpleChatScreen(vm, photoPicker, microphone, audioPicker); 1 -> EngineCheckScreen(check); else -> AccountsScreen(app.accounts, app.settings) }
                     }
                 }
             }

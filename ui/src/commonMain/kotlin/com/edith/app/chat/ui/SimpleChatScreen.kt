@@ -13,7 +13,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
  * [ChatFeatures] are off. Android has its own glue (`ChatScreen` in `app/`) because it also asks for permissions, picks files and runs services.
  */
 @Composable
-fun SimpleChatScreen(vm: ChatViewModel, photoPicker: PhotoPicker? = null, microphone: MicrophoneAccess? = null) {
+fun SimpleChatScreen(vm: ChatViewModel, photoPicker: PhotoPicker? = null, microphone: MicrophoneAccess? = null, audioPicker: AudioPicker? = null) {
     val state by vm.state.collectAsStateWithLifecycle()
     var permissionDenied by rememberSaveable { mutableStateOf(false) }
     ChatContent(
@@ -34,6 +34,7 @@ fun SimpleChatScreen(vm: ChatViewModel, photoPicker: PhotoPicker? = null, microp
             ),
             onOpenAppSettings = { microphone?.openSettings() },
             onAttachPhoto = { photoPicker?.pick(MAX_PHOTOS) { vm.attachImages(it) } },
+            onAttachAudio = { audioPicker?.pick { address -> address?.let(vm::attachAudio) } },
             onRemoveAttachment = vm::removeAttachment,
             onDraftChange = vm::onDraftChange,
             onSend = vm::send,
