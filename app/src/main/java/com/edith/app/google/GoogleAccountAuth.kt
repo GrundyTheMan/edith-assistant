@@ -18,23 +18,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-/** What Edith may ask Google for (C17 §2). Each tool asks only for what it needs. */
-enum class GoogleScope(val uri: String) {
-    CalendarEvents("https://www.googleapis.com/auth/calendar.events"),
-    /** C18: which calendars the owner has checked (the owner chose all of them, not only the primary). */
-    CalendarList("https://www.googleapis.com/auth/calendar.calendarlist.readonly"),
-    GmailReadonly("https://www.googleapis.com/auth/gmail.readonly"),
-    GmailCompose("https://www.googleapis.com/auth/gmail.compose"),
-    /** C35: Google Tasks, read and write. Asked for only when a Tasks call needs it (trap 2), never at startup. */
-    Tasks("https://www.googleapis.com/auth/tasks"),
-    ;
-
-    companion object {
-        /** What calendar and email need: every scope but [Tasks], so an account signed in before C35 stays Connected. */
-        val CORE: Set<GoogleScope> = entries.toSet() - Tasks
-    }
-}
-
 /** Signing in (who): Android's Credential Manager with "Sign in with Google". A fake in tests. */
 interface GoogleSignIn {
     sealed interface Result {
@@ -68,16 +51,6 @@ interface GoogleAuthorizer {
     suspend fun revoke(email: String)
 }
 
-/** One Google API call made with an access token (C18, C19): its result, or "the token was refused". */
-sealed interface GoogleCall<out T> {
-    data class Ok<T>(val value: T) : GoogleCall<T>
-    /** HTTP 401: the token was refused. */
-    data object Unauthorized : GoogleCall<Nothing>
-    /** HTTP 403 for a missing scope (`insufficientPermissions`): the owner must approve more access. */
-    data object MissingScope : GoogleCall<Nothing>
-    data class Failed(val error: AppError) : GoogleCall<Nothing>
-}
-
 /**
  * One Google account's access (C17, C17b; per account since C22). With Google Play services, tokens come from Play
  * services for this account on every call and the app stores none. Without it (D16) the account signs in through the
@@ -91,7 +64,7 @@ class GoogleAccountAuth(
     private val usesBrowser: suspend () -> Boolean,
     /** Signs this account in again through the browser (Grant access on the browser path). */
     private val signInAgain: suspend (Activity) -> Unit,
-) {
+) : GoogleAuth {
     private val _state = MutableStateFlow<AccountState>(AccountState.Checking)
     val state: StateFlow<AccountState> = _state.asStateFlow()
 
@@ -207,7 +180,7 @@ class GoogleAccountAuth(
      * Runs [call] with a fresh access token for [scopes] (C18, C19). A 401 clears the token and tries once more; a
      * second 401 means access was withdrawn, so [state] becomes NeedsSignIn.
      */
-    suspend fun <T> authorized(scopes: Set<GoogleScope>, call: suspend (token: String) -> GoogleCall<T>): Outcome<T> {
+    override suspend fun <T> authorized(scopes: Set<GoogleScope>, call: suspend (token: String) -> GoogleCall<T>): Outcome<T> {
         repeat(2) { attempt ->
             val token = when (val t = accessToken(scopes)) {
                 is Outcome.Success -> t.value
@@ -236,7 +209,7 @@ class GoogleAccountAuth(
      * only makes [tasks] NeedsPermission: [state] (calendar and email) stays as it is. On the browser path the refresh
      * response's `scope` already says whether Tasks was granted, so no Tasks request is made without it.
      */
-    suspend fun <T> tasksAuthorized(call: suspend (token: String) -> GoogleCall<T>): Outcome<T> {
+    override suspend fun <T> tasksAuthorized(call: suspend (token: String) -> GoogleCall<T>): Outcome<T> {
         val scopes = setOf(GoogleScope.Tasks)
         repeat(2) { attempt ->
             val token = when (val r = authorizer.authorize(scopes)) {
