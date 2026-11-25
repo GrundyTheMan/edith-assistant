@@ -386,7 +386,9 @@ fun InputRow(
             // C15 §1: Photo (Android's photo picker, no permission) or Audio file.
             Box {
                 var menu by remember { mutableStateOf(false) }
-                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.AttachFile, contentDescription = "Attach a file") }
+                IconButton(onClick = { if (features.audioFiles) menu = true else onAttachPhoto() }) {
+                    Icon(Icons.Filled.AttachFile, contentDescription = if (features.audioFiles) "Attach a file" else "Attach a photo")
+                }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(
                         text = { Text("Photo") },

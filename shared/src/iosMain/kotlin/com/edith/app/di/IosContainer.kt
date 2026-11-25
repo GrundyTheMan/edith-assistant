@@ -3,6 +3,9 @@
 package com.edith.app.di
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import com.edith.app.attachments.AttachmentFiles
+import com.edith.app.attachments.AttachmentIntake
+import com.edith.app.attachments.IosAttachmentIntake
 import com.edith.app.attachments.PathAttachmentStore
 import com.edith.app.chat.engine.ReplyListener
 import com.edith.app.core.dispatchers.AppDispatchers
@@ -35,7 +38,16 @@ import platform.Foundation.NSURL
 import platform.Foundation.NSUserDomainMask
 
 /** What the iPhone app keeps for the chat engine (K4.1): the shared container, and the two platform pieces a screen also needs. */
-class IosApp(val container: SharedContainer, val secrets: SecretStore, val settings: SettingsRepository, val registry: ToolRegistry)
+class IosApp(
+    val container: SharedContainer,
+    val secrets: SecretStore,
+    val settings: SettingsRepository,
+    val registry: ToolRegistry,
+    /** Prepares picked photos (K4.3); its folder is emptied at startup. */
+    val intake: AttachmentIntake,
+    /** Where sent photos are kept and read back from (the chat shows them). */
+    val attachments: AttachmentFiles,
+)
 
 /**
  * Builds the shared engine for the iPhone from Apple's own parts (K4.1; plan §4.2): the Keychain for secrets, the Darwin engine for HTTP, the
@@ -48,6 +60,7 @@ fun createIosApp(): IosApp {
     val settings = DataStoreSettingsRepository(PreferenceDataStoreFactory.createWithPath { "$dir/settings.preferences_pb".toPath() })
     val listeners = mutableListOf<ReplyListener>()
     val clients = DarwinKtorClients()
+    val attachmentStore = PathAttachmentStore("$dir/files", "$dir/cache")
     lateinit var container: SharedContainer
     // The tools that need no permission and no account: the time, the weather in a named place, web search and reading a page. The reader refuses names
     // that resolve to a private address (publicHostAllowed; Android does it inside its DNS lookup).
@@ -60,7 +73,7 @@ fun createIosApp(): IosApp {
             settings = settings,
             secrets = secrets,
             http = clients,
-            attachments = PathAttachmentStore("$dir/files", "$dir/cache"),
+            attachments = attachmentStore,
             location = NoLocation,
             toolPermissions = ToolPermissions { true },
             localNetwork = object : LocalNetworkAccess { override fun isGranted() = true },   // iOS asks itself, at the first local connection
@@ -69,7 +82,7 @@ fun createIosApp(): IosApp {
         replyListeners = { listeners.also { if (it.isEmpty()) it += container.conversationTitler } },
         afterAttachments = { container.retention.apply() },
     )
-    return IosApp(container, secrets, settings, registry)
+    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore)
 }
 
 /** No location yet (K4.2 adds Core Location): the weather tool is not offered, so this is never asked. */

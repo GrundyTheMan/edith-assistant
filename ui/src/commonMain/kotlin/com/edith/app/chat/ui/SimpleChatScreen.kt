@@ -10,12 +10,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
  * [ChatFeatures] are off. Android has its own glue (`ChatScreen` in `app/`) because it also asks for permissions, picks files and runs services.
  */
 @Composable
-fun SimpleChatScreen(vm: ChatViewModel) {
+fun SimpleChatScreen(vm: ChatViewModel, photoPicker: PhotoPicker? = null) {
     val state by vm.state.collectAsStateWithLifecycle()
     ChatContent(
         state = state,
         draft = vm.draft,
         actions = ChatActions(
+            onAttachPhoto = { photoPicker?.pick(MAX_PHOTOS) { vm.attachImages(it) } },
+            onRemoveAttachment = vm::removeAttachment,
             onDraftChange = vm::onDraftChange,
             onSend = vm::send,
             onStopReply = vm::stopReply,
@@ -31,3 +33,6 @@ fun SimpleChatScreen(vm: ChatViewModel) {
         ),
     )
 }
+
+/** How many photos one pick may add (as on Android). */
+private const val MAX_PHOTOS = 4

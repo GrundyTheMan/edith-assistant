@@ -75,6 +75,26 @@ class ChatContentTest {
         onNodeWithTag(SLOW_HINT_TAG).assertIsDisplayed()
     }
 
+    @Test fun withoutAudioFilesThePaperclipGoesStraightToThePhotoPicker() = runComposeUiTest {
+        // K4.3: the iPhone cannot attach audio files yet, so a one-item menu would only be an extra tap.
+        var photos = 0
+        setContent {
+            EdithTheme {
+                ChatContent(state = chat.copy(features = ChatFeatures(attach = true, audioFiles = false)), draft = "", actions = ChatActions(onAttachPhoto = { photos++ }))
+            }
+        }
+        onNodeWithContentDescription("Attach a photo").performClick()
+        assertEquals(1, photos)
+        onNodeWithText("Audio file").assertDoesNotExist()
+    }
+
+    @Test fun withAudioFilesThePaperclipOpensAMenuOfTwo() = runComposeUiTest {
+        setContent { EdithTheme { ChatContent(state = chat.copy(features = ChatFeatures(attach = true)), draft = "", actions = ChatActions()) } }
+        onNodeWithContentDescription("Attach a file").performClick()
+        onNodeWithText("Photo").assertIsDisplayed()
+        onNodeWithText("Audio file").assertIsDisplayed()
+    }
+
     @Test fun aSharedScreenForEmptyChatsSaysSoOnceLoaded() = runComposeUiTest {
         setContent { EdithTheme { ChatContent(state = ChatUiState(conversationId = 1, loaded = true), draft = "", actions = ChatActions()) } }
         onNodeWithTag(INPUT_TAG).assertIsDisplayed()
