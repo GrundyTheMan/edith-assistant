@@ -5,6 +5,8 @@ import com.edith.app.core.error.AppError
 import com.edith.app.core.error.Outcome
 import com.edith.app.core.log.Log
 import com.edith.app.core.log.LogTag
+import com.edith.app.home.LiveFeed
+import com.edith.app.home.TrackLiveFeed
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,21 +32,27 @@ import org.webrtc.VideoTrack
 import org.webrtc.audio.JavaAudioDeviceModule
 import kotlin.coroutines.resume
 
-/** One WebRTC call to a Ring camera (C32): the video [track], drawn with [eglContext]. [close] ends the call. */
-interface RtcCall {
+/** One WebRTC call to a Ring camera (C32): the video [track], drawn with [eglContext]. [close] ends the call. (The shared [RingCall] is its lifecycle.) */
+interface RtcCall : RingCall {
     val track: VideoTrack
     val eglContext: EglBase.Context
-    /** Why the connection was lost (failed, or closed by Ring), null while it holds. */
-    val lost: StateFlow<String?>
-    fun close()
 }
 
 /**
  * Makes WebRTC calls (C32). [exchange] sends Edith's offer (SDP text) to the service and returns its answer, or null when
  * the service refused; the real implementation is [WebRtcClient], tests pass a fake because the native library can't run on the JVM.
+ * The feed it gives the screens carries the call's video track.
  */
-interface RingRtc {
-    suspend fun open(exchange: suspend (offerSdp: String) -> String?): Outcome<RtcCall>
+interface RingRtc : RingLive {
+    override suspend fun open(exchange: suspend (offerSdp: String) -> String?): Outcome<RtcCall>
+
+    override fun feed(call: RingCall, lifecycle: LiveFeed): LiveFeed {
+        val rtc = call as RtcCall
+        return object : TrackLiveFeed, LiveFeed by lifecycle {
+            override val track = rtc.track
+            override val eglContext = rtc.eglContext
+        }
+    }
 }
 
 /**

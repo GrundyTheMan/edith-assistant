@@ -43,6 +43,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import com.edith.app.alexa.AlexaApi
 import com.edith.app.alexa.AlexaService
+import com.edith.app.ring.RingApi
+import com.edith.app.ring.RingService
 import com.edith.app.home.DataStoreHomePrefs
 import com.edith.app.home.Home
 import com.edith.app.home.RoomCommandLog
@@ -131,8 +133,9 @@ fun createIosApp(): IosApp {
     // The smart home (K4.9): the printer on the home Wi-Fi so far (Meross, Ring, Alexa and Blink register here as they move). The sign-in forms are on the More tab.
     val printer = PrinterService(secrets, MoonrakerApi(clients.ktorPlain), SystemClock)
     val alexa = AlexaService(secrets, AlexaApi(lazy { clients.alexaClient() }), SystemClock)
+    val ring = RingService(secrets, RingApi(clients.ktorSecure), SystemClock)   // no live view yet: that needs WebRTC on the iPhone
     val home by lazy {
-        Home(DataStoreHomePrefs(settings.store), RoomCommandLog(database.value.homeCommandDao()), container.appScope, SystemClock).also { it.register(printer); it.register(alexa) }
+        Home(DataStoreHomePrefs(settings.store), RoomCommandLog(database.value.homeCommandDao()), container.appScope, SystemClock).also { it.register(printer); it.register(alexa); it.register(ring) }
     }
     val registry by lazy {
         val calendarHandles = CalendarHandles(); val mailHandles = MailHandles(); val taskHandles = TaskHandles()
@@ -166,6 +169,7 @@ fun createIosApp(): IosApp {
     container.appScope.launch { accounts.load() }   // connects and quietly checks every saved account
     container.appScope.launch { printer.load() }   // picks up a saved printer
     container.appScope.launch { alexa.load() }   // picks up a saved Alexa sign-in
+    container.appScope.launch { ring.load() }   // picks up a saved Ring sign-in
     val speech = SpeechOutput(IosTtsEngine(), settings, container.appScope)
     // Replies are read aloud only while Read replies aloud is on, which it is not until the owner turns it on (the More tab).
     listeners += container.conversationTitler
