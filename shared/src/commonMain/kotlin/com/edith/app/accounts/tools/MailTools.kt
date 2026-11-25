@@ -2,8 +2,9 @@ package com.edith.app.accounts.tools
 
 import com.edith.app.accounts.AccountDirectory
 import com.edith.app.core.time.formatPattern
+import com.edith.app.accounts.ACCOUNTS_INTEGRATION_ID
 import com.edith.app.accounts.AccountEntry
-import com.edith.app.accounts.Accounts
+import com.edith.app.accounts.sources.MailBody
 import com.edith.app.accounts.sources.MailQuery
 import com.edith.app.accounts.sources.MailSource
 import com.edith.app.accounts.sources.MailSummary
@@ -12,7 +13,8 @@ import com.edith.app.accounts.sources.Readable
 import com.edith.app.accounts.sources.Reads
 import com.edith.app.chat.engine.ConfirmationRequest
 import com.edith.app.core.error.Outcome
-import com.edith.app.google.gmail.MailText
+import com.edith.app.core.util.PlatformLock
+import com.edith.app.core.util.synchronized
 import com.edith.app.tools.framework.ArgumentError
 import com.edith.app.tools.framework.ParamType
 import com.edith.app.tools.framework.Tool
@@ -38,16 +40,17 @@ import kotlin.time.Instant
 class MailHandles {
     private val handles = LinkedHashMap<String, MailSummary>()
     private var next = 1
+    private val lock = PlatformLock()
 
-    @Synchronized fun handleFor(email: MailSummary): String {
-        handles.entries.firstOrNull { it.value.accountId == email.accountId && it.value.id == email.id }?.let { it.setValue(email); return it.key }
+    fun handleFor(email: MailSummary): String = lock.synchronized {
+        handles.entries.firstOrNull { it.value.accountId == email.accountId && it.value.id == email.id }?.let { it.setValue(email); return@synchronized it.key }
         val h = "m${next++}"
         handles[h] = email
         if (handles.size > MAX) handles.remove(handles.keys.first())
-        return h
+        h
     }
 
-    @Synchronized fun email(handle: String?): MailSummary? = handle?.trim()?.let { handles[it] }
+    fun email(handle: String?): MailSummary? = lock.synchronized { handle?.trim()?.let { handles[it] } }
 
     companion object { const val MAX = 300 }
 }
@@ -93,7 +96,7 @@ class SearchEmailTool(private val dir: AccountDirectory, private val handles: Ma
     )
     override val statusLabel = "Checking your email…"
     override val displayName = "email"
-    override val integrationId = Accounts.ID
+    override val integrationId = ACCOUNTS_INTEGRATION_ID
     override val guidance = "For questions about the user's email, call search_email, then read_email with a message_id when the content " +
         "matters. For today's email use after: today; for yesterday's, after: yesterday and before: today."
 
@@ -142,8 +145,8 @@ class ReadEmailTool(private val dir: AccountDirectory, private val handles: Mail
     )
     override val statusLabel = "Reading the email…"
     override val displayName = "email"
-    override val integrationId = Accounts.ID
-    override val maxResultChars = MailText.MAX_BODY + 600
+    override val integrationId = ACCOUNTS_INTEGRATION_ID
+    override val maxResultChars = MailBody.MAX_BODY + 600
 
     override suspend fun execute(args: ToolArgs, ctx: ToolContext): ToolResult {
         val known = handles.email(args.string("message_id")) ?: return ToolResult.Error(NEEDS_SEARCH)
@@ -174,7 +177,7 @@ private abstract class WriteEmailTool(protected val dir: AccountDirectory, prote
     )
     override val displayName = "email"
     override val timeoutMs: Long? = Reads.PATIENT_TOOL_MS   // a Patient source (Jarvis, through Outlook) may take longer than 20 s
-    override val integrationId = Accounts.ID
+    override val integrationId = ACCOUNTS_INTEGRATION_ID
 
     private sealed interface Prepared {
         data class Ready(val entry: AccountEntry, val email: OutgoingMail) : Prepared

@@ -10,6 +10,7 @@ import com.edith.app.accounts.sources.MailMessage
 import com.edith.app.accounts.sources.MailQuery
 import com.edith.app.accounts.sources.MailSearchResult
 import com.edith.app.accounts.sources.MailSummary
+import com.edith.app.accounts.sources.MailBody
 import com.edith.app.accounts.sources.OutgoingMail
 import com.edith.app.google.GoogleAccountAuth
 import com.edith.app.google.GoogleCall
@@ -222,7 +223,7 @@ object GmailQuery {
  * base64url).
  */
 object MailText {
-    const val MAX_BODY = 6_000
+    const val MAX_BODY = MailBody.MAX_BODY
 
     /** Plain text when there is any, else the HTML part made readable; quoted history removed; capped at [MAX_BODY]. */
     internal fun body(part: PartDto?): String {
@@ -231,11 +232,7 @@ object MailText {
         return clean(text)
     }
 
-    /** Plain text with the quoted history removed, capped at [MAX_BODY] (Outlook's text bodies too, C23 §3). */
-    fun clean(text: String): String {
-        val clean = stripQuoted(text.replace("\r\n", "\n")).trim()
-        return if (clean.length <= MAX_BODY) clean else clean.take(MAX_BODY) + "\n[…the rest of the email is cut]"
-    }
+    fun clean(text: String): String = MailBody.clean(text)
 
     /** The first part of [mime] in the tree (multipart/alternative, multipart/mixed, …), skipping attachments. */
     private fun find(part: PartDto?, mime: String): PartDto? {
@@ -246,21 +243,9 @@ object MailText {
 
     private fun decode(part: PartDto): String = part.body?.data?.let { String(Base64.getUrlDecoder().decode(it.trimEnd('=')), Charsets.UTF_8) }.orEmpty()
 
-    internal fun htmlToText(html: String): String = PageReader.readableHtml(html).content
+    internal fun htmlToText(html: String): String = MailBody.htmlToText(html)
 
-    /**
-     * Removes the quoted earlier messages where it's obvious: from an "On … wrote:" line (Gmail, Apple Mail) or an
-     * "-----Original Message-----" line (Outlook) on, and lines starting with ">".
-     */
-    fun stripQuoted(text: String): String {
-        val lines = text.lines()
-        val cut = lines.indices.firstOrNull { i ->
-            val l = lines[i].trim()
-            l.startsWith("-----Original Message-----", ignoreCase = true) ||
-                (l.startsWith("On ") && (l.endsWith("wrote:") || (i + 1 < lines.size && lines[i + 1].trim().endsWith("wrote:") && l.length < 120)))
-        } ?: lines.size
-        return lines.take(cut).filterNot { it.trimStart().startsWith(">") }.joinToString("\n").trimEnd()
-    }
+    fun stripQuoted(text: String): String = MailBody.stripQuoted(text)
 
     /** RFC 2822, base64url: To, Subject (RFC 2047 when not ASCII), reply headers, a UTF-8 plain-text body. */
     fun raw(email: OutgoingMail): String {
