@@ -11,12 +11,12 @@ import com.edith.app.accounts.DataStoreAccountStore
 import com.edith.app.accounts.IosAccounts
 import com.edith.app.accounts.IosGoogleAccounts
 import com.edith.app.accounts.tools.CalendarHandles
-import com.edith.app.accounts.tools.FindFreeTimeTool
-import com.edith.app.accounts.tools.ListCalendarEventsTool
+import com.edith.app.accounts.tools.calendarTools
+import com.edith.app.accounts.tools.mailTools
+import com.edith.app.accounts.tools.taskTools
+import com.edith.app.accounts.tasks.RankStore
+import com.edith.app.accounts.tasks.TaskRanker
 import com.edith.app.accounts.tools.MailHandles
-import com.edith.app.accounts.tools.ReadEmailTool
-import com.edith.app.accounts.tools.SearchEmailTool
-import com.edith.app.accounts.tools.ListTasksTool
 import com.edith.app.accounts.tools.TaskHandles
 import com.edith.app.google.browser.IosAuthSession
 import com.edith.app.jarvis.DarwinPinnedHttp
@@ -91,18 +91,17 @@ fun createIosApp(): IosApp {
         )
     }
     // The tools that need no permission: the time, the weather in a named place, web search and reading a page. The reader refuses names
-    // that resolve to a private address (publicHostAllowed; Android does it inside its DNS lookup). With the accounts, only the tools that READ (the
-    // calendar, email and to-dos): the ones that change something wait for the confirmation cards on the iPhone.
+    // that resolve to a private address (publicHostAllowed; Android does it inside its DNS lookup). With the accounts, the calendar, email and to-do
+    // tools: those that change something (create, send, complete, delete) wait for the owner's tap on a confirmation card, which the shared chat shows.
     val registry by lazy {
         val calendarHandles = CalendarHandles(); val mailHandles = MailHandles(); val taskHandles = TaskHandles()
+        val ranker = TaskRanker(container.ollama, RankStore("$dir/${RankStore.FILE_NAME}"), SystemClock)
         ToolRegistry(
             listOf(
                 CurrentTimeTool(), WeatherTool(container.openMeteo, NoLocation), SearchWebTool(container.webSearch),
                 ReadWebPageTool(container.webSearch.pages(PageReader(lazy { clients.pageReaderClient() }, AppDispatchers.Default, hostAllowed = ::publicHostAllowed))),
-                ListCalendarEventsTool(accounts, calendarHandles), FindFreeTimeTool(accounts),
-                SearchEmailTool(accounts, mailHandles), ReadEmailTool(accounts, mailHandles),
-                ListTasksTool(accounts, taskHandles),
-            ),
+            ) + calendarTools(accounts, calendarHandles, SystemClock::zone) + mailTools(accounts, mailHandles) +
+                taskTools(accounts, taskHandles, ranker, SystemClock) { settings.current() },
             integrations = listOf(accounts),
         )
     }
