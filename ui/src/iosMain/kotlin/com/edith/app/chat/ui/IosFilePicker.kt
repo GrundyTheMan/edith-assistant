@@ -8,19 +8,20 @@ import platform.UIKit.UIApplication
 import platform.UIKit.UIDocumentPickerDelegateProtocol
 import platform.UIKit.UIDocumentPickerViewController
 import platform.UIKit.UIViewController
+import platform.UniformTypeIdentifiers.UTType
 import platform.UniformTypeIdentifiers.UTTypeAudio
 import platform.darwin.NSObject
 
 /**
- * The iPhone's audio file picker (K4.3): the Files app's document picker, set to hand over a **copy** (so the app needs no access to the original and
+" * The iPhone's file picker (K4.3; audio files by default, any file for a printer's .gcode): the Files app's document picker, set to hand over a **copy** (so the app needs no access to the original and
  * the intake may delete what it gets). Written without a Mac to try it on: the macOS jobs compile it, the owner's phone is the first real run.
  */
-class IosAudioPicker : AudioPicker {
+class IosFilePicker(private val types: List<UTType> = listOf(UTTypeAudio)) : AudioPicker {
     /** The picker keeps its delegate weakly, so it is held here until the picker has finished. */
     private var delegate: Delegate? = null
 
     override fun pick(onPicked: (String?) -> Unit) {
-        val picker = UIDocumentPickerViewController(forOpeningContentTypes = listOf(UTTypeAudio), asCopy = true)
+        val picker = UIDocumentPickerViewController(forOpeningContentTypes = types, asCopy = true)
         picker.allowsMultipleSelection = false
         val d = Delegate { address -> delegate = null; onPicked(address) }
         delegate = d
