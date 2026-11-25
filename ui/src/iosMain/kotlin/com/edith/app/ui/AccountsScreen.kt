@@ -27,6 +27,8 @@ import com.edith.app.accounts.AccountState
 import com.edith.app.accounts.IosAccounts
 import com.edith.app.accounts.PlatformActivity
 import com.edith.app.jarvis.JarvisAccounts
+import com.edith.app.settings.SettingsRepository
+import androidx.compose.material3.Switch
 import kotlinx.coroutines.launch
 
 /**
@@ -35,14 +37,21 @@ import kotlinx.coroutines.launch
  * how the sign-in seams get used before a designed Settings exists.
  */
 @Composable
-fun AccountsScreen(accounts: IosAccounts) {
+fun AccountsScreen(accounts: IosAccounts, settings: SettingsRepository) {
     val scope = rememberCoroutineScope()
     val list by accounts.accounts.collectAsState()
     val message by accounts.message.collectAsState()
     var busy by remember { mutableStateOf(false) }
 
     Column(Modifier.statusBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Accounts", style = MaterialTheme.typography.headlineSmall)
+        Text("More", style = MaterialTheme.typography.headlineSmall)
+        val current by settings.settings.collectAsState(initial = null)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Read replies aloud")
+            Switch(checked = current?.speakReplies == true, onCheckedChange = { on -> scope.launch { settings.update { it.copy(speakReplies = on) } } })
+        }
+        HorizontalDivider()
+        Text("Accounts", style = MaterialTheme.typography.titleLarge)
         message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
         if (list.isEmpty()) Text("No account is connected yet.")

@@ -38,6 +38,7 @@ import com.edith.app.data.db.MessageSource
 import com.edith.app.data.db.open
 import com.edith.app.settings.DataStoreSettingsRepository
 import com.edith.app.settings.SettingsRepository
+import com.edith.app.settings.Settings
 import com.edith.app.tools.context.CurrentTimeTool
 import com.edith.app.voice.capture.IosRecorder
 import com.edith.app.voice.capture.NoSpeechInput
@@ -90,7 +91,7 @@ class IosApp(
 fun createIosApp(): IosApp {
     val dir = applicationSupportDir()
     val secrets = IosSecretStore()
-    val settings = DataStoreSettingsRepository(PreferenceDataStoreFactory.createWithPath { "$dir/settings.preferences_pb".toPath() })
+    val settings = DataStoreSettingsRepository(PreferenceDataStoreFactory.createWithPath { "$dir/settings.preferences_pb".toPath() }, defaults = Settings(speakReplies = false))
     val listeners = mutableListOf<ReplyListener>()
     val clients = DarwinKtorClients()
     val attachmentStore = PathAttachmentStore("$dir/files", "$dir/cache")
@@ -134,11 +135,14 @@ fun createIosApp(): IosApp {
             localNetwork = object : LocalNetworkAccess { override fun isGranted() = true },   // iOS asks itself, at the first local connection
         ),
         toolRegistry = { registry },
-        replyListeners = { listeners.also { if (it.isEmpty()) it += container.conversationTitler } },
+        replyListeners = { listeners },
         afterAttachments = { container.retention.apply() },
     )
     container.appScope.launch { accounts.load() }   // connects and quietly checks every saved account
     val speech = SpeechOutput(IosTtsEngine(), settings, container.appScope)
+    // Replies are read aloud only while Read replies aloud is on, which it is not until the owner turns it on (the More tab).
+    listeners += container.conversationTitler
+    listeners += speech
     val voiceMemos = VoiceMemos(
         recorder = IosRecorder("$dir/recordings"),
         transcriber = OllamaTranscriber(container.ollama, settings, AppDispatchers.Default),
