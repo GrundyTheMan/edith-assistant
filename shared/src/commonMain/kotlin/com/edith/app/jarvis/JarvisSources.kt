@@ -26,9 +26,9 @@ import kotlin.time.Instant
 
 /** The words every read-only account says when asked to change something (C38: Jarvis's feed only reads and saves drafts). */
 /** Outlook on the PC can be slow; the HTTP call gives up at 40 s (JarvisApi), so the read waits a little longer than that. */
-internal const val JARVIS_PATIENCE_MS = 45_000L
+const val JARVIS_PATIENCE_MS = 45_000L
 
-internal const val READ_ONLY = "Edith can only read your work account through Jarvis (and save email drafts); change it in Outlook on the PC."
+const val READ_ONLY = "Edith can only read your work account through Jarvis (and save email drafts); change it in Outlook on the PC."
 
 private fun <T> readOnly(): Outcome<T> = Outcome.Failure(AppError.ToolFailed("work account", READ_ONLY))
 
@@ -38,7 +38,7 @@ private inline fun <A, B> Outcome<A>.map(f: (A) -> B): Outcome<B> = when (this) 
 }
 
 /** One more email address in "Name <address>" form, as the mail tools show senders. */
-internal fun WireAddress.display(): String = when {
+fun WireAddress.display(): String = when {
     name.isBlank() -> address
     address.isBlank() -> name
     name.equals(address, ignoreCase = true) -> address
@@ -46,7 +46,7 @@ internal fun WireAddress.display(): String = when {
 }
 
 /** The shared work mailboxes as one mailbox (C38 §2): ids are Jarvis's own, so a message keeps its account. */
-internal class JarvisMailSource(
+class JarvisMailSource(
     override val account: Account,
     private val api: JarvisApi,
     private val now: () -> Instant = kotlin.time.Clock.System::now,
@@ -104,7 +104,7 @@ internal class JarvisMailSource(
     }
 }
 
-internal fun WireMail.toSummary(accountId: String) = MailSummary(
+fun WireMail.toSummary(accountId: String) = MailSummary(
     id = id,
     threadId = id,
     from = from.display(),
@@ -118,7 +118,7 @@ internal fun WireMail.toSummary(accountId: String) = MailSummary(
 )
 
 /** The shared work calendars as one source (C38 §2), read-only. */
-internal class JarvisCalendarSource(
+class JarvisCalendarSource(
     override val account: Account,
     private val api: JarvisApi,
 ) : CalendarSource, Patient {
@@ -162,7 +162,7 @@ internal class JarvisCalendarSource(
 }
 
 /** An all-day event runs from local midnight to the next local midnight (the contract, spec 7.4); others are instants. */
-internal fun WireEvent.toEvent(accountId: String, calendarName: String): CalendarEvent {
+fun WireEvent.toEvent(accountId: String, calendarName: String): CalendarEvent {
     val s = Instant.fromEpochMilliseconds(start)
     val e = Instant.fromEpochMilliseconds(end)
     return CalendarEvent(
@@ -175,7 +175,7 @@ internal fun WireEvent.toEvent(accountId: String, calendarName: String): Calenda
 }
 
 /** The shared Outlook Tasks (spec part 8) as to-do lists, read-only. */
-internal class JarvisTaskSource(override val account: Account, private val api: JarvisApi) : TaskSource, Patient {
+class JarvisTaskSource(override val account: Account, private val api: JarvisApi) : TaskSource, Patient {
     override val patienceMs: Long get() = JARVIS_PATIENCE_MS
     override val readOnly: Boolean get() = true
 
@@ -189,7 +189,7 @@ internal class JarvisTaskSource(override val account: Account, private val api: 
                     id = t.id, listId = listId, title = t.title.ifBlank { "(no title)" }, notes = t.notes?.ifBlank { null },
                     due = t.due?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
                     done = t.done, completedAt = t.completed?.let(Instant::fromEpochMilliseconds),
-                    position = "%06d".format(i),   // Jarvis sends them in Outlook's order
+                    position = i.toString().padStart(6, '0'),   // Jarvis sends them in Outlook's order
                     accountId = account.id,
                 )
             }
