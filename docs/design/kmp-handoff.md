@@ -97,7 +97,7 @@ Then, in this order, none needing a decision unless noted:
 
 - Try the TestFlight build and report what breaks (see §5).
 - The Google iOS client ID and the Microsoft app registration (client ID, the iOS platform with the bundle id) so those sign-ins can be tried; the iCloud app-specific password.
-- Decisions open in the plan's §12: D47 (licence), D49 (App Transport Security for plain-HTTP Ollama: the build still has a blanket exemption), the bundle id (D43), D50 to D60.
+- Decisions open in the plan's §12: D47 (licence), the bundle id (D43), D50 to D60. D49 (App Transport Security) was decided on 2026-11-26: see its row.
 - Delete the App Store Connect API key `edith-spike-ci` once the spike is no longer needed.
 - Tidy-up: the old private clone `D:\Dev Projects\edith`, the extra worktrees, the paused Expo prep.
 

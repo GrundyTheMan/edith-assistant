@@ -66,6 +66,8 @@ class SettingsViewModel(
     private val ollama: OllamaClient,
     private val modelSelection: ModelSelection,
     private val localNetwork: LocalNetworkAccess,
+    /** The platform's rule for plain-http addresses (the iPhone's, D49); null: any. */
+    private val plainHttp: com.edith.app.settings.PlainHttpRule? = null,
 ) : ViewModel() {
     private val _state = MutableStateFlow(SettingsUiState())
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
@@ -134,7 +136,7 @@ class SettingsViewModel(
     }
 
     fun saveServer() {
-        when (val result = ServerUrl.normalize(_state.value.serverField)) {
+        when (val result = ServerUrl.normalize(_state.value.serverField, plainHttp)) {
             is ServerUrl.Result.Invalid -> _state.update { it.copy(serverError = result.message) }
             is ServerUrl.Result.Valid -> viewModelScope.launch {
                 settings.update { it.copy(serverUrl = result.url) }
@@ -160,7 +162,7 @@ class SettingsViewModel(
     }
 
     /** The normalized typed address, or null after showing why it can't be used. */
-    private fun typedUrlOrShowError(): String? = when (val result = ServerUrl.normalize(_state.value.serverField)) {
+    private fun typedUrlOrShowError(): String? = when (val result = ServerUrl.normalize(_state.value.serverField, plainHttp)) {
         is ServerUrl.Result.Valid -> result.url
         is ServerUrl.Result.Invalid -> { _state.update { it.copy(serverError = result.message) }; null }
     }
