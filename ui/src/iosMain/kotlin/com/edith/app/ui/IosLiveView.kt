@@ -131,7 +131,10 @@ private fun IosLivePlayer(feed: StreamLiveFeed) {
     Text(report, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
 }
 
-/** Ring's live picture (K4.18): the WebRTC view Swift made for this call. Only Ring has this kind of feed; ending the dialog ends the call through the feed. */
+/**
+ * Ring's live picture (K4.18): the WebRTC view Swift made for this call. Only Ring has this kind of feed; ending the dialog ends the call through the feed.
+ * Under the picture: the connection's own words (state, candidates, Ring's answer, the picture's size), because this has not run on a phone before: when no picture comes, they say which step stopped.
+ */
 @Composable
 private fun IosRtcPlayer(feed: PeerLiveFeed) {
     val bridged = feed.peer as? BridgedRingPeer
@@ -139,8 +142,16 @@ private fun IosRtcPlayer(feed: PeerLiveFeed) {
         Text("Live view for this camera isn't available on this phone yet.")
         return
     }
+    var report by remember { mutableStateOf("") }
+    LaunchedEffect(bridged) {
+        while (true) {
+            report = listOfNotNull(bridged.status().ifEmpty { null }, feed.peer.lost.value?.let { "Lost: $it" }).joinToString("\n")
+            delay(500)
+        }
+    }
     UIKitView(
         factory = { bridged.swift.makeVideoView() },
         modifier = Modifier.fillMaxWidth().height(220.dp),
     )
+    if (report.isNotEmpty()) Text(report, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
 }

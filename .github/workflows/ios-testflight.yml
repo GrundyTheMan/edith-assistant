@@ -78,7 +78,12 @@ jobs:
             -destination 'generic/platform=iOS' -archivePath build/App.xcarchive \
             -allowProvisioningUpdates \
             -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_${KEY_ID}.p8" -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER_ID" \
-            DEVELOPMENT_TEAM="$TEAM_ID" CURRENT_PROJECT_VERSION="$((100 + ${{ github.run_number }}))" | tail -60
+            DEVELOPMENT_TEAM="$TEAM_ID" CURRENT_PROJECT_VERSION="$((100 + ${{ github.run_number }}))" 2>&1 | tee build/archive.log | tail -60
+
+      - name: Show the first errors of a failed archive (the log above keeps only its last 60 lines)
+        if: failure()
+        run: |
+          grep -n -m3 -B3 -A25 -E 'Exception|^e: |error:' build/archive.log | head -120 || true
 
       - name: Upload to TestFlight
         run: |

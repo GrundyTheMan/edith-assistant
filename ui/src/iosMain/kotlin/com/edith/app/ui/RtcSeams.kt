@@ -39,6 +39,9 @@ interface SwiftRtcPeer {
 
     /** Ends the connection; safe to call twice. */
     fun close()
+
+    /** One line for the screen: the connection and ICE state, how many candidates went in the offer, whether Ring's answer was accepted, and the video's size once a picture arrives. */
+    fun status(): String
 }
 
 /** Makes [SwiftRtcPeer]s; null when WebRTC could not start. (Not named `newPeer`: Kotlin renames methods that start with "new" for Swift.) */
@@ -67,4 +70,6 @@ class BridgedRingPeer(val swift: SwiftRtcPeer) : RingPeer {
     }
 
     override fun close() = swift.close()
+
+    override fun status(): String = swift.status()
 }
