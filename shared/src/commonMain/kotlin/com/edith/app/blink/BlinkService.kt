@@ -63,6 +63,8 @@ class BlinkService(
     private val liveLimitMs: Long = 5 * 60_000L,
     /** How long a live view waits before asking again after the stream server closed it early; tests shorten it. */
     private val liveRetryWaitMs: Long = 3_000L,
+    /** How long after the stream ends on its own Blink is asked what became of the view's command; tests shorten it. */
+    private val liveStatusWaitMs: Long = 1_500L,
     /** Waits between polls; tests pass one that does not wait. (A live view always waits in real time.) */
     private val pause: suspend (Long) -> Unit = { kotlinx.coroutines.delay(it) },
 ) : HomeService {
@@ -424,7 +426,7 @@ class BlinkService(
                         Log.i(LogTag.Home, "Blink live view: the stream closed early ($why); asking again")
                         again()?.let { next -> why = runner.run(next, serial) { channel.trySend(it) } }
                     }
-                    finish(why)
+                    finish(withBlinkSide(why))
                 }
                 if (answer.commandId != null) launch {
                     while (true) {
@@ -434,13 +436,33 @@ class BlinkService(
                         val status = authed { t, w -> api.liveStatus(t, w, network, id) }
                         val stopped = (status as? Outcome.Success)?.value
                         // A command ended on purpose while the view is being asked for again is not the end of the view.
-                        if (stopped != null && !switching && watched === current) { finish("Blink ended the live view (its command stopped: $stopped)."); break }
+                        if (stopped != null && !switching && watched === current) { finish(endedByBlink(stopped)); break }
                     }
                 }
                 launch { kotlinx.coroutines.delay(liveLimitMs); finish("Live view stops after 5 minutes. Start it again to keep watching.") }
                 stream.join()
             }
         }
+
+        /** When the stream ends on its own, asks Blink what became of the view's command, so the message says whether Blink ended it or the connection was lost. */
+        private suspend fun withBlinkSide(why: String): String {
+            val id = current.commandId
+            if (id == null || !(why.startsWith("Blink's stream server closed") || why.contains("connection failed"))) return why
+            kotlinx.coroutines.delay(liveStatusWaitMs)
+            val r = authed { t, w -> api.liveStatus(t, w, network, id) } as? Outcome.Success ?: return why
+            val stopped = r.value
+            // Blink finished the view's command normally: Blink ended the view itself (it limits how long one lasts), which is not a failure.
+            if (stopped != null && stopped.contains("state_condition done")) {
+                Log.i(LogTag.Home, "Blink ended a live view normally: $why Blink says the view's command had stopped ($stopped).")
+                return endedByBlink(stopped)
+            }
+            return why + (stopped?.let { " Blink says the view's command had stopped ($it)." } ?: " Blink still shows the view as running, so the connection was lost rather than ended by Blink.")
+        }
+
+        /** Blink finishing the view's command normally is Blink ending the view (it limits how long one lasts): not a failure. Anything else keeps its codes. */
+        private fun endedByBlink(stopped: String): String =
+            if (stopped.contains("state_condition done")) "Blink ended the live view after ${startedAt.elapsedNow().inWholeSeconds} s: its command finished normally, as Blink limits how long a live view lasts. Start it again to keep watching."
+            else "Blink ended the live view (its command stopped: $stopped)."
 
         private fun finish(reason: String) {
             if (!finished.compareAndSet(false, true)) return

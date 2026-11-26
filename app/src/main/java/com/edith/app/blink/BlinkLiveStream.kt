@@ -58,7 +58,7 @@ class BlinkLiveStream(
                     var why: String? = null
                     while (why == null && isActive) {
                         val n = input.read(buffer)
-                        if (n < 0) why = if (bytes == 0L) "Blink's stream server closed the connection before any video arrived." else "Blink's stream server closed the connection after ${bytes / 1024} KB of video."
+                        if (n < 0) { val secs = (System.nanoTime() - started) / 1_000_000_000; why = if (bytes == 0L) "Blink's stream server closed the connection before any video arrived (${secs} s in)." else "Blink's stream server closed the connection after ${bytes / 1024} KB of video (${secs} s in)." }
                         else for (chunk in reader.push(buffer, n)) { bytes += chunk.size; onVideo(chunk) }
                     }
                     why ?: "Stopped."

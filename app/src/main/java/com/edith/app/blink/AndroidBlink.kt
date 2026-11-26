@@ -28,8 +28,9 @@ fun AndroidBlinkService(
     liveConnect: (BlinkLive.Immis) -> Socket = BlinkLiveStream::tlsSocket,
     liveLimitMs: Long = 5 * 60_000L,
     liveRetryWaitMs: Long = 3_000L,
+    liveStatusWaitMs: Long = 1_500L,
     pause: suspend (Long) -> Unit = { kotlinx.coroutines.delay(it) },
-): BlinkService = BlinkService(secrets, api, clock, AndroidBlinkLive(liveConnect), liveLimitMs, liveRetryWaitMs, pause)
+): BlinkService = BlinkService(secrets, api, clock, AndroidBlinkLive(liveConnect), liveLimitMs, liveRetryWaitMs, liveStatusWaitMs, pause)
 
 /** Android's [BlinkLiveRunner]: [BlinkLiveStream] over a socket. */
 class AndroidBlinkLive(private val connect: (BlinkLive.Immis) -> Socket) : BlinkLiveRunner {
