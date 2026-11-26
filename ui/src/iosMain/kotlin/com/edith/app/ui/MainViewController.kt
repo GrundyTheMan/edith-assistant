@@ -45,10 +45,10 @@ import platform.UIKit.UIViewController
  * The iPhone's entry (K4.1, K4.2): the shared screens inside a view controller that the SwiftUI shell in `iosApp/` shows. It builds the shared
  * engine once per launch from Apple's own parts (Keychain, Darwin, files), does what Android's container does at startup (clears leftovers,
  * opens the database, picks the open chat), and shows two tabs: the chat, and the setup page with the engine check where the Ollama address is typed.
- * Chat has photo attachments (K4.3); voice and audio files come later.
+ * Chat has photo attachments (K4.3); voice and audio files come later. [rtc] is the Swift shell's WebRTC for Ring's live view (K4.18); null: Ring has no live view.
  */
-fun MainViewController(): UIViewController {
-    val app = createIosApp()
+fun MainViewController(rtc: SwiftRtcFactory?): UIViewController {
+    val app = createIosApp(rtc?.let { factory -> com.edith.app.ring.RingPeerFactory { factory.newPeer()?.let(::BridgedRingPeer) } })
     val check = EngineCheck(app.container, app.secrets, app.settings)
     app.intake.clearLeftovers()
     app.container.appScope.launch {

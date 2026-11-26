@@ -8,10 +8,17 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     ENABLE_USER_SCRIPT_SANDBOXING: NO
+# Google's WebRTC as a Swift package, for Ring's live view (K4.18); pinned so a build does not change by itself.
+packages:
+  WebRTC:
+    url: https://github.com/stasel/WebRTC.git
+    exactVersion: 158.0.0
 targets:
   iosApp:
     type: application
     platform: iOS
+    dependencies:
+      - package: WebRTC
     sources:
       - iosApp
     info:
@@ -26,6 +33,7 @@ targets:
         NSLocationWhenInUseUsageDescription: Edith uses your approximate location only when you ask for the weather here, and never stores it.
         NSMicrophoneUsageDescription: Edith listens when you tap the record button, to turn what you say into a message.
         NSSpeechRecognitionUsageDescription: Edith turns what you say into text in the message box, on your phone when your language allows it.
+        NSCameraUsageDescription: Edith never uses the camera. The live-view library asks for this text; Ring and Blink cameras are shown from the internet.
         NSLocalNetworkUsageDescription: Edith talks to the model on your PC over your home network.
         EdithGoogleClientId: "158291874134-m9dqa46o72rg2a38352984p7ucsnbd3e.apps.googleusercontent.com"   # Google's iOS client ID (docs/google-setup.md); empty: Google sign-in says it is not set up
         EdithMicrosoftClientId: "93dc844d-f90a-481f-b5c3-12f3e03db45e"   # Edith's Microsoft app registration (docs/microsoft-setup.md, with the iOS platform and this bundle id); empty: Microsoft sign-in says it is not set up

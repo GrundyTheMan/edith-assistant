@@ -121,9 +121,9 @@ class IosApp(
 /**
  * Builds the shared engine for the iPhone from Apple's own parts (K4.1; plan §4.2): the Keychain for secrets, the Darwin engine for HTTP, the
  * database, settings and attachments as files under Application Support (kept by the system and backed up, not shown in the Files app).
- * Call once per launch. Tools so far: the time, the weather in a named place or "here" (Core Location), web search and reading a page; the others join as their services move (K2.5 to K2.8).
+ * Call once per launch; [ringPeers] makes the WebRTC connections for Ring's live view (Swift's, null: no live view). Tools so far: the time, the weather in a named place or "here" (Core Location), web search and reading a page; the others join as their services move (K2.5 to K2.8).
  */
-fun createIosApp(): IosApp {
+fun createIosApp(ringPeers: com.edith.app.ring.RingPeerFactory? = null): IosApp {
     val dir = applicationSupportDir()
     val secrets = IosSecretStore()
     val settings = DataStoreSettingsRepository(PreferenceDataStoreFactory.createWithPath { "$dir/settings.preferences_pb".toPath() }, defaults = Settings(speakReplies = false))
@@ -152,7 +152,7 @@ fun createIosApp(): IosApp {
     val alexa = AlexaService(secrets, AlexaApi(lazy { clients.alexaClient() }), SystemClock)
     val printerFeed = PrinterFeed { accounts.jarvisConnection() }
     val printerPrefs = DataStorePrinterPrefs(settings.store)
-    val ring = RingService(secrets, RingApi(clients.ktorSecure), SystemClock)   // no live view yet: that needs WebRTC on the iPhone
+    val ring = RingService(secrets, RingApi(clients.ktorSecure), SystemClock, rtc = ringPeers?.let { com.edith.app.ring.PeerRingLive(it) })   // live view only when the Swift shell supplied WebRTC (K4.18)
     val blink = BlinkService(secrets, BlinkApi(lazy { clients.blinkClient() }), SystemClock, live = BlinkStreamRunner(NsBlinkTransportFactory()))
     val meross = MerossService(secrets, MerossApi(clients.ktorSecure, SystemClock), MqttMerossBus(com.edith.app.icloud.mail.NsStreamTransportFactory(), AppDispatchers.Default, SystemClock), SystemClock)
     val home by lazy {

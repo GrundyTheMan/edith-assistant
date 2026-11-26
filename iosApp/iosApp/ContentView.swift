@@ -5,7 +5,7 @@ import EdithUI
 /// Shows the shared Compose screens. This file and iOSApp.swift are the whole Swift side of the app so far.
 struct ComposeView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIViewController {
-        MainViewControllerKt.MainViewController()
+        MainViewControllerKt.MainViewController(rtc: RingRtcFactory())
     }
 
     func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
