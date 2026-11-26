@@ -41,9 +41,9 @@ interface SwiftRtcPeer {
     fun close()
 }
 
-/** Makes [SwiftRtcPeer]s; null when WebRTC could not start. */
+/** Makes [SwiftRtcPeer]s; null when WebRTC could not start. (Not named `newPeer`: Kotlin renames methods that start with "new" for Swift.) */
 interface SwiftRtcFactory {
-    fun newPeer(): SwiftRtcPeer?
+    fun makePeer(): SwiftRtcPeer?
 }
 
 /** A Swift peer as the shared code's [RingPeer]; the screen asks [swift] for the view. */

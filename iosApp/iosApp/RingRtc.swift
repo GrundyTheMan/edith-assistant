@@ -7,7 +7,7 @@ import EdithUI
 /// does the signalling with Ring and asks this for the offer, gives it Ring's answer and shows the view it draws; the same steps as Android's `WebRtcClient`.
 /// Written without a Mac to try it on: CI compiles it, and the owner's phone is the first real run.
 final class RingRtcFactory: NSObject, SwiftRtcFactory {
-    func newPeer() -> SwiftRtcPeer? {
+    func makePeer() -> SwiftRtcPeer? {
         RingRtcPeer.make()
     }
 }

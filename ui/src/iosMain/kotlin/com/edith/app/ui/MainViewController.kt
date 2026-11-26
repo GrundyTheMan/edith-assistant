@@ -48,7 +48,7 @@ import platform.UIKit.UIViewController
  * Chat has photo attachments (K4.3); voice and audio files come later. [rtc] is the Swift shell's WebRTC for Ring's live view (K4.18); null: Ring has no live view.
  */
 fun MainViewController(rtc: SwiftRtcFactory?): UIViewController {
-    val app = createIosApp(rtc?.let { factory -> com.edith.app.ring.RingPeerFactory { factory.newPeer()?.let(::BridgedRingPeer) } })
+    val app = createIosApp(rtc?.let { factory -> com.edith.app.ring.RingPeerFactory { factory.makePeer()?.let(::BridgedRingPeer) } })
     val check = EngineCheck(app.container, app.secrets, app.settings)
     app.intake.clearLeftovers()
     app.container.appScope.launch {
