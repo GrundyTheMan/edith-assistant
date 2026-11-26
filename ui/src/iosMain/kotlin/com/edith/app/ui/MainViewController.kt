@@ -18,6 +18,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +49,9 @@ import platform.UIKit.UIViewController
  * Chat has photo attachments (K4.3); voice and audio files come later. [rtc] is the Swift shell's WebRTC for Ring's live view (K4.18); null: Ring has no live view.
  */
 fun MainViewController(rtc: SwiftRtcFactory?): UIViewController {
+    // The crash hook goes in first, and what the last run left is read before this run marks itself as in front (D58).
+    val crash = com.edith.app.core.crash.IosCrashReporter.create().also { it.install() }
+    val crashAtLaunch = crash.pending()
     val app = createIosApp(rtc?.let { factory -> com.edith.app.ring.RingPeerFactory { factory.makePeer()?.let(::BridgedRingPeer) } })
     val check = EngineCheck(app.container, app.secrets, app.settings)
     app.intake.clearLeftovers()
@@ -66,6 +70,18 @@ fun MainViewController(rtc: SwiftRtcFactory?): UIViewController {
                 val printerVm = viewModel { com.edith.app.printer.ui.PrinterViewModel(app.printerSession, app.printerPrefs, app.container.clock) }
                 var showPrinter by rememberSaveable { mutableStateOf(false) }
                 var showCheck by rememberSaveable { mutableStateOf(false) }
+                // The last crash report (D58): the banner at the top, and Settings → About keeps it until it is dismissed. Edith is "in front" between
+                // start and stop; a run that ends there without a report is told as a crash.
+                var crashReport by remember { mutableStateOf(crashAtLaunch) }
+                val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+                DisposableEffect(lifecycle) {
+                    val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                        if (event == androidx.lifecycle.Lifecycle.Event.ON_START) crash.markFront()
+                        if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) crash.markBackground()
+                    }
+                    lifecycle.addObserver(observer)
+                    onDispose { lifecycle.removeObserver(observer) }
+                }
                 // While you were away: what the cameras reported since the app was last opened (K4.16), found once at launch.
                 var catchUp by remember { mutableStateOf<List<com.edith.app.alerts.Alert>>(emptyList()) }
                 androidx.compose.runtime.LaunchedEffect(Unit) { catchUp = app.alerts.catchUp() }
@@ -118,6 +134,7 @@ fun MainViewController(rtc: SwiftRtcFactory?): UIViewController {
                                 settingsVm, webSearchVm, attachmentsVm, app.settings, app.speech, app.accounts, app.home, app.alertPrefs,
                                 edithVersion = (platform.Foundation.NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String) ?: "",
                                 openEngineCheck = { showCheck = true },
+                                crashReport = crashReport,
                             )
                         }
                         // New camera alerts while the app is open, over whatever tab is showing.
@@ -127,6 +144,9 @@ fun MainViewController(rtc: SwiftRtcFactory?): UIViewController {
                             onDismiss = app.alerts::dismiss,
                             modifier = Modifier.align(androidx.compose.ui.Alignment.TopCenter),
                         )
+                        crashReport?.let {
+                            com.edith.app.ui.components.CrashBanner(it, onDismiss = { crash.dismiss(); crashReport = null }, modifier = Modifier.align(androidx.compose.ui.Alignment.TopCenter))
+                        }
                     }
                 }
             }

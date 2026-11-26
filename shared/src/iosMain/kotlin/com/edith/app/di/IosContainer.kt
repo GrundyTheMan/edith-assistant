@@ -233,11 +233,21 @@ fun createIosApp(ringPeers: com.edith.app.ring.RingPeerFactory? = null): IosApp 
         say = { speech.announce(it) },
         wakeIsTap = true,
     )
+    // D54: a reply being written asks iOS for extra time, so it can finish after the owner leaves the app (it cannot hold longer than iOS lends, about 30 s).
+    com.edith.app.chat.engine.ReplyKeepAlive(
+        container.chatEngine.state,
+        begin = { onExpired ->
+            val id = platform.UIKit.UIApplication.sharedApplication.beginBackgroundTaskWithName("Edith reply") { onExpired() }
+            if (id == platform.UIKit.UIBackgroundTaskInvalid) null else id
+        },
+        end = { platform.UIKit.UIApplication.sharedApplication.endBackgroundTask(it as ULong) },
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
+    )
     return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore, accounts, home, printerSession, printerPrefs, alerts, alertPrefs, speech, voiceMemos, com.edith.app.attachments.IosAttachmentPlayer { speech.stop() }, com.edith.app.voice.capture.IosSpeechInput(), handsFree)
 }
 
 /** The app's private folder for data, made on first use. */
-private fun applicationSupportDir(): String {
+internal fun applicationSupportDir(): String {
     val url: NSURL? = NSFileManager.defaultManager.URLForDirectory(
         directory = NSApplicationSupportDirectory,
         inDomain = NSUserDomainMask,

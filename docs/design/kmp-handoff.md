@@ -16,9 +16,9 @@ Read it before touching anything, then the plan's §4 (target architecture) and 
 | Phase 4 the iPhone app on shared code (K4.1 to K4.16) | **built**: chat with tools; photos, audio files, voice memos, dictation, read-aloud and conversation mode (a Talk button, no wake word); Google, Microsoft, iCloud (mail and calendar) and the Jarvis work account; Home, Printer, Calendar and Settings tabs; Alexa, Ring, Blink, Meross and the printer; camera alerts while the app is open and While you were away. **Not tried on a phone** |
 | Phase 5 parity and retirement | not started; waits on the phone checks |
 
-**What the iPhone does not have yet:** a wake word (an engine and a decision), live camera views (Ring's WebRTC, Blink's stream: the iPhone has no player for either), the
-crash banner, hands-free settings, and notifications while the app is closed (iOS allows them only with a push from a server, which is a separate design). Sign-in for Google and
-Microsoft needs the owner's client IDs in `iosApp/project.yml` (`EdithGoogleClientId`, `EdithMicrosoftClientId`) and, for Microsoft, an app registration with the bundle id.
+**What the iPhone does not have yet** (full list with evidence: [`kmp-parity-audit.md`](kmp-parity-audit.md)): a wake word (paused) and its hands-free settings, Edith's file cards (View, Save and Share do nothing), and notifications while the app is closed (iOS allows them only with a push from a
+server: designed in `ios-alerts-while-closed.md`, Jarvis's side not built). Built but **never tried on a phone** (only Microsoft sign-in, mail and calendar have been): the live views for Blink and Ring,
+Google sign-in, the crash banner, a reply that keeps running after leaving the app, alerts, Alexa, Meross, the printer, Jarvis and iCloud mail. The client IDs for Google and Microsoft are in `iosApp/project.yml`.
 
 ## 2. The ground rules (read `AGENTS.md` too)
 

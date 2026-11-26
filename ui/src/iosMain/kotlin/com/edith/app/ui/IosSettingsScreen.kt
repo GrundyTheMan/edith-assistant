@@ -49,12 +49,14 @@ fun IosSettingsScreen(
     alertPrefs: com.edith.app.alerts.AlertPrefs,
     edithVersion: String,
     openEngineCheck: () -> Unit,
+    /** The last crash report, if there is one (D58); Settings → About shows "View last crash report". */
+    crashReport: String? = null,
 ) {
     val state by settingsVm.state.collectAsStateWithLifecycle()
     Column(Modifier.statusBarsPadding()) {
         SettingsContent(
             state = state,
-            crashReport = null,
+            crashReport = crashReport,
             onServerChange = settingsVm::onServerFieldChange,
             onSave = settingsVm::saveServer,
             onTest = settingsVm::testConnection,
