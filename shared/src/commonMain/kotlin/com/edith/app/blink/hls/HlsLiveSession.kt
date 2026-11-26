@@ -20,11 +20,13 @@ class HlsLiveSession(private val feed: StreamLiveFeed, scope: CoroutineScope = C
     private val clock = TimeSource.Monotonic.markNow()
     private val segmenter = TsSegmenter(now = { clock.elapsedNow().inWholeMilliseconds })
     private val list = HlsPlaylist()
+    private var bytesIn = 0L
+    private var segmentsCut = 0
     private val job: Job = scope.launch {
         try {
             for (chunk in feed.video) {
                 val cut = segmenter.push(chunk)
-                if (cut.isNotEmpty()) lock.synchronized { cut.forEach(list::add) }
+                lock.synchronized { bytesIn += chunk.size; segmentsCut += cut.size; cut.forEach(list::add) }
             }
         } finally {
             lock.synchronized { segmenter.finish()?.let(list::add); list.end() }
@@ -36,6 +38,12 @@ class HlsLiveSession(private val feed: StreamLiveFeed, scope: CoroutineScope = C
 
     /** The bytes of segment [sequence], or null when it is not (or no longer) there. */
     fun segment(sequence: Long): ByteArray? = lock.synchronized { list.segment(sequence)?.data }
+
+    /** One line for the screen while the live view is being proven on a phone: what has come in from the camera, and why the feed ended if it did. */
+    fun status(): String {
+        val (bytes, segments) = lock.synchronized { bytesIn to segmentsCut }
+        return "Camera: ${bytes / 1024} KB received, $segments segments cut" + (feed.ended.value?.let { ". Ended: $it" } ?: "")
+    }
 
     /** Stops reading the feed. */
     fun close() { job.cancel() }
