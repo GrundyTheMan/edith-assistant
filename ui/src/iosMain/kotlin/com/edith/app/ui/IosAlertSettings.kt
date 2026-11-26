@@ -27,7 +27,7 @@ import kotlinx.coroutines.launch
  * notifications while it is closed.
  */
 @Composable
-fun IosAlertSettings(home: Home, prefs: AlertPrefs) {
+fun IosAlertSettings(home: Home, prefs: AlertPrefs, push: com.edith.app.alerts.push.PushRegistration? = null) {
     val services by home.services.collectAsState()
     val choices by prefs.choices.collectAsState(initial = AlertChoices())
     val scope = rememberCoroutineScope()
@@ -40,6 +40,7 @@ fun IosAlertSettings(home: Home, prefs: AlertPrefs) {
         )
         if (alerting.none { it.state.collectAsState().value == ServiceState.Connected }) Text("Connect Ring or Blink in the smart-home section first.")
         alerting.forEach { service -> ServiceAlerts(service, choices, prefs) { block -> scope.launch { block() } } }
+        if (push != null) ClosedPushRow(push, prefs) { block -> scope.launch { block() } }
     }
 }
 
@@ -55,4 +56,16 @@ private fun ServiceAlerts(service: HomeService, choices: AlertChoices, prefs: Al
             Switch(checked = choices.enabled(id, kind), onCheckedChange = { on -> launch { prefs.set(id, kind, on) } })
         }
     }
+}
+
+/** "Also when Edith is closed (through Jarvis)" (K6.2): Jarvis on the PC watches the cameras and sends an Apple push; the line under the switch says how far it got. */
+@Composable
+private fun ClosedPushRow(push: com.edith.app.alerts.push.PushRegistration, prefs: AlertPrefs, launch: (suspend () -> Unit) -> Unit) {
+    val on by prefs.closedPush.collectAsState(initial = false)
+    val state by push.state.collectAsState()
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text("Also when Edith is closed (through Jarvis)", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        Switch(checked = on, onCheckedChange = { v -> launch { prefs.setClosedPush(v) } })
+    }
+    Text(state.words, style = MaterialTheme.typography.bodySmall)
 }
