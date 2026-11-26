@@ -2,6 +2,7 @@ package com.edith.app.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -27,7 +28,8 @@ fun IosHomeScreen(
     onDismissCatchUp: () -> Unit = {},
 ) {
     val ui by vm.state.collectAsStateWithLifecycle()
-    Column {
+    // Each screen keeps clear of the status bar (the clock and the camera cut-out) itself: the tab scaffold passes no top inset (MainViewController).
+    Column(Modifier.statusBarsPadding()) {
         CatchUpCard(catchUp, onOpenClips = { vm.openClips(); onDismissCatchUp() }, onDismiss = onDismissCatchUp)
         Box(Modifier.weight(1f)) {
             HomeContent(ui, vm.tabActions(openSettings = openMore, openPrinter = openPrinter), HomeOverlays(clipPlayer = { url, headers -> IosClipPlayer(url, headers) }, live = { live, onClose -> IosLiveDialog(live, onClose) }))
