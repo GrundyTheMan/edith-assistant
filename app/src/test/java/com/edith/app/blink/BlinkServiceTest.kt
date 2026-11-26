@@ -192,7 +192,7 @@ class BlinkServiceTest {
         return server to got
     }
 
-    private fun liveService(limitMs: Long = 60_000) = AndroidBlinkService(secrets, blink.api(), clock, { Socket(it.host, it.port) }, limitMs, 100L) { waits += it }
+    private fun liveService(limitMs: Long = 60_000) = AndroidBlinkService(secrets, blink.api(), clock, { Socket(it.host, it.port) }, limitMs, 100L, 50L) { waits += it }
 
     @Test fun `a live view asks Blink, connects to the stream server with the camera's serial, and passes the video on`() = runBlocking {
         val (server, got) = streamServer(video(0x47, 1), video(0x47, 2))
@@ -248,7 +248,7 @@ class BlinkServiceTest {
         withTimeout(5_000) { feed.video.receive() }
         blink.liveState = "done"
         withTimeout(8_000) { while (feed.ended.value == null) delay(50) }
-        assertEquals("Blink ended the live view (its command stopped: state_condition done).", feed.ended.value)
+        assertTrue(feed.ended.value, Regex("Blink ended the live view after \\d+ s: its command finished normally.*Start it again to keep watching\\.").matches(feed.ended.value!!))
         withTimeout(5_000) { assertTrue(feed.video.receiveCatching().isClosed) }
         server.close()
     }
@@ -275,6 +275,41 @@ class BlinkServiceTest {
             server.close()
         }
         assertTrue(crashes.joinToString { it.toString() }, crashes.isEmpty())
+    }
+
+    @Test fun `a stream Blink closes says how long it ran and that Blink still shows the view as running`() = runBlocking {
+        val server = ServerSocket(0)
+        // Twice: a close within 10 s is asked for again once, and the second close is the one reported.
+        Thread { repeat(2) { server.accept().apply { getInputStream().readNBytes(122); getOutputStream().write(video(0x47, 1)); getOutputStream().flush(); Thread.sleep(1_100); close() } } }.apply { isDaemon = true; start() }
+        blink.liveServer = "immis://127.0.0.1:${server.localPort}/CONN?client_id=9"
+        val feed = liveService().also { it.signIn(login) }.backend.startLive("1").value()
+        withTimeout(8_000) { while (feed.ended.value == null) delay(50) }
+        val why = feed.ended.value!!
+        assertTrue(why, Regex("Blink's stream server closed the connection after 0 KB of video \\(\\d+ s in\\)\\. Blink still shows the view as running, so the connection was lost rather than ended by Blink\\.").matches(why))
+        server.close()
+    }
+
+    @Test fun `a stream Blink closes after ending its command says what Blink reported`() = runBlocking {
+        val server = ServerSocket(0)
+        Thread { repeat(2) { server.accept().apply { getInputStream().readNBytes(122); getOutputStream().write(video(0x47, 1)); getOutputStream().flush(); Thread.sleep(1_100); close() } } }.apply { isDaemon = true; start() }
+        blink.liveServer = "immis://127.0.0.1:${server.localPort}/CONN?client_id=9"
+        blink.liveState = "error"
+        val feed = liveService().also { it.signIn(login) }.backend.startLive("1").value()
+        withTimeout(8_000) { while (feed.ended.value == null) delay(50) }
+        assertTrue(feed.ended.value!!, feed.ended.value!!.contains("state_condition error"))
+        server.close()
+    }
+
+    @Test fun `a view Blink ends normally says so, and that starting it again keeps watching`() = runBlocking {
+        val server = ServerSocket(0)
+        Thread { repeat(2) { server.accept().apply { getInputStream().readNBytes(122); getOutputStream().write(video(0x47, 1)); getOutputStream().flush(); Thread.sleep(1_100); close() } } }.apply { isDaemon = true; start() }
+        blink.liveServer = "immis://127.0.0.1:${server.localPort}/CONN?client_id=9"
+        blink.liveState = "done"
+        val feed = liveService().also { it.signIn(login) }.backend.startLive("1").value()
+        withTimeout(8_000) { while (feed.ended.value == null) delay(50) }
+        val why = feed.ended.value!!
+        assertTrue(why, Regex("Blink ended the live view after \\d+ s: its command finished normally.*Start it again to keep watching\\.").matches(why))
+        server.close()
     }
 
     @Test fun `a view is ended at the time limit`() = runBlocking {

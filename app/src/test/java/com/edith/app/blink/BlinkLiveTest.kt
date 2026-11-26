@@ -92,7 +92,7 @@ class BlinkLiveTest {
         // Read the handshake first: closing a socket with unread data resets the connection instead of ending it cleanly.
         Thread { server.accept().apply { getInputStream().readNBytes(122); close() } }.apply { isDaemon = true; start() }
         val reason = withTimeout(5_000) { BlinkLiveStream(BlinkLive.Immis("127.0.0.1", server.localPort, "C", 1), "S") { Socket(it.host, it.port) }.run { } }
-        assertEquals("Blink's stream server closed the connection before any video arrived.", reason)
+        assertTrue(reason, Regex("Blink's stream server closed the connection before any video arrived \\(\\d+ s in\\)\\.").matches(reason))
         server.close()
     }
 
@@ -144,7 +144,7 @@ class BlinkLiveTest {
         val server = ServerSocket(0)
         Thread { server.accept().apply { getInputStream().readNBytes(122); repeat(11) { getOutputStream().write(message(0, List(190) { 0x47 })) }; getOutputStream().flush(); close() } }.apply { isDaemon = true; start() }
         val reason = withTimeout(5_000) { BlinkLiveStream(BlinkLive.Immis("127.0.0.1", server.localPort, "C", 1), "S") { Socket(it.host, it.port) }.run { } }
-        assertEquals("Blink's stream server closed the connection after 2 KB of video.", reason)
+        assertTrue(reason, Regex("Blink's stream server closed the connection after 2 KB of video \\(\\d+ s in\\)\\.").matches(reason))
         server.close()
     }
 }
