@@ -16,8 +16,8 @@ Read it before touching anything, then the plan's §4 (target architecture) and 
 | Phase 4 the iPhone app on shared code (K4.1 to K4.16) | **built**: chat with tools; photos, audio files, voice memos, dictation, read-aloud and conversation mode (a Talk button, no wake word); Google, Microsoft, iCloud (mail and calendar) and the Jarvis work account; Home, Printer, Calendar and Settings tabs; Alexa, Ring, Blink, Meross and the printer; camera alerts while the app is open and While you were away. **Not tried on a phone** |
 | Phase 5 parity and retirement | not started; waits on the phone checks |
 
-**What the iPhone does not have yet** (full list with evidence: [`kmp-parity-audit.md`](kmp-parity-audit.md)): a wake word (paused) and its hands-free settings, Edith's file cards (View, Save and Share do nothing), and notifications while the app is closed (iOS allows them only with a push from a
-server: designed in `ios-alerts-while-closed.md`, Jarvis's side not built). Built but **never tried on a phone** (only Microsoft sign-in, mail and calendar have been): the live views for Blink and Ring,
+**What the iPhone does not have yet** (full list with evidence: [`kmp-parity-audit.md`](kmp-parity-audit.md)): a wake word (paused) and its hands-free settings, and notifications while the app is closed (iOS allows them only with a push from a
+server: designed in `ios-alerts-while-closed.md`, Jarvis's side not built). Built but **never tried on a phone** (only Microsoft sign-in, mail and calendar have been): the live views for Blink and Ring, Edith's file cards and the full-screen photo (K4.21),
 Google sign-in, the crash banner, a reply that keeps running after leaving the app, alerts, Alexa, Meross, the printer, Jarvis and iCloud mail. The client IDs for Google and Microsoft are in `iosApp/project.yml`.
 
 ## 2. The ground rules (read `AGENTS.md` too)

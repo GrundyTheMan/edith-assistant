@@ -62,6 +62,7 @@ fun MainViewController(rtc: SwiftRtcFactory?): UIViewController {
     val photoPicker = IosPhotoPicker()
     val audioPicker = IosFilePicker()
     val microphone = IosMicrophoneAccess()
+    val fileExporter = com.edith.app.chat.ui.IosFileExporter()
     return ComposeUIViewController {
         EdithTheme {
             Surface {
@@ -123,7 +124,7 @@ fun MainViewController(rtc: SwiftRtcFactory?): UIViewController {
                 ) { padding ->
                     Box(Modifier.padding(padding)) {
                         when (tab) {
-                            0 -> SimpleChatScreen(vm, photoPicker, microphone, audioPicker)
+                            0 -> SimpleChatScreen(vm, photoPicker, microphone, audioPicker, fileExporter)
                             1 -> if (showPrinter) IosPrinterScreen(printerVm, onBack = { showPrinter = false }, openPairing = { showPrinter = false; tab = 3 })
                                 else IosHomeScreen(homeVm, openMore = { tab = 3 }, openPrinter = { showPrinter = true }, catchUp = catchUp, onDismissCatchUp = { catchUp = emptyList() })
                             2 -> IosCalendarScreen(calendarVm, { todoVm() }, openMore = { tab = 3 })
