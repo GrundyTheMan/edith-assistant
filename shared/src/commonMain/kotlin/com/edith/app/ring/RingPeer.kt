@@ -20,6 +20,9 @@ interface RingPeer {
     val lost: StateFlow<String?>
 
     fun close()
+
+    /** One line about the connection for the screen while this is proven on a phone: its state, the candidates, Ring's answer, the video. Empty when the platform has none. */
+    fun status(): String = ""
 }
 
 /** Makes a [RingPeer]; null when this phone cannot start WebRTC. */

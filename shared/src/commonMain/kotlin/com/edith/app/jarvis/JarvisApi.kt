@@ -302,6 +302,10 @@ class JarvisApi(
     suspend fun <T> postJson(segments: List<String>, body: String, serializer: KSerializer<T>): FeedResult<T> =
         exchange(segments, emptyMap(), TextContent(body, JSON)) { feedJson.decodeFromString(serializer, it.text) }
 
+    /** POST a JSON body whose answer has no content (204): only whether Jarvis took it. */
+    suspend fun postNoContent(segments: List<String>, body: String): FeedResult<Unit> =
+        exchange(segments, emptyMap(), TextContent(body, JSON)) { }
+
     /** GET the bytes of an answer (a camera picture). */
     suspend fun getBytes(segments: List<String>, query: Map<String, String> = emptyMap()): FeedResult<Raw> =
         exchange(segments, query) { it }
