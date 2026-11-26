@@ -23,8 +23,8 @@ platform part each side adds. Status words:
 | # | Finding | Where | Size |
 |---|---|---|---|
 | 1 | **Dead, then fixed (K4.21): three controls the iPhone chat left unwired.** `SimpleChatScreen` (the iPhone's chat glue) passed only some of `ChatActions`; Android's `ChatScreen` passes more. Missing on the iPhone: **View, Save and Share on Edith's file cards** (the default empty `FileActions`), **a photo full screen** (`onOpenImage`: tapping a photo did nothing) and **play/stop on an audio attachment** (`onToggleAttachment`). Now wired: a shared `FileExporter` (View reads the text; the iPhone's `IosFileExporter` opens the Files picker for Save and the share sheet for Share), `ImageViewer` and `FileViewer` dialogs, and the view model's playback toggle. Compiles; never tried on a phone. | C4, C6 | done |
-| 2 | **Gap: hands-free settings and the wake word.** The iPhone has Talk instead. The wake word is paused (the owner, 2026-11-26: the ONNX Runtime Swift package is gone). Android's Hands-free settings (sensitivity, Test) have no iPhone counterpart, which is right while there is no wake word. | D6, D8, G3 | paused |
-| 3 | **Gap: camera alerts while Edith is closed.** The iPhone alerts only while open, plus the summary on return (D53). Designed (`ios-alerts-while-closed.md`, `jarvis-push-spec.md`), needs Jarvis's side first. | F9 | M + Jarvis |
+| 2 | **Built, unproven (K6.1): the wake word.** "Hey Edith" through Apple's on-device speech recognizer (the ONNX route stays closed); the Talk button stays. It uses the saved sensitivity (the default; the iPhone has no slider yet, and no Test button). | D6, D8, G3 | owner's phone |
+| 3 | **Half built (K6.2): camera alerts while Edith is closed.** Edith's side (switch, registration, Apple push, tap) is built; **Jarvis's side is not**, so nothing arrives yet (`jarvis-push-spec.md`). | F9 | Jarvis + owner |
 | 4 | **Closed by this branch (D54, D58):** a reply now asks iOS for extra time when it starts (A10), and the iPhone writes a crash report and shows the banner and "View last crash report" (A11, G8). Both compile; neither has run on a phone. | A10, A11 | done |
 | 5 | **Unproven and the most likely to be wrong:** Blink Live (Apple's player may reject the camera's H.264 stream), Ring Live (WebRTC from Swift), Google sign-in (waits on Google applying the bundle id), alerts, Alexa, Meross, the printer, Jarvis, iCloud mail. All built, none tried. | F3 to F11, E2, E7, E8 | owner's checks |
 | 6 | **Not compared at all:** whether each shared screen *looks* right on the iPhone. Two overlapped the status bar (Home, Calendar; fixed in PR 85). Chat and the Printer page use a Scaffold and have not been looked at. Only a phone shows this. | all screens | owner's checks |
@@ -85,9 +85,9 @@ The tool list is identical on both: time, weather, web search, page reading, cal
 | D3 | Dictation into the text box | **By design** | the iPhone keyboard's own key |
 | D4 | Spoken replies, speed, Test voice | **Built** | `IosTtsEngine`; Settings → Voice (`IosVoiceSection`). Uses the voice chosen in the phone's Accessibility settings |
 | D5 | Edith's own voice, downloads | **By design** (D57) | every iPhone has a speech engine; not planned |
-| D6 | Hands-free with "Hey Edith" | **Gap, paused** | Talk button instead (K4.11) |
+| D6 | Hands-free with "Hey Edith" | **Built** (K6.1, unproven) | `IosSpeechWakeListener` (on-device recognition only), with the Talk button kept |
 | D7 | Follow-ups without the wake word | Same | the shared `HandsFree` loop runs on the iPhone |
-| D8 | Hands-free settings | **Gap, paused** | nothing to set without a wake word |
+| D8 | Hands-free settings | **Gap** | Android's Hands-free section (sensitivity, Test) is not on the iPhone; sensitivity is read from the shared setting |
 | D9 | Voice banner (set up a speech engine) | **By design** | Android-only problem: some phones have no engine |
 
 ## E. Accounts, calendar, mail, to-dos
@@ -115,7 +115,7 @@ The tool list is identical on both: time, weather, web search, page reading, cal
 | F6 | Blink: sign-in, cameras, snapshots, motion | Same | shared; cookie and address handling in `DarwinKtorClients` |
 | F7 | Clips: chip, list, player | **Built** | `IosClipPlayer` |
 | F8 | Live view | **Built, unproven** | Blink: `BlinkStreamRunner` + `LocalHlsServer` + Apple's player; Ring: WebRTC from Swift (`RingRtc.swift`). Both show diagnostic lines under the picture |
-| F9 | Camera alerts | **By design** (D53) | while open plus a summary; while closed is finding 3 |
+| F9 | Camera alerts | **By design** (D53), closed: **half built** (K6.2) | while open plus a summary; while closed waits on Jarvis sending pushes |
 | F10, F11 | 3D printer, printer page through Jarvis | Same | `IosPrinterScreen` over shared screens |
 
 ## G. Settings
@@ -124,7 +124,7 @@ The tool list is identical on both: time, weather, web search, page reading, cal
 |---|---|
 | Server and model | Same |
 | Voice | **Built** (no own-voice downloads: D57) |
-| Hands-free | **Gap, paused** (finding 2) |
+| Hands-free | **Gap**: no sensitivity or Test on the iPhone (finding 2) |
 | Web search key | Same |
 | Accounts | Same |
 | Attachments | Same |

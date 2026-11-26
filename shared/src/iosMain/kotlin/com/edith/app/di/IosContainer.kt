@@ -36,7 +36,6 @@ import com.edith.app.data.db.EdithDatabase
 import com.edith.app.data.db.MessageSource
 import com.edith.app.data.db.open
 import com.edith.app.voice.handsfree.HandsFree
-import com.edith.app.voice.handsfree.TapWakeListener
 import com.edith.app.voice.handsfree.iosEarcon
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -219,7 +218,7 @@ fun createIosApp(ringPeers: com.edith.app.ring.RingPeerFactory? = null): IosApp 
     )
     // Conversation mode (K4.11): the hands-free loop with a Talk button in place of the wake word (the iPhone has no wake-word engine yet).
     val handsFree = HandsFree(
-        wake = TapWakeListener,
+        wake = com.edith.app.voice.handsfree.IosSpeechWakeListener(),
         recognizer = com.edith.app.voice.capture.IosSpeechInput(),
         engineState = container.chatEngine.state,
         speaking = speech.speakingMessageId,
@@ -229,9 +228,10 @@ fun createIosApp(ringPeers: com.edith.app.ring.RingPeerFactory? = null): IosApp 
         earcon = { iosEarcon() },
         settings = settings,
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
-        phrase = "Talk",
+        phrase = "Hey Edith",
         say = { speech.announce(it) },
         wakeIsTap = true,
+        wakeIsSpoken = true,
     )
     // D54: a reply being written asks iOS for extra time, so it can finish after the owner leaves the app (it cannot hold longer than iOS lends, about 30 s).
     com.edith.app.chat.engine.ReplyKeepAlive(

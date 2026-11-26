@@ -39,6 +39,7 @@ import com.edith.app.di.createIosApp
 import com.edith.app.diagnostics.EngineCheck
 import com.edith.app.ui.diagnostics.EngineCheckScreen
 import com.edith.app.ui.theme.EdithTheme
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import platform.UIKit.UIViewController
 
@@ -63,6 +64,22 @@ fun MainViewController(rtc: SwiftRtcFactory?): UIViewController {
     val audioPicker = IosFilePicker()
     val microphone = IosMicrophoneAccess()
     val fileExporter = com.edith.app.chat.ui.IosFileExporter()
+    // Camera alerts while Edith is closed (K6.2): keeps Jarvis told of this phone's push address and of the alert kinds that are on. Off until the owner switches it on in Settings.
+    val push = com.edith.app.alerts.push.PushRegistration(
+        seam = ApplePush,
+        feed = object : com.edith.app.alerts.push.PushFeed {
+            private fun real() = app.accounts.jarvisConnection()?.feedApi?.let { com.edith.app.alerts.push.JarvisPushFeed(it) }
+            override suspend fun register(body: com.edith.app.alerts.push.PushRegisterBody) = real()?.register(body) ?: com.edith.app.jarvis.FeedResult.Unauthorized
+            override suspend fun unregister() = real()?.unregister() ?: com.edith.app.jarvis.FeedResult.Unauthorized
+            override suspend fun status() = real()?.status() ?: com.edith.app.jarvis.FeedResult.Unauthorized
+        },
+        enabled = app.alertPrefs.closedPush,
+        choices = app.alertPrefs.choices,
+        paired = app.accounts.accounts.map { app.accounts.jarvisConnection() != null },
+        env = (platform.Foundation.NSBundle.mainBundle.objectForInfoDictionaryKey("EdithPushEnv") as? String) ?: "sandbox",
+        bundleId = platform.Foundation.NSBundle.mainBundle.bundleIdentifier ?: "",
+        scope = app.container.appScope,
+    ).also { it.run() }
     return ComposeUIViewController {
         EdithTheme {
             Surface {
@@ -87,6 +104,9 @@ fun MainViewController(rtc: SwiftRtcFactory?): UIViewController {
                 var catchUp by remember { mutableStateOf<List<com.edith.app.alerts.Alert>>(emptyList()) }
                 androidx.compose.runtime.LaunchedEffect(Unit) { catchUp = app.alerts.catchUp() }
                 val banners by app.alerts.banners.collectAsState()
+                // A tap on a camera push (Edith was closed): the Home tab's clips, as a tap on a banner does (K6.2).
+                val pushTaps by ApplePush.tapped.collectAsState()
+                androidx.compose.runtime.LaunchedEffect(pushTaps) { if (pushTaps > 0) { showPrinter = false; tab = 1; homeVm.openClips(); app.alerts.dismissAll() } }
                 val settingsVm = viewModel { com.edith.app.settings.SettingsViewModel(app.settings, app.container.modelCatalog, app.container.ollama, app.container.modelSelection, object : com.edith.app.core.permissions.LocalNetworkAccess { override fun isGranted() = true }, com.edith.app.settings.AtsPlainHttpRule) }
                 val webSearchVm = viewModel { com.edith.app.ui.settings.WebSearchSettingsViewModel(app.container.webSearchSetup, app.container.ollamaWeb) }
                 val attachmentsVm = viewModel { com.edith.app.ui.settings.AttachmentSettingsViewModel(app.settings, app.container.retention) }
@@ -132,7 +152,7 @@ fun MainViewController(rtc: SwiftRtcFactory?): UIViewController {
                                 androidx.compose.material3.TextButton(onClick = { showCheck = false }, modifier = Modifier.statusBarsPadding()) { Text("‹ Settings") }
                                 EngineCheckScreen(check)
                             } else IosSettingsScreen(
-                                settingsVm, webSearchVm, attachmentsVm, app.settings, app.speech, app.accounts, app.home, app.alertPrefs,
+                                settingsVm, webSearchVm, attachmentsVm, app.settings, app.speech, app.accounts, app.home, app.alertPrefs, push,
                                 edithVersion = (platform.Foundation.NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String) ?: "",
                                 openEngineCheck = { showCheck = true },
                                 crashReport = crashReport,

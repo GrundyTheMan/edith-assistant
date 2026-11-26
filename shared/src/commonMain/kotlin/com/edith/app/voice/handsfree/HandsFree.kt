@@ -52,6 +52,8 @@ class HandsFree(
     private val say: (String) -> Unit = {},
     /** True where there is no wake-word engine: the owner taps Talk instead, which calls [wakeWordHeard] (the iPhone). */
     val wakeIsTap: Boolean = false,
+    /** With [wakeIsTap]: the wake listener also hears the phrase (the iPhone with Apple's recognizer), so the status says "or tap Talk". */
+    val wakeIsSpoken: Boolean = false,
 ) {
     sealed interface State {
         data object Off : State

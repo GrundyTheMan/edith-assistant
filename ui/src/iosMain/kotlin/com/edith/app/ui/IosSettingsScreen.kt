@@ -47,6 +47,8 @@ fun IosSettingsScreen(
     accounts: IosAccounts,
     home: Home,
     alertPrefs: com.edith.app.alerts.AlertPrefs,
+    /** Keeps Jarvis told of the push address (alerts while closed); null: no such row. */
+    push: com.edith.app.alerts.push.PushRegistration? = null,
     edithVersion: String,
     openEngineCheck: () -> Unit,
     /** The last crash report, if there is one (D58); Settings → About shows "View last crash report". */
@@ -73,7 +75,7 @@ fun IosSettingsScreen(
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 WebSearchSection(webSearchVm)
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                IosAlertSettings(home, alertPrefs)
+                IosAlertSettings(home, alertPrefs, push)
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     AccountsSections(accounts, home)

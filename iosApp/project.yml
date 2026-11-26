@@ -37,6 +37,7 @@ targets:
         NSLocalNetworkUsageDescription: Edith talks to the model on your PC over your home network.
         EdithGoogleClientId: "158291874134-m9dqa46o72rg2a38352984p7ucsnbd3e.apps.googleusercontent.com"   # Google's iOS client ID (docs/google-setup.md); empty: Google sign-in says it is not set up
         EdithMicrosoftClientId: "93dc844d-f90a-481f-b5c3-12f3e03db45e"   # Edith's Microsoft app registration (docs/microsoft-setup.md, with the iOS platform and this bundle id); empty: Microsoft sign-in says it is not set up
+        EdithPushEnv: production   # TestFlight and App Store builds use the production push service; Jarvis must send to the same one (docs/design/ios-alerts-while-closed.md)
         NSAppTransportSecurity:
           # D49 (decided 2026-11-26): https everywhere, plain http only to the home network (NSAllowsLocalNetworking: private addresses, .local
           # and dotless names: the 3D printer, a PC by its LAN name) and to Tailscale names (the PC's Ollama at http://name.tailnet.ts.net:11434).
@@ -47,6 +48,12 @@ targets:
             ts.net:
               NSIncludesSubdomains: true
               NSExceptionAllowsInsecureHTTPLoads: true
+    # Push notifications (K6.2, alerts while Edith is closed). Xcode swaps "development" for "production" in an archive. The App ID needs the Push Notifications
+    # capability: automatic signing normally adds it; if the archive says no profile has it, the owner switches it on once at developer.apple.com.
+    entitlements:
+      path: iosApp/iosApp.entitlements
+      properties:
+        aps-environment: development
     settings:
       base:
         # The Phase 0 spike's identifier is reused for the first builds (its App Store Connect record and signing exist). The workflows replace
