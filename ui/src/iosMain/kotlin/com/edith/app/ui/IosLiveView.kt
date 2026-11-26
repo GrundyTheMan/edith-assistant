@@ -23,11 +23,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.UIKitView
 import androidx.compose.ui.viewinterop.UIKitViewController
 import com.edith.app.blink.hls.HlsLiveSession
 import com.edith.app.blink.hls.LocalHlsServer
 import com.edith.app.home.StreamLiveFeed
 import com.edith.app.home.ui.LiveUi
+import com.edith.app.ring.PeerLiveFeed
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.delay
@@ -62,6 +64,7 @@ fun IosLiveDialog(live: LiveUi, onClose: () -> Unit) {
                     live.endedBecause != null -> Text(live.endedBecause!!)
                     feed == null -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                     feed is StreamLiveFeed -> IosLivePlayer(feed)
+                    feed is PeerLiveFeed -> IosRtcPlayer(feed)
                     else -> Text("Live view for this camera isn't available on this phone yet.")
                 }
                 Text(
@@ -126,4 +129,18 @@ private fun IosLivePlayer(feed: StreamLiveFeed) {
         modifier = Modifier.fillMaxWidth().height(220.dp),
     )
     Text(report, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+}
+
+/** Ring's live picture (K4.18): the WebRTC view Swift made for this call. Only Ring has this kind of feed; ending the dialog ends the call through the feed. */
+@Composable
+private fun IosRtcPlayer(feed: PeerLiveFeed) {
+    val bridged = feed.peer as? BridgedRingPeer
+    if (bridged == null) {
+        Text("Live view for this camera isn't available on this phone yet.")
+        return
+    }
+    UIKitView(
+        factory = { bridged.swift.makeVideoView() },
+        modifier = Modifier.fillMaxWidth().height(220.dp),
+    )
 }
