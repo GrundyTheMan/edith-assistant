@@ -90,14 +90,14 @@ Then, in this order, none needing a decision unless noted:
 2. **Live camera view on the iPhone.** Ring needs a WebRTC library (K0.6b probe), Blink needs a TLS socket to the stream server (its certificate is not checked, as on Android) and a way to
    play MPEG transport stream bytes (AVPlayer wants HLS or a file: a small local server or a segmenter). The seams are ready: `RingLive` and `BlinkLiveRunner` in `shared/`, `HomeOverlays.live` in `ui/`.
 3. **Notifications while the app is closed** (C72 option B): Jarvis sends a push. Needs a design with the owner (Apple push credentials, Jarvis's side).
-4. **The wake word** ("Hey Edith"): an engine decision (D41) first; `WakeListener` is the seam, `TapWakeListener` the stand-in.
+4. **The wake word** ("Hey Edith"): **paused by the owner, 2026-11-26.** The plan was ONNX Runtime with Android's three models, but Microsoft's ONNX Runtime Swift package and its download site disappeared in mid-November 2026 (cause unconfirmed; only unofficial mirrors remain), and no unofficial binary goes into the app. Talk stays. Reopen when Microsoft republishes an official package, or choose Apple's on-device speech. `WakeListener` is the seam, `TapWakeListener` the stand-in.
 5. **Phase 5**: retire the Expo app once the phone checks pass, remove the Android copies that the shared code replaced, update `AGENTS.md`'s design index.
 
 ## 6. Things waiting on the owner (do not do these for them)
 
 - Try the TestFlight build and report what breaks (see §5).
 - The Google iOS client ID and the Microsoft app registration (client ID, the iOS platform with the bundle id) so those sign-ins can be tried; the iCloud app-specific password.
-- Decisions open in the plan's §12: D47 (licence), D49 (App Transport Security for plain-HTTP Ollama: the build still has a blanket exemption), the bundle id (D43), D50 to D60.
+- Decisions open in the plan's §12: D47 (licence), the bundle id (D43), D50 to D60. D49 (App Transport Security) was decided on 2026-11-26: see its row.
 - Delete the App Store Connect API key `edith-spike-ci` once the spike is no longer needed.
 - Tidy-up: the old private clone `D:\Dev Projects\edith`, the extra worktrees, the paused Expo prep.
 

@@ -13,8 +13,8 @@ object ServerUrl {
 
     private const val NOT_AN_ADDRESS = "That doesn't look like an address, e.g. http://192.168.4.82:11434."
 
-    /** `192.168.4.82` → `http://192.168.4.82:11434`; `http://x:1234/` → `http://x:1234`. */
-    fun normalize(input: String): Result {
+    /** `192.168.4.82` → `http://192.168.4.82:11434`; `http://x:1234/` → `http://x:1234`. [plainHttp]: the platform's rule for `http://` hosts (the iPhone's, D49); null: any. */
+    fun normalize(input: String, plainHttp: PlainHttpRule? = null): Result {
         val trimmed = input.trim()
         if (trimmed.isEmpty()) return Result.Invalid("Enter your Ollama server's address.")
         if (trimmed.any { it.isWhitespace() }) return Result.Invalid("The address can't contain spaces.")
@@ -34,6 +34,7 @@ object ServerUrl {
         if ((url.encodedPath.isNotEmpty() && url.encodedPath != "/") || url.encodedQuery.isNotEmpty()) {
             return Result.Invalid("Use just the server address and port, without a path.")
         }
+        if (scheme == "http") plainHttp?.problem(host)?.let { return Result.Invalid(it) }
         val port = if (url.specifiedPort == 0) DEFAULT_PORT else url.specifiedPort
         return Result.Valid("$scheme://$host:$port")
     }

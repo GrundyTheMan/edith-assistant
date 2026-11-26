@@ -70,7 +70,7 @@ fun MainViewController(rtc: SwiftRtcFactory?): UIViewController {
                 var catchUp by remember { mutableStateOf<List<com.edith.app.alerts.Alert>>(emptyList()) }
                 androidx.compose.runtime.LaunchedEffect(Unit) { catchUp = app.alerts.catchUp() }
                 val banners by app.alerts.banners.collectAsState()
-                val settingsVm = viewModel { com.edith.app.settings.SettingsViewModel(app.settings, app.container.modelCatalog, app.container.ollama, app.container.modelSelection, object : com.edith.app.core.permissions.LocalNetworkAccess { override fun isGranted() = true }) }
+                val settingsVm = viewModel { com.edith.app.settings.SettingsViewModel(app.settings, app.container.modelCatalog, app.container.ollama, app.container.modelSelection, object : com.edith.app.core.permissions.LocalNetworkAccess { override fun isGranted() = true }, com.edith.app.settings.AtsPlainHttpRule) }
                 val webSearchVm = viewModel { com.edith.app.ui.settings.WebSearchSettingsViewModel(app.container.webSearchSetup, app.container.ollamaWeb) }
                 val attachmentsVm = viewModel { com.edith.app.ui.settings.AttachmentSettingsViewModel(app.settings, app.container.retention) }
                 val calendarVm = viewModel { com.edith.app.accounts.ui.CalendarViewModel(app.accounts, app.accounts.accounts, app.accounts.loaded, app.container.clock) }
