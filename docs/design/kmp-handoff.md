@@ -90,7 +90,7 @@ Then, in this order, none needing a decision unless noted:
 2. **Live camera view on the iPhone.** Ring needs a WebRTC library (K0.6b probe), Blink needs a TLS socket to the stream server (its certificate is not checked, as on Android) and a way to
    play MPEG transport stream bytes (AVPlayer wants HLS or a file: a small local server or a segmenter). The seams are ready: `RingLive` and `BlinkLiveRunner` in `shared/`, `HomeOverlays.live` in `ui/`.
 3. **Notifications while the app is closed** (C72 option B): Jarvis sends a push. Needs a design with the owner (Apple push credentials, Jarvis's side).
-4. **The wake word** ("Hey Edith"): an engine decision (D41) first; `WakeListener` is the seam, `TapWakeListener` the stand-in.
+4. **The wake word** ("Hey Edith"): **paused by the owner, 2026-11-26.** The plan was ONNX Runtime with Android's three models, but Microsoft's ONNX Runtime Swift package and its download site disappeared in mid-November 2026 (cause unconfirmed; only unofficial mirrors remain), and no unofficial binary goes into the app. Talk stays. Reopen when Microsoft republishes an official package, or choose Apple's on-device speech. `WakeListener` is the seam, `TapWakeListener` the stand-in.
 5. **Phase 5**: retire the Expo app once the phone checks pass, remove the Android copies that the shared code replaced, update `AGENTS.md`'s design index.
 
 ## 6. Things waiting on the owner (do not do these for them)
