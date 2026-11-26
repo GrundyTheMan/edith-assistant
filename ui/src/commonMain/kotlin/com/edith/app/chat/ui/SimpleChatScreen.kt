@@ -3,6 +3,7 @@ package com.edith.app.chat.ui
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -13,9 +14,26 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
  * [ChatFeatures] are off. Android has its own glue (`ChatScreen` in `app/`) because it also asks for permissions, picks files and runs services.
  */
 @Composable
-fun SimpleChatScreen(vm: ChatViewModel, photoPicker: PhotoPicker? = null, microphone: MicrophoneAccess? = null, audioPicker: AudioPicker? = null) {
+fun SimpleChatScreen(
+    vm: ChatViewModel,
+    photoPicker: PhotoPicker? = null,
+    microphone: MicrophoneAccess? = null,
+    audioPicker: AudioPicker? = null,
+    /** Edith's file cards: View, Save and Share (C16); null: the buttons do nothing. */
+    fileExporter: FileExporter? = null,
+) {
     val state by vm.state.collectAsStateWithLifecycle()
     var permissionDenied by rememberSaveable { mutableStateOf(false) }
+    // A photo full screen, and a file of Edith's shown as text (name to text): both are dialogs over the chat, as on Android.
+    var viewingImage by rememberSaveable { mutableStateOf<String?>(null) }
+    var viewingFile by remember { mutableStateOf<Pair<String, String>?>(null) }
+    viewingImage?.let { ImageViewer(it) { viewingImage = null } }
+    viewingFile?.let { (name, text) -> FileViewer(name, text) { viewingFile = null } }
+    val files = if (fileExporter == null) FileActions() else FileActions(
+        onView = { a -> a.path?.let { path -> viewingFile = a.fileName to (fileExporter.readText(path) ?: "This file can't be read.") } },
+        onSave = { a -> a.path?.let { fileExporter.save(it, a.fileName) } },
+        onShare = { a -> a.path?.let { fileExporter.share(it, a.fileName) } },
+    )
     ChatContent(
         state = state,
         draft = vm.draft,
@@ -41,6 +59,9 @@ fun SimpleChatScreen(vm: ChatViewModel, photoPicker: PhotoPicker? = null, microp
             onTalk = vm::talk,
             onAttachAudio = { audioPicker?.pick { address -> address?.let(vm::attachAudio) } },
             onRemoveAttachment = vm::removeAttachment,
+            onToggleAttachment = vm::toggleAttachmentPlayback,
+            onOpenImage = { viewingImage = it },
+            files = files,
             onDraftChange = vm::onDraftChange,
             onSend = vm::send,
             onStopReply = vm::stopReply,

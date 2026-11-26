@@ -14,13 +14,15 @@ platform part each side adds. Status words:
 | **Gap** | Android has it, the iPhone does not, and no decision says it should not |
 | **Dead** | The control is on the iPhone's screen and does nothing |
 
+**The method that found finding 1:** compare what Android's `ChatScreen` passes to `ChatContent` with what `SimpleChatScreen` passes. Anything left at its default is a dead or hidden control on the iPhone. Repeat it for each screen pair when a shared component gains an action.
+
 **Checked on the owner's iPhone so far (all of it, 2026-11-25/26):** Microsoft sign-in, Microsoft mail and calendar. Nothing else. Every "Built" row below is unproven on a phone.
 
 ## Findings: what needs work
 
 | # | Finding | Where | Size |
 |---|---|---|---|
-| 1 | **Dead: Edith's file cards.** When Edith writes a file (a `<file>` block) her reply shows a card with View, Save and Share. On the iPhone the three buttons do nothing: the chat is given the default, empty `FileActions`. Android wires them in `ChatScreen` (`FileExport`, a content provider). The iPhone needs a share sheet (which also offers Save to Files) and a text view. | C6, `ui/.../AttachmentViews.kt`, `MainViewController` | S |
+| 1 | **Dead, then fixed (K4.21): three controls the iPhone chat left unwired.** `SimpleChatScreen` (the iPhone's chat glue) passed only some of `ChatActions`; Android's `ChatScreen` passes more. Missing on the iPhone: **View, Save and Share on Edith's file cards** (the default empty `FileActions`), **a photo full screen** (`onOpenImage`: tapping a photo did nothing) and **play/stop on an audio attachment** (`onToggleAttachment`). Now wired: a shared `FileExporter` (View reads the text; the iPhone's `IosFileExporter` opens the Files picker for Save and the share sheet for Share), `ImageViewer` and `FileViewer` dialogs, and the view model's playback toggle. Compiles; never tried on a phone. | C4, C6 | done |
 | 2 | **Gap: hands-free settings and the wake word.** The iPhone has Talk instead. The wake word is paused (the owner, 2026-11-26: the ONNX Runtime Swift package is gone). Android's Hands-free settings (sensitivity, Test) have no iPhone counterpart, which is right while there is no wake word. | D6, D8, G3 | paused |
 | 3 | **Gap: camera alerts while Edith is closed.** The iPhone alerts only while open, plus the summary on return (D53). Designed (`ios-alerts-while-closed.md`, `jarvis-push-spec.md`), needs Jarvis's side first. | F9 | M + Jarvis |
 | 4 | **Closed by this branch (D54, D58):** a reply now asks iOS for extra time when it starts (A10), and the iPhone writes a crash report and shows the banner and "View last crash report" (A11, G8). Both compile; neither has run on a phone. | A10, A11 | done |
@@ -35,7 +37,7 @@ Nothing else in the plan's list turned up as missing. A list built from the plan
 |---|---|---|---|
 | A1 | Streaming chat, persona, Stop | Same | `chat/engine`, `ChatContent` (shared) |
 | A2 | Regenerate, copy, delete, Play/Stop on a bubble | Same | `ChatComponents` (shared) |
-| A3 | Several conversations: list, rename, delete, new, clear | Same | `ChatContent`, `ChatViewModel` (shared) |
+| A3 | Several conversations: list, rename, delete, new, clear | Same | `ChatContent`, `ChatViewModel` (shared); wired in `SimpleChatScreen` |
 | A4 | Automatic titles | Same | shared titler |
 | A5 | Model picker with "Hears audio" / "Sees images" | Same | `SettingsContent`, `ModelSelection` (shared) |
 | A6 | Server address, Test connection, local network | **By design** (D49) | `ServerUrl` with `AtsPlainHttpRule`: the iPhone refuses a plain-http Tailscale number and asks for the `.ts.net` name; iOS asks for local-network access itself |
@@ -68,9 +70,9 @@ The tool list is identical on both: time, weather, web search, page reading, cal
 | C1 | Attach photos | **Built** | `IosPhotoPicker`, `IosAttachmentIntake` |
 | C2 | Resize to JPEG, vision gate | **Built** | `IosAttachmentIntake`; the gate is shared |
 | C3 | Attach audio files, converted to WAV | **Built** | `IosFilePicker`, `AudioToWav` |
-| C4 | Viewer, bubbles, player | Same / **Built** | `AttachmentViews` (shared); `IosAttachmentPlayer` |
+| C4 | Viewer, bubbles, player | **Built** (K4.21) | `AttachmentViews` (shared); `IosAttachmentPlayer`; the photo full screen and the audio ▶/■ were unwired on the iPhone until K4.21 (finding 1) |
 | C5 | Retention, Delete all | Same | `AttachmentSettingsSection` (shared) |
-| **C6** | **Edith's files: View, Save, Share** | **Dead** | see finding 1 |
+| C6 | Edith's files: View, Save, Share | **Built** (K4.21) | `IosFileExporter` (Files picker, share sheet, a copy under the file's own name) |
 | C7 | Resend an earlier attachment | Same | shared |
 | C8 | Edith's own pictures | Same | shared |
 
