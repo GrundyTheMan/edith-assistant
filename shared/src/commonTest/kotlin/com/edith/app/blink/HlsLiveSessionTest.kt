@@ -40,6 +40,7 @@ class HlsLiveSessionTest {
         feed.channel.send(packet(0, true) + packet(0x101, false) + packet(0x101, false))
         delay(100)
         assertNull(session.playlist())            // still the first, unfinished segment
+        assertTrue(session.status().startsWith("Camera: 0 KB received"), session.status())   // 564 bytes
         feed.channel.close()
         withTimeout(5_000) { while (session.playlist() == null) delay(10) }
         val text = assertNotNull(session.playlist())
