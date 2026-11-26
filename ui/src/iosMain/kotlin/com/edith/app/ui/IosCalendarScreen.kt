@@ -1,6 +1,9 @@
 package com.edith.app.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import com.edith.app.accounts.PlatformActivity
 import com.edith.app.accounts.ui.AgendaScreenFrame
 import com.edith.app.accounts.ui.CalendarTabFrame
@@ -14,11 +17,12 @@ import com.edith.app.accounts.ui.TodoViewModel
  */
 @Composable
 fun IosCalendarScreen(calendarVm: CalendarViewModel, todoVm: @Composable () -> TodoViewModel, openMore: () -> Unit) {
-    CalendarTabFrame(
+    // Keeps clear of the status bar itself: the tab scaffold passes no top inset (MainViewController).
+    Box(Modifier.statusBarsPadding()) { CalendarTabFrame(
         agenda = { AgendaScreenFrame(calendarVm, openMore) },
         todo = {
             val vm = todoVm()
             TodoScreenFrame(vm, openMore, onGrant = { id -> vm.grantTasks(id, PlatformActivity()) {} })
         },
-    )
+    ) }
 }
