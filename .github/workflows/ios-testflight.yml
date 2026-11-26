@@ -82,7 +82,8 @@ jobs:
 
       - name: Show the first errors of a failed archive (the log above keeps only its last 60 lines)
         if: failure()
-        run: grep -n -m3 -B3 -A25 -E 'Exception|^e: |error:' build/archive.log | head -120 || true
+        run: |
+          grep -n -m3 -B3 -A25 -E 'Exception|^e: |error:' build/archive.log | head -120 || true
 
       - name: Upload to TestFlight
         run: |
