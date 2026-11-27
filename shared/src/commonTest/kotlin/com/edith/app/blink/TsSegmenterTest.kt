@@ -86,3 +86,40 @@ class TsSegmenterTest {
         assertNotNull(list.segment(3)); assertNull(list.segment(0))
     }
 }
+
+/** What the camera's stream holds, read from its PMT (shown on the live view's diagnostics). */
+class TsSegmenterStreamsTest {
+    private fun pmtPacket(vararg types: Int): ByteArray {
+        val p = ByteArray(188) { 0xff.toByte() }
+        p[0] = 0x47; p[1] = 0x41; p[2] = 0x00; p[3] = 0x10   // pid 0x100, payload start
+        p[4] = 0                                               // pointer
+        val entries = types.size * 5
+        val length = 9 + entries + 4
+        val s = byteArrayOf(2, (0xb0 or (length shr 8)).toByte(), (length and 0xff).toByte(), 0, 1, 0xc1.toByte(), 0, 0, 0xe1.toByte(), 1, 0xf0.toByte(), 0)
+        s.copyInto(p, 5)
+        var at = 5 + s.size
+        types.forEachIndexed { n, t -> p[at] = t.toByte(); p[at + 1] = (0xe1).toByte(); p[at + 2] = (0x01 + n).toByte(); p[at + 3] = 0xf0.toByte(); p[at + 4] = 0; at += 5 }
+        return p
+    }
+
+    private fun pat(): ByteArray {
+        val p = ByteArray(188) { 0xff.toByte() }
+        p[0] = 0x47; p[1] = 0x40; p[2] = 0; p[3] = 0x10; p[4] = 0
+        byteArrayOf(0x00, 0xb0.toByte(), 13, 0, 1, 0xc1.toByte(), 0, 0, 0, 1, 0xe1.toByte(), 0, 0, 0, 0).copyInto(p, 5)
+        return p
+    }
+
+    @Test fun namesTheStreamsInThePmt() {
+        val s = TsSegmenter(now = { 0 })
+        s.push(pat() + pmtPacket(0x1b, 0x0f))
+        assertEquals("H.264, AAC", s.streams)
+    }
+
+    @Test fun namesAnH265AndAnUnknownType() {
+        val s = TsSegmenter(now = { 0 })
+        s.push(pat() + pmtPacket(0x24, 0x99))
+        assertEquals("H.265, type 0x99", s.streams)
+    }
+
+    @Test fun emptyBeforeThePmt() = assertEquals("", TsSegmenter(now = { 0 }).streams)
+}

@@ -21,6 +21,10 @@ class TsSegmenter(
     private var pmt: ByteArray? = null
     private var pmtPid = -1
 
+    /** What the stream holds, read from its PMT ("H.264, AAC"), for the diagnostics line; empty until the PMT is seen. */
+    @kotlin.concurrent.Volatile var streams: String = ""
+        private set
+
     /** Takes more bytes of the stream and returns the segments that are complete now. */
     fun push(bytes: ByteArray): List<HlsSegment> {
         buffer += bytes
@@ -49,7 +53,7 @@ class TsSegmenter(
         if (pid == 0 && starts) {
             pat = packet
             pmtPid = pmtPidOf(packet)
-        } else if (pid == pmtPid && starts) pmt = packet
+        } else if (pid == pmtPid && starts) { pmt = packet; streams = streamNames(packet) }
         if (startedAt < 0) startedAt = time
         val age = time - startedAt
         if (current.isNotEmpty() && ((pid == 0 && starts && age >= minMs) || age >= maxMs)) out += cut()
@@ -69,6 +73,31 @@ class TsSegmenter(
         current.clear()
         val seconds = ((now() - startedAt).coerceAtLeast(1)) / 1000.0
         return HlsSegment(next++, seconds, data)
+    }
+
+    /** The stream types a PMT packet lists, by name: what the camera actually sends, because a player refuses some (H.265 in a transport stream, for one). */
+    private fun streamNames(packet: ByteArray): String {
+        val adaptation = (packet[3].toInt() shr 4) and 3
+        var i = 4
+        if (adaptation == 2 || adaptation == 3) i += 1 + (packet[4].toInt() and 0xff)
+        if (adaptation == 2 || i >= PACKET) return ""
+        i += 1 + (packet[i].toInt() and 0xff)               // the pointer field
+        if (i + 12 > PACKET) return ""
+        val sectionLength = ((packet[i + 1].toInt() and 0x0f) shl 8) or (packet[i + 2].toInt() and 0xff)
+        val programInfo = ((packet[i + 10].toInt() and 0x0f) shl 8) or (packet[i + 11].toInt() and 0xff)
+        var entry = i + 12 + programInfo
+        val end = minOf(i + 3 + sectionLength - 4, PACKET)
+        val names = ArrayList<String>()
+        while (entry + 5 <= end) {
+            val type = packet[entry].toInt() and 0xff
+            names += when (type) {
+                0x01, 0x02 -> "MPEG video"; 0x1b -> "H.264"; 0x24 -> "H.265"
+                0x03, 0x04 -> "MPEG audio"; 0x0f -> "AAC"; 0x11 -> "AAC-LATM"; 0x81 -> "AC-3"; 0x90 -> "G.711"; 0x06 -> "private data"
+                else -> "type 0x" + type.toString(16)
+            }
+            entry += 5 + (((packet[entry + 3].toInt() and 0x0f) shl 8) or (packet[entry + 4].toInt() and 0xff))
+        }
+        return names.joinToString(", ")
     }
 
     /** The PMT's PID from a PAT packet: the first real program's, or -1. */
