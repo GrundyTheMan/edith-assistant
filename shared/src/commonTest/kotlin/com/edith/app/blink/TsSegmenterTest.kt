@@ -1,5 +1,6 @@
 package com.edith.app.blink
 
+import com.edith.app.blink.hls.AudioKeep
 import com.edith.app.blink.hls.HlsPlaylist
 import com.edith.app.blink.hls.TsSegmenter
 import kotlin.test.Test
@@ -122,4 +123,68 @@ class TsSegmenterStreamsTest {
     }
 
     @Test fun emptyBeforeThePmt() = assertEquals("", TsSegmenter(now = { 0 }).streams)
+}
+
+/** Blink's indoor cameras send two AAC streams; the player stalls on them, so only one goes on (and none in the fallback). */
+class TsSegmenterAudioTest {
+    private fun packet(pid: Int, start: Boolean, fill: Int): ByteArray {
+        val p = ByteArray(188) { fill.toByte() }
+        p[0] = 0x47; p[1] = ((if (start) 0x40 else 0) or (pid shr 8)).toByte(); p[2] = (pid and 0xff).toByte(); p[3] = 0x10
+        return p
+    }
+
+    private fun pat(): ByteArray {
+        val p = ByteArray(188) { 0xff.toByte() }
+        p[0] = 0x47; p[1] = 0x40; p[2] = 0; p[3] = 0x10; p[4] = 0
+        byteArrayOf(0x00, 0xb0.toByte(), 13, 0, 1, 0xc1.toByte(), 0, 0, 0, 1, 0xe1.toByte(), 0, 0, 0, 0).copyInto(p, 5)
+        return p
+    }
+
+    /** A PMT (pid 0x100, clock on the video pid 0x101) with H.264 on 0x101 and AAC on 0x102 and 0x103. */
+    private fun pmt(): ByteArray {
+        val p = ByteArray(188) { 0xff.toByte() }
+        p[0] = 0x47; p[1] = 0x41; p[2] = 0; p[3] = 0x10; p[4] = 0
+        val length = 9 + 15 + 4
+        byteArrayOf(2, (0xb0 or (length shr 8)).toByte(), length.toByte(), 0, 1, 0xc1.toByte(), 0, 0, 0xe1.toByte(), 1, 0xf0.toByte(), 0).copyInto(p, 5)
+        var at = 17
+        for ((type, pid) in listOf(0x1b to 0x101, 0x0f to 0x102, 0x0f to 0x103)) {
+            p[at] = type.toByte(); p[at + 1] = (0xe0 or (pid shr 8)).toByte(); p[at + 2] = (pid and 0xff).toByte(); p[at + 3] = 0xf0.toByte(); p[at + 4] = 0
+            at += 5
+        }
+        return p
+    }
+
+    private fun run(keep: AudioKeep): ByteArray {
+        val s = TsSegmenter(now = { 0 }, audio = keep)
+        s.push(pat() + pmt() + packet(0x101, false, 0x11) + packet(0x102, false, 0x22) + packet(0x103, false, 0x33))
+        return s.finish()!!.data
+    }
+
+    private fun pidsOf(data: ByteArray) = (0 until data.size / 188).map { ((data[it * 188 + 1].toInt() and 0x1f) shl 8) or (data[it * 188 + 2].toInt() and 0xff) }
+
+    @Test fun keepsOneAudioStreamAndDropsTheOthersPackets() {
+        val data = run(AudioKeep.One)
+        assertEquals(listOf(0, 0x100, 0x101, 0x102), pidsOf(data))
+    }
+
+    @Test fun rewrittenPmtListsOnlyWhatIsKeptAndItsCrcHolds() {
+        val s = TsSegmenter(now = { 0 })
+        s.push(pat() + pmt() + packet(0x101, false, 0x11))
+        assertEquals("H.264, AAC, AAC", s.streams)
+        assertEquals("H.264, AAC", s.sent)
+        val pmt = s.finish()!!.data.copyOfRange(188, 376)
+        val length = ((pmt[6].toInt() and 0x0f) shl 8) or (pmt[7].toInt() and 0xff)
+        assertEquals(9 + 10 + 4, length)
+        // A section's CRC over the whole section including its own CRC comes to zero.
+        var crc = -1
+        for (n in 5 until 5 + 3 + length) {
+            crc = crc xor ((pmt[n].toInt() and 0xff) shl 24)
+            repeat(8) { crc = if (crc < 0) (crc shl 1) xor 0x04C11DB7 else crc shl 1 }
+        }
+        assertEquals(0, crc)
+    }
+
+    @Test fun noAudioLeavesThePicture() = assertEquals(listOf(0, 0x100, 0x101), pidsOf(run(AudioKeep.None)))
+
+    @Test fun allAudioPassesThroughUnchanged() = assertEquals(listOf(0, 0x100, 0x101, 0x102, 0x103), pidsOf(run(AudioKeep.All)))
 }

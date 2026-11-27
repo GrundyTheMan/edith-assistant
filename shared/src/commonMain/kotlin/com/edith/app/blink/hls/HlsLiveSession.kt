@@ -15,10 +15,15 @@ import kotlin.time.TimeSource
  * coroutine, cuts the transport stream into segments and keeps the last few. The player's loader asks [playlist] and [segment] as often as it likes.
  * [close] stops reading and ends the playlist, so a player knows the stream is over.
  */
-class HlsLiveSession(private val feed: StreamLiveFeed, scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)) {
+class HlsLiveSession(
+    private val feed: StreamLiveFeed,
+    /** Which audio streams go on to the player (see [AudioKeep]). */
+    audio: AudioKeep = AudioKeep.One,
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+) {
     private val lock = PlatformLock()
     private val clock = TimeSource.Monotonic.markNow()
-    private val segmenter = TsSegmenter(now = { clock.elapsedNow().inWholeMilliseconds })
+    private val segmenter = TsSegmenter(now = { clock.elapsedNow().inWholeMilliseconds }, audio = audio)
     private val list = HlsPlaylist()
     private var bytesIn = 0L
     private var segmentsCut = 0
@@ -43,7 +48,7 @@ class HlsLiveSession(private val feed: StreamLiveFeed, scope: CoroutineScope = C
     /** One line for the screen while the live view is being proven on a phone: what has come in from the camera, and why the feed ended if it did. */
     fun status(): String {
         val (bytes, segments, last) = lock.synchronized { Triple(bytesIn, segmentsCut, recent.joinToString(" ")) }
-        return "Camera: ${bytes / 1024} KB received, $segments segments cut" + (if (last.isEmpty()) "" else " (latest $last)") + (segmenter.streams.takeIf { it.isNotEmpty() }?.let { ". Stream: $it" } ?: "") + (feed.ended.value?.let { ". Ended: $it" } ?: "")
+        return "Camera: ${bytes / 1024} KB received, $segments segments cut" + (if (last.isEmpty()) "" else " (latest $last)") + (segmenter.streams.takeIf { it.isNotEmpty() }?.let { ". Stream: $it" + (if (segmenter.sent != it) " (sent: ${segmenter.sent.ifEmpty { "picture only" }})" else "") } ?: "") + (feed.ended.value?.let { ". Ended: $it" } ?: "")
     }
 
     /** Stops reading the feed. */

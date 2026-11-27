@@ -89,7 +89,10 @@ fun IosLiveDialog(live: LiveUi, onClose: () -> Unit) {
  */
 @Composable
 private fun IosLivePlayer(feed: StreamLiveFeed) {
-    val session = remember(feed) { HlsLiveSession(feed) }
+    // One audio stream goes to the player (Blink's indoor cameras send two, and the player never started on them); when the picture still has not started after
+    // 15 s the view restarts with the picture alone, so at worst there is no sound.
+    var audio by remember(feed) { mutableStateOf(com.edith.app.blink.hls.AudioKeep.One) }
+    val session = remember(feed, audio) { HlsLiveSession(feed, audio) }
     val server = remember(session) { LocalHlsServer(session) }
     val started = remember(server) { server.start() }
     var report by remember { mutableStateOf("") }
@@ -116,6 +119,7 @@ private fun IosLivePlayer(feed: StreamLiveFeed) {
         }
     }
     LaunchedEffect(player) {
+        val begun = kotlin.time.TimeSource.Monotonic.markNow()
         while (true) {
             val item = player.currentItem
             val error = item?.error
@@ -127,7 +131,9 @@ private fun IosLivePlayer(feed: StreamLiveFeed) {
             // The status line was built but never shown (the report printed the player object instead). Now it is, with the picture size and what the player itself logged.
             val size = item?.presentationSize?.useContents { "${width.toInt()}x${height.toInt()}" } ?: "?"
             val logged = (item?.errorLog()?.events?.lastOrNull() as? AVPlayerItemErrorLogEvent)?.let { "\nPlayer log: ${it.errorComment ?: "-"} (${it.errorDomain} ${it.errorStatusCode})" }.orEmpty()
-            report = "${session.status()}\n$line, picture $size$logged\nAsked for: ${server.requests().ifEmpty { "nothing yet" }}"
+            if (audio == com.edith.app.blink.hls.AudioKeep.One && size == "0x0" && begun.elapsedNow().inWholeSeconds >= 15) audio = com.edith.app.blink.hls.AudioKeep.None
+            val note = if (audio == com.edith.app.blink.hls.AudioKeep.None) "\nNo sound: the picture did not start with it." else ""
+            report = "${session.status()}\n$line, picture $size$logged$note\nAsked for: ${server.requests().ifEmpty { "nothing yet" }}"
             delay(500)
         }
     }
