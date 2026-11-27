@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -111,6 +112,7 @@ fun MainViewController(rtc: SwiftRtcFactory?): UIViewController {
                 val webSearchVm = viewModel { com.edith.app.ui.settings.WebSearchSettingsViewModel(app.container.webSearchSetup, app.container.ollamaWeb) }
                 val attachmentsVm = viewModel { com.edith.app.ui.settings.AttachmentSettingsViewModel(app.settings, app.container.retention) }
                 val calendarVm = viewModel { com.edith.app.accounts.ui.CalendarViewModel(app.accounts, app.accounts.accounts, app.accounts.loaded, app.container.clock) }
+                val mailVm = viewModel { com.edith.app.accounts.ui.MailViewModel(app.accounts, app.accounts.accounts, app.accounts.loaded, app.container.clock, app.settings, app.mailRanker) }
                 // The To-do view loads only once it is picked, so its view model is made then.
                 val todoVm: @Composable () -> com.edith.app.accounts.ui.TodoViewModel = { viewModel { com.edith.app.accounts.ui.TodoViewModel(app.accounts, app.accounts.accounts, app.accounts.tasksAccess, app.accounts.loaded, app.container.clock, grant = { id, a, show -> app.accounts.grantTasks(id, a, show) }, consentResult = { app.accounts.onConsentResult(it) }, appScope = app.container.appScope) } }
                 val vm = viewModel {
@@ -138,16 +140,18 @@ fun MainViewController(rtc: SwiftRtcFactory?): UIViewController {
                             NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null) }, label = { Text("Chat") })
                             NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Icon(Icons.Filled.Home, contentDescription = null) }, label = { Text("Home") })
                             NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Icon(Icons.Filled.CalendarMonth, contentDescription = null) }, label = { Text("Calendar") })
-                            NavigationBarItem(selected = tab == 3, onClick = { tab = 3 }, icon = { Icon(Icons.Filled.Settings, contentDescription = null) }, label = { Text("Settings") })
+                            NavigationBarItem(selected = tab == 3, onClick = { tab = 3 }, icon = { Icon(Icons.Filled.Email, contentDescription = null) }, label = { Text("Mail") })
+                            NavigationBarItem(selected = tab == 4, onClick = { tab = 4 }, icon = { Icon(Icons.Filled.Settings, contentDescription = null) }, label = { Text("Settings") })
                         }
                     },
                 ) { padding ->
                     Box(Modifier.padding(padding)) {
                         when (tab) {
                             0 -> SimpleChatScreen(vm, photoPicker, microphone, audioPicker, fileExporter)
-                            1 -> if (showPrinter) IosPrinterScreen(printerVm, onBack = { showPrinter = false }, openPairing = { showPrinter = false; tab = 3 })
-                                else IosHomeScreen(homeVm, openMore = { tab = 3 }, openPrinter = { showPrinter = true }, catchUp = catchUp, onDismissCatchUp = { catchUp = emptyList() })
-                            2 -> IosCalendarScreen(calendarVm, { todoVm() }, openMore = { tab = 3 })
+                            1 -> if (showPrinter) IosPrinterScreen(printerVm, onBack = { showPrinter = false }, openPairing = { showPrinter = false; tab = 4 })
+                                else IosHomeScreen(homeVm, openMore = { tab = 4 }, openPrinter = { showPrinter = true }, catchUp = catchUp, onDismissCatchUp = { catchUp = emptyList() })
+                            2 -> IosCalendarScreen(calendarVm, { todoVm() }, openMore = { tab = 4 })
+                            3 -> IosMailScreen(mailVm, openMore = { tab = 4 })
                             else -> if (showCheck) Column {
                                 androidx.compose.material3.TextButton(onClick = { showCheck = false }, modifier = Modifier.statusBarsPadding()) { Text("‹ Settings") }
                                 EngineCheckScreen(check)

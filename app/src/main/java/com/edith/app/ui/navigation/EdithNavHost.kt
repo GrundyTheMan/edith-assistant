@@ -10,8 +10,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
 import com.edith.app.accounts.ui.CalendarScreen
+import com.edith.app.accounts.ui.MailScreen
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -46,6 +48,7 @@ private val Destination.icon: ImageVector
     get() = when (this) {
         Destination.Chat -> Icons.AutoMirrored.Filled.Chat
         Destination.Calendar -> Icons.Filled.CalendarMonth
+        Destination.Mail -> Icons.Filled.Email
         Destination.Home -> Icons.Filled.Home
         Destination.Settings -> Icons.Filled.Settings
     }
@@ -108,6 +111,14 @@ fun EdithNavHost(banner: @Composable () -> Unit = {}) {
             }
             composable(Destination.Calendar.route) {
                 CalendarScreen(onOpenSettings = {
+                    navController.navigate(Destination.Settings.route) {
+                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                    }
+                })
+            }
+            composable(Destination.Mail.route) {
+                MailScreen(onOpenSettings = {
                     navController.navigate(Destination.Settings.route) {
                         popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                         launchSingleTop = true

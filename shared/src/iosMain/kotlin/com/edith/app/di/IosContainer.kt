@@ -115,6 +115,8 @@ class IosApp(
     val dictation: com.edith.app.voice.capture.SpeechInput,
     /** Conversation mode (K4.11): tap Talk, ask, hear the answer, follow up. */
     val handsFree: HandsFree,
+    /** The Mail tab's ranking with the local model (K7.1). */
+    val mailRanker: com.edith.app.accounts.mail.MailRanker,
 )
 
 /**
@@ -243,7 +245,7 @@ fun createIosApp(ringPeers: com.edith.app.ring.RingPeerFactory? = null): IosApp 
         end = { platform.UIKit.UIApplication.sharedApplication.endBackgroundTask(it as ULong) },
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
     )
-    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore, accounts, home, printerSession, printerPrefs, alerts, alertPrefs, speech, voiceMemos, com.edith.app.attachments.IosAttachmentPlayer { speech.stop() }, com.edith.app.voice.capture.IosSpeechInput(), handsFree)
+    return IosApp(container, secrets, settings, registry, IosAttachmentIntake("$dir/pending", AppDispatchers.Default), attachmentStore, accounts, home, printerSession, printerPrefs, alerts, alertPrefs, speech, voiceMemos, com.edith.app.attachments.IosAttachmentPlayer { speech.stop() }, com.edith.app.voice.capture.IosSpeechInput(), handsFree, com.edith.app.accounts.mail.MailRanker(container.ollama, com.edith.app.accounts.mail.MailRatingStore("$dir/${com.edith.app.accounts.mail.MailRatingStore.FILE_NAME}")))
 }
 
 /** The app's private folder for data, made on first use. */
