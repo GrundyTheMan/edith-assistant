@@ -4,6 +4,7 @@ package com.edith.app.ui.navigation
 enum class Destination(val route: String, val label: String) {
     Chat("chat", "Chat"),
     Calendar("calendar", "Calendar"),
+    Mail("mail", "Mail"),
     Home("home", "Home"),
     Settings("settings", "Settings");
 

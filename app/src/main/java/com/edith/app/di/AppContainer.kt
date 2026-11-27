@@ -129,6 +129,8 @@ import com.edith.app.accounts.tools.calendarTools
 import com.edith.app.accounts.tools.mailTools
 import com.edith.app.accounts.tools.TaskHandles
 import com.edith.app.accounts.tools.taskTools
+import com.edith.app.accounts.mail.MailRanker
+import com.edith.app.accounts.mail.MailRatingStore
 import com.edith.app.accounts.tasks.RankStore
 import com.edith.app.accounts.tasks.TaskRanker
 import com.edith.app.voice.capture.AudioRecorder
@@ -473,6 +475,8 @@ class AppContainer(val app: Application) {
     /** C35: to-do handles (`t1`…) and the suggested order, saved in `filesDir/task-ranks.json`. */
     val taskHandles: TaskHandles by lazy { TaskHandles() }
     val taskRanker: TaskRanker by lazy { TaskRanker(ollama, RankStore(java.io.File(app.filesDir, RankStore.FILE_NAME).path), clock) }
+    /** K7.1: the Mail tab's ranking with the local model; the ratings are kept in `filesDir/mail-ratings.json`. */
+    val mailRanker: MailRanker by lazy { MailRanker(ollama, MailRatingStore(java.io.File(app.filesDir, MailRatingStore.FILE_NAME).path)) }
 
     /** Keeps the newest N attachments each way (C16, O1). */
     val retention: Retention get() = shared.retention
