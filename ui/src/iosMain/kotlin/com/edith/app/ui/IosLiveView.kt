@@ -32,6 +32,10 @@ import com.edith.app.home.ui.LiveUi
 import com.edith.app.ring.PeerLiveFeed
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.useContents
+import platform.AVFoundation.AVPlayerItemErrorLogEvent
+import platform.AVFoundation.errorLog
+import platform.AVFoundation.presentationSize
 import kotlinx.coroutines.delay
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryPlayback
@@ -120,7 +124,10 @@ private fun IosLivePlayer(feed: StreamLiveFeed) {
                 item?.status == AVPlayerItemStatusReadyToPlay -> "Player: ready"
                 else -> "Player: waiting"
             }
-            report = "${session.status()}\n$player\nAsked for: ${server.requests().ifEmpty { "nothing yet" }}"
+            // The status line was built but never shown (the report printed the player object instead). Now it is, with the picture size and what the player itself logged.
+            val size = item?.presentationSize?.useContents { "${width.toInt()}x${height.toInt()}" } ?: "?"
+            val logged = (item?.errorLog()?.events?.lastOrNull() as? AVPlayerItemErrorLogEvent)?.let { "\nPlayer log: ${it.errorComment ?: "-"} (${it.errorDomain} ${it.errorStatusCode})" }.orEmpty()
+            report = "${session.status()}\n$line, picture $size$logged\nAsked for: ${server.requests().ifEmpty { "nothing yet" }}"
             delay(500)
         }
     }

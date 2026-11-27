@@ -22,11 +22,12 @@ class HlsLiveSession(private val feed: StreamLiveFeed, scope: CoroutineScope = C
     private val list = HlsPlaylist()
     private var bytesIn = 0L
     private var segmentsCut = 0
+    private var recent = ArrayList<String>()
     private val job: Job = scope.launch {
         try {
             for (chunk in feed.video) {
                 val cut = segmenter.push(chunk)
-                lock.synchronized { bytesIn += chunk.size; segmentsCut += cut.size; cut.forEach(list::add) }
+                lock.synchronized { bytesIn += chunk.size; segmentsCut += cut.size; cut.forEach { list.add(it); recent += "${it.seconds.toString().take(4)}s/${it.data.size / 1024}KB"; if (recent.size > 3) recent.removeAt(0) } }
             }
         } finally {
             lock.synchronized { segmenter.finish()?.let(list::add); list.end() }
@@ -41,8 +42,8 @@ class HlsLiveSession(private val feed: StreamLiveFeed, scope: CoroutineScope = C
 
     /** One line for the screen while the live view is being proven on a phone: what has come in from the camera, and why the feed ended if it did. */
     fun status(): String {
-        val (bytes, segments) = lock.synchronized { bytesIn to segmentsCut }
-        return "Camera: ${bytes / 1024} KB received, $segments segments cut" + (feed.ended.value?.let { ". Ended: $it" } ?: "")
+        val (bytes, segments, last) = lock.synchronized { Triple(bytesIn, segmentsCut, recent.joinToString(" ")) }
+        return "Camera: ${bytes / 1024} KB received, $segments segments cut" + (if (last.isEmpty()) "" else " (latest $last)") + (segmenter.streams.takeIf { it.isNotEmpty() }?.let { ". Stream: $it" } ?: "") + (feed.ended.value?.let { ". Ended: $it" } ?: "")
     }
 
     /** Stops reading the feed. */
