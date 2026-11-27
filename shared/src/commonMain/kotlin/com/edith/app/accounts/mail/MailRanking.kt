@@ -208,6 +208,9 @@ class MailRatingStore(private val path: String) {
 
 /** Rates emails with the owner's local model (K7.1): separate, non-streaming calls of [MailRanking.BATCH], not part of the chat. */
 class MailRanker(private val ollama: OllamaClient, private val store: MailRatingStore) {
+    /** One run at a time: the Mail and Today tabs each have a view model, and the second one waits, then finds everything already rated. */
+    private val running = Mutex()
+
     /** What the saved ratings already say about [mail], by [MailRanking.key]. */
     suspend fun saved(mail: List<MailSummary>, model: String): Map<String, MailRating> {
         val out = LinkedHashMap<String, MailRating>()
@@ -219,7 +222,10 @@ class MailRanker(private val ollama: OllamaClient, private val store: MailRating
      * Rates [mail] (the ones with no saved rating) batch by batch, calling [onRated] with each batch's ratings as they arrive. [own] gives the account's own address.
      * A reply that cannot be read leaves its batch estimated. Returns null when all went well, or why the model could not be reached.
      */
-    suspend fun rate(mail: List<MailSummary>, own: (MailSummary) -> String, serverUrl: String, model: String, onRated: suspend (Map<String, MailRating>) -> Unit): AppError? {
+    suspend fun rate(mail: List<MailSummary>, own: (MailSummary) -> String, serverUrl: String, model: String, onRated: suspend (Map<String, MailRating>) -> Unit): AppError? =
+        running.withLock { rateLocked(mail, own, serverUrl, model, onRated) }
+
+    private suspend fun rateLocked(mail: List<MailSummary>, own: (MailSummary) -> String, serverUrl: String, model: String, onRated: suspend (Map<String, MailRating>) -> Unit): AppError? {
         val todo = mail.filter { store.get(MailRanking.key(it), model) == null }
         for (batch in todo.chunked(MailRanking.BATCH)) {
             val call = ChatCall(

@@ -5,13 +5,13 @@ import org.junit.Test
 
 class DestinationsTest {
     @Test
-    fun destinationsInBottomBarOrder() {   // C25 added Home, K7 added Mail
-        assertEquals(listOf("Chat", "Calendar", "Mail", "Home", "Settings"), Destination.entries.map { it.label })
+    fun destinationsInBottomBarOrder() {   // C25 added Home, K7 added Mail, K8 added Today
+        assertEquals(listOf("Today", "Chat", "Calendar", "Mail", "Home", "Settings"), Destination.entries.map { it.label })
     }
 
     @Test
-    fun chatIsTheStartDestination() {
-        assertEquals(Destination.Chat, Destination.start)
+    fun todayIsTheStartDestination() {
+        assertEquals(Destination.Today, Destination.start)
     }
 
     @Test

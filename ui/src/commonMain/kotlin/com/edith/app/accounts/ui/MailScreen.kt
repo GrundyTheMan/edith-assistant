@@ -197,6 +197,8 @@ class MailViewModel(
                 ratings = ratings + got
                 publish()
             }
+            // Another view model (the Today tab's) may have rated some of these while this one waited its turn: take what is saved now.
+            ratings = ratings + ranker.saved(summaries.map { it.second }, model)
             ranking = false
             note = if (failure == null) "Ranked by $model." else "Couldn't reach your model (${Reads.why(failure)}): showing estimates from signals."
             publish()
