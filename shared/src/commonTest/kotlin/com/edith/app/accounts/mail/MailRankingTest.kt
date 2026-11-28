@@ -100,7 +100,7 @@ class MailRankingTest {
             ok("""{"ratings":[${(1..10).joinToString(",") { """{"n":$it,"score":7,"reason":"r$it"}""" }}]}"""),
             ok("""{"ratings":[{"n":1,"score":3,"reason":"late"},{"n":2,"score":2,"reason":"later"}]}"""),
         ))
-        val ranker = MailRanker(ollama, MailRatingStore("build/mail-ratings-test-1.json"))
+        val ranker = MailRanker(ollama, MailRatingStore("build/mail-ratings-test-${kotlin.random.Random.nextLong()}.json"))
         val seen = mutableListOf<Int>()
         val failure = ranker.rate(twelve, { own }, "http://x", "model", { seen += it.size })
         assertNull(failure)
@@ -119,14 +119,14 @@ class MailRankingTest {
             ok("nonsense"),
             ok("""{"ratings":[{"n":1,"score":8,"reason":"waiting on you"}]}"""),
         ))
-        val ranker = MailRanker(ollama, MailRatingStore("build/mail-ratings-test-2.json"))
+        val ranker = MailRanker(ollama, MailRatingStore("build/mail-ratings-test-${kotlin.random.Random.nextLong()}.json"))
         assertNull(ranker.rate(twenty, { own }, "http://x", "model", {}))
         assertEquals(1, ranker.saved(twenty, "model").size)
     }
 
     @Test fun `a model that cannot be reached is reported and stops the run`() = runTest {
         val ollama = Scripted(mutableListOf(Outcome.Failure(AppError.Timeout)))
-        val ranker = MailRanker(ollama, MailRatingStore("build/mail-ratings-test-3.json"))
+        val ranker = MailRanker(ollama, MailRatingStore("build/mail-ratings-test-${kotlin.random.Random.nextLong()}.json"))
         assertEquals(AppError.Timeout, ranker.rate((1..20).map { mail("o$it") }, { own }, "http://x", "model", {}))
         assertEquals(1, ollama.calls)
     }

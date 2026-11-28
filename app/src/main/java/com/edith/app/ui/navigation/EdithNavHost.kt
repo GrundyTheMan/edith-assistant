@@ -14,7 +14,10 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
 import com.edith.app.accounts.ui.CalendarScreen
 import com.edith.app.accounts.ui.MailScreen
+import com.edith.app.today.ui.TodayScreen
+
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -46,6 +49,7 @@ private const val PRINTER_ROUTE = "printer"
 
 private val Destination.icon: ImageVector
     get() = when (this) {
+        Destination.Today -> Icons.Filled.Today
         Destination.Chat -> Icons.AutoMirrored.Filled.Chat
         Destination.Calendar -> Icons.Filled.CalendarMonth
         Destination.Mail -> Icons.Filled.Email
@@ -101,6 +105,14 @@ fun EdithNavHost(banner: @Composable () -> Unit = {}) {
             startDestination = Destination.start.route,
             modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
         ) {
+            composable(Destination.Today.route) {
+                fun go(d: Destination) = navController.navigate(d.route) {
+                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+                TodayScreen(onOpenCalendar = { go(Destination.Calendar) }, onOpenMail = { go(Destination.Mail) }, onOpenHome = { go(Destination.Home) })
+            }
             composable(Destination.Chat.route) {
                 ChatWithVoiceBanner(onOpenSettings = {
                     navController.navigate(Destination.Settings.route) {

@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -84,7 +85,7 @@ fun MainViewController(rtc: SwiftRtcFactory?): UIViewController {
     return ComposeUIViewController {
         EdithTheme {
             Surface {
-                var tab by rememberSaveable { mutableStateOf(0) }
+                var tab by rememberSaveable { mutableStateOf(TAB_TODAY) }   // Edith opens on Today (K8.1)
                 val homeVm = viewModel { com.edith.app.home.ui.HomeViewModel(app.home, app.container.clock) { app.accounts.jarvisConnection() != null } }
                 val printerVm = viewModel { com.edith.app.printer.ui.PrinterViewModel(app.printerSession, app.printerPrefs, app.container.clock) }
                 var showPrinter by rememberSaveable { mutableStateOf(false) }
@@ -137,6 +138,7 @@ fun MainViewController(rtc: SwiftRtcFactory?): UIViewController {
                     contentWindowInsets = WindowInsets(0, 0, 0, 0),   // each screen handles its own top inset
                     bottomBar = {
                         NavigationBar {
+                            NavigationBarItem(selected = tab == TAB_TODAY, onClick = { tab = TAB_TODAY }, icon = { Icon(Icons.Filled.Today, contentDescription = null) }, label = { Text("Today") })
                             NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null) }, label = { Text("Chat") })
                             NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Icon(Icons.Filled.Home, contentDescription = null) }, label = { Text("Home") })
                             NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Icon(Icons.Filled.CalendarMonth, contentDescription = null) }, label = { Text("Calendar") })
@@ -152,6 +154,7 @@ fun MainViewController(rtc: SwiftRtcFactory?): UIViewController {
                                 else IosHomeScreen(homeVm, openMore = { tab = 4 }, openPrinter = { showPrinter = true }, catchUp = catchUp, onDismissCatchUp = { catchUp = emptyList() })
                             2 -> IosCalendarScreen(calendarVm, { todoVm() }, openMore = { tab = 4 })
                             3 -> IosMailScreen(mailVm, openMore = { tab = 4 })
+                            TAB_TODAY -> IosTodayScreen(calendarVm, todoVm(), mailVm, app.home, catchUp, app.container.clock, openCalendar = { tab = 2 }, openMail = { tab = 3 }, openHome = { tab = 1 })
                             else -> if (showCheck) Column {
                                 androidx.compose.material3.TextButton(onClick = { showCheck = false }, modifier = Modifier.statusBarsPadding()) { Text("‹ Settings") }
                                 EngineCheckScreen(check)
@@ -178,3 +181,6 @@ fun MainViewController(rtc: SwiftRtcFactory?): UIViewController {
         }
     }
 }
+
+/** The Today tab's id. Its button is first in the bar but the ids of the others (0 to 4) are older, so it takes the next free one. */
+private const val TAB_TODAY = 5

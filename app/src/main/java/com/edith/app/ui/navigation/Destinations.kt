@@ -2,6 +2,7 @@ package com.edith.app.ui.navigation
 
 /** The bottom-bar destinations, in display order. Icons are mapped in [EdithNavHost]. */
 enum class Destination(val route: String, val label: String) {
+    Today("today", "Today"),
     Chat("chat", "Chat"),
     Calendar("calendar", "Calendar"),
     Mail("mail", "Mail"),
@@ -9,6 +10,6 @@ enum class Destination(val route: String, val label: String) {
     Settings("settings", "Settings");
 
     companion object {
-        val start = Chat
+        val start = Today
     }
 }

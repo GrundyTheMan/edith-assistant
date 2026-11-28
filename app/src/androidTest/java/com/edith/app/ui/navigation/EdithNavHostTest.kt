@@ -33,7 +33,8 @@ class EdithNavHostTest {
     fun bottomBarSwitchesBetweenScreens() {
         compose.setContent { EdithTheme { EdithNavHost() } }
 
-        compose.onNodeWithText("Chat").assertExists()
+        // K8: Edith opens on the Today tab; the chat is one tap away.
+        compose.onNodeWithText("Chat").performClick()
         compose.onNodeWithText("Message Edith").assertExists()   // the chat screen (C07); not its contents, which are the owner's
 
         compose.onNodeWithText("Calendar").performClick()
